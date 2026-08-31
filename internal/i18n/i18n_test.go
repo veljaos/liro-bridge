@@ -1,0 +1,96 @@
+package i18n
+
+import (
+	"sort"
+	"testing"
+
+	"github.com/veljaos/liro-bridge/internal/errs"
+)
+
+// TestCataloguesHaveIdenticalKeySets is the completeness test from F0 §5.4:
+// a key present in one locale but missing from another must fail the build.
+func TestCataloguesHaveIdenticalKeySets(t *testing.T) {
+	locales := []string{"sr-Latn", "sr-Cyrl", "en"}
+	var reference []string
+	for i, locale := range locales {
+		c := Load(locale)
+		keys := make([]string, 0, len(c.data))
+		for k := range c.data {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		if i == 0 {
+			reference = keys
+			continue
+		}
+		if len(keys) != len(reference) {
+			t.Fatalf("%s has %d keys, %s has %d keys", locale, len(keys), locales[0], len(reference))
+		}
+		for j, k := range keys {
+			if k != reference[j] {
+				t.Fatalf("%s key set differs from %s: %q vs %q", locale, locales[0], k, reference[j])
+			}
+		}
+	}
+}
+
+func TestLoadFallsBackOnUnknownLocale(t *testing.T) {
+	c := Load("fr")
+	if c.locale != defaultLocale {
+		t.Fatalf("locale = %q, want %q", c.locale, defaultLocale)
+	}
+}
+
+func TestLoadFallsBackOnEmptyLocale(t *testing.T) {
+	c := Load("")
+	if c.locale != defaultLocale {
+		t.Fatalf("locale = %q, want %q", c.locale, defaultLocale)
+	}
+}
+
+// TestBareSrDoesNotResolveToCyrillic guards SPEC §9.1: in CLDR, bare "sr"
+// resolves to Cyrillic. A bare "sr" here must fall back to sr-Latn instead.
+func TestBareSrDoesNotResolveToCyrillic(t *testing.T) {
+	c := Load("sr")
+	if c.locale != "sr-Latn" {
+		t.Fatalf("bare \"sr\" resolved to %q, want sr-Latn (never sr-Cyrl)", c.locale)
+	}
+}
+
+func TestLoadExactMatches(t *testing.T) {
+	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+		c := Load(locale)
+		if c.locale != locale {
+			t.Fatalf("Load(%q).locale = %q", locale, c.locale)
+		}
+	}
+}
+
+func TestTReturnsMessage(t *testing.T) {
+	c := Load("en")
+	if got := c.T("app.name"); got != "Liro Bridge" {
+		t.Fatalf("T(app.name) = %q", got)
+	}
+}
+
+func TestTFallsBackToEnglishThenToKey(t *testing.T) {
+	c := Load("sr-Latn")
+	// Present nowhere: must fall back all the way to the key itself.
+	if got := c.T("does.not.exist"); got != "does.not.exist" {
+		t.Fatalf("T(missing) = %q, want the key echoed back", got)
+	}
+}
+
+func TestCodeKey(t *testing.T) {
+	cases := map[errs.Code]string{
+		errs.CodeCardNotPresent: "error.card_not_present",
+		errs.CodeNoReader:       "error.no_reader",
+		errs.CodeInternal:       "error.internal",
+	}
+	for code, want := range cases {
+		if got := CodeKey(code); got != want {
+			t.Fatalf("CodeKey(%s) = %q, want %q", code, got, want)
+		}
+	}
+}

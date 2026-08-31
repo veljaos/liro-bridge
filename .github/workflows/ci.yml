@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          fmt_out="$(gofmt -l .)"
+          if [ -n "$fmt_out" ]; then
+            echo "$fmt_out"
+            echo "gofmt found unformatted files (see above)"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+      - name: dependency rule check
+        run: go run ./scripts/checkdeps
+
+      - name: test
+        run: go test ./... -race -count=1
+        env:
+          # -race requires cgo. This is orthogonal to CGO_ENABLED=0 below:
+          # that keeps our own code cgo-free (F0 §10), this just lets the
+          # race detector's instrumentation build.
+          CGO_ENABLED: 1
+
+      # Cross-compilation must work from day one (F0 §8), even though only
+      # Windows has a real implementation so far. CGO_ENABLED=0 here keeps
+      # these builds honest about not depending on a C toolchain, per the
+      # "no cgo until phase 11" rule in F0 §10.
+      - name: build windows/amd64
+        run: go build -o dist/ ./...
+        env:
+          CGO_ENABLED: 0
+          GOOS: windows
+          GOARCH: amd64
+
+      - name: build darwin/arm64
+        run: go build -o dist/ ./...
+        env:
+          CGO_ENABLED: 0
+          GOOS: darwin
+          GOARCH: arm64
+
+      - name: build linux/amd64
+        run: go build -o dist/ ./...
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: amd64

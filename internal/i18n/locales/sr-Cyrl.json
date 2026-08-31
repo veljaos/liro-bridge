@@ -1,0 +1,6 @@
+{
+  "app.name": "Liro Bridge",
+  "error.card_not_present": "Картица није у читачу.",
+  "error.no_reader": "Читач картица није пронађен.",
+  "error.internal": "Дошло је до неочекиване грешке."
+}

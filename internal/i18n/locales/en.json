@@ -1,0 +1,6 @@
+{
+  "app.name": "Liro Bridge",
+  "error.card_not_present": "The card is not in the reader.",
+  "error.no_reader": "No smart card reader was found.",
+  "error.internal": "An unexpected error occurred."
+}
