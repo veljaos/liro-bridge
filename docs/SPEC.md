@@ -132,8 +132,8 @@ These are checked in CI. A violation fails the build.
 2. **`internal/keysource` MUST NOT import `internal/pades`.**
    Key sources sign hashes. They do not know what a PDF is.
 
-3. **`internal/trust` MUST NOT import anything from `internal/`.**
-   Trust evaluation (TSL, OCSP, chain building) is pure and independently testable.
+3. **`internal/trust` MUST NOT import anything from `internal/` except `internal/errs`.**
+   Trust evaluation (TSL, OCSP, chain building) is pure and independently testable. `internal/errs` is a dependency-free leaf carrying only the error-code vocabulary; importing it does not compromise that property. No other `internal/` package may be imported.
 
 4. **`internal/api`, `internal/ui`, `internal/cli` MUST NOT import each other.**
    Three independent front doors onto the same core.
@@ -400,6 +400,7 @@ Initial code set — extend as phases require, and document every addition:
 | `PDF_INVALID` | Input is not a parseable PDF |
 | `PDF_ENCRYPTED` | Input is password-protected |
 | `SIGN_FAILED` | The card refused or failed to sign |
+| `STAMP_GLYPH_MISSING` | The visual stamp needs a character the embedded font subset does not contain |
 | `VERSION_TOO_OLD` | Client requires a newer agent |
 | `INTERNAL` | Anything unclassified — always accompanied by a local log entry |
 
@@ -925,6 +926,22 @@ Two hard requirements:
 Before any release, output is checked in all four of: Adobe Acrobat Reader, the PKS qualified validation service, the Inception validation service, and the eUprava validator.
 
 Documented expectation: **Adobe will report "identity unknown" for MUP-signed documents**, because MUP's CA is not in Adobe's AATL trust list. This is not a defect and cannot be fixed in code. It is documented for users.
+
+### 16.8 The validator landscape
+
+The validators this project checks output against are not interchangeable — each proves a different thing, and a document rejected by one of them while accepted by the rest is not automatically this project's bug. Record what each one actually establishes:
+
+| Validator | What it proves |
+|---|---|
+| **eUprava validator** | Legal validity under Serbian law. This is the validator that matters most for Liro Bridge's users: it is the one a Serbian qualified signature is legally judged against, and it is more authoritative for our users than Adobe's opinion. |
+| **DSS Demo, European Commission** | Conformance to ETSI's PAdES specifications themselves. It is the ETSI reference implementation and produces the most detailed diagnostic report of any validator in this list — the first place to look when a signature is structurally wrong, not just rejected. |
+| **PKS** and **Inception** | Registered qualified validation services under Serbian law. Their acceptance is independent evidence of legal validity, alongside the eUprava validator. |
+| **pyHanko** | The most rigorous open-source PAdES implementation available. It enumerates every signature in a document, reports byte-range coverage per signature, and diffs revisions to classify exactly what an incremental update changed (form filling, DSS, LTA, or something else). Useful as a fast, local, offline check during development — see the diagnosis below for what it is not a substitute for. |
+| **Adobe Acrobat** | What the user actually sees and judges the product by — that alone earns it a permanent place in this list, regardless of how it ranks against the others below. It is also demonstrably **stricter than the specification** in places: Adobe does not read `/ByteRange` through its general PDF object parser but scans it from raw bytes with its own dedicated scanner, before the rest of the document is even parsed (PDF 32000-1 §7.7.5 permits, but does not require, this). That scanner accepts only the exact shape real producers emit and rejects PDF that is otherwise entirely spec-conformant. |
+
+**Measured case that motivated this table.** A document this project signed was rejected by Adobe Acrobat ("At least one signature is invalid", an empty Signature Panel) while **four independent implementations — pyHanko, pypdf, PDFium, and this project's own from-scratch verifier (§16.4) — accepted the same bytes as valid.** pyHanko in particular enumerated all signatures as `SignatureCoverageLevel.ENTIRE_REVISION` and reported no structural defect. The actual fault (documented in `docs/decisions.md`) was real, but specific to how Adobe's raw-byte `/ByteRange` scanner and its signature-widget renderer are stricter than the general PDF object model every other tool here parses through — not a case of Acrobat being wrong and everything else being right, nor the reverse.
+
+The lesson this table exists to fix in place: **do not let a future change "simplify" a formatting decision back to a form Acrobat dislikes** on the reasoning that four other validators already accept it. Four acceptances are not proof a fifth, stricter reader will too — that is exactly the gap this section was written to close.
 
 ---
 

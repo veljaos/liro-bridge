@@ -16,20 +16,33 @@ const (
 	CodeConsentTimeout Code = "CONSENT_TIMEOUT"
 	CodeNoReader       Code = "NO_READER"
 	CodeCardNotPresent Code = "CARD_NOT_PRESENT"
-	CodePINRequired    Code = "PIN_REQUIRED"
-	CodePINIncorrect   Code = "PIN_INCORRECT"
-	CodePINLocked      Code = "PIN_LOCKED"
-	CodeCertNotFound   Code = "CERT_NOT_FOUND"
-	CodeCertExpired    Code = "CERT_EXPIRED"
-	CodeCertNotUsable  Code = "CERT_NOT_USABLE"
-	CodeCertRevoked    Code = "CERT_REVOKED"
-	CodeTSAUnavailable Code = "TSA_UNAVAILABLE"
-	CodeTSARejected    Code = "TSA_REJECTED"
-	CodePDFInvalid     Code = "PDF_INVALID"
-	CodePDFEncrypted   Code = "PDF_ENCRYPTED"
-	CodeSignFailed     Code = "SIGN_FAILED"
-	CodeVersionTooOld  Code = "VERSION_TOO_OLD"
-	CodeInternal       Code = "INTERNAL"
+
+	// CodeSmartCardServiceDown means the OS smart card service is not
+	// running. This is different from NO_READER: the fix is to start a
+	// Windows service, not to plug in hardware (F1 §2.3).
+	CodeSmartCardServiceDown Code = "SMART_CARD_SERVICE_DOWN"
+	CodePINRequired          Code = "PIN_REQUIRED"
+	CodePINIncorrect         Code = "PIN_INCORRECT"
+	CodePINLocked            Code = "PIN_LOCKED"
+	CodeCertNotFound         Code = "CERT_NOT_FOUND"
+	CodeCertExpired          Code = "CERT_EXPIRED"
+	CodeCertNotUsable        Code = "CERT_NOT_USABLE"
+	CodeCertRevoked          Code = "CERT_REVOKED"
+	CodeTSAUnavailable       Code = "TSA_UNAVAILABLE"
+	CodeTSARejected          Code = "TSA_REJECTED"
+	CodePDFInvalid           Code = "PDF_INVALID"
+	CodePDFEncrypted         Code = "PDF_ENCRYPTED"
+	CodeSignFailed           Code = "SIGN_FAILED"
+
+	// CodeStampGlyphMissing means the visual signature stamp needs a
+	// character the embedded font subset does not contain. This is
+	// unrelated to the card, the reader or the signing operation itself
+	// (Task 2) — SIGN_FAILED's own message ("the card failed to produce
+	// a signature") sends the user to check hardware for a problem that
+	// has nothing to do with hardware.
+	CodeStampGlyphMissing Code = "STAMP_GLYPH_MISSING"
+	CodeVersionTooOld     Code = "VERSION_TOO_OLD"
+	CodeInternal          Code = "INTERNAL"
 )
 
 // Error is the only error type that crosses an API boundary. It carries a

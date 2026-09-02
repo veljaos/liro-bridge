@@ -41,7 +41,7 @@ func TestSetupLoggingWritesJSONToFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetupLogging: %v", err)
 	}
-	defer closer.Close()
+	defer func() { _ = closer.Close() }()
 
 	logger.Info("startup", "version", "0.1.0-dev")
 
@@ -71,7 +71,7 @@ func TestSetupLoggingRespectsLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetupLogging: %v", err)
 	}
-	defer closer.Close()
+	defer func() { _ = closer.Close() }()
 
 	logger.Info("should be filtered out")
 	logger.Warn("should appear")
@@ -94,7 +94,7 @@ func TestRotatingWriterRotatesBySize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newRotatingWriter: %v", err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	line := []byte("0123456789\n") // 11 bytes
 	for i := 0; i < 10; i++ {
@@ -139,8 +139,8 @@ func TestSetupLoggingDebugAlsoWritesStderr(t *testing.T) {
 		t.Fatalf("SetupLogging: %v", err)
 	}
 	logger.Info("debug line")
-	closer.Close()
-	wPipe.Close()
+	_ = closer.Close()
+	_ = wPipe.Close()
 
 	scanner := bufio.NewScanner(r)
 	found := false

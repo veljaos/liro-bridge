@@ -48,7 +48,7 @@ func SetupLogging(level string, logDir string, debug bool) (*slog.Logger, io.Clo
 		handlers = append(handlers, slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slogLevel}))
 	}
 
-	var handler slog.Handler = handlers[0]
+	handler := handlers[0]
 	if len(handlers) > 1 {
 		handler = &multiHandler{handlers: handlers}
 	}
@@ -164,7 +164,7 @@ func (w *rotatingWriter) openCurrent() error {
 	}
 	info, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	w.file = f

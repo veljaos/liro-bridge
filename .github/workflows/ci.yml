@@ -42,6 +42,187 @@ jobs:
           # race detector's instrumentation build.
           CGO_ENABLED: 1
 
+      # The soft token (F2 §3) only compiles in with this tag — run its
+      # own tests, plus everything else, under it too, so a regression
+      # there is caught the same way as everywhere else.
+      - name: test (softtoken tag)
+        run: go test -tags softtoken ./... -race -count=1
+        env:
+          CGO_ENABLED: 1
+
+      # F2 §7.3 / SPEC §16.6: the soft token must be impossible to enable
+      # in a release build. This does not trust the build tag alone — it
+      # builds a binary without it and inspects the binary itself. The
+      # second half proves the check can actually fail: if softtoken.go's
+      # own build tag were ever broken (e.g. a typo turning it into a
+      # comment), the symbols would vanish even WITH the tag, and that
+      # half goes red too — so this check fires in both directions, not
+      # just the one F2 asks for.
+      - name: soft token is absent without the build tag
+        run: |
+          go build -o dist/liro-bridge-no-softtoken ./cmd/liro-bridge
+          if go tool nm dist/liro-bridge-no-softtoken | grep -q 'internal/keysource/softtoken'; then
+            echo "FAIL: softtoken symbols found in a binary built WITHOUT the softtoken tag"
+            go tool nm dist/liro-bridge-no-softtoken | grep 'internal/keysource/softtoken'
+            exit 1
+          fi
+          echo "OK: no softtoken symbols in a release-shaped build"
+
+          go build -tags softtoken -o dist/liro-bridge-with-softtoken ./cmd/liro-bridge
+          if ! go tool nm dist/liro-bridge-with-softtoken | grep -q 'internal/keysource/softtoken'; then
+            echo "FAIL: softtoken symbols are missing even WITH the tag — this check's own methodology is broken"
+            exit 1
+          fi
+          echo "OK: softtoken symbols are present when the tag is passed"
+        env:
+          CGO_ENABLED: 0
+
+      # This is F2's exit condition (F2 §6.1): a signature produced by
+      # sign-digest verifies with OpenSSL, a tool that shares no code
+      # with this project, with no hardware present at all.
+      - name: sign-digest verifies with OpenSSL against the soft token
+        run: |
+          go build -tags softtoken -o dist/liro-bridge-softtoken ./cmd/liro-bridge
+          go run ./scripts/gentestkeys /tmp/softtoken
+
+          export LIRO_SOFTTOKEN_P12=/tmp/softtoken/test.p12
+          export LIRO_SOFTTOKEN_PASSWORD=liro-softtoken-test
+          export LOCALAPPDATA=/tmp/liro-appdata
+          export HOME=/tmp/liro-home
+          export XDG_CONFIG_HOME=/tmp/liro-home/config
+
+          echo "liro-bridge F2 CI verification" > /tmp/input.txt
+          DIGEST=$(openssl dgst -sha256 /tmp/input.txt | awk '{print $2}')
+
+          THUMBPRINT=$(dist/liro-bridge-softtoken certs --json | jq -r '.certificates[] | select(.isTestKey==true) | .thumbprint')
+          test -n "$THUMBPRINT"
+
+          dist/liro-bridge-softtoken certs --json | jq -r --arg tp "$THUMBPRINT" \
+            '.certificates[] | select(.thumbprint == $tp) | .pem' > /tmp/cert.pem
+
+          dist/liro-bridge-softtoken sign-digest --thumbprint "$THUMBPRINT" --digest "$DIGEST" --out /tmp/sig.bin
+
+          openssl x509 -in /tmp/cert.pem -pubkey -noout > /tmp/pub.pem
+          openssl dgst -sha256 -verify /tmp/pub.pem -signature /tmp/sig.bin /tmp/input.txt | tee /tmp/verify.out
+          grep -q "Verified OK" /tmp/verify.out
+        env:
+          CGO_ENABLED: 0
+
+      # F3 §16.5/SPEC §16.5: the PDF parser accepts foreign input and must
+      # never panic, allocate unboundedly, or loop forever on it. 60s per
+      # push/PR is a floor, not a substitute for the longer local runs
+      # this phase's report cites (12.6M+18M executions clean) — it exists
+      # so a future regression is caught automatically, not only when
+      # someone remembers to fuzz by hand again.
+      - name: fuzz internal/pades/pdf.FuzzParse
+        run: go test ./internal/pades/pdf/... -run=^$ -fuzz=FuzzParse -fuzztime=60s
+        env:
+          CGO_ENABLED: 0
+
+      # F3's own exit condition, automated the same way F2's was: sign a
+      # PDF with the soft token (no hardware, no network credential
+      # needed for this step — B-B, no TSA), and check the result with
+      # OpenSSL, a tool sharing no code with this project, exactly like
+      # F2 §6.1's sign-digest check. This is this project's own
+      # independent verifier's job too, run right after for the same
+      # reason F3 §16.4 asks for it in CI.
+      - name: sign a PDF and verify it with OpenSSL and the independent verifier
+        run: |
+          go build -tags softtoken -o dist/liro-bridge-softtoken ./cmd/liro-bridge
+          go run ./scripts/gentestkeys /tmp/softtoken
+
+          export LIRO_SOFTTOKEN_P12=/tmp/softtoken/test.p12
+          export LIRO_SOFTTOKEN_PASSWORD=liro-softtoken-test
+          export LOCALAPPDATA=/tmp/liro-appdata
+          export HOME=/tmp/liro-home
+          export XDG_CONFIG_HOME=/tmp/liro-home/config
+
+          mkdir -p dist/ci-helpers/genpdf dist/ci-helpers/extract
+          cat > dist/ci-helpers/genpdf/main.go << 'GOEOF'
+          package main
+
+          import (
+          	"fmt"
+          	"os"
+          )
+
+          // A minimal, valid, classic-xref PDF — the same shape this
+          // project's own tests build (internal/pades/pdf's fixtures_test.go
+          // and internal/pades's own test helpers), with byte offsets
+          // computed here rather than hand-typed in a shell heredoc.
+          func main() {
+          	var buf []byte
+          	offsets := map[int]int{}
+          	write := func(num int, body string) {
+          		offsets[num] = len(buf)
+          		buf = append(buf, []byte(fmt.Sprintf("%d 0 obj\n%s\nendobj\n", num, body))...)
+          	}
+          	buf = append(buf, []byte("%PDF-1.4\n")...)
+          	write(1, "<< /Type /Catalog /Pages 2 0 R >>")
+          	write(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+          	write(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R >>")
+          	content := "BT /F1 12 Tf 72 712 Td (Hello) Tj ET"
+          	offsets[4] = len(buf)
+          	buf = append(buf, []byte(fmt.Sprintf("4 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n", len(content), content))...)
+          	xrefStart := len(buf)
+          	buf = append(buf, []byte("xref\n0 5\n0000000000 65535 f \n")...)
+          	for i := 1; i <= 4; i++ {
+          		buf = append(buf, []byte(fmt.Sprintf("%010d %05d n \n", offsets[i], 0))...)
+          	}
+          	buf = append(buf, []byte(fmt.Sprintf("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF", xrefStart))...)
+          	if err := os.WriteFile(os.Args[1], buf, 0o644); err != nil {
+          		panic(err)
+          	}
+          }
+          GOEOF
+          go run ./dist/ci-helpers/genpdf /tmp/input.pdf
+
+          THUMBPRINT=$(dist/liro-bridge-softtoken certs --json | jq -r '.certificates[] | select(.isTestKey==true) | .thumbprint')
+          test -n "$THUMBPRINT"
+
+          dist/liro-bridge-softtoken sign --in /tmp/input.pdf --out /tmp/signed.pdf --thumbprint "$THUMBPRINT" --force
+
+          cat > dist/ci-helpers/extract/main.go << 'GOEOF'
+          package main
+
+          import (
+          	"fmt"
+          	"os"
+
+          	"github.com/veljaos/liro-bridge/internal/pades/verify"
+          )
+
+          func main() {
+          	data, err := os.ReadFile(os.Args[1])
+          	if err != nil {
+          		panic(err)
+          	}
+          	slots, err := verify.FindSignatures(data)
+          	if err != nil || len(slots) != 1 {
+          		panic(fmt.Sprintf("FindSignatures: %v (slots=%d)", err, len(slots)))
+          	}
+          	r := verify.VerifySignature(data, slots[0])
+          	if len(r.Errors) > 0 || !r.ByteRangeDigestOK || !r.SignatureOK || !r.SigningCertificateOK {
+          		panic(fmt.Sprintf("independent verifier rejected the signature: %+v errors=%v", r, r.Errors))
+          	}
+          	fmt.Println("independent verifier: OK")
+
+          	b, c, d := slots[0].ByteRange[1], slots[0].ByteRange[2], slots[0].ByteRange[3]
+          	if err := os.WriteFile(os.Args[2], slots[0].CMS, 0o644); err != nil {
+          		panic(err)
+          	}
+          	content := append(append([]byte{}, data[:b]...), data[c:c+d]...)
+          	if err := os.WriteFile(os.Args[3], content, 0o644); err != nil {
+          		panic(err)
+          	}
+          }
+          GOEOF
+          go run ./dist/ci-helpers/extract /tmp/signed.pdf /tmp/sig.der /tmp/sig.content
+
+          openssl cms -verify -inform DER -in /tmp/sig.der -noverify -binary -content /tmp/sig.content -out /dev/null
+        env:
+          CGO_ENABLED: 0
+
       # Cross-compilation must work from day one (F0 §8), even though only
       # Windows has a real implementation so far. CGO_ENABLED=0 here keeps
       # these builds honest about not depending on a C toolchain, per the

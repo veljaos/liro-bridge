@@ -13,3 +13,23 @@
 *.swp
 .DS_Store
 Thumbs.db
+
+# Real certificates (personal data) — never committed. See
+# testdata/certs/local/README.md.
+/testdata/certs/local/*
+!/testdata/certs/local/README.md
+
+# Soft token test key material (F2 §3.3) — a private key, even a test
+# one, is never committed. See testdata/softtoken/local/README.md.
+/testdata/softtoken/local/*
+!/testdata/softtoken/local/README.md
+
+# Real signed PDFs (personal data in the signer certificate) — never
+# committed. See testdata/pdfs/local/README.md.
+/testdata/pdfs/local/*
+!/testdata/pdfs/local/README.md
+
+# TSA client-certificate test credential — never committed. See
+# testdata/tsa/local/README.md.
+/testdata/tsa/local/*
+!/testdata/tsa/local/README.md

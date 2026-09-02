@@ -50,6 +50,36 @@ func TestTrustImportingItsOwnSubpackagesIsAllowed(t *testing.T) {
 	}
 }
 
+func TestTrustImportingErrsIsAllowed(t *testing.T) {
+	graph := map[string][]string{
+		"internal/trust/classify": {"internal/errs"},
+	}
+	if v := checkGraph(graph); len(v) != 0 {
+		t.Fatalf("trust importing internal/errs was flagged: %+v", v)
+	}
+}
+
+// TestTrustImportingAnyOtherInternalPackageIsForbidden proves the errs
+// exception is narrow: every other internal/ package is still forbidden
+// from internal/trust, not just internal/config (SPEC §4.2 rule 3).
+func TestTrustImportingAnyOtherInternalPackageIsForbidden(t *testing.T) {
+	graph := map[string][]string{
+		"internal/trust/classify/a": {"internal/config"},
+		"internal/trust/classify/b": {"internal/keysource"},
+		"internal/trust/classify/c": {"internal/platform"},
+		"internal/trust/classify/d": {"internal/pades"},
+	}
+	violations := checkGraph(graph)
+	if len(violations) != 4 {
+		t.Fatalf("got %d violations, want 4: %+v", len(violations), violations)
+	}
+	for _, v := range violations {
+		if v.Explanation != rule3 {
+			t.Errorf("wrong rule cited for %+v", v)
+		}
+	}
+}
+
 func TestAPIUICLITriangleIsForbiddenInEveryDirection(t *testing.T) {
 	graph := map[string][]string{
 		"internal/api/server": {"internal/ui"},
@@ -79,7 +109,7 @@ func TestCleanGraphProducesNoViolations(t *testing.T) {
 	graph := map[string][]string{
 		"internal/pades/cms": {"internal/errs"},
 		"internal/keysource": {"internal/errs"},
-		"internal/trust/tsl": {"internal/trust/classify"},
+		"internal/trust/tsl": {"internal/trust/classify", "internal/errs"},
 		"internal/api":       {"internal/signing", "internal/errs"},
 		"internal/ui":        {"internal/signing", "internal/errs"},
 		"internal/cli":       {"internal/signing", "internal/errs"},

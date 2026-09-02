@@ -25,7 +25,7 @@ type Violation struct {
 const (
 	rule1 = "the PDF engine must be usable without the HTTP server existing (SPEC §4.2 rule 1)"
 	rule2 = "key sources sign hashes; they do not know what a PDF is (SPEC §4.2 rule 2)"
-	rule3 = "trust evaluation (TSL, OCSP, chain building) is pure and independently testable (SPEC §4.2 rule 3)"
+	rule3 = "trust evaluation (TSL, OCSP, chain building) is pure and independently testable; internal/errs is a dependency-free leaf carrying only the error-code vocabulary and is the sole permitted exception (SPEC §4.2 rule 3)"
 	rule4 = "internal/api, internal/ui and internal/cli are three independent front doors onto the same core (SPEC §4.2 rule 4)"
 	rule5 = "nothing in internal/ may import cmd/ (SPEC §4.2 rule 5)"
 )
@@ -55,6 +55,9 @@ func checkPackage(pkg string, deps []string) []Violation {
 		}
 	case isUnder(pkg, "internal/trust"):
 		for _, d := range deps {
+			if isUnder(d, "internal/errs") {
+				continue
+			}
 			if isUnder(d, "internal") && !isUnder(d, "internal/trust") {
 				out = append(out, Violation{pkg, d, rule3})
 			}

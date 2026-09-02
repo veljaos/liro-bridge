@@ -1,0 +1,141 @@
+// Package cli implements the agent's command-line interface. In F1 this
+// is exactly one command, "certs" (F1 §6): it enumerates certificates,
+// classifies them against the Trusted List, and prints the result. It
+// never signs anything and never opens a session that could prompt for
+// a PIN.
+package cli
+
+import (
+	"context"
+	"crypto/x509"
+	"fmt"
+	"time"
+
+	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
+	"github.com/veljaos/liro-bridge/internal/platform"
+	"github.com/veljaos/liro-bridge/internal/trust/classify"
+	"github.com/veljaos/liro-bridge/internal/trust/tsl"
+)
+
+// Deps supplies certs with everything it needs, as functions rather than
+// concrete types, so tests can exercise the reporting and rendering
+// logic with fakes instead of real hardware or a real network fetch —
+// the Windows APIs and TSL network fetch cannot be meaningfully unit
+// tested (F1 §2.5/§3.6), but everything built on top of them can be.
+type Deps struct {
+	Readers        func(ctx context.Context) ([]platform.ReaderState, error)
+	AnyCardPresent func(ctx context.Context) (bool, error)
+	Enumerate      func(ctx context.Context) ([]windowscng.Certificate, error)
+	Store          tsl.Store
+
+	// ExtraCertificates supplies certificates from a source other than
+	// the Windows CNG store — in this phase, the soft token (F2 §3),
+	// wired in only when it is configured (LIRO_SOFTTOKEN_P12 set and
+	// the binary built with the "softtoken" tag). Nil otherwise, in
+	// which case Gather behaves exactly as it did in F1. Certificates it
+	// returns are never on hardware; ExtraCertificate.IsTestKey flows
+	// into the resulting row's classify.Info.IsTestKey, which is how
+	// "certs --json" (F2 §6.1's OpenSSL recipe) can list and export the
+	// soft token's public certificate exactly like a real one.
+	ExtraCertificates func(ctx context.Context) ([]ExtraCertificate, error)
+}
+
+// ExtraCertificate is a certificate from a source other than the
+// Windows CNG store (F2 §3) — currently only the soft token.
+type ExtraCertificate struct {
+	Thumbprint string
+	DER        []byte
+	IsTestKey  bool
+}
+
+// CertRow is one certificate, classified. OnHardware and DER are
+// carried alongside Info (rather than inside it — Info is the
+// caller-facing shape F1 §5.1 defines) because the CLI's "Storage" row
+// and --json's PEM export (F2 §6.1) need them and Classify does not
+// store its own input back onto the result.
+type CertRow struct {
+	Info       classify.Info
+	OnHardware bool
+	DER        []byte
+}
+
+// Report is everything "liro-bridge certs" prints.
+type Report struct {
+	Readers      []platform.ReaderState
+	Certificates []CertRow
+	TSL          tsl.Provenance
+}
+
+// Hidden reports whether row is hidden from the default (non --all) view:
+// SPEC/F1 §5.4 measured that the store contains Windows-internal
+// certificates (self-signed, GUID subject, software KSP) that are
+// neither qualified nor of any recognised purpose. Those, and only
+// those, are hidden by default.
+func (r CertRow) Hidden() bool {
+	return r.Info.Purpose == classify.PurposeUnknown && r.Info.Qualification == classify.QualificationNotQualified
+}
+
+// Gather assembles a Report: readers, enumerated certificates
+// classified against the Trusted List's current state. It attempts one
+// best-effort Trusted List refresh first (F1 §4.8: "refresh at
+// startup"); a failed refresh is not fatal and is not returned as an
+// error — the existing (embedded or cached) list is used instead, with
+// its own staleness visible in Report.TSL.
+//
+// No PIN is ever requested: nothing here opens a signing session.
+func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
+	_ = deps.Store.Refresh(ctx) // best-effort; failure is never fatal (F1 §4.8)
+
+	readers, err := deps.Readers(ctx)
+	if err != nil {
+		return Report{}, fmt.Errorf("listing smart card readers: %w", err)
+	}
+
+	anyCard, err := deps.AnyCardPresent(ctx)
+	if err != nil {
+		return Report{}, fmt.Errorf("checking card presence: %w", err)
+	}
+
+	certs, err := deps.Enumerate(ctx)
+	if err != nil {
+		return Report{}, fmt.Errorf("enumerating certificates: %w", err)
+	}
+
+	list, provenance, err := deps.Store.Current(ctx)
+	if err != nil {
+		return Report{}, fmt.Errorf("reading trusted list: %w", err)
+	}
+
+	rows := make([]CertRow, 0, len(certs))
+	for _, c := range certs {
+		x, err := x509.ParseCertificate(c.DER)
+		if err != nil {
+			continue // not this phase's concern to explain a malformed store entry
+		}
+		info := classify.Classify(x, list, c.OnHardware, anyCard, now)
+		info.Thumbprint = c.Thumbprint // identical to classify's own computation; use the source value
+		rows = append(rows, CertRow{Info: info, OnHardware: c.OnHardware, DER: c.DER})
+	}
+
+	if deps.ExtraCertificates != nil {
+		extra, err := deps.ExtraCertificates(ctx)
+		if err != nil {
+			return Report{}, fmt.Errorf("enumerating extra certificates: %w", err)
+		}
+		for _, c := range extra {
+			x, err := x509.ParseCertificate(c.DER)
+			if err != nil {
+				continue
+			}
+			// onHardware is always false for an extra certificate — the
+			// soft token is never on hardware by definition (F2 §3) —
+			// so hardwarePresent is irrelevant to computeUsable's result.
+			info := classify.Classify(x, list, false, anyCard, now)
+			info.Thumbprint = c.Thumbprint
+			info.IsTestKey = c.IsTestKey
+			rows = append(rows, CertRow{Info: info, OnHardware: false, DER: c.DER})
+		}
+	}
+
+	return Report{Readers: readers, Certificates: rows, TSL: provenance}, nil
+}
