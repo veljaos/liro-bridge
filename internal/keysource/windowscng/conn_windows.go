@@ -10,6 +10,7 @@ package windowscng
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -33,6 +34,23 @@ const (
 	// it a legacy CSP handle may come back, which signs through a
 	// different API entirely (F2 §2.1).
 	cryptAcquireOnlyNCryptKeyFlag = 0x00040000
+
+	// cryptAcquireSilentFlag is CRYPT_ACQUIRE_SILENT_FLAG. Presence
+	// probing (probePresence, below) relies on SPEC §11.10's claim that
+	// "opening a key never prompts for a PIN, only signing does" — that
+	// claim does not hold without this flag: verified directly on this
+	// machine, CryptAcquireCertificatePrivateKey without it can raise an
+	// interactive Windows credential/PIN UI for some certificates (the
+	// historical log line "CryptAcquireCertificatePrivateKey: The action
+	// was cancelled by the user" is that UI actually having been shown
+	// and dismissed), which blocks probePresence's caller forever if
+	// nothing is watching for it — exactly the F5 first-real-run failure
+	// this constant fixes. Signing's own key acquisition
+	// (findAndAcquire, cryptAcquireOnlyNCryptKeyFlag alone) deliberately
+	// keeps UI allowed: F2 §2.3 parents the OS PIN dialog to the agent's
+	// own window via nCryptWindowHandleProperty, so a real sign still
+	// prompts exactly as intended.
+	cryptAcquireSilentFlag = 0x00000040
 
 	// certNCryptKeySpec is CERT_NCRYPT_KEY_SPEC. Anything else means a
 	// legacy handle came back despite the flag above (F2 §2.1).
@@ -72,16 +90,21 @@ type realConn struct{}
 
 func newConn() ncryptConn { return realConn{} }
 
-// findAndAcquire implements ncryptConn.findAndAcquire (F2 §2.1).
-func (realConn) findAndAcquire(thumbprintHex string) ([]byte, ncryptKeyHandle, bool, error) {
+// findCert locates the certificate with the given SHA-1 thumbprint in
+// the current user's certificate store. The caller owns the returned
+// context (must call windows.CertFreeCertificateContext on it) and must
+// call cleanup once done with it, in either order — cleanup only closes
+// the store handle, which the certificate context does not depend on
+// once found (CertFindCertificateInStore's own contract).
+func findCert(thumbprintHex string) (certCtx *windows.CertContext, cleanup func(), err error) {
 	hash, err := hex.DecodeString(thumbprintHex)
 	if err != nil || len(hash) == 0 {
-		return nil, 0, false, errs.New(errs.CodeCertNotFound, fmt.Errorf("invalid thumbprint %q: %w", thumbprintHex, err))
+		return nil, nil, errs.New(errs.CodeCertNotFound, fmt.Errorf("invalid thumbprint %q: %w", thumbprintHex, err))
 	}
 
 	storeName, err := windows.UTF16PtrFromString("MY")
 	if err != nil {
-		return nil, 0, false, fmt.Errorf("encoding store name: %w", err)
+		return nil, nil, fmt.Errorf("encoding store name: %w", err)
 	}
 	store, err := windows.CertOpenStore(
 		certStoreProvSystemW,
@@ -91,21 +114,32 @@ func (realConn) findAndAcquire(thumbprintHex string) ([]byte, ncryptKeyHandle, b
 		uintptr(unsafe.Pointer(storeName)),
 	)
 	if err != nil {
-		return nil, 0, false, fmt.Errorf("opening MY store: %w", err)
+		return nil, nil, fmt.Errorf("opening MY store: %w", err)
 	}
-	defer func() { _ = windows.CertCloseStore(store, certCloseStoreForce) }()
+	cleanup = func() { _ = windows.CertCloseStore(store, certCloseStoreForce) }
 
 	blob := cryptHashBlob{cbData: uint32(len(hash)), pbData: &hash[0]}
-	certCtx, err := windows.CertFindCertificateInStore(store, certEncodingType, 0, certFindHash, unsafe.Pointer(&blob), nil)
+	ctx, err := windows.CertFindCertificateInStore(store, certEncodingType, 0, certFindHash, unsafe.Pointer(&blob), nil)
 	if err != nil {
+		cleanup()
 		// Any failure to find the certificate itself — most commonly
 		// CRYPT_E_NOT_FOUND, which is not in F2 §2.4's table (that table
 		// covers signing-operation failures, not lookup failures) — means
 		// exactly one thing to a caller: no certificate with this
 		// thumbprint exists in the store. mapStatus's generic
 		// SIGN_FAILED fallback would be misleading here.
-		return nil, 0, false, errs.New(errs.CodeCertNotFound, err)
+		return nil, nil, errs.New(errs.CodeCertNotFound, err)
 	}
+	return ctx, cleanup, nil
+}
+
+// findAndAcquire implements ncryptConn.findAndAcquire (F2 §2.1).
+func (realConn) findAndAcquire(thumbprintHex string) ([]byte, ncryptKeyHandle, bool, error) {
+	certCtx, cleanup, err := findCert(thumbprintHex)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	defer cleanup()
 	defer func() { _ = windows.CertFreeCertificateContext(certCtx) }()
 
 	der := make([]byte, certCtx.Length)
@@ -137,6 +171,50 @@ func (realConn) findAndAcquire(thumbprintHex string) ([]byte, ncryptKeyHandle, b
 	}
 
 	return der, ncryptKeyHandle(hKey), callerFree, nil
+}
+
+// probePresence implements ncryptConn.probePresence (Task 2 / SPEC
+// §11.10). It shares findCert's certificate lookup with findAndAcquire,
+// but interprets CryptAcquireCertificatePrivateKey's raw status directly
+// via isCardAbsentStatus rather than through mapStatus: mapStatus's table
+// (errors.go) serves the signing path, where NTE_BAD_KEYSET has
+// historically been reported as CERT_NOT_FOUND — a mapping this task
+// does not change, since a presence probe and a failed signing attempt
+// are different callers with different needs. A key successfully opened
+// here is immediately closed again (if fCallerFree said this caller owns
+// it) — a probe never keeps a session open.
+func (realConn) probePresence(thumbprintHex string) (bool, error) {
+	certCtx, cleanup, err := findCert(thumbprintHex)
+	if err != nil {
+		return false, err
+	}
+	defer cleanup()
+	defer func() { _ = windows.CertFreeCertificateContext(certCtx) }()
+
+	var hKey windows.Handle
+	var keySpec uint32
+	var callerFree bool
+	err = windows.CryptAcquireCertificatePrivateKey(certCtx, cryptAcquireOnlyNCryptKeyFlag|cryptAcquireSilentFlag, nil, &hKey, &keySpec, &callerFree)
+	if err != nil {
+		var errno windows.Errno
+		if errors.As(err, &errno) && isCardAbsentStatus(uint32(errno)) {
+			return false, nil // the expected, non-error outcome for a removed card
+		}
+		if errors.As(err, &errno) && uint32(errno) == uint32(windows.NTE_SILENT_CONTEXT) {
+			// CRYPT_ACQUIRE_SILENT_FLAG's own documented outcome when the
+			// provider would otherwise have needed to show UI (most
+			// commonly a PIN/credential prompt) — this certificate's card
+			// needs interaction to confirm, which a presence probe must
+			// never trigger, so treat it the same as "not present" rather
+			// than surfacing it as an error.
+			return false, nil
+		}
+		return false, fmt.Errorf("CryptAcquireCertificatePrivateKey: %w", err)
+	}
+	if callerFree {
+		_, _, _ = procNCryptFreeObject.Call(uintptr(hKey))
+	}
+	return true, nil
 }
 
 // setWindowHandle implements ncryptConn.setWindowHandle (F2 §2.3).

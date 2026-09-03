@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://liro.local/tokens.css" />
+<link rel="stylesheet" href="https://liro.local/intents.css" />
+<link rel="stylesheet" href="https://liro.local/pages/settings.css" />
+</head>
+<body>
+
+<main>
+  <p class="liro-display" data-i18n="settings.window_title"></p>
+
+  <label class="liro-row">
+    <span data-i18n="settings.language_label"></span>
+    <select id="locale">
+      <option value="sr-Latn">Srpski (latinica)</option>
+      <option value="sr-Cyrl">Srpski (ćirilica)</option>
+      <option value="en">English</option>
+    </select>
+  </label>
+
+  <label class="liro-row">
+    <span data-i18n="settings.start_with_windows"></span>
+    <input type="checkbox" id="start-with-windows" />
+  </label>
+
+  <label class="liro-row">
+    <span data-i18n="settings.tsa_label"></span>
+    <input type="text" id="tsa-url" data-i18n-placeholder="settings.tsa_custom_url_placeholder" />
+  </label>
+
+  <label class="liro-row">
+    <span data-i18n="settings.tsa_user_label"></span>
+    <input type="text" id="tsa-user" autocomplete="off" />
+  </label>
+
+  <label class="liro-row">
+    <span data-i18n="settings.tsa_password_label"></span>
+    <input type="password" id="tsa-password" autocomplete="off" />
+  </label>
+
+  <label class="liro-row">
+    <span data-i18n="settings.tsa_client_cert_label"></span>
+    <input type="text" id="tsa-client-cert-path" data-i18n-placeholder="settings.tsa_client_cert_placeholder" autocomplete="off" />
+  </label>
+
+  <label class="liro-row">
+    <span data-i18n="settings.tsa_client_cert_password_label"></span>
+    <input type="password" id="tsa-client-cert-password" autocomplete="off" />
+  </label>
+
+  <label class="liro-row">
+    <span data-i18n="settings.output_suffix_label"></span>
+    <input type="text" id="output-suffix" />
+  </label>
+
+  <fieldset>
+    <legend data-i18n="settings.signature_level_label"></legend>
+    <label class="liro-row">
+      <span data-i18n="settings.level_bt"></span>
+      <input type="radio" name="level" value="b-t" id="level-bt" />
+    </label>
+    <label class="liro-row">
+      <span data-i18n="settings.level_blt"></span>
+      <input type="radio" name="level" value="b-lt" id="level-blt" />
+    </label>
+  </fieldset>
+
+  <div class="actions-row">
+    <button id="export-audit-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.export_audit_log"></button>
+  </div>
+
+  <label class="liro-row">
+    <span data-i18n="settings.check_updates_daily"></span>
+    <input type="checkbox" id="check-updates-daily" />
+  </label>
+  <div class="actions-row">
+    <button id="check-updates-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.check_updates_now"></button>
+  </div>
+
+  <div class="liro-row secondary-row">
+    <span data-i18n="settings.version_label"></span>
+    <span id="version"></span>
+    <button id="copy-version-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.copy"></button>
+  </div>
+
+  <div class="actions">
+    <button id="close-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.close"></button>
+    <button id="save-btn" class="liro-btn liro-btn-primary" data-i18n="settings.save"></button>
+  </div>
+</main>
+
+<script src="https://liro.local/bridge.js"></script>
+<script src="https://liro.local/pages/settings.js"></script>
+</body>
+</html>

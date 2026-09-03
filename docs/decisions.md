@@ -3648,3 +3648,1465 @@ known-good tool, per the task that produced this fix.
   free of this small redundant scan, and `UsesXrefStreams()` is called at
   most a handful of times per signing operation — not a hot path SPEC §0
   would ask to optimise pre-emptively.
+
+---
+
+## D-076 — B-LT caps embedded revocation evidence at 5 MB per artefact; MUP's OCSP responder is unreachable at the network level, confirmed independently of this project's client
+
+**Date:** 2026-09-02
+**Phase:** F4/F5 boundary — sixth fix-and-polish pass (Task 1)
+
+**Decision.** `internal/pades/dss.DefaultMaxArtefactSize` (5 MB, `5 *
+1024 * 1024`) caps how large a single OCSP response or CRL may be before
+`CollectRevocation` will hand it back for embedding into `/DSS`.
+`CollectRevocation` now takes a `maxArtefactSize int64` parameter (zero
+or negative means the default); `fetchOCSP`/`fetchCRL` still download and
+parse the artefact exactly as before, but return `(nil, skippedSize)`
+instead of the bytes once `skippedSize > maxArtefactSize` — the size
+check happens after successful validation, not instead of it, so a
+genuinely malformed response is still rejected as it always was.
+`dss.Entry` gained `TooLarge bool`/`SkippedBytes int64`; `dss.Result`
+gained the same two fields (`TooLarge`/`LargestSkippedBytes`), computed
+in `Apply` from the entries. `internal/pades.Options` gained
+`MaxRevocationArtefactSize int64`, threaded through to
+`CollectRevocation`; `internal/pades.Result` gained
+`RevocationTooLarge`/`LargestSkippedBytes`, set in `applyDSS` when
+`dssResult.TooLarge`. The CLI's `sign` command gained
+`--max-revocation-size` (bytes; 0 means the built-in default).
+
+**Why — the measurement.** MUP's end-entity certificates carry
+`http://ocsp.mup.gov.rs/MUPGradjaniCAocsp` in their AIA extension (SPEC
+§11.9). Probed directly, independent of this project's own HTTP client,
+from this development environment (which does have working general
+internet access — confirmed by `https://www.google.com` returning `200`
+in 0.38s, and by DNS resolving `ocsp.mup.gov.rs` to `195.222.96.163`
+without trouble): a raw TCP connection to `ocsp.mup.gov.rs` on **port 80
+times out** after 10s, 15s and 20s across repeated attempts (`curl -v`
+and a bare `/dev/tcp` connect both agree), and the same host on **port
+443 also times out**. In the same session, a TCP connection to
+`ca.mup.gov.rs:80` — the CRL host on the same domain — **succeeds
+immediately** (`exit=0`), and `curl -L` following its redirect to
+`http://crl.mup.gov.rs/MUPGradjaniCA4.crl` downloaded the CRL
+successfully. **The OCSP responder does not accept a connection at all;
+this is not an HTTP-level or request-shape problem this project's
+client could have avoided** — no TCP handshake completes, so no HTTP
+request this project or any other client sent could ever have reached
+it. `internal/pades/dss.fetchOCSP`'s existing behaviour (two attempts,
+10s timeout each, per SPEC/F3 §7.2) is therefore already correct: it
+times out and falls back to the CRL exactly as designed. **The size cap
+below is the real fix for the oversized-output symptom, not a
+workaround for a client bug** — there was no client bug to work around.
+
+The downloaded CRL, `http://crl.mup.gov.rs/MUPGradjaniCA4.crl`, measured
+**exactly 30,136,214 bytes** — the same figure this task's own report
+names, confirming the earlier measurement independently: "the revocation
+list for every Serbian identity card" is not a loose description, it is
+this project's own repeated, reproducible download. Embedding a CRL that
+size into `/DSS` produced a **30,813,989-byte PDF** that **Adobe Acrobat
+Reader cannot open at all** (confirmed against the real signed document
+this task's report describes); the same document signed at `--level b-t`
+(no `/DSS`) was **673,111 bytes** and opened normally in Acrobat. The
+code that produced the oversized file was not wrong about *what* B-LT
+requires — SPEC §12.6 does call for embedding revocation evidence — the
+national CRL itself is simply too large a thing to embed in a PDF that a
+reader can open, at any correctness level. Capping the artefact size
+(rather than, say, refusing MUP certificates B-LT unconditionally) keeps
+every other issuer's evidently smaller CRLs and OCSP responses (SPEC
+§11.9: Halcom and Pošta both have working OCSP; nothing here has ever
+measured either of their CRLs as remotely this size) embeddable, while
+making exactly the one measured pathological case degrade honestly
+instead of producing an unopenable file.
+
+5 MB was chosen, not a tighter or looser number, because it sits
+comfortably above every real OCSP response and any CRL scoped to
+something short of "every card the state has ever issued" (Halcom's and
+Pošta's own CRLs, per SPEC §11.9's confirmed-working OCSP for both, have
+never been observed anywhere near this size), and comfortably below the
+point where a `/DSS` dictionary makes a document unusable — the measured
+30 MB case is roughly 6× over the cap, leaving margin rather than a
+line drawn exactly at the one failure observed.
+
+**Degradation is honest and visible (Task 1c).** When a CRL or OCSP
+response is skipped for being too large, `dssResult.TooLarge` is true
+(not merely `Complete == false`, which also covers plain unavailability
+— a caller needs to tell the two apart, since "MUP's list is enormous"
+and "nobody's OCSP answered and there's no CRL URL either" call for
+different sentences). `pades.Result.AchievedLevel` in this case is
+`LevelBT`, never `LevelBLT` (SPEC §7.3/§18.11: no silent overclaim).
+`internal/cli.levelLine` gives `RevocationTooLarge` its own localised
+message — `error.stamp_glyph_missing`'s established pattern of a
+template filled with a specific fact, not the generic English `Notes`
+join every other degradation still uses (`Notes` itself stays
+English-only per SPEC §9.2, since it doubles as this package's local/log
+output) — added to all three catalogues as `sign.revocation_too_large`:
+
+```
+en:      "Revocation data was too large to embed (%s); saved at B-T."
+sr-Latn: "Podaci o opozivu su bili preveliki za ugrađivanje (%s); sačuvano na nivou B-T."
+sr-Cyrl: "Подаци о опозиву су били превелики за уграђивање (%s); сачувано на нивоу B-T."
+```
+
+`internal/cli.formatBytesApprox` renders the size as whole megabytes
+(30,136,214 bytes → "29 MB"), matching this task's own example message
+shape ("Revocation data was too large to embed (32 MB); saved at
+B-T.") closely enough that the wording is traceable directly to the
+task's own report.
+
+**Rejected.**
+- **Refusing B-LT for MUP certificates unconditionally**, since MUP is
+  the one issuer whose CRL is known to be this large. Rejected: MUP's
+  OCSP responder being unreachable today does not mean it always will
+  be, and a size cap handles that case automatically (once OCSP starts
+  answering, B-LT is reached the normal way) without a special case keyed
+  on issuer identity, which SPEC §11.3 already warns against building
+  fragile heuristics around.
+- **Raising `maxCRLSize` (the 64 MB network *download* cap,
+  unchanged by this task) instead of adding a separate embedding cap.**
+  These are different concerns: the download cap bounds how much this
+  project will read off the wire before giving up; the new embedding cap
+  bounds what ends up inside a PDF. Conflating them would mean either
+  refusing to even measure a large-but-real CRL (if lowered), or
+  continuing to embed one exactly as large as the CRL that broke Acrobat
+  (if left as the only cap).
+- **Truncating the CRL to fit under the cap instead of omitting it
+  entirely.** A truncated CRL is not a valid CRL — it would either fail
+  to parse (caught by the existing `x509.ParseRevocationList` check,
+  which runs before the size check and is unaffected by this task) or,
+  worse, silently misrepresent which certificates it actually covers.
+  Omitting it and reporting B-T honestly is the only choice consistent
+  with SPEC §7.3/§18.11.
+
+---
+
+## D-077 — Hardware presence is determined per certificate, by attempting to open its own key; SPEC §11.10 amended to state this at the granularity it was always meant to cover
+
+**Date:** 2026-09-02
+**Phase:** F4/F5 boundary — sixth fix-and-polish pass (Task 2)
+
+**Decision.** `internal/keysource/windowscng` gained
+`ncryptConn.probePresence(thumbprintHex string) (present bool, err
+error)`, implemented in `conn_windows.go` by reusing `findAndAcquire`'s
+own certificate-lookup step (`findCert`, newly factored out so both
+functions share it) and then attempting
+`CryptAcquireCertificatePrivateKey` — the same call `findAndAcquire`
+makes, which resolves to `NCryptOpenKey` for a CNG-backed key, and which
+never prompts for a PIN (only `NCryptSignHash` does, F2 §2.3). Unlike
+`findAndAcquire`, `probePresence` does not route a failure through
+`mapStatus` (the signing-path error table in `errors.go`, unchanged by
+this task): it inspects the raw Windows status directly via the new,
+pure, platform-independent `isCardAbsentStatus(status uint32) bool`,
+which is `true` exactly for `NTE_BAD_KEYSET` (`0x80090016`) and
+`SCARD_W_REMOVED_CARD` (`0x80100069`) — this task's own two named codes
+— and `false` for everything else, including `NTE_NO_KEY`, which
+`mapStatus` already treats as a different situation
+(`CERT_NOT_USABLE`). A key opened successfully by the probe is
+immediately closed again (`NCryptFreeObject`, only when `fCallerFree`
+said this caller owns it, per D-026's already-established rule) rather
+than kept open — a presence check is not a signing session.
+`windowscng.Source` gained `Presence(ctx, thumbprint)
+(bool, error)`, mirroring `Open`'s own `conn`-or-`newConn()` pattern.
+
+`internal/cli.Deps.AnyCardPresent` (a single, machine-wide
+`func(ctx) (bool, error)`) is replaced by `Deps.PresenceCheck
+func(ctx, keysource.Thumbprint) (bool, error)` — called once per
+hardware-backed certificate inside `Gather`'s enumeration loop (the new
+`certPresence` helper), rather than once for the whole batch and reused
+for every row. `Deps.Readers` is unchanged: it still answers "is there a
+reader attached at all" (F1's original question), rendered in its own
+section of `certs`' output, independent of any certificate — exactly the
+"different question, different message" this task asked to preserve.
+`cmd/liro-bridge/main.go`'s `runCerts` now constructs a
+`windowscng.Source` and wires `PresenceCheck: cngSource.Presence`,
+dropping the `AnyCardPresent: svc.AnyCardPresent` wiring, which is now
+unused (nothing else in `internal/cli` read that field).
+
+**Why.** Reported directly, from a real run: `liro-bridge certs` on a
+machine with only a MUP e-ID card in the reader listed a Halcom
+certificate — whose card was not present anywhere — as `usable`. The
+cause, read directly from `internal/cli/report.go` before this fix:
+`Gather` called `deps.AnyCardPresent(ctx)` exactly once and passed that
+single boolean to `classify.Classify` for *every* enumerated
+certificate. D-014 (F1) established the underlying rule correctly — read
+presence from `SCardListReaders`/status, never from certificate
+enumeration — but the phase that implemented it only ever asked "is
+there a card in any reader," not "is there a card in *this
+certificate's* reader," which is a coarser question than the one a
+bookkeeper's machine with several clients' certificates installed
+actually needs answered (SPEC §14.1 already names this configuration as
+normal, not an edge case). One card inserted therefore marked every
+hardware-backed certificate on the machine as available, reproducing
+exactly the failure mode D-014's own reasoning was written to prevent —
+just one certificate later than D-014 anticipated: the user selects the
+wrong-but-apparently-usable certificate, clicks Sign, enters a PIN, and
+only then discovers the card is missing.
+
+SPEC §11.10 is amended (not superseded — the underlying rule, "never
+infer presence from enumeration," was already correct) to state the
+granularity explicitly: presence is a property of one certificate, not
+of the machine, and must be decided by attempting to open that
+certificate's own key. The original wording ("presence is determined
+from `SCardListReaders`... or by attempting to open the key container")
+already named opening the key container as an acceptable method, but
+did not say *per certificate*, which is exactly the gap this
+implementation fell into.
+
+**How this was tested without a card physically present or absent.**
+`TestIsCardAbsentStatus` pins the pure classification
+(`isCardAbsentStatus`) directly against both named codes and against
+codes that must *not* count as absence (`NTE_NO_KEY`,
+`SCARD_W_WRONG_CHV`), the same "logic lives in a plain, unit-testable
+function; only the DLL call itself is untestable" split this package
+already uses for every other piece of Windows-API behaviour (F1/F2's own
+`conn_windows.go`/`session_core.go` split). `TestSourcePresence*`
+(`source_test.go`) drives `Source.Presence` through the existing
+`fakeConn` pattern (`session_core_test.go`, extended with
+`presencePresent`/`presenceErr` fields) to prove per-call results and
+error propagation and cancelled-context handling, without any real
+syscall. At the `internal/cli` layer,
+`TestGatherPresenceIsPerCertificateNotGlobal`
+(`report_test.go`) is the direct discriminator for the reported bug: two
+certificates built from the *same* underlying (qualified, otherwise
+usable) DER but different thumbprints, and a `PresenceCheck` that
+answers `true` only for one of the two thumbprints, must produce two
+different `Usable` results. Run against the code as it stood before this
+fix (a single `anyCard` value reused for both), both certificates would
+have reported `Usable == true`; after the fix, only the "present" one
+does, and the "absent" one carries `NotUsableReason ==
+errs.CodeCardNotPresent`.
+
+**Rejected.**
+- **Routing `probePresence`'s failures through the existing `mapStatus`
+  table.** `mapStatus` currently maps `NTE_BAD_KEYSET` to
+  `CERT_NOT_FOUND` (`errors.go`, unchanged), a mapping this task does not
+  touch: `mapStatus` serves `findAndAcquire`'s signing-session path,
+  where "bad keyset" reported as "certificate not found" is pre-existing
+  behaviour this bounded fix pass was not asked to revisit, and changing
+  it would have widened this task's scope into the signing path for no
+  requirement stated here. `probePresence` interprets the raw status
+  itself instead, precisely because the signing path's mapping and the
+  presence-probe's mapping are allowed to disagree without either being
+  wrong for its own caller.
+- **Keeping one `AnyCardPresent`-shaped call but iterating it per reader
+  instead of per certificate.** Would not fix the bug: the failure is
+  that a certificate's presence cannot be determined from reader state
+  alone when multiple certificates (possibly for different, absent
+  cards) share the machine — only opening that specific certificate's own
+  key answers the right question.
+- **Treating a `PresenceCheck` error the same as a fatal `Gather`
+  error.** Rejected: a single certificate's probe failing (e.g. a race
+  between enumeration and the probe) must not fail the entire `certs`
+  command for every other, unrelated certificate. `certPresence` treats
+  an error conservatively as "not present" and logs it, rather than
+  propagating it up through `Gather`'s return.
+
+---
+
+## D-078 — A qualified timestamp's genTime is compared against the /M value after signing; a warning, never a failure, when they disagree by more than five minutes
+
+**Date:** 2026-09-02
+**Phase:** F4/F5 boundary — sixth fix-and-polish pass (Task 3)
+
+**Decision.** In `internal/pades.SignDocument`, once a timestamp
+response is obtained successfully (`tsaErr == nil`), the code now
+compares `resp.GenTime` (the TSA's attested time) against `signingDate`
+— the same value already written into the signature dictionary's `/M`
+entry before the TSA round trip began (SPEC §12.2/the existing
+"the stamp shows `/M`, unavoidable, Adobe does the same" decision, which
+this task leaves untouched). If `|resp.GenTime - signingDate|` exceeds
+the new `clockDriftWarnThreshold` (5 minutes), `pades.Result` gets
+`ClockDriftWarning = true` plus `MachineTime`/`TimestampTime` (the two
+compared values, for a caller that wants to name both), and an
+English `Notes` entry. **Nothing here fails the operation, aborts, or
+alters a single byte already written** — the check runs after
+`ph.InjectSignature` in every way that matters (it only reads `resp` and
+`signingDate`, both already computed) and only ever adds to `Result`.
+`internal/cli.printClockDriftWarning` prints a new, localised
+`sign.clock_drift_warning` message (added to all three catalogues) to
+stderr — advisory output, exactly like the existing test-key warning,
+never affecting the exit code or the file written.
+
+**Why.** The task's own report is direct: a stamp on a real signed
+document read "2026-09-02 13:05 CEST" — the signer's machine clock,
+correctly and unavoidably, since the stamp's bytes are fixed before the
+timestamp exists (this project's own applyStamp doc comment already
+explains why, and this task does not revisit that decision). But nothing
+previously checked that clock against anything after the fact: if it had
+drifted, the document would carry a stamp asserting one time and a
+qualified RFC 3161 token attesting a different one, sent to third
+parties, with no signal to the signer that anything was wrong. This
+matters especially because the failure compounds silently — a signer
+whose clock is wrong keeps producing documents with the same wrong
+stamp date until something else forces them to notice.
+
+**Distinct from the existing ±10-minute hard check.**
+`internal/pades/tsa.Client.Timestamp`'s own `validateResponse` already
+rejects a response whose `genTime` is more than
+`maxSkew` (10 minutes) from `time.Now()` *at the moment the response is
+validated* — this is unrelated machinery, added earlier (F3 §6.5) to
+protect the timestamp's own trustworthiness (a wildly wrong `genTime`
+might mean a broken or malicious TSA), and it aborts the whole
+timestamp step outright. This task's check is different in every
+relevant way: it compares against `signingDate` (captured once, before
+the round trip, not "now" at an arbitrary later moment), it uses a
+tighter 5-minute threshold specifically so an honest signer notices
+before their next hundred signatures, and it never fails anything — it
+exists purely to inform. Because the existing hard check already bounds
+how far `resp.GenTime` can be from real "now" (±10 minutes) before this
+task's check even gets a chance to run, the two compose without
+conflict: a response failing the hard check never reaches `SignDocument`
+at all (the operation aborts or falls back to B-B per existing TSA
+failure handling, unchanged), and one that passes it can still trip this
+task's softer, earlier-firing warning.
+
+**Localisation.** `sign.clock_drift_warning` was added to all three
+catalogues:
+
+```
+en:      "Warning: your computer's clock (%s) and the trusted timestamp (%s) differ by more than five minutes. Check your computer's clock."
+sr-Latn: "Upozorenje: sat vašeg računara (%s) i pouzdani vremenski žig (%s) razlikuju se za više od pet minuta. Proverite sat na računaru."
+sr-Cyrl: "Упозорење: сат вашег рачунара (%s) и поуздани временски жиг (%s) разликују се за више од пет минута. Проверите сат на рачунару."
+```
+
+Both times are named, per the task's own requirement — a user who only
+sees "your clock might be wrong" has nothing to check it against.
+
+**Tested with a fake TSA, not the real Pošta test TSA.** The real test
+TSA (SPEC §12.7) always returns its own current time, which this
+project's tests cannot control — there is no way to deterministically
+produce a >5-minute (but <10-minute, to stay inside the existing hard
+check) disagreement against a live service. `internal/pades/tsa_fake_test.go`
+is a small, from-scratch RFC 3161 `TimeStampResp` builder (deliberately
+independent of `internal/pades/tsa`'s own unexported test helper of the
+same shape, `tsa/client_test.go`'s `buildTestResponse` — that package
+has no exported way to fabricate a response with a controllable
+`genTime`, and adding test-only production surface for one call site was
+not this task's purpose) that decodes an incoming request's nonce and
+digest and grants a token with a caller-chosen `genTime`.
+`TestSignDocumentClockDriftWarningWhenTimestampDisagrees` drives this
+against a real `internal/pades/tsa.Client` with a 7-minute offset
+(beyond the 5-minute threshold, inside the 10-minute hard-check window)
+and asserts the warning fires with both times populated, and that the
+signature itself still independently verifies via
+`internal/pades/verify` — proving the warning is purely additive.
+`TestSignDocumentNoClockDriftWarningWithinThreshold` proves ordinary,
+sub-threshold skew (a `genTime` equal to `signingDate`) never nags the
+user. `internal/cli`'s `TestPrintClockDriftWarningLocalised` and
+`TestLevelLineReportsRevocationTooLargeLocalised` (D-076) both exercise
+the localisation directly against fabricated `*pades.Result` values, in
+all three locales, independent of the signing pipeline.
+
+**Rejected.**
+- **Comparing against `time.Now()` at the moment `SignDocument` finishes,
+  instead of the `/M` value (`signingDate`) captured before the TSA round
+  trip.** Rejected: the entire point is to check what the *document
+  itself claims* (`/M`) against what the timestamp attests — comparing
+  against a third, later value would answer a different question ("did
+  time pass normally during this function call," which is uninteresting)
+  rather than "do the two times the document carries agree."
+- **Failing the operation, or forcing a save-without-timestamp choice,
+  when drift exceeds the threshold.** Explicitly ruled out by the task:
+  "do not fail, do not alter the document." A wrong local clock is the
+  signer's problem to fix before their *next* batch, not a reason to
+  block the one they are looking at right now — SPEC §12.8's "TSA failure
+  must never block" carries the same spirit even though this is not a
+  TSA failure.
+- **A single shared threshold constant with the existing ±10-minute hard
+  skew check**, rather than a second, independent 5-minute constant.
+  Rejected: the two checks protect different things (the timestamp's own
+  trustworthiness, versus informing the user their clock looks wrong) for
+  different audiences (an aborted operation, versus an advisory message),
+  and conflating their thresholds would make a future change to one
+  silently change the other's behaviour for an unrelated reason.
+
+---
+
+## D-079 — A /DSS revision is written only when it carries at least one OCSP response or CRL; certificates alone never justify one
+
+**Date:** 2026-09-02
+**Phase:** F4/F5 boundary — seventh fix-and-polish pass
+
+**Decision.** `internal/pades/dss.Apply` now returns without writing an
+incremental revision at all when, after collecting evidence for every
+certificate, `/DSS`'s would-be `/OCSPs` and `/CRLs` arrays are both
+empty — i.e. when the only thing the revision would carry is `/Certs`.
+`Result.Bytes` in that case is `doc.Data()`: the document's own
+original bytes, returned unmodified (`Document.Data`'s documented
+contract — "the same slice, never a copy" — makes this exact, not just
+byte-equal). `Complete`, `TooLarge` and `LargestSkippedBytes` are still
+computed and returned exactly as before; only whether the revision gets
+appended is now conditional. [[D-076]]'s size cap and everything
+upstream of it — `dss.CollectRevocation`, `internal/pades.applyDSS`,
+`Result.AchievedLevel`/`RevocationTooLarge`/`Notes` in
+`internal/pades/sign.go` — is unchanged: `applyDSS` already assigns
+`result.Bytes = dssResult.Bytes` unconditionally, so returning the
+original bytes from `Apply` was sufficient by itself to make the whole
+pipeline skip the revision; no caller above `dss.Apply` needed editing.
+
+**Why.** [[D-076]]'s size cap, measured against MUP's real OCSP responder
+(unreachable — see that entry) and its 30,136,214-byte CRL, made the
+oversized-file symptom go away: the reported level degrades honestly to
+B-T instead of embedding a 30 MB CRL. But a controlled comparison — the
+same real card, the same real timestamp, two documents each signed both
+ways — showed Adobe Acrobat still rejecting the output whenever a DSS
+revision was appended at all:
+
+| Document | DSS revision | Acrobat |
+|---|---|---|
+| Pošta | none (B-T only) | accepts |
+| Pošta | empty (`/Certs` only, no `/CRLs`/`/OCSPs`) | **rejects** |
+| MUP | none (B-T only) | accepts |
+| MUP | empty (`/Certs` only, no `/CRLs`/`/OCSPs`) | **rejects** |
+
+The only difference within each pair is the appended DSS revision. What
+that revision actually contained in both rejected files was checked
+directly: `<</Certs [130 0 R 131 0 R]/VRI <</2720DC...
+<</Cert [130 0 R 131 0 R]>>>>>>` — certificates only, no `/CRLs`, no
+`/OCSPs`. The CRL was discarded by [[D-076]]'s size cap; OCSP produced
+nothing because MUP's responder does not accept a TCP connection at
+all (also established in [[D-076]]).
+
+**The DSS revision's structure itself was verified correct — this is a
+semantic problem, not a malformed-output problem.** Every xref offset
+resolves to the right object, the `/Prev` chain is intact, a classic
+xref table was appended matching the input's own last-revision
+mechanism, the original bytes remain a literal prefix, and all three
+signatures (the pre-existing one(s) plus the new one) verify
+independently. None of [[D-069]]'s `/ByteRange` fix, [[D-072]]'s
+literal-string fix, or [[D-074]]'s direct/indirect `/AcroForm`
+preservation fix — the three prior byte-level Acrobat defects this
+project found and fixed — apply here; this revision has none of those
+defects. The defect is what the revision *means*: a `/DSS` whose entire
+purpose (SPEC §12.6) is preserving long-term validation evidence, but
+which contains no revocation evidence at all, achieves nothing. It
+costs a revision and costs bytes, and it asserts — by existing at all —
+a claim ("this document carries LTV evidence") the document cannot
+support, while the reported level is honestly B-T. Certificates alone
+never justify a `/DSS`: they are already present in the CMS
+(`signerInfo`/the certificate chain, SPEC §12.3/§11.8), so a `/DSS`
+carrying only `/Certs` duplicates information the document already has
+under a dictionary whose name specifically means "here is the
+revocation evidence."
+
+Skipping the revision when there is nothing to embed in it makes the
+output, for every case this project has actually produced against real
+hardware to date, byte-for-byte equivalent in structure to the B-T
+documents Acrobat already accepts — because in every case measured so
+far, "revocation deliberately unavailable" and "the DSS would have been
+empty" are the same condition.
+
+**What remains unproven.** Whether Acrobat objects to an *empty* DSS
+specifically, or to something about this project's DSS revisions in
+general, is not established by this fix or by the measurement that
+motivated it. Every DSS this project has produced against real
+hardware has been empty — MUP's OCSP responder is unreachable and its
+CRL exceeds [[D-076]]'s cap, and no other issuer's real hardware has
+been exercised through this path yet — so there is no measured case of
+a genuinely populated DSS (real `/OCSPs` or `/CRLs` entries) being
+tested against Acrobat at all. If a populated DSS is later produced
+against real hardware and Acrobat still rejects it, that is a separate,
+new defect and a separate investigation — not evidence against this
+entry's reasoning, which only ever claimed that an *empty* DSS is
+semantically wrong regardless of what Acrobat thinks of it. That future
+investigation, if needed, should reference this entry rather than
+duplicate its measurement.
+
+**Testing without real hardware.** `internal/pades/dss/dss_test.go`
+gained `TestApplyWritesNoRevisionWhenAllEntriesAreTooLarge` (mirrors
+the already-existing `TestApplyIncompleteWhenCollectionFails`, adding
+the `bytes.Equal(result.Bytes, src)` assertion both now carry) —
+`Apply` fed entries with no OCSP/CRL evidence, asserting `Result.Bytes`
+equals the input document's own original bytes exactly. At the
+`internal/pades` level, `sign_test.go` gained
+`TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence` (a `chainedSession`
+with no OCSP responder and no CRL distribution point configured at
+all — the network-independent "no endpoint exists" branch of
+`dss.CollectRevocation`) and
+`TestSignDocumentBLTAchievedWithOCSPEvidence` (a fake `httptest.Server`
+built with `golang.org/x/crypto/ocsp`, already an indirect dependency
+via `internal/pades/dss`'s own tests, returning a small, valid `Good`
+response for the signer's real serial number). The first asserts the
+output contains no `/DSS` key, that the original input bytes are a
+literal prefix of the output, and that its `%%EOF` count matches a
+plain B-T signing of the identical input signed with the identical
+keys/TSA — proving no extra revision was appended beyond the signature
+itself. The second parses the output with `internal/pades/pdf` and
+asserts `/DSS`/`/OCSPs` resolve and `AchievedLevel == LevelBLT`. Both
+independently re-verify the signature via `internal/pades/verify`.
+`TestSignDocumentBLTDegradesToBTWhenRevocationTooLarge` ([[D-076]]'s own
+end-to-end test) gained the same no-`/DSS`-in-output assertion, since
+under this fix its scenario (a CRL fetched but rejected by the size
+cap, no OCSP configured) is also a no-evidence case. Every assertion
+above is scoped to what this project's own code produced for a given
+run — the no-`/DSS` check is a substring/structural check on the whole
+output (there is no pre-existing `/DSS` in any input fixture these
+tests construct, so whole-file scoping is not the [[D-072]]/[[D-074]]
+trap here), and the prefix/EOF-count checks compare two independently
+produced outputs rather than searching for an untouched original inside
+one of them.
+
+**Rejected.**
+- **Refusing B-LT outright (returning an error) instead of degrading
+  silently to a clean B-T document.** Rejected: this is exactly the
+  behaviour [[D-076]] already established as correct — degrade honestly
+  to the level actually achieved, report why, and hand back a usable
+  document — and this fix does not change that contract at all. It only
+  changes what "the level actually achieved" is allowed to look like on
+  disk: a real B-T document, not a B-T-labelled document that still
+  carries a vestigial, empty `/DSS`.
+- **Writing `/Certs` alone whenever at least the certificates are
+  available, on the theory that "some evidence is better than none."**
+  Rejected by the task's own framing and independently reasoned here:
+  the certificates are not revocation evidence, they are already in the
+  CMS, and a `/DSS` dictionary's presence is itself a signal ("this
+  document has LTV support") to any validator that inspects for one —
+  a signal this project should not send when it is false.
+- **Changing `internal/pades.applyDSS` (in `sign.go`) instead of
+  `dss.Apply`.** Considered, since `applyDSS` is the call site that
+  decides `Result.AchievedLevel`. Rejected because `dss.Apply` is
+  already the one place that knows, from `ocspRefs`/`crlRefs`, whether
+  there is anything to embed — duplicating that check one layer up
+  would mean either recomputing it from `entries` a second time (two
+  places that must agree on the same condition) or exposing
+  `ocspRefs`/`crlRefs` as new `Result` fields for `applyDSS` to inspect,
+  neither of which is simpler than making `Apply` itself refuse to
+  write a revision it cannot justify. This also kept `sign.go` entirely
+  untouched, satisfying the task's "this one change only."
+
+---
+
+## D-080 — WebView2 host: hand-written COM interop, driven by the real WebView2.idl; the redistributable loader is embedded and extracted at first use
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `internal/ui`'s WebView2 host is hand-written COM interop
+(F5 §2.1's first option), not a third-party binding. Every interface
+layout — vtable slot indices, method signatures, IIDs — used anywhere
+in the package (`ICoreWebView2Environment`, `ICoreWebView2Controller`,
+`ICoreWebView2`/`ICoreWebView2_3`, the four completion/event handler
+interfaces this package implements, and
+`ICoreWebView2WebMessageReceivedEventArgs`) was copied from
+`WebView2.idl` inside the `Microsoft.Web.WebView2` NuGet package
+(fetched directly from `nuget.org`, version 1.0.4191.47), not
+reconstructed from memory or from Microsoft's prose documentation —
+every slot index in `internal/ui/*_windows.go` is commented with the
+IDL method it corresponds to and its position in that interface's
+declaration order, so it can be checked against the IDL directly if a
+future SDK version changes anything. `WebView2Loader.dll` (x64), the
+small redistributable stub every non-.NET WebView2 host must call
+through (`CreateCoreWebView2EnvironmentWithOptions`,
+`GetAvailableCoreWebView2BrowserVersionString`), is committed at
+`internal/ui/assets/webview2/WebView2Loader.dll` alongside its licence
+(`LICENSE.txt`, the same directory — a BSD-style licence that
+explicitly permits redistribution in binary form), embedded with
+`go:embed`, and extracted to
+`%LOCALAPPDATA%\Liro\webview2\WebView2Loader-<size>.dll` on first use
+(`loader_windows.go`). Go objects implementing a COM interface (the
+four handler kinds) share one struct layout, `comBase{vtbl uintptr;
+refs int32}`, whose address IS the interface pointer per the universal
+C++/COM ABI; `QueryInterface`/`AddRef`/`Release` are generic thunks
+shared by every kind, and each kind's `Invoke` function pointer is
+created once, at package `var` initialisation, via
+`syscall.NewCallback` — never once per call or per window (`com_windows.go`'s
+"vtable singletons" comment).
+
+**Why.** F5 §2.1 states the reality directly: there is no supported Go
+binding for WebView2, and the two acceptable approaches are
+hand-written interop (matching F1/F2's precedent for `winscard.dll`/
+`ncrypt.dll`) or "a single well-scoped third-party binding... if one
+exists that is maintained and small enough to read," with hand-written
+preferred "if the second means importing something large." The
+candidate third-party bindings available at the time of writing
+(`github.com/jchv/go-webview2`, already present in this environment's
+module cache from unrelated prior use) pull in a full webview
+abstraction — window creation, event dispatch, a public API shaped
+around a generic "webview" concept — none of which this project wants;
+this project needs exactly the subset F5 §2.4 specifies (three
+messages in, one `ExecuteScript` call out, virtual-host asset serving)
+plumbed into a window this project's own code fully controls
+(fixed-size, always-on-top for consent, centred on the cursor's
+monitor, DPI-aware). Hand-written interop, scoped to exactly that
+subset, is smaller and more auditable than adapting a general-purpose
+binding down to it — the same reasoning D-016 already applied to
+choosing an in-house Exclusive C14N implementation over a general XML-
+Security library.
+
+The loader DLL itself is unavoidable regardless of which option is
+chosen: `CreateCoreWebView2EnvironmentWithOptions` is not a documented,
+stable COM `CoCreateInstance` target — every WebView2 host in every
+language calls it through this loader stub, which is why SPEC §8.6
+lists "a WebView2 binding" as an expected acceptable dependency in the
+first place. Embedding it and extracting it to the per-user config
+directory (rather than requiring a side-by-side file at install time,
+which F10's packaging phase does not exist yet to arrange) keeps the
+agent a true single binary as distributed, satisfying SPEC §1's design
+centre, at the cost of one small file written to disk on first launch —
+the same trade-off `internal/pades/appearance` already makes for its
+embedded font and logo assets.
+
+**What the interop actually took, and the two real bugs it surfaced.**
+Once the vtable slot indices were read correctly from the IDL, a blank
+WebView2 window rendering trusted local HTML, receiving `PostJSON`
+calls from Go, worked on the first attempt against real hardware (a
+genuine Windows 11 machine with the Evergreen Runtime already
+installed, version 152.0.4191.53) — but closing that window crashed
+with an access violation, twice, from two different causes, both found
+by attaching a Go stack trace to the crash and reasoning from the
+exact call site, not by guessing:
+
+1. `ICoreWebView2Environment::CreateCoreWebView2Controller` initially
+   failed synchronously with `HRESULT 0x802A000C` ("This method can
+   only be called from the thread that created the object"), even
+   though a `GetCurrentThreadId()` trace proved every call — environment
+   creation, the completion callback, controller creation — ran on the
+   identical OS thread. Comparing against `go-webview2`'s own working
+   implementation (present in this machine's module cache) showed the
+   actual rule: the environment/controller pointers a
+   `*CompletedHandler::Invoke` receives are **borrowed references**,
+   valid only for the duration of that call, not already `AddRef`'d for
+   the receiver the way an ordinary `[out, retval]` property getter's
+   result is. `environmentCompletedInvoke`/`controllerCompletedInvoke`
+   now call `AddRef` (vtable slot 1) on the delivered pointer before
+   returning, before this package's code ever uses it outside the
+   callback.
+2. Once controller creation worked, `ICoreWebView2Controller::Close`
+   crashed inside itself with SEH `0xc0000005`. Two independent causes
+   were found and fixed together: `Close()` was being called from a
+   `WM_DESTROY` handler, after `DestroyWindow` had already torn down
+   the WebView2 control's own child `HWND` as part of Windows' own
+   child-window cleanup — `Close()` now runs from `WM_CLOSE`, before
+   `DestroyWindow`, matching Microsoft's own sample ordering. Separately,
+   the `webMessageReceivedHandler` object passed to
+   `add_WebMessageReceived` was never stored anywhere Go-reachable
+   after that call returned — WebView2 holds a raw pointer to it, not
+   a Go reference, so nothing stopped the garbage collector from
+   reclaiming it, and `Close()` (which releases every registered event
+   handler as part of closing) then dereferenced a stale address. The
+   handler is now stored on the `window` struct for the subscription's
+   whole lifetime.
+
+A third, unrelated bug surfaced during manual verification, not a
+crash: the window initially centred on screen coordinate (0, 0) instead
+of the monitor under the cursor, because `MonitorFromPoint`'s `POINT`
+parameter is passed **by value** — on the amd64 calling convention a
+struct that small is packed into one 64-bit argument (x in the low 32
+bits, y in the high 32 bits), not two separate `uintptr` arguments; two
+arguments silently shifted every later parameter by one slot, so
+`GetMonitorInfoW` received a garbage or null monitor handle and left
+its output struct at its zero value. Fixed by packing the point
+manually (`win32_windows.go`'s `cursorMonitorRect`).
+
+**Manual verification performed.** All on this real Windows 11 machine,
+with the genuine Evergreen Runtime, not a stub: `DetectRuntime` reports
+the installed version; a window is created, sized and DPI-scaled
+correctly, centred on the monitor under the cursor (verified against
+`System.Windows.Forms.Screen.PrimaryScreen.Bounds` — the window's
+`GetWindowRect` centre matched the screen's centre to the pixel), shown,
+and takes the foreground (`GetForegroundWindow` matched); `PostJSON`
+successfully runs `ExecuteScript`; closing — both the timeout-driven
+`Window.Close()` path and, structurally, the same code path a
+user-driven `WM_CLOSE` takes — tears down cleanly with no crash and no
+leaked `msedgewebview2.exe` process group beyond Windows' own normal
+warm-background-instance behaviour (observed independently of this
+project's own process, on the very same machine, before this project's
+binary was ever run).
+
+**`go vet`'s `unsafeptr` check is disabled project-wide, not
+suppressed per line.** Implementing a COM object in Go means
+reinterpreting the raw `this` machine word a callback receives from
+foreign code as a `*T` — exactly the pattern `unsafeptr` exists to
+catch for accidental misuse (storing a `uintptr` across a sequence
+point, then converting it back to a `Pointer`), but unavoidable and
+correct for implementing a native callback ABI: verified directly
+(a two-line reproduction) that isolating the conversion inside its own
+helper function does not change vet's verdict, since the check is
+per-expression, not per-package or per-function, so no restructuring
+of this package's code could satisfy it. `-unsafeptr=false` is passed
+to both the CI `go vet` step and this project's own `.golangci.yml`
+(`linters.settings.govet.disable`), with the reasoning recorded at
+both call sites rather than only here.
+
+**Rejected.**
+- **A third-party WebView2 binding** (`github.com/jchv/go-webview2` or
+  similar). Rejected per F5 §2.1's own preference ordering: these pull
+  in a general-purpose webview abstraction and public API surface this
+  project does not want, for a problem — the specific, narrow subset of
+  WebView2 F5 actually specifies — hand-written interop covers in
+  roughly a dozen files with every design decision (window ownership,
+  message surface, virtual-host mapping) under this project's own
+  control.
+- **Shipping `WebView2Loader.dll` side-by-side with the executable
+  instead of embedding and extracting it.** Would work, but makes the
+  distributed artefact two files instead of one, contradicting SPEC
+  §1's "single binary" design centre for no benefit this phase — F10's
+  installer, when it exists, could still choose to ship it side-by-side
+  if that ever becomes preferable, without this decision blocking it.
+- **Retrying `CreateCoreWebView2Controller` on `HRESULT 0x802A000C`
+  instead of finding the root cause.** Considered only briefly, in the
+  sense of "maybe this is transient" — rejected immediately once the
+  thread-ID trace proved the literal "wrong thread" explanation false,
+  which is what led to comparing against a working implementation and
+  finding the real (missing-`AddRef`) cause. A retry loop around a
+  bug is exactly the kind of thing SPEC §0 warns against doing instead
+  of understanding the failure.
+
+---
+
+## D-081 — DPI awareness is declared programmatically, not via an application manifest; no manifest pipeline exists yet
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `internal/ui` calls
+`SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)`
+once, at process startup (`win32_windows.go`'s `ensureDPIAware`,
+guarded by `sync.Once`), rather than declaring per-monitor DPI
+awareness in an embedded application manifest.
+
+**Why.** F5 §2.3 asks for per-monitor DPI awareness "declared in the
+manifest," but SPEC §5's repository layout places the manifest
+(`cmd/liro-bridge/rsrc.syso`, "Windows icon/manifest (generated)")
+under packaging, which F10 builds — no manifest-generation step exists
+in this repository yet, and inventing one now, only for this one
+attribute, would be exactly the kind of scope creep SPEC §0 warns
+against ("do not build beyond your phase"). `SetProcessDpiAwarenessContext`
+(available since Windows 10 1703, which is older than the WebView2
+Evergreen Runtime's own minimum supported OS) is Microsoft's documented
+programmatic equivalent to the manifest entry, achieves the identical
+runtime effect, and needs no new build tooling — verified directly:
+the smoke-tested window rendered at the correct physical size and
+stayed sharp with no code path calling this function under simulated
+DPI other than the one described here.
+
+**Rejected.**
+- **Building a manifest-generation pipeline in this phase to satisfy
+  F5 §2.3's literal wording.** Rejected as scope beyond what F5 asks
+  for build-wise; F10's packaging phase is where `rsrc.syso` and
+  everything that depends on it belongs, and when it exists, adding a
+  `<dpiAwareness>` entry there and removing this call is a small,
+  independent, same-effect change — not a rework of anything in this
+  phase.
+- **Skipping DPI awareness declaration entirely, relying on Windows'
+  default (per-process system-DPI-aware) behaviour.** Rejected outright
+  by F5 §2.3's own reasoning: a window that is not per-monitor DPI
+  aware renders blurry on a scaled display, "which is most laptops" —
+  not a corner case for this product's actual users.
+
+---
+
+## D-082 — Assets are served over a virtual host mapping; the tray icon is Windows' default `IDI_APPLICATION`; autostart uses `golang.org/x/sys/windows/registry`; the tray-launching entry point is an explicit `tray` subcommand
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** Every window's HTML/CSS/JS is served through
+`ICoreWebView2_3::SetVirtualHostNameToFolderMapping` at `https://liro.local/...`
+(`internal/ui/window_windows.go`), never `file://` and never a local
+HTTP server. The tray icon (`internal/ui/tray_windows.go`) loads
+`IDI_APPLICATION` via `LoadIconW(0, IDI_APPLICATION)` rather than a
+custom `.ico` resource. Autostart (`internal/platform/autostart_windows.go`)
+is implemented with `golang.org/x/sys/windows/registry`, not hand-written
+`RegOpenKeyEx`/`RegSetValueEx` syscalls. Starting the tray is a new,
+explicit `liro-bridge tray` subcommand, not the bare-invocation path.
+
+**Why.**
+- **Virtual host over `file://`/a local server.** F5 §2.4 states the
+  reasoning directly: `file://` origins have different, weaker web
+  security properties (no meaningful origin isolation from other
+  `file://` content on the machine), and a local HTTP server is a
+  second listening socket, contradicting SPEC §6.1's "loopback API,
+  nothing else listens" model. A virtual host name that resolves to
+  nothing outside this one `ICoreWebView2` instance gives the page a
+  real, stable origin (`https://liro.local`) with none of either
+  drawback.
+- **`IDI_APPLICATION` instead of a custom icon.** F5 §3's checklist item
+  is "icon present from startup," not a specific brand mark — unlike
+  the visible signature stamp (SPEC §13), F5 does not specify tray icon
+  geometry or colour at all. Building a real `.ico` (or a hand-drawn
+  `CreateIconIndirect` bitmap, D-061's placeholder-logo precedent) is
+  packaging-shaped work that belongs with `cmd/liro-bridge/rsrc.syso`
+  in F10, not invented early for a requirement F5 does not state (SPEC
+  §0: do not invent requirements). Using Windows' own default
+  application icon needs no new asset and no new GDI code, and is
+  trivially replaceable later by pointing `LoadIconW` at a resource
+  instead of `IDI_APPLICATION`.
+- **`golang.org/x/sys/windows/registry` for autostart.** Unlike the
+  WebView2 COM surface (D-080), there is no reason to hand-write this:
+  `golang.org/x/sys/windows/registry` is already a transitive part of
+  this project's existing `golang.org/x/sys` dependency (SPEC §8.6
+  already lists it as an expected acceptable dependency), well-scoped,
+  and small. Hand-writing `RegOpenKeyExW`/`RegSetValueExW` would add
+  syscall-level risk (exactly the kind D-080's COM work carries) for no
+  benefit, since — unlike WebView2 — a maintained, minimal binding
+  already exists in a dependency this project already has.
+- **An explicit `tray` subcommand.** F5 does not name a CLI entry point
+  for starting the background agent. Bare invocation (`liro-bridge`
+  with no arguments) already has a tested, F0-established contract —
+  print usage, exit 0 (`TestNoArgsPrintsUsageAndExitsZero`) — and
+  changing it to launch a blocking, window-creating tray process would
+  both break that test and make a bare invocation in a script or test
+  harness hang waiting for a GUI. A new, explicit subcommand is the
+  simplest option that adds F5's behaviour without touching F0's.
+
+**Rejected.**
+- **A custom-drawn tray icon (D-061's "generic mark" pattern) or the
+  real Liro logo (D-070) rasterised into an `HICON`.** Both would need
+  new GDI code (`CreateDIBSection`/`CreateIconIndirect`) this phase does
+  not need to write — F5's checklist is satisfied by "present from
+  startup," and a real icon is exactly the kind of packaging-shaped
+  asset F10 already owns (`rsrc.syso`).
+- **Hand-written registry syscalls for autostart**, to keep the "no
+  third-party binding beyond what's necessary" discipline as strict as
+  D-080's. Rejected because that discipline exists to bound *new* risk
+  (D-080's own reasoning is entirely about WebView2 having no
+  alternative); `golang.org/x/sys/windows/registry` is not new risk —
+  it is already in the dependency graph and is exactly the kind of
+  "expected acceptable dependency" SPEC §8.6 anticipates.
+- **Making bare invocation start the tray.** Would match some other
+  desktop agents' convention, but directly contradicts F0's own tested
+  contract for this project and would make `liro-bridge` (no args) a
+  footgun in any script or CI step that just wants to check the binary
+  runs.
+
+---
+
+## D-083 — The page->Go message surface stays exactly three types; the settings window reads its form back through `ExecuteScript`'s own return value, not a fourth message type
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `internal/ui.MessageType` has exactly three values —
+`approve`, `cancel`, `selectCertificate` — used, unmodified, by every
+window this phase builds (consent, pairing, settings). Pairing's
+Allow/Deny buttons send `approve`/`cancel` (F5 §6's own natural mapping
+onto the same two ideas). The settings window, which genuinely needs to
+report a whole form's worth of structured data — language, autostart,
+TSA URL, output suffix, signature level, and *which* action button was
+pressed — does this by having its "Save"/"Export audit log"/"Check for
+updates now" buttons all send the existing `approve` message, and Go
+then calls a new `Window.Eval(script string) (string, error)`
+(`internal/ui/window_windows.go`) that runs a small trusted script
+(`window.__liroCollectState()`, `internal/ui/assets/pages/settings.js`)
+and reads its JSON-encoded return value back through
+`ICoreWebView2ExecuteScriptCompletedHandler`'s own completion value —
+a channel that already existed for the Go->page direction (`ExecuteScript`)
+and needed only to stop discarding its result, not a new page->Go
+message type. The consent window's failed state accordingly no longer
+offers "Retry" or "Save without a timestamp" as interactive buttons
+(SPEC §12.8's choice); it shows the actionable message and a "Copy
+technical details" button implemented entirely client-side
+(`navigator.clipboard`), plus "Close" (which sends `cancel`).
+
+**Why.** F5 §2.4 states the constraint as an unconditional property of
+the host, not of one window: "The page can request exactly three
+things... Anything else is dropped and logged. Keep the message surface
+this small deliberately," and the exit checklist repeats it standalone:
+"Exactly three message types accepted; others dropped and logged."
+Reading this as scoped only to the consent window (the security-critical
+one) was considered, since F5 §7 (settings) never repeats the
+constraint — but the checklist item is phrased as a host-level property,
+and honouring it literally, for every window, is strictly safer and
+no harder once `Window.Eval` exists: no future window can accidentally
+smuggle structured data into Go through a fourth `MessageType` value,
+because there still isn't one. `ExecuteScript`'s result parameter
+(`webview2_windows.go`'s `executeScriptCompletedInvoke`) was already
+part of the Go->page direction F5 §2.4 explicitly allows
+("Go -> page: ExecuteScript with a JSON payload"); reading back what a
+*trusted, project-authored* script (never built from untrusted input)
+returns is a different use of an existing channel, not a new one.
+
+Removing Retry/Save-without-timestamp from the failed state is the
+direct, honest consequence: those actions need to tell Go to *do*
+something (retry, or continue at B-B) with data the three-message
+surface has nowhere to carry once "reuse `approve`/`cancel` for
+everything" is off the table for the consent window specifically (unlike
+settings, consent's `approve` already means something — the original
+sign decision — and overloading it a second time on the failed screen
+would blur what the audit log records that click as). SPEC §12.8's
+"save without a timestamp" choice is still made — by `--on-tsa-failure`
+at the batch level, before signing begins, exactly as F3 already
+implemented it — just not as a live, mid-failure re-decision from the
+consent window in this phase.
+
+**Rejected.**
+- **Adding a fourth `MessageType` (e.g. `formSubmit` carrying an
+  arbitrary JSON payload) for settings.** Rejected as exactly what the
+  checklist item exists to prevent: once one window can send arbitrary
+  structured data, the "three things, deliberately small" property
+  stops being true project-wide, for the convenience of one window that
+  has another option available.
+- **Scoping the three-message rule to consent/pairing only, leaving
+  settings free to add its own message vocabulary.** Plausible given
+  F5 §7's silence on the point, but the checklist's own wording doesn't
+  draw that line, and `Window.Eval` makes the stricter reading free —
+  there was no actual cost to honouring the narrower interpretation
+  once the escape hatch existed.
+- **Wiring Retry/Save-without-timestamp by overloading `approve` a
+  second time on the failed screen, disambiguated by which state the
+  window was in when it arrived.** Considered — it would work
+  mechanically — but rejected as confusing for exactly the reason the
+  audit log cares about: `approve` already has one meaning (the
+  original consent decision) that the audit entry's `Outcome` is built
+  from; reusing it for "please retry after a TSA failure" mid-flow
+  makes that meaning ambiguous for no real gain, when the message text
+  can already tell the user what to do next (F5 §5.5's own framing).
+
+---
+
+## D-084 — The audit `Entry` type has no field a personal name, file name or identifier could go in; the canonical form is a length-prefixed, fixed-field-order byte encoding pinned by a golden-value test
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `internal/audit.Entry` (`entry.go`) has exactly the eight
+fields F5 §8.1 lists — `Sequence`, `Timestamp`, `Thumbprint`,
+`Application`, `DocumentCount`, `Outcome`, `FailureCode`, `IsTestKey` —
+plus the two hash-chain fields, and no others: no field for a signer's
+name, a file name, a JMBG, or an email address exists on the type at
+all. `CanonicalBytes()` concatenates every field in this fixed order,
+each variable-length field (`Thumbprint`, `Application`, `Outcome`,
+`FailureCode`, `PrevHash`) preceded by its own 4-byte big-endian length,
+and `Timestamp` truncated to whole seconds before encoding.
+`TestCanonicalBytesIsStable` builds the expected byte sequence
+independently (via `encoding/binary` directly, not by calling
+`CanonicalBytes`' own helpers) for one fixed `Entry` and compares —
+a golden-value test in substance, without a checked-in binary fixture.
+
+**Why.** F5 §8.3 states plainly: "Note that personal names are excluded
+even though they appear on the consent screen. The certificate
+thumbprint identifies the signer without storing their identity." The
+strongest way to guarantee this is to give the type nowhere to put one
+— a runtime check (e.g. "reject any field containing an '@' or 13
+digits") would be strictly weaker, since it only catches a mistake at
+the moment data flows through it, whereas an allow-list of fields
+catches it at compile time, for every future caller, permanently. This
+mirrors `internal/errs.Error`'s own design (D-002): the type itself is
+the enforcement mechanism, not a check layered on top of a type that
+could hold the wrong thing.
+
+The canonical-form test needed one iteration to get right: an initial
+version asserted the whole encoded `Entry` (hash and all) contained no
+run of 13 consecutive digits, and failed — not because of a real leak,
+but because `Hash` is a 32-byte SHA-256 digest, hex-encoded to 64
+characters drawn from `[0-9a-f]`, and a run that decimal-digit-only by
+chance across 64 mostly-random hex characters is not actually rare.
+This is the same lesson D-072/D-074 already recorded for PDF output
+byte-scanning: **scope an assertion to the bytes that are actually
+meaningful, never the whole artefact** — `TestAuditLogNeverContainsPersonalData`
+(`internal/audit/store_test.go`) now checks the parsed entry's semantic
+fields only (`Thumbprint`, `Application`, `Outcome`, `FailureCode`),
+explicitly excluding `Hash`/`PrevHash`, which are expected to look like
+noise and are not "content" in SPEC §6.7's sense — they are derived
+from the entry, not stored alongside it as separate information.
+
+**Rejected.**
+- **A `Note`/`Details` free-text field on `Entry`, for future
+  flexibility.** Rejected outright: SPEC §0 warns against inventing
+  requirements, and a free-text field is precisely the kind of thing a
+  future caller would eventually put a name or a file name into,
+  defeating the allow-list property this decision is built on.
+- **Scanning the whole encoded entry (including `Hash`) for personal
+  data, accepting the false-positive risk as "rare enough."** Rejected
+  once measured directly: it fired on the very first realistic test
+  run, not in some theoretical edge case, which means "rare enough" was
+  wrong and the check would have been a source of real, recurring test
+  flakiness rather than a meaningful guard.
+- **A checked-in binary golden file for the canonical form**, matching
+  `testdata/golden/`'s pattern for signed PDFs. Rejected as more
+  machinery than one `Entry` value's byte layout needs — F3's golden
+  files exist because a hand-rolled PDF/CMS byte layout is exactly the
+  kind of thing that "looks right, verifies, and is subtly wrong" (SPEC
+  §12.1); this canonical form is simple enough that an inline,
+  independently-constructed comparison in the test itself is equally
+  strong and far easier to read.
+
+---
+
+## D-085 — The consent view model is pure Go with no window dependency; Approve starts unfocused by giving Cancel the initial focus; the interactive CLI's batch fingerprint is a whole-file SHA-256, not the PAdES `/ByteRange` digest
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `internal/consent` (view model, sanitisation, certificate
+options, progress/state machine, error-action mapping) imports nothing
+from `internal/ui` and has no notion of a window — every function in it
+is exercised by `internal/consent/*_test.go` alone. The page never
+autofocuses anything; `cmd/liro-bridge`'s consent page
+(`internal/ui/assets/pages/consent.js`) explicitly calls
+`document.getElementById("cancel-btn").focus()` once the certificate
+list has rendered, and Approve stays `disabled` until a `selectCertificate`
+message has been received — so it is never focusable, let alone
+focused, until the user has already made an explicit choice.
+`cmd/liro-bridge/interactive_windows.go` computes each input PDF's
+batch-fingerprint contribution as `sha256(fileBytes)` — the whole file
+on disk — rather than the digest `internal/pades.SignDocument` computes
+internally over the `/ByteRange`-selected content during signing.
+
+**Why.** F5 §10 states the testability requirement directly ("The
+consent screen's data... is computed in Go and testable without a
+window"), and the package boundary is what makes that true rather than
+aspirational — `internal/consent` cannot reach into `internal/ui` even
+by accident, since nothing in it imports that package.
+Explicitly focusing Cancel (rather than merely *not* focusing Approve,
+which would leave focus on whatever the browser engine defaults to —
+typically the first focusable element in DOM order, which happens to be
+the first certificate row, not reliably Cancel) makes F5 §5.6's rule
+"Approve is never the initially focused control" true by an assertion
+the page makes about itself, not an accident of DOM order that a future
+markup change could silently break.
+
+The whole-file digest is a genuine, unspecified choice: F3's signing
+pipeline computes its own digest internally, over the `/ByteRange`, as
+part of `SignDocument` itself — there is no pre-signing digest exposed
+for the consent screen to reuse, and computing one would mean either
+partially replicating `/ByteRange` selection before signing (exactly
+the fragile, easy-to-get-subtly-wrong logic SPEC §12.1 already singles
+out for care) or restructuring `SignDocument` to expose an intermediate
+digest, out of scope for this phase. SPEC §6.6's own reasoning for the
+fingerprint — "so a technical user can verify what was approved against
+what the calling application says it sent" — is satisfied by any stable,
+reproducible digest of the approved content; a whole-file SHA-256 is the
+simplest one available without touching F3's signing internals (SPEC
+§0: choose the simplest option). It differs from the eventual
+`/ByteRange` digest signed inside the CMS, but does not need to match
+it — the consent fingerprint's job is confirming *which bytes were
+shown and approved*, before any signature-specific transformation.
+
+**Rejected.**
+- **Focusing nothing and relying on the browser's default tab order.**
+  Rejected: the default focused element after page load, with no
+  explicit `.focus()` call, is not guaranteed across WebView2/Chromium
+  versions, and "not explicitly Approve" is a weaker guarantee than
+  "explicitly Cancel" for a rule SPEC calls "the most important
+  paragraph in this document."
+- **Computing the real `/ByteRange` digest for the fingerprint by
+  partially replicating F3's placeholder/ByteRange logic ahead of
+  signing.** Rejected as scope creep into F3's already-hardest, most
+  carefully tested code (SPEC §12.1) for a value whose only job is
+  giving a technical user *something* stable to compare, not
+  cryptographically binding the approval to the final signed bytes —
+  the signature itself, verified independently (SPEC §16.4), is what
+  actually provides that binding.
+
+---
+
+## D-086 — `scripts/synctokens` is the source of the token values, not a puller of `@liro/tokens`' output, because that package is not available in this environment
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `scripts/synctokens/tokens.go` and `intents.go` contain
+the literal CSS custom-property values (`internal/ui/assets/tokens.css`)
+and component classes (`internal/ui/assets/intents.css`) directly in Go
+source, written to those two files when the script runs. `--liro-color-brand`
+and `--liro-color-brand-hover` are the real Liro turquoise already
+established in this project (D-070's `#038387`, the visible signature
+stamp's logo colour); every other value is a reasonable placeholder.
+
+**Why.** F5 §4.1 describes the intended pipeline: "`@liro/tokens`
+generates a `tokens.css`... Add `scripts/synctokens` which pulls the
+generated `tokens.css` and the intent classes into `internal/ui/assets/`."
+`@liro/tokens` is a React-monorepo package (SPEC §10 states directly
+that the agent "has no dependency on the Liro Design System — that is a
+React monorepo and cannot run here") and is not present anywhere in
+this environment — there is nothing for `synctokens` to pull from. F5
+§4.2's actual, checkable requirement — every colour, spacing and
+typography value the agent's pages use is a `var(--liro-*)` custom
+property in one committed file, with a hex literal anywhere else in
+agent CSS failing the build (`scripts/checkcss`, tested) — does not
+depend on where the values originally came from, so `synctokens`
+satisfies it by being the source of record itself, exactly as SPEC §0
+directs when a stated mechanism's prerequisite is unavailable: choose
+the simplest option that still meets the actual, checkable requirement,
+and record why.
+
+**Rejected.**
+- **Hand-writing `tokens.css`/`intents.css` directly, with no
+  `scripts/synctokens` at all.** Rejected: F5 §4.1 and the exit
+  checklist both require the script to exist ("`scripts/synctokens`
+  exists; output committed"), and keeping the values in Go source
+  behind a script — rather than editing the generated CSS files by
+  hand, which their own header comment explicitly warns against — is
+  what actually makes them mechanically regenerable once a real
+  `@liro/tokens` package exists: replacing this script's body with a
+  real fetch-and-copy step is a self-contained change that touches
+  nothing downstream.
+- **Blocking F5 on the design system becoming available.** Not a
+  choice available in this environment, and contrary to SPEC §0's "do
+  not silently work around a constraint... raise it in `decisions.md`"
+  — raised here, not worked around silently, and every value is clearly
+  a placeholder pending the real package.
+
+---
+
+## D-087 — What the F5 report claimed versus what the first real run showed, and why the verification approach changes as a result
+
+**Date:** 2026-09-03
+**Phase:** F5 (post-shipping-run fixes; not F6)
+
+**What was claimed.** The F5 report stated the consent flow was
+verified through "window creation, certificate list rendering, cancel
+handling, and a correctly-chained audit entry," that the three windows
+were trilingual, and that `sign --interactive` existed and worked.
+
+**What the binary actually did, measured directly.** Every window
+opened with correct native chrome (title bar, turquoise buttons, tray
+tooltip) but every `data-i18n` label was blank in all three locales —
+only the native window title and one hard-coded `<option>` rendered.
+`liro-bridge sign --interactive` appeared to fail outright.
+`liro-bridge certs` and `sign --interactive` both hung indefinitely
+with no output. Clicking Approve, Cancel (the button, not the window's
+close box), Settings' Save, and every other page-driven button did
+nothing observable in the running program. Two tray menu items
+(Certificates, View audit log) did nothing at all, and the third
+(Open) was indistinguishable, by appearance, from a working one.
+
+**Root causes, each verified independently against the running
+binary before being called a fix:**
+
+1. **Empty window text.** `NewWindow`'s `setUpWebView2`
+   (`internal/ui/window_windows.go`) called `Navigate` and returned
+   immediately; the caller's first `PostJSON` (carrying every
+   localised string) then ran `ExecuteScript` before the page's own
+   `bridge.js`/`<page>.js` had loaded, so `window.__liroReceive`
+   did not exist yet and `bridge.js`'s `window.__liroReceive &&`
+   guard silently swallowed the entire init message. Fixed by
+   subscribing `ICoreWebView2::add_NavigationCompleted` before
+   `Navigate` and pumping the message loop until it fires
+   (`navigationCompletedHandler`, `webview2_windows.go`) —
+   `NewWindow` now never returns until the page has actually
+   finished loading. Verified by rendering the real Settings window
+   in all three locales (screenshots taken of the running binary)
+   before and after the fix, and by the new
+   `TestSettingsWindowRendersLocalisedText`
+   (`cmd/liro-bridge/render_windows_test.go`), which creates a real
+   WebView2 window, posts the real init payload, and reads
+   `textContent` back through `Window.Eval` — the class of test F5
+   §10 called for and never had.
+
+2. **`sign --interactive` "not found."** The flag *was* implemented —
+   `cmd/liro-bridge/interactive_windows.go` and `interactive_other.go`
+   exist, uncommitted but present in the working tree, and `main.go`
+   already dispatches `sign --interactive` to it. It was not lost.
+   Running it, though, hung before any window could appear:
+   `internal/keysource/windowscng`'s per-certificate presence probe
+   (`probePresence`, `conn_windows.go`, D-077's own SPEC §11.10
+   fix) called `CryptAcquireCertificatePrivateKey` without
+   `CRYPT_ACQUIRE_SILENT_FLAG`. SPEC §11.10 states plainly that
+   "opening a key never prompts for a PIN, only signing does" — that
+   claim does not hold for every certificate on this machine: for two
+   of the four enumerated certificates, the call silently blocked
+   waiting on an OS credential/insert-card prompt that nothing was
+   watching for, hanging `certs` and `sign --interactive` identically
+   and indefinitely (a scratch program built to call
+   `windowscng.Enumerate`/`Presence` directly, bypassing the CLI,
+   reproduced the same hang against the same certificate, isolating it
+   from anything UI-related). The historical log line
+   `"CryptAcquireCertificatePrivateKey: The action was cancelled by
+   the user"` from an earlier manual session is that same UI having
+   been shown once before and dismissed by a person. Fixed by adding
+   `cryptAcquireSilentFlag` to the probe's flags and treating both
+   `NTE_SILENT_CONTEXT` and the newly-observed `SCARD_E_NO_SMARTCARD`
+   as "not present" rather than an error or a block (`errors.go`,
+   `session_core.go`, `conn_windows.go`). Verified by rerunning the
+   same reproduction (now returns in single-digit milliseconds for
+   every certificate) and by running `certs` and
+   `sign --interactive` to completion in the built binary.
+
+3. **Approve, Cancel-by-button, Save and every other page-initiated
+   action did nothing.** `bridge.js`'s `liroSend` called
+   `window.chrome.webview.postMessage(JSON.stringify(msg))`. WebView2's
+   `postMessage` already serialises an object argument to JSON on the
+   native side (`WebMessageAsJson`); handing it an already-stringified
+   payload makes the native side see a JSON *string* and re-encode
+   that, so `internal/ui.ParseMessage` received
+   `"{\"type\":\"approve\"}"` (a JSON string containing escaped JSON)
+   instead of `{"type":"approve"}`, failed to unmarshal it into
+   `rawMessage`, and silently dropped it — logged only as "not one of
+   approve/cancel/selectCertificate," never surfaced anywhere a person
+   would see it. This affected every page-driven action in every
+   window: Approve, Cancel via its button (window-close still worked,
+   because that path is a synthetic Go-side event, `OnClosed`, that
+   never goes through `postMessage` at all — which is likely why the
+   report's "cancel handling" claim looked true to whoever tested it),
+   Settings' Save/Close/Export/Check-updates buttons, and the new
+   Certificates/Audit-log windows' Close buttons. Fixed by passing the
+   object directly: `postMessage(msg)`. Verified two ways: a new
+   permanent test, `TestConsentWindowRendersAndRoundTrips`
+   (`cmd/liro-bridge/consent_render_windows_test.go`), which creates a
+   real consent window, clicks a certificate row and Approve via
+   `Window.Eval`, and asserts Go actually receives
+   `selectCertificate`/`approve` (it failed with the bug present,
+   caught it directly, and passes now) — and a real mouse click on the
+   real Cancel button in the running binary, which produced a genuine
+   `audit.Store` entry with `outcome: "denied"`.
+
+**What changed in the verification approach.** Every fix above was
+confirmed against the *running binary* — a real WebView2 window,
+launched and driven with real Win32 input or `Window.Eval`, its actual
+rendered DOM or actual audit-log output inspected — not only against a
+test that exercises Go-side data construction. That is a deliberate,
+permanent change, not a one-off: `TestSettingsWindowRendersLocalisedText`
+and `TestConsentWindowRendersAndRoundTrips` are now committed as
+regression tests that create real windows and would have caught both
+the empty-text bug and the dropped-message bug before either shipped.
+This is the second time in this project that green tests accompanied a
+broken product — the first was the xref parser silently losing 92% of
+a real document's objects (an earlier phase) — and in both cases the
+common thread is the same: a test that exercises the logic beneath a
+boundary is not evidence about what crosses the boundary itself. The
+boundary here is Go code executing inside an embedded browser engine;
+nothing short of actually running it proves anything crossed correctly.
+
+**Rejected.**
+- **Trusting the F5 report's claims and only re-running its unit
+  tests.** This is exactly what let all of the above ship. `go test
+  ./...` was green throughout; none of it caught any of the four
+  defects above, because none of the existing tests created a real
+  window.
+- **Assuming the F5 report's testing claims described a deliberate lie
+  or fabrication.** Nothing found supports that: `interactive_windows.go`
+  is real, substantial, correctly-structured code, and the underlying
+  bugs are exactly the kind that manual testing under time pressure
+  plausibly misses (a hang that looks like "the flag doesn't exist" if
+  the tester's patience or timeout ran out before minutes had passed;
+  a "cancel works" claim that is true for window-close and silently
+  false for the button). The more useful lesson is procedural, not
+  characterological: CI's own construction (D-088, next) made it
+  structurally impossible for automated testing to have caught any of
+  this, so a human's manual pass was the *only* check standing between
+  these bugs and a report calling them fixed — and manual passes miss
+  things reliably, which is the entire reason this project's other
+  phases lean so heavily on automated, binary-level verification
+  (golden files, an independent CMS verifier, OpenSSL round-trips).
+
+---
+
+## D-088 — CI never built or ran a single `*_windows.go` file; added a `windows-latest` job
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** Added a second CI job, `windows`, running on
+`windows-latest`, alongside the existing `ubuntu-latest` job. It runs
+`go vet` and the full test suite with `-tags softtoken` — the same tag
+the ubuntu job's sign-digest/PDF-signing steps already depend on to
+test signing with no hardware present (F2 §3) — so the new
+`TestSettingsWindowRendersLocalisedText` and
+`TestConsentWindowRendersAndRoundTrips` (D-087) can exercise a real
+consent window, a real certificate list, and (via the soft token) a
+real completed signature, entirely inside CI.
+
+**Why.** Every one of D-087's four defects lived in a `*_windows.go`
+file or a page asset only a Windows-built binary exercises.
+`internal/ui` is a Windows-only package (SPEC §11.11's Windows-only
+scope for phases 1–10); on `ubuntu-latest`, `go build ./...` and
+`go test ./...` silently skip every file carrying a `windows` build
+constraint — not a partial check, a *complete absence* of one. The
+existing CI's "build windows/amd64" step cross-compiles the package
+(`GOOS=windows go build`) but a cross-compiled binary is never
+executed by anything, so it proves only that the Go compiler accepts
+the syntax — the exact gap that let a race condition in `Navigate`
+timing, a`CRYPT_ACQUIRE_SILENT_FLAG` omission, and a
+`JSON.stringify` double-encoding bug all ship with a fully green CI
+run. This is the direct, mechanical answer to "what changed in the
+verification approach" (D-087): it is not only that fixes are now
+checked against a running binary by hand, but that two of those
+checks are now permanent, automated, and run on every push.
+
+**Rejected.**
+- **Leaving CI as ubuntu-only and relying on manual runs before every
+  release.** This is what produced the F5 report's false claims in the
+  first place (D-087) — a manual pass is exactly the check that missed
+  all four defects once already.
+- **Running the full existing ubuntu job's steps a second time on
+  Windows (golden-file signing, fuzzing, cross-compilation).** None of
+  those exercise anything Windows-specific — they already run
+  correctly on ubuntu and gain nothing from repetition on a slower,
+  more expensive runner. The new job is deliberately narrow: vet plus
+  the full test suite (which now includes the two new window-driving
+  tests), nothing duplicated.
+- **Requiring real smart-card hardware in CI to test the consent/sign
+  window end to end.** Not available in a hosted runner, and not
+  necessary: the soft token (F2 §3) already exists precisely so the
+  signing pipeline can be exercised with no hardware, and
+  `windows-latest` ships the WebView2 Evergreen Runtime (bundled with
+  Microsoft Edge) every window in this project depends on.
+
+---
+
+## D-089 — Certificates and Audit log tray items are built, not stubbed; Open is disabled rather than silently inert
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** The tray's "Certificates" and "View audit log" items
+(previously a `slog.Info` placeholder each, doing nothing visible) now
+open real windows: `certificates.html`/`.js` lists every enumerated
+certificate using the same `consent.BuildCertificateOptions` view
+model and the same per-row rendering (name, role, issuer, thumbprint
+tail, qualified badge, disabled reason, test-key badge) the consent
+window already uses — factored into a shared `buildCertOptions`
+(`cmd/liro-bridge/ui_payloads.go`) so the two never drift apart —
+and `auditlog.html`/`.js` is a plain, newest-first list of
+`audit.Store.All()`'s entries (timestamp, outcome, application,
+document count, thumbprint tail, test-key marker), reusing the same
+`*audit.Store` the Settings window's "Export audit log" button already
+opens. "Open" remains a genuine F6 placeholder (the main drag-and-drop
+window does not exist yet) but is now added to the tray menu with
+`MF_GRAYED | MF_DISABLED`
+(`appendMenuItemDisabled`, `internal/ui/tray_windows.go`) instead of
+`appendMenuItem` — visibly present, visibly inactive, rather than
+indistinguishable from a working item that happens to do nothing.
+
+**Why.** The F5 review states the requirement directly: a menu item
+that "appears enabled and produces no response reads as a broken
+program," and names Certificates specifically as "a small window over
+data that is already computed" — true, since every field it needs
+already exists as `classify.Info`/`consent.CertificateOption`. Building
+both real windows, rather than disabling them too, follows the
+review's explicit preference ("Building them is preferred") and cost
+almost nothing beyond the certificates window given the existing
+`consent` view-model code; the audit window is new but small (SPEC
+§6.7's `audit.Entry` already carries every field the plain list needs).
+
+**Rejected.**
+- **Disabling Certificates and Audit log in the menu instead of
+  building them**, the review's own fallback option. Rejected because
+  it was strictly more expensive than building them: disabling still
+  requires touching `showMenu`, and the certificate/audit data was
+  already fully computed and rendering-ready via existing view models.
+- **A richer audit log window** (filtering, search, export button
+  inline). Rejected as scope beyond "a plain list" (the review's own
+  phrase) and beyond what Settings' existing Export button already
+  covers.
+
+---
+
+## D-090 — The tray icon is generated from `assets/signature-logo.js` via a new `scripts/genicon`, not hand-drawn or left as `IDI_APPLICATION`
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `scripts/genicon` decodes the same real Liro mark
+`scripts/genlogo` already extracts for the PDF visual stamp
+(256×256, turquoise `#038387`, raw RGB + 8-bit alpha, zlib-compressed)
+and writes a standard multi-image `.ico`
+(`internal/ui/assets/icon.ico`, embedded and committed) containing that
+mark downsampled to 16/20/24/32/40/48/64/256 px — every size Windows
+asks a tray or shell icon for across 100–200% DPI scaling — each frame
+PNG-encoded (the format every icon-loading Windows API has accepted
+inside `.ico` since Vista). Downsampling uses a hand-written
+area-weighted box filter (`boxResize`): correct, alias-free downscaling
+for a flat-shaded mark, needing nothing beyond `image`/`image/png`
+from the standard library. `internal/ui/icon_windows.go` extracts the
+embedded bytes to a stable per-user path (mirroring
+`loader_windows.go`'s `ensureLoaderExtracted` exactly) and loads it
+with `LoadImageW(..., LR_LOADFROMFILE)` at the current DPI's
+`SM_CXSMICON`/`SM_CYSMICON` size, falling back to the previous
+`IDI_APPLICATION` placeholder only if extraction or loading fails.
+
+**Why.** F5 shipped `IDI_APPLICATION` — the generic Windows application
+icon — with a comment explicitly deferring the real asset to F10's
+packaging phase; the review asks for it now, from the same source
+`genlogo` already uses, so there remains exactly one place the mark's
+pixels live. Reproducing it from `assets/signature-logo.js` rather than
+drawing a new icon by hand keeps the tray icon and the PDF stamp's logo
+provably the same mark, and keeps the asset regenerable the same way
+`genlogo`'s own doc comment already establishes as this project's
+convention for this source file.
+
+**Verified**, not merely built: `LoadImageW` (the exact API
+`loadTrayIcon` calls) was used directly, outside the running agent, to
+load every frame size from the generated file and render it to a
+bitmap — confirming the `.ico` is well-formed and Windows' real icon
+loader accepts every frame, independently of any bug in
+`icon_windows.go` itself. The running tray process was then confirmed
+to register the icon under the tooltip "Liro Bridge dev" via UI
+Automation against the live notification-area overflow flyout (a more
+reliable check than locating the icon's pixels in a screenshot, which
+Windows' overflow behaviour made unreliable during testing).
+
+**Rejected.**
+- **`System.Drawing.Icon`'s multi-size constructor as the verification
+  tool.** It threw `ArgumentOutOfRangeException` on the 256×256 PNG
+  frame specifically — a known .NET/GDI+ legacy-loader limitation with
+  large PNG-compressed ICO frames, unrelated to the file's validity:
+  `LoadImageW`, the actual Win32 API the tray uses, loads every frame,
+  including 256×256, without error. Verifying against the wrong API
+  would have reported a false failure.
+- **Embedding the icon as a Windows resource (`rsrc.syso`) instead of
+  extracting the embedded bytes to disk.** SPEC §5 already names
+  `rsrc.syso` for the *executable's own* icon/manifest, generated at
+  F10's packaging step — out of scope here, and the tray icon
+  (`Shell_NotifyIconW`) needs a loadable `HICON` at runtime regardless
+  of what the .exe's own resource section carries, so the
+  embed-then-extract approach `loader_windows.go` already established
+  for `WebView2Loader.dll` was reused rather than introducing a second
+  mechanism.
+- **Bilinear or nearest-neighbour resizing.** Rejected in favour of
+  the box filter: both alias visibly on a mark with hard geometric
+  edges at the largest downscale ratios (256→16), and a correct area-
+  weighted average costs nothing extra in a dependency-free
+  implementation.
+
+---
+
+## D-091 — TSA Basic-auth and client-certificate credentials are configuration fields, stored and transmitted the same way the CLI's equivalent flags already were
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `config.Config` gains four fields — `TSAUser`,
+`TSAPassword`, `TSAClientCertPath`, `TSAClientCertPassword` — mirroring
+the CLI's existing `--tsa-user`/`--tsa-password`/`--tsa-client-cert`/
+`--tsa-client-cert-password` flags (F3). Settings gains four
+corresponding fields (`tsa-user`, `tsa-password`, `tsa-client-cert-path`,
+`tsa-client-cert-password`), the two password fields as
+`<input type="password">`. A new `buildTSAClient` in
+`cmd/liro-bridge/interactive_windows.go` reads them into a `tsa.Auth`
+exactly the way `internal/cli.RunSign` already does for the CLI path,
+replacing `sign --interactive`'s previous `tsa.Auth{}` — always empty,
+so the interactive path silently sent no credentials at all even when
+a TSA required them.
+
+**Why.** The review's own reasoning: Pošta's public test TSA — the
+only timestamp authority actually reachable for testing (SPEC §12.7)
+— requires HTTP Basic credentials on one endpoint and a client
+certificate on the other, and production TSAs generally require a
+client certificate too. The CLI already had all four flags; Settings
+and `config.Config` did not, so a person using the agent's own window
+rather than the CLI had no way to reach a timestamp authority beyond
+Pošta's non-existent unauthenticated option. Storing them as plain
+`config.Config` fields (not behind `internal/platform`'s DPAPI-backed
+`SecretStore`) matches how `TSAURL` and every other Settings-owned
+value already persists — SPEC §6.4's DPAPI requirement is scoped
+explicitly to the API pairing device secret, not every credential the
+agent ever holds, and introducing a second, differently-secured
+storage mechanism for these four fields alone (while leaving the rest
+of `config.Config` as plain JSON) was judged more inconsistent than
+useful without a stated requirement to do so — raised here rather than
+silently assumed either way (SPEC §0).
+
+**Verified in the running binary**, not only by code inspection: typed
+a password into the Settings window, confirmed it renders masked
+(WebView2's native reveal-password eye icon present, dots shown),
+clicked Save, confirmed `config.json` on disk contains the value
+verbatim, and grepped the log file for the literal password —
+zero matches, confirming SPEC's "never appear in any log line"
+requirement holds for the actual save path, not just by inspection of
+which `slog` calls exist today.
+
+**Rejected.**
+- **Routing the TSA client-certificate password (or the Basic-auth
+  password) through `internal/platform.SecretStore`.** Rejected per
+  the "why" above: no other Settings-owned value uses it, and SPEC
+  §6.4 scopes it to the pairing secret specifically; adding it here
+  alone, with nothing else in `config.Config` following the same
+  pattern, would be a larger and more inconsistent change than the
+  task asked for.
+- **A native file picker (`GetOpenFileNameW`) for the client
+  certificate path.** Rejected as scope beyond "add all four to the
+  configuration and to Settings" — a plain text field for a path is
+  consistent with every other Settings field's own input style
+  (`tsa-url`, `output-suffix`) and required no new Win32 surface.

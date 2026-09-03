@@ -16,8 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ocsp"
+
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/keysource"
+	"github.com/veljaos/liro-bridge/internal/pades/pdf"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
 	"github.com/veljaos/liro-bridge/internal/pades/verify"
 )
@@ -67,6 +70,89 @@ func (s *fakeSession) Certificate() keysource.Certificate {
 
 func (s *fakeSession) Chain() [][]byte { return nil }
 func (s *fakeSession) Close() error    { return nil }
+
+// chainedSession is like fakeSession but its certificate is issued by a
+// separate CA rather than self-signed, and Chain() returns that CA — the
+// shape internal/pades/dss.CollectRevocation needs (signer, then its
+// issuer) to actually attempt revocation collection at all (a self-signed
+// certificate is its own excluded root and is never checked, see
+// CollectRevocation's own doc comment).
+type chainedSession struct {
+	cert  *x509.Certificate
+	key   *rsa.PrivateKey
+	caDER []byte
+}
+
+func (s *chainedSession) SignDigest(_ context.Context, alg keysource.DigestAlgorithm, digest []byte) ([]byte, error) {
+	if alg != keysource.DigestSHA256 || len(digest) != 32 {
+		return nil, fmt.Errorf("unexpected digest")
+	}
+	return rsa.SignPKCS1v15(rand.Reader, s.key, crypto.SHA256, digest)
+}
+
+func (s *chainedSession) Certificate() keysource.Certificate {
+	return keysource.Certificate{Thumbprint: "TEST", DER: s.cert.Raw}
+}
+
+func (s *chainedSession) Chain() [][]byte { return [][]byte{s.caDER} }
+func (s *chainedSession) Close() error    { return nil }
+
+// newTestCA builds a self-signed CA certificate usable to sign both a
+// leaf certificate and a CRL.
+func newTestCA(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
+	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "pades.SignDocument test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("CreateCertificate(CA): %v", err)
+	}
+	ca, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("ParseCertificate(CA): %v", err)
+	}
+	return ca, caKey
+}
+
+// newChainedSession issues a leaf certificate from ca/caKey, pointing its
+// AIA/CRL DP extensions at ocspURLs/crlURLs, and wraps it in a
+// chainedSession.
+func newChainedSession(t *testing.T, ca *x509.Certificate, caKey *rsa.PrivateKey, ocspURLs, crlURLs []string) *chainedSession {
+	t.Helper()
+	leafKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "pades.SignDocument test signer"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageContentCommitment,
+		OCSPServer:            ocspURLs,
+		CRLDistributionPoints: crlURLs,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &leafKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("CreateCertificate(leaf): %v", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("ParseCertificate(leaf): %v", err)
+	}
+	return &chainedSession{cert: leaf, key: leafKey, caDER: ca.Raw}
+}
 
 func buildMinimalPDF(t *testing.T) []byte {
 	t.Helper()
@@ -269,6 +355,249 @@ func TestSignDocumentNoTSAConfiguredFallsBackToBBWithNote(t *testing.T) {
 	}
 	if len(result.Notes) == 0 {
 		t.Fatal("no note explaining why B-T was requested but not reached")
+	}
+}
+
+// TestSignDocumentClockDriftWarningWhenTimestampDisagrees is Task 3: a
+// genTime that disagrees with the /M value (signingDate, here forced via
+// Options.Now so the test controls both sides of the comparison) by more
+// than five minutes must produce a warning — but never fail the
+// operation or alter which bytes get written beyond the timestamp itself
+// arriving normally.
+func TestSignDocumentClockDriftWarningWhenTimestampDisagrees(t *testing.T) {
+	sess := newFakeSession(t)
+	// Both times are anchored to the real time.Now() (not an arbitrary
+	// fixed date) because internal/pades/tsa.Client's own ±10-minute
+	// hard skew check (internal/pades/tsa/client.go's validateResponse)
+	// compares genTime against the real current time independently of
+	// this test — a fixed-date machineTime far from actual "now" would
+	// make that unrelated check fail first.
+	machineTime := time.Now()
+	tsaTime := machineTime.Add(7 * time.Minute) // beyond the 5-minute threshold, within the TSA client's own 10-minute skew window
+
+	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
+		RequestedLevel: LevelBT,
+		TSA:            fakeTSAClientAt(t, tsaTime),
+		Now:            machineTime,
+	})
+	if err != nil {
+		t.Fatalf("SignDocument: %v", err)
+	}
+	if result.AchievedLevel != LevelBT {
+		t.Fatalf("AchievedLevel = %s, want B-T", result.AchievedLevel)
+	}
+	if !result.ClockDriftWarning {
+		t.Fatal("ClockDriftWarning = false, want true (7 minutes of drift exceeds the 5-minute threshold)")
+	}
+	if !result.MachineTime.Equal(machineTime) {
+		t.Fatalf("MachineTime = %s, want %s", result.MachineTime, machineTime)
+	}
+	// TimestampTime round-trips through RFC 3161's GeneralizedTime
+	// encoding (whole seconds, UTC), so it is compared with a
+	// sub-second tolerance rather than exact equality.
+	if d := result.TimestampTime.Sub(tsaTime); d < -time.Second || d > time.Second {
+		t.Fatalf("TimestampTime = %s, want approximately %s", result.TimestampTime, tsaTime)
+	}
+	r := verifyResult(t, result.Bytes)
+	if len(r.Errors) > 0 || !r.SignatureOK || !r.HasTimestamp || !r.TimestampOK {
+		t.Fatalf("a clock-drift warning must never affect the signature itself: %+v errors=%v", r, r.Errors)
+	}
+}
+
+// TestSignDocumentNoClockDriftWarningWithinThreshold proves the warning
+// does not fire for ordinary, sub-threshold skew — a few seconds of
+// difference between requesting the timestamp and receiving it is
+// completely normal and must not nag the user.
+func TestSignDocumentNoClockDriftWarningWithinThreshold(t *testing.T) {
+	sess := newFakeSession(t)
+	now := time.Now()
+
+	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
+		RequestedLevel: LevelBT,
+		TSA:            fakeTSAClientAt(t, now),
+		Now:            now,
+	})
+	if err != nil {
+		t.Fatalf("SignDocument: %v", err)
+	}
+	if result.ClockDriftWarning {
+		t.Fatal("ClockDriftWarning = true, want false (genTime matches the machine clock exactly)")
+	}
+}
+
+// TestSignDocumentBLTDegradesToBTWhenRevocationTooLarge is Task 1b/1c's
+// end-to-end case: a CRL that is fetched and valid, but larger than
+// Options.MaxRevocationArtefactSize, must not be embedded — the achieved
+// level stays B-T (never a silently-overclaimed B-LT, SPEC §18.11), and
+// Result carries the specific reason (as opposed to plain OCSP/CRL
+// unavailability) so a caller can report it honestly (Task 1c).
+func TestSignDocumentBLTDegradesToBTWhenRevocationTooLarge(t *testing.T) {
+	ca, caKey := newTestCA(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tmpl := &x509.RevocationList{
+			Number:     big.NewInt(1),
+			ThisUpdate: time.Now().Add(-time.Minute),
+			NextUpdate: time.Now().Add(time.Hour),
+		}
+		der, err := x509.CreateRevocationList(rand.Reader, tmpl, ca, caKey)
+		if err != nil {
+			t.Fatalf("CreateRevocationList: %v", err)
+		}
+		_, _ = w.Write(der)
+	}))
+	defer server.Close()
+
+	sess := newChainedSession(t, ca, caKey, nil, []string{server.URL})
+
+	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
+		RequestedLevel:            LevelBLT,
+		TSA:                       fakeTSAClientAt(t, time.Now()),
+		MaxRevocationArtefactSize: 16, // any real CRL exceeds this
+	})
+	if err != nil {
+		t.Fatalf("SignDocument: %v", err)
+	}
+	if result.AchievedLevel != LevelBT {
+		t.Fatalf("AchievedLevel = %s, want B-T (B-LT must never be claimed when revocation data was skipped)", result.AchievedLevel)
+	}
+	if !result.RevocationTooLarge {
+		t.Fatal("RevocationTooLarge = false, want true")
+	}
+	if result.LargestSkippedBytes <= 16 {
+		t.Fatalf("LargestSkippedBytes = %d, want the CRL's real (larger than 16) size", result.LargestSkippedBytes)
+	}
+	if len(result.Notes) == 0 {
+		t.Fatal("no note explaining the B-T degradation")
+	}
+	// D-079: a skipped-for-size CRL means no evidence was actually
+	// obtained for embedding, so no /DSS revision is written at all —
+	// not one containing only /Certs. The reported level and reason
+	// above are unchanged by that fix; only the writing became
+	// conditional.
+	if bytes.Contains(result.Bytes, []byte("/DSS")) {
+		t.Fatal("output contains /DSS, want no DSS revision written when the only evidence was too large to embed")
+	}
+	r := verifyResult(t, result.Bytes)
+	if len(r.Errors) > 0 || !r.SignatureOK {
+		t.Fatalf("the B-T signature itself must still verify despite the skipped /DSS: %+v", r)
+	}
+}
+
+// TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence is D-079's core
+// case: no OCSP responder and no CRL distribution point at all (the "no
+// endpoint exists" branch of dss.CollectRevocation), so nothing is ever
+// collected to embed. A /DSS dictionary carrying only /Certs asserts
+// long-term validation evidence the document does not actually have —
+// the certificates are already inside the CMS — so the fix is to skip
+// the revision entirely rather than write an empty one. The achieved
+// level and its reason are unchanged (still B-T, still "OCSP/CRL
+// unavailable"); only whether a revision gets appended changes.
+func TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence(t *testing.T) {
+	ca, caKey := newTestCA(t)
+	input := buildMinimalPDF(t)
+
+	sess := newChainedSession(t, ca, caKey, nil, nil) // no OCSP, no CRL DP configured
+	result, err := SignDocument(context.Background(), input, sess, Options{
+		RequestedLevel: LevelBLT,
+		TSA:            fakeTSAClientAt(t, time.Now()),
+	})
+	if err != nil {
+		t.Fatalf("SignDocument: %v", err)
+	}
+	if result.AchievedLevel != LevelBT {
+		t.Fatalf("AchievedLevel = %s, want B-T (no revocation evidence exists to justify B-LT)", result.AchievedLevel)
+	}
+	if bytes.Contains(result.Bytes, []byte("/DSS")) {
+		t.Fatal("output contains /DSS, want no DSS revision written when there is no revocation evidence to embed")
+	}
+	if !bytes.HasPrefix(result.Bytes, input) {
+		t.Fatal("the original document bytes are not a literal prefix of the signed output")
+	}
+
+	// A plain B-T signing of the same input never attempts applyDSS at
+	// all, so its revision count is the ground truth this result's
+	// count must match exactly: the skipped-DSS case must not leave any
+	// trace of an extra revision beyond the signature itself.
+	btSess := newChainedSession(t, ca, caKey, nil, nil)
+	btResult, err := SignDocument(context.Background(), input, btSess, Options{
+		RequestedLevel: LevelBT,
+		TSA:            fakeTSAClientAt(t, time.Now()),
+	})
+	if err != nil {
+		t.Fatalf("baseline plain B-T SignDocument: %v", err)
+	}
+	if got, want := bytes.Count(result.Bytes, []byte("%%EOF")), bytes.Count(btResult.Bytes, []byte("%%EOF")); got != want {
+		t.Fatalf("%%%%EOF count = %d, want %d (same as a plain B-T signing: no extra revision beyond the signature)", got, want)
+	}
+
+	r := verifyResult(t, result.Bytes)
+	if len(r.Errors) > 0 || !r.SignatureOK || !r.HasTimestamp || !r.TimestampOK {
+		t.Fatalf("independent verification failed: %+v errors=%v", r, r.Errors)
+	}
+}
+
+// TestSignDocumentBLTAchievedWithOCSPEvidence is the complement of
+// TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence: with a fake OCSP
+// responder returning a small, valid "good" response, real revocation
+// evidence exists, so the /DSS revision is written and B-LT is reached.
+func TestSignDocumentBLTAchievedWithOCSPEvidence(t *testing.T) {
+	ca, caKey := newTestCA(t)
+	var leafCert *x509.Certificate // set below, read by the handler closure at request time
+	ocspSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respTemplate := ocsp.Response{
+			Status:       ocsp.Good,
+			SerialNumber: leafCert.SerialNumber,
+			ThisUpdate:   time.Now().Add(-time.Minute),
+			NextUpdate:   time.Now().Add(time.Hour),
+			Certificate:  ca,
+		}
+		der, err := ocsp.CreateResponse(ca, ca, respTemplate, caKey)
+		if err != nil {
+			t.Fatalf("ocsp.CreateResponse: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/ocsp-response")
+		_, _ = w.Write(der)
+	}))
+	defer ocspSrv.Close()
+
+	sess := newChainedSession(t, ca, caKey, []string{ocspSrv.URL}, nil)
+	leafCert = sess.cert
+	input := buildMinimalPDF(t)
+
+	result, err := SignDocument(context.Background(), input, sess, Options{
+		RequestedLevel: LevelBLT,
+		TSA:            fakeTSAClientAt(t, time.Now()),
+	})
+	if err != nil {
+		t.Fatalf("SignDocument: %v", err)
+	}
+	if result.AchievedLevel != LevelBLT {
+		t.Fatalf("AchievedLevel = %s, want B-LT (notes: %v)", result.AchievedLevel, result.Notes)
+	}
+	if !bytes.HasPrefix(result.Bytes, input) {
+		t.Fatal("the original document bytes are not a literal prefix of the signed output")
+	}
+
+	doc, err := pdf.Parse(result.Bytes)
+	if err != nil {
+		t.Fatalf("re-parse signed output: %v", err)
+	}
+	root, ok := doc.ResolveDict(doc.Trailer().Get(pdf.Name("Root")))
+	if !ok {
+		t.Fatal("/Root did not resolve")
+	}
+	dssDict, ok := doc.ResolveDict(root.Get(pdf.Name("DSS")))
+	if !ok {
+		t.Fatal("/DSS did not resolve, want a written DSS revision")
+	}
+	ocsps, ok := doc.Resolve(dssDict.Get(pdf.Name("OCSPs"))).(pdf.Array)
+	if !ok || len(ocsps) == 0 {
+		t.Fatalf("/DSS/OCSPs = %#v, want at least one entry", dssDict.Get(pdf.Name("OCSPs")))
+	}
+
+	r := verifyResult(t, result.Bytes)
+	if len(r.Errors) > 0 || !r.SignatureOK || !r.HasTimestamp || !r.TimestampOK {
+		t.Fatalf("independent verification failed: %+v errors=%v", r, r.Errors)
 	}
 }
 

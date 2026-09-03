@@ -1,7 +1,6 @@
 // Command liro-bridge is the entry point for the Liro Bridge desktop
-// signing agent. In this phase it supports exactly --version and --help;
-// everything else (certificates, signing, the HTTP API, the UI) arrives
-// in later phases.
+// signing agent: certs, sign, sign-digest and tray (see topLevelUsage
+// for the one-line description of each, also shown by --help).
 package main
 
 import (
@@ -19,6 +18,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/errs"
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
@@ -31,6 +31,18 @@ var (
 	commit    = "none"
 	buildDate = "unknown"
 )
+
+// containsFlag reports whether name is present among args — used only
+// to decide "sign" vs "sign --interactive" dispatch before either
+// command's own flag.Parse runs.
+func containsFlag(args []string, name string) bool {
+	for _, a := range args {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout))
@@ -58,12 +70,23 @@ func run(args []string, out io.Writer) int {
 		return runSignDigest(context.Background(), args[1:], out, os.Stderr, cfg.Locale)
 	}
 	if len(args) > 0 && args[0] == "sign" {
+		if containsFlag(args[1:], "--interactive") {
+			return runSignInteractive(context.Background(), args[1:], out, cfg.Locale, cfg)
+		}
 		return runSign(context.Background(), args[1:], out, os.Stderr, cfg.Locale)
+	}
+	if len(args) > 0 && args[0] == "tray" {
+		// F5 §3: the agent starts minimised to tray with no window. Not
+		// the bare-invocation behaviour (which stays usage-and-exit,
+		// SPEC/F0's own tested contract) — an explicit subcommand, the
+		// simplest option for something F5 does not itself name (D-0xx).
+		return runTray(cfg, version, cfg.Locale)
 	}
 
 	fs := flag.NewFlagSet("liro-bridge", flag.ContinueOnError)
 	fs.SetOutput(out)
 	showVersion := fs.Bool("version", false, "print version information and exit")
+	fs.Usage = topLevelUsage(fs, cfg.Locale)
 
 	if parseErr := fs.Parse(args); parseErr != nil {
 		if parseErr == flag.ErrHelp {
@@ -89,6 +112,7 @@ func run(args []string, out io.Writer) int {
 // (F1 §6), so it stays testable without hardware.
 func runCerts(args []string, out io.Writer, locale string) int {
 	svc := platform.NewSmartCardService()
+	cngSource := windowscng.NewSource()
 	cachePath := filepath.Join(filepath.Dir(platform.DefaultConfigFile()), "tsl-cache.xml")
 	store, err := tsl.NewFileStore(cachePath, tsl.DefaultURL, tsl.HTTPFetcher)
 	if err != nil {
@@ -98,7 +122,7 @@ func runCerts(args []string, out io.Writer, locale string) int {
 
 	deps := cli.Deps{
 		Readers:           svc.Readers,
-		AnyCardPresent:    svc.AnyCardPresent,
+		PresenceCheck:     cngSource.Presence,
 		Enumerate:         windowscng.Enumerate,
 		Store:             store,
 		ExtraCertificates: softTokenExtraCertificates,
@@ -183,4 +207,42 @@ func caCertificatesFromTSL(list *tsl.List) []*x509.Certificate {
 		}
 	}
 	return out
+}
+
+// topLevelCommands lists every liro-bridge subcommand and the
+// catalogue key for its one-line description (Task 3): certs, sign,
+// sign-digest and tray are the only four the binary actually
+// recognises (see run, above) — none of them was previously
+// discoverable from --help, which is what this list and topLevelUsage
+// fix.
+var topLevelCommands = []struct{ name, descKey string }{
+	{"certs", "cli.help_cmd_certs"},
+	{"sign", "cli.help_cmd_sign"},
+	{"sign-digest", "cli.help_cmd_sign_digest"},
+	{"tray", "cli.help_cmd_tray"},
+}
+
+// topLevelUsage returns fs.Usage for the top-level flag set: a
+// localised synopsis, every subcommand with its one-line description,
+// the flag set's own (English, from the standard library) usage block
+// — kept so the exact "Usage of liro-bridge" text existing tests assert
+// on is still present — and a pointer to each subcommand's own --help,
+// since sign --help etc. already work but were undiscoverable without
+// already knowing the subcommand's name.
+func topLevelUsage(fs *flag.FlagSet, locale string) func() {
+	return func() {
+		c := i18n.Load(locale)
+		w := fs.Output()
+		fprintln(w, c.T("cli.help_usage"))
+		fprintln(w)
+		fprintln(w, c.T("cli.help_commands_heading"))
+		for _, cmd := range topLevelCommands {
+			fprintf(w, "  %-14s %s\n", cmd.name, c.T(cmd.descKey))
+		}
+		fprintln(w)
+		fprintf(w, "Usage of %s:\n", fs.Name())
+		fs.PrintDefaults()
+		fprintln(w)
+		fprintln(w, c.T("cli.help_more"))
+	}
 }

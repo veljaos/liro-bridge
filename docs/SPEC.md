@@ -642,13 +642,17 @@ All three support OCSP, so B-LT is achievable for all of them.
 
 Note that MUP's OCSP URL appears in the **end-entity** certificate, not in the CA certificate. Read AIA from the certificate being checked.
 
-### 11.10 Hardware presence
+### 11.10 Hardware presence — decided per certificate, never once for the whole machine
 
 Certificates remain listed in the Windows certificate store **after the card is removed**. Verified: with the reader empty, both Halcom certificates still enumerate normally.
 
 > **Rule: presence is determined from `SCardListReaders` and reader state, or by attempting to open the key container. Never from the certificate being enumerable.**
 
-Getting this wrong produces the worst possible user experience: the agent offers to sign, the user clicks, enters a PIN, and fails five seconds later.
+The original wording above was ambiguous enough to permit computing presence once — "is there a card in any reader" — and applying that single answer to every hardware-backed certificate on the machine. Verified this is wrong: on a machine holding several clients' certificates (a bookkeeper's normal case, not an edge case — see §14.1), inserting one card marked *every* hardware-backed certificate as usable, including ones whose card was not present anywhere.
+
+> **The rule stated precisely: presence is a property of one certificate, not of the machine. Determine it per certificate by attempting to open that certificate's own key — this never prompts for a PIN, only signing does — and treat `NTE_BAD_KEYSET` or `SCARD_W_REMOVED_CARD` from that attempt as "this certificate's card is not present." The reader-state check (`SCardListReaders`/`AnyCardPresent`) remains — it answers a different, coarser question, "is there a reader attached at all," and keeps its own message.**
+
+Getting either check wrong produces the worst possible user experience: the agent offers to sign, the user clicks, enters a PIN, and fails five seconds later.
 
 ### 11.11 Windows provider reality
 

@@ -18,6 +18,20 @@ const (
 	scardWRemovedCard     uint32 = 0x80100069
 	nteBadKeyset          uint32 = 0x80090016
 	nteNoKey              uint32 = 0x8009000D
+
+	// scardENoSmartcard is SCARD_E_NO_SMARTCARD ("The operation requires
+	// a smart card, but no smart card is currently in the device.") —
+	// the status probePresence (conn_windows.go) measured directly on a
+	// real machine once CRYPT_ACQUIRE_SILENT_FLAG is set: without that
+	// flag, CryptAcquireCertificatePrivateKey does not fail this way at
+	// all for an absent card on some providers — it instead blocks,
+	// waiting on the very "please insert your smart card" UI silence was
+	// supposed to prevent (see cryptAcquireSilentFlag's doc comment).
+	// Recognising this status is what makes the silent probe usable: without
+	// it, an absent card here would fall through to mapStatus's generic
+	// SIGN_FAILED-shaped default and be logged as an unexpected error on
+	// every single presence check for that certificate.
+	scardENoSmartcard uint32 = 0x8010000C
 )
 
 // mapStatus converts a raw Windows/CNG status code into the errs.Code

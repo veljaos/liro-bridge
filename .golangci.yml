@@ -9,6 +9,18 @@ linters:
     - ineffassign
     - unused
     - misspell
+  settings:
+    govet:
+      # unsafeptr is disabled project-wide: internal/ui's hand-written
+      # COM vtable implementations (F5 §2.1) must reinterpret the raw
+      # "this" machine word a callback receives from foreign code as a
+      # *T — the exact pattern this analyzer exists to catch for
+      # accidental misuse, but unavoidable and correct for implementing
+      # a native callback ABI. Verified: isolating the conversion in its
+      # own helper function does not change the verdict, since the
+      # check is per-expression, not per-package. See D-080.
+      disable:
+        - unsafeptr
 
 formatters:
   enable:

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/veljaos/liro-bridge/internal/errs"
+	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/classify"
@@ -59,15 +61,21 @@ func bundledTSLList(t *testing.T) *tsl.List {
 
 var referenceTime = time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 
+// fakeDeps builds Deps whose PresenceCheck returns anyCard uniformly for
+// every certificate — that is enough for every existing test here, none
+// of which has more than one hardware-backed certificate. Task 2's own
+// discriminating test (TestGatherPresenceIsPerCertificateNotGlobal)
+// builds Deps directly instead, with a PresenceCheck that answers
+// differently per thumbprint.
 func fakeDeps(t *testing.T, certs []windowscng.Certificate, anyCard bool, store tsl.Store) Deps {
 	t.Helper()
 	return Deps{
 		Readers: func(context.Context) ([]platform.ReaderState, error) {
 			return []platform.ReaderState{{Name: "Test Reader", CardPresent: anyCard}}, nil
 		},
-		AnyCardPresent: func(context.Context) (bool, error) { return anyCard, nil },
-		Enumerate:      func(context.Context) ([]windowscng.Certificate, error) { return certs, nil },
-		Store:          store,
+		PresenceCheck: func(context.Context, keysource.Thumbprint) (bool, error) { return anyCard, nil },
+		Enumerate:     func(context.Context) ([]windowscng.Certificate, error) { return certs, nil },
+		Store:         store,
 	}
 }
 
@@ -137,6 +145,57 @@ func TestGatherIgnoresRefreshFailure(t *testing.T) {
 	}
 	if report.TSL.Source != tsl.SourceCache {
 		t.Fatalf("TSL.Source = %v, want SourceCache (unchanged by the failed refresh)", report.TSL.Source)
+	}
+}
+
+// TestGatherPresenceIsPerCertificateNotGlobal is Task 2's own reported
+// scenario: a machine with only one card in the reader nevertheless
+// reported a second, physically absent certificate as usable, because
+// presence was decided once (AnyCardPresent) and applied to every
+// hardware-backed certificate. Two certificates with the same
+// (otherwise qualified and usable) DER but different thumbprints, and a
+// PresenceCheck that answers differently per thumbprint, must produce
+// two different Usable results — not the same one twice.
+func TestGatherPresenceIsPerCertificateNotGlobal(t *testing.T) {
+	der := loadDER(t, "mup_signing.der")
+	store := &fakeStore{list: bundledTSLList(t), prov: tsl.Provenance{Source: tsl.SourceEmbedded, Sequence: 36, IssuedAt: referenceTime}}
+
+	deps := Deps{
+		Readers: func(context.Context) ([]platform.ReaderState, error) {
+			return []platform.ReaderState{{Name: "Test Reader", CardPresent: true}}, nil
+		},
+		PresenceCheck: func(_ context.Context, thumbprint keysource.Thumbprint) (bool, error) {
+			return thumbprint == "PRESENT", nil
+		},
+		Enumerate: func(context.Context) ([]windowscng.Certificate, error) {
+			return []windowscng.Certificate{
+				{Thumbprint: "PRESENT", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+				{Thumbprint: "ABSENT", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+			}, nil
+		},
+		Store: store,
+	}
+
+	report, err := Gather(context.Background(), deps, referenceTime)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	if len(report.Certificates) != 2 {
+		t.Fatalf("len(Certificates) = %d, want 2", len(report.Certificates))
+	}
+
+	byThumbprint := map[string]classify.Info{}
+	for _, row := range report.Certificates {
+		byThumbprint[row.Info.Thumbprint] = row.Info
+	}
+	if !byThumbprint["PRESENT"].Usable {
+		t.Errorf("PRESENT certificate Usable = false, want true (reason=%q)", byThumbprint["PRESENT"].NotUsableReason)
+	}
+	if byThumbprint["ABSENT"].Usable {
+		t.Fatal("ABSENT certificate Usable = true, want false — this is the exact bug Task 2 fixes: one card present marking every hardware-backed certificate usable")
+	}
+	if byThumbprint["ABSENT"].NotUsableReason != errs.CodeCardNotPresent {
+		t.Errorf("ABSENT certificate NotUsableReason = %q, want CARD_NOT_PRESENT", byThumbprint["ABSENT"].NotUsableReason)
 	}
 }
 

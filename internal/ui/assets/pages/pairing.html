@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://liro.local/tokens.css" />
+<link rel="stylesheet" href="https://liro.local/intents.css" />
+<link rel="stylesheet" href="https://liro.local/pages/pairing.css" />
+</head>
+<body>
+
+<main>
+  <p class="liro-display" id="app-name"></p>
+  <p class="liro-text-secondary">
+    <span data-i18n="pairing.wants_to_connect"></span>
+  </p>
+  <div class="liro-card liro-text-small">
+    <span data-i18n="pairing.origin_label"></span>: <code id="app-origin"></code>
+  </div>
+
+  <div class="actions">
+    <button id="deny-btn" class="liro-btn liro-btn-secondary" data-i18n="pairing.deny"></button>
+    <button id="allow-btn" class="liro-btn liro-btn-primary" data-i18n="pairing.allow"></button>
+  </div>
+</main>
+
+<script src="https://liro.local/bridge.js"></script>
+<script src="https://liro.local/pages/pairing.js"></script>
+</body>
+</html>

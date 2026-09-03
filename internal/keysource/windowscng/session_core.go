@@ -44,6 +44,42 @@ type ncryptConn interface {
 	// call this only when fCallerFree was true (F2 §2.1) — a cached
 	// handle must never be freed.
 	freeKey(key ncryptKeyHandle) error
+
+	// probePresence attempts to open the certificate's private key
+	// handle (findAndAcquire's own first step — locate the certificate,
+	// then CryptAcquireCertificatePrivateKey, which resolves to
+	// NCryptOpenKey for a CNG-backed key) without keeping it open or
+	// signing anything, purely to test whether the card is currently
+	// present (Task 2 / SPEC §11.10). Opening a key handle never prompts
+	// for a PIN — only NCryptSignHash does (F2 §2.3) — so this is
+	// silent and safe to run for every hardware-backed certificate.
+	//
+	// present is false with err == nil exactly when the underlying
+	// status was one of the two codes measured to mean "the card is not
+	// in the reader" (isCardAbsentStatus) — the normal, expected
+	// outcome for a removed card, not a failure to report. Any other
+	// error (including the certificate simply not existing) is returned
+	// as err instead of being folded into "not present".
+	probePresence(thumbprintHex string) (present bool, err error)
+}
+
+// isCardAbsentStatus reports whether status is one of the codes
+// measured to mean "this certificate's card is not currently in the
+// reader" (Task 2 / SPEC §11.10, extended by the F5 first-real-run
+// fix): NTE_BAD_KEYSET (the smart card minidriver can no longer reach
+// the key container), SCARD_W_REMOVED_CARD (the reader itself reports
+// removal), or SCARD_E_NO_SMARTCARD (the status a silent
+// CryptAcquireCertificatePrivateKey — cryptAcquireSilentFlag,
+// conn_windows.go — actually returns for an absent card on this
+// project's real test machine; without the silent flag, some providers
+// do not return this status at all for the same condition and instead
+// block on the "please insert a smart card" UI the flag exists to
+// suppress). Kept as a pure, platform-independent function — unlike the
+// DLL call that produces status — so the classification has a real unit
+// test, the same split conn_windows.go/session_core.go already uses for
+// every other piece of Windows-API logic in this package.
+func isCardAbsentStatus(status uint32) bool {
+	return status == nteBadKeyset || status == scardWRemovedCard || status == scardENoSmartcard
 }
 
 // session implements keysource.Session over a Windows CNG key handle

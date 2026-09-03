@@ -1,0 +1,298 @@
+//go:build windows
+
+package ui
+
+// Generic COM plumbing shared by every hand-written interface in this
+// package (F5 §2.1: hand-written COM interop, consistent with how F1
+// and F2 handled winscard.dll/ncrypt.dll — pure logic separated from
+// DLL glue, though here there is no "pure logic" half at all: COM
+// vtable dispatch cannot be exercised without the real WebView2 runtime,
+// so unlike windowscng there is no ...conn interface behind this file to
+// unit-test against). Every interface layout and IID used anywhere in
+// this package was read directly from the WebView2 SDK's own
+// WebView2.idl (shipped inside the Microsoft.Web.WebView2 NuGet
+// package; the redistributed loader and its licence live in
+// internal/ui/assets/webview2), not reconstructed from memory — see
+// D-080.
+//
+// Two directions of COM call happen here:
+//
+//  1. Calling INTO an interface the WebView2 runtime implements
+//     (Environment, Controller, CoreWebView2): comCall reads the
+//     vtable pointer from the object's first machine word (the
+//     universal C++/COM ABI: an interface pointer IS the address of a
+//     struct whose first field is a pointer to an array of function
+//     pointers) and invokes the method at a fixed slot index. The slot
+//     indices used throughout this package are recorded next to each
+//     call site as "IDL line N, slot K" so they can be checked against
+//     WebView2.idl directly.
+//  2. Implementing an interface the runtime calls INTO (the
+//     environment/controller-created completion handlers,
+//     WebMessageReceived, ExecuteScript's completion handler): each is
+//     a Go struct whose first field is comBase (vtbl pointer + a
+//     refcount), with a package-level, singleton vtable per kind whose
+//     function pointers are created once via syscall.NewCallback and
+//     never released — see the comment on vtable singletons below for
+//     why that is safe here.
+import (
+	"fmt"
+	"sync/atomic"
+	"syscall"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
+
+var (
+	ole32DLL = windows.NewLazySystemDLL("ole32.dll")
+
+	procCoInitializeEx = ole32DLL.NewProc("CoInitializeEx")
+	procCoUninitialize = ole32DLL.NewProc("CoUninitialize")
+	procCoTaskMemFree  = ole32DLL.NewProc("CoTaskMemFree")
+)
+
+const (
+	coinitApartmentThreaded = 0x2
+
+	sOK          = uintptr(0)
+	eNoInterface = uintptr(0x80004002)
+)
+
+// mustGUID parses a canonical "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+// GUID string. Every call site passes a compile-time constant copied
+// directly from a WebView2.idl [uuid(...)] attribute, so a parse
+// failure here can only be a transcription bug in this file — it is
+// caught immediately by TestKnownGUIDsParse rather than surfacing as a
+// mysterious E_NOINTERFACE at runtime.
+func mustGUID(s string) windows.GUID {
+	g, err := windows.GUIDFromString("{" + s + "}")
+	if err != nil {
+		panic("ui: invalid GUID literal " + s + ": " + err.Error())
+	}
+	return g
+}
+
+// IIDs, read directly from WebView2.idl's [uuid(...)] attributes
+// (D-080). Only the two actually dereferenced anywhere in this package
+// are kept: every completion/event handler this package implements is
+// only ever handed to the one WebView2 method that already knows its
+// concrete type statically (queryInterfaceThunk's own doc comment
+// explains why no handler needs its own IID recognised), and every
+// interface this package calls into is reached structurally (via
+// CreateCoreWebView2Controller's result, Controller::CoreWebView2, and
+// one explicit QueryInterface for ICoreWebView2_3) rather than by
+// looking up an IID from this table.
+var (
+	iidIUnknown       = windows.GUID{Data1: 0x00000000, Data2: 0x0000, Data3: 0x0000, Data4: [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
+	iidCoreWebView2_3 = mustGUID("a0d6df20-3b92-416d-aa0c-437a9c727857")
+)
+
+func coInitialize() error {
+	r0, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded)
+	// S_FALSE (1) means COM was already initialised on this thread with
+	// a compatible apartment; that is not an error for our purposes.
+	if int32(r0) < 0 {
+		return fmt.Errorf("CoInitializeEx: HRESULT 0x%08X", uint32(r0))
+	}
+	return nil
+}
+
+func coUninitialize() { _, _, _ = procCoUninitialize.Call() }
+
+func coTaskMemFree(p uintptr) {
+	if p != 0 {
+		_, _, _ = procCoTaskMemFree.Call(p)
+	}
+}
+
+// comBase is the first field of every COM object this package
+// implements (see the package doc comment, direction 2). Its address
+// equals the address of the whole struct, which is what makes an
+// *T holding comBase as field 0 a valid COM interface pointer.
+type comBase struct {
+	vtbl uintptr
+	refs int32
+}
+
+// simpleHandlerVtbl is the vtable shape shared by every completion/event
+// handler this package implements: IUnknown's three methods plus one
+// Invoke. WebView2's various *CompletedHandler and *EventHandler
+// interfaces (ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
+// ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,
+// ICoreWebView2WebMessageReceivedEventHandler,
+// ICoreWebView2ExecuteScriptCompletedHandler) all have exactly this
+// shape in WebView2.idl — three IUnknown methods, one Invoke — even
+// though Invoke's two non-this parameters mean different things per
+// interface. One Go struct type serves all of them; only the Invoke
+// function pointer differs per kind (see the vtable singletons below).
+type simpleHandlerVtbl struct {
+	QueryInterface uintptr
+	AddRef         uintptr
+	Release        uintptr
+	Invoke         uintptr
+}
+
+// queryInterfaceThunk, addRefThunk and releaseThunk implement IUnknown
+// generically for every object in this package: comBase is always field
+// 0, so `this` reinterpreted as *comBase is valid regardless of which
+// concrete handler type actually owns it.
+//
+// queryInterfaceThunk only ever answers for IUnknown. None of the
+// handler objects in this package are, in practice, queried by the
+// WebView2 runtime for any interface other than IUnknown (each is
+// handed to exactly one method that already knows its concrete type
+// statically) — answering only IUnknown here is the simplest correct
+// implementation for that usage pattern, not a general-purpose COM
+// object.
+func queryInterfaceThunk(this, riid, ppv uintptr) uintptr {
+	b := (*comBase)(unsafe.Pointer(this))
+	id := (*windows.GUID)(unsafe.Pointer(riid))
+	out := (*uintptr)(unsafe.Pointer(ppv))
+	if *id == iidIUnknown {
+		atomic.AddInt32(&b.refs, 1)
+		*out = this
+		return sOK
+	}
+	*out = 0
+	return eNoInterface
+}
+
+func addRefThunk(this uintptr) uintptr {
+	b := (*comBase)(unsafe.Pointer(this))
+	return uintptr(atomic.AddInt32(&b.refs, 1))
+}
+
+// releaseThunk decrements the refcount and reports it, exactly like a
+// real COM object, but never frees anything: these handler objects are
+// ordinary Go values, collected by the garbage collector once nothing
+// reachable from a Go root points at them any more. Nothing in this
+// package keeps one alive past the point its result has been consumed
+// (each caller holds its own local reference on the stack until it has
+// read the outcome — see window_windows.go), so there is no leak; there
+// is also nothing for Release to free, since freeing Go memory
+// explicitly is not a thing.
+func releaseThunk(this uintptr) uintptr {
+	b := (*comBase)(unsafe.Pointer(this))
+	return uintptr(atomic.AddInt32(&b.refs, -1))
+}
+
+// Vtable singletons: one per Invoke shape, created once and shared by
+// every instance of that handler kind. Creating the vtable once, rather
+// than once per handler instance, keeps the number of
+// syscall.NewCallback trampolines fixed and tiny (four) regardless of
+// how many windows or ExecuteScript calls happen over the agent's
+// lifetime — NewCallback trampolines are never released by the Go
+// runtime, so allocating one per call would be a real, unbounded leak
+// over a long-running tray process; allocating four for the life of the
+// program is not.
+var (
+	environmentCompletedVtbl = &simpleHandlerVtbl{
+		QueryInterface: syscall.NewCallback(queryInterfaceThunk),
+		AddRef:         syscall.NewCallback(addRefThunk),
+		Release:        syscall.NewCallback(releaseThunk),
+		Invoke:         syscall.NewCallback(environmentCompletedInvoke),
+	}
+	controllerCompletedVtbl = &simpleHandlerVtbl{
+		QueryInterface: syscall.NewCallback(queryInterfaceThunk),
+		AddRef:         syscall.NewCallback(addRefThunk),
+		Release:        syscall.NewCallback(releaseThunk),
+		Invoke:         syscall.NewCallback(controllerCompletedInvoke),
+	}
+	webMessageReceivedVtbl = &simpleHandlerVtbl{
+		QueryInterface: syscall.NewCallback(queryInterfaceThunk),
+		AddRef:         syscall.NewCallback(addRefThunk),
+		Release:        syscall.NewCallback(releaseThunk),
+		Invoke:         syscall.NewCallback(webMessageReceivedInvoke),
+	}
+	navigationCompletedVtbl = &simpleHandlerVtbl{
+		QueryInterface: syscall.NewCallback(queryInterfaceThunk),
+		AddRef:         syscall.NewCallback(addRefThunk),
+		Release:        syscall.NewCallback(releaseThunk),
+		Invoke:         syscall.NewCallback(navigationCompletedInvoke),
+	}
+	executeScriptCompletedVtbl = &simpleHandlerVtbl{
+		QueryInterface: syscall.NewCallback(queryInterfaceThunk),
+		AddRef:         syscall.NewCallback(addRefThunk),
+		Release:        syscall.NewCallback(releaseThunk),
+		Invoke:         syscall.NewCallback(executeScriptCompletedInvoke),
+	}
+)
+
+// comCall invokes the method at vtable slot index (0 = QueryInterface)
+// on obj, an interface pointer to an object the WebView2 runtime
+// implements (direction 1 in the package doc comment). obj's first
+// machine word is read as the vtable array's address, per the
+// universal C++/COM ABI — the same layout comBase gives our own
+// objects, just on the other end of the call.
+func comCall(obj uintptr, slot int, args ...uintptr) (uintptr, error) {
+	if obj == 0 {
+		return 0, fmt.Errorf("ui: comCall on a nil interface pointer (slot %d)", slot)
+	}
+	vtbl := *(*uintptr)(unsafe.Pointer(obj))
+	fn := *(*uintptr)(unsafe.Pointer(vtbl + uintptr(slot)*unsafe.Sizeof(uintptr(0))))
+	all := make([]uintptr, 0, len(args)+1)
+	all = append(all, obj)
+	all = append(all, args...)
+	r1, _, _ := syscall.SyscallN(fn, all...)
+	if int32(r1) < 0 {
+		return r1, fmt.Errorf("ui: HRESULT 0x%08X (slot %d)", uint32(r1), slot)
+	}
+	return r1, nil
+}
+
+// comRelease calls IUnknown::Release (always slot 2) on obj, ignoring
+// the returned refcount — every interface pointer this package holds
+// onto (Environment, Controller, CoreWebView2, the QueryInterface'd
+// CoreWebView2_3) is released exactly once when the window closes.
+// Release's return value is a plain refcount, not an HRESULT, but it is
+// never negative in practice, so comCall's HRESULT-shaped error check
+// never misfires on it; the error is discarded either way since there
+// is nothing a caller could do about a failed Release.
+func comRelease(obj uintptr) {
+	if obj != 0 {
+		_, _ = comCall(obj, 2)
+	}
+}
+
+// queryInterface calls IUnknown::QueryInterface (always slot 0) on obj
+// for iid, returning the resulting interface pointer. Used once, to
+// reach ICoreWebView2_3 (for SetVirtualHostNameToFolderMapping) from
+// the base ICoreWebView2 pointer CoreWebView2Controller::CoreWebView2
+// returns — see D-080 for why this project trusts the two pointers may
+// legitimately differ and always QueryInterfaces explicitly rather than
+// assuming they are numerically equal.
+func queryInterface(obj uintptr, iid windows.GUID) (uintptr, error) {
+	var out uintptr
+	iidCopy := iid
+	_, err := comCall(obj, 0, uintptr(unsafe.Pointer(&iidCopy)), uintptr(unsafe.Pointer(&out)))
+	if err != nil {
+		return 0, err
+	}
+	return out, nil
+}
+
+// utf16Ptr encodes s as a NUL-terminated UTF-16 string and returns a
+// pointer to it. The caller must runtime.KeepAlive the returned slice's
+// backing array — via the string itself is not enough, since only the
+// pointer crosses into the syscall — until the call using it returns;
+// every call site below does so explicitly.
+func utf16Ptr(s string) (*uint16, []uint16, error) {
+	u, err := windows.UTF16FromString(s)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &u[0], u, nil
+}
+
+// stringFromLPWSTR reads a NUL-terminated UTF-16 string the runtime
+// allocated with CoTaskMemAlloc (an `[out, retval] LPWSTR*` parameter,
+// e.g. WebMessageAsJson) and frees it, per the WebView2 API convention
+// documented directly above every such parameter in WebView2.idl ("The
+// caller must free the returned string with CoTaskMemFree").
+func stringFromLPWSTR(p uintptr) string {
+	if p == 0 {
+		return ""
+	}
+	defer coTaskMemFree(p)
+	return windows.UTF16PtrToString((*uint16)(unsafe.Pointer(p)))
+}

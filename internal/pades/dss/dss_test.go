@@ -119,7 +119,7 @@ func TestCollectRevocationPrefersOCSP(t *testing.T) {
 	defer os.Close()
 	leaf.OCSPServer = []string{os.URL}
 
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca})
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2 (one per certificate, ca's left empty since it is the excluded root)", len(entries))
 	}
@@ -151,7 +151,7 @@ func TestCollectRevocationFallsBackToCRL(t *testing.T) {
 	defer cs.Close()
 	leaf.CRLDistributionPoints = []string{cs.URL}
 
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca})
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
 	if len(entries) != 2 || len(entries[0].CRL) == 0 {
 		t.Fatalf("entries = %#v, want a CRL for the one non-root certificate", entries)
 	}
@@ -162,7 +162,7 @@ func TestCollectRevocationFallsBackToCRL(t *testing.T) {
 
 func TestCollectRevocationNoEndpointsYieldsEmptyEntry(t *testing.T) {
 	ca, _, leaf := buildTestChain(t, "", "")
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca})
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2", len(entries))
 	}
@@ -192,7 +192,7 @@ func TestApplyEmbedsDSSAndVRI(t *testing.T) {
 	leaf.OCSPServer = []string{os.URL}
 
 	doc, _ := buildPlaceholderDoc(t)
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca})
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
 	fakeCMS := []byte("fake cms bytes for VRI keying")
 
 	result, err := Apply(doc, fakeCMS, []*x509.Certificate{leaf, ca}, entries)
@@ -233,10 +233,83 @@ func TestApplyEmbedsDSSAndVRI(t *testing.T) {
 	}
 }
 
+// TestCollectRevocationSkipsCRLLargerThanCap is Task 1b's core case: a
+// CRL that is successfully downloaded and parses as valid is still not
+// handed back for embedding once it exceeds maxArtefactSize — the
+// discriminator is size, not validity. A small cap (rather than a real
+// multi-megabyte CRL) keeps the test fast while exercising exactly the
+// same comparison the real 30,136,214-byte MUP CRL tripped.
+func TestCollectRevocationSkipsCRLLargerThanCap(t *testing.T) {
+	ca, caKey, leaf := buildTestChain(t, "", "")
+	cs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tmpl := &x509.RevocationList{
+			Number:     big.NewInt(1),
+			ThisUpdate: time.Now().Add(-time.Minute),
+			NextUpdate: time.Now().Add(time.Hour),
+		}
+		der, err := x509.CreateRevocationList(rand.Reader, tmpl, ca, caKey)
+		if err != nil {
+			t.Fatalf("CreateRevocationList: %v", err)
+		}
+		_, _ = w.Write(der)
+	}))
+	defer cs.Close()
+	leaf.CRLDistributionPoints = []string{cs.URL}
+
+	// Fetch once with no cap to learn the real size of this test's CRL.
+	uncapped := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
+	if len(uncapped[0].CRL) == 0 {
+		t.Fatal("setup: expected a CRL to be embeddable with no cap")
+	}
+	realSize := int64(len(uncapped[0].CRL))
+
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, realSize-1)
+	if len(entries[0].CRL) != 0 {
+		t.Fatal("CRL returned despite exceeding the cap")
+	}
+	if !entries[0].TooLarge {
+		t.Fatal("TooLarge = false, want true (the CRL was fetched but exceeded the cap)")
+	}
+	if entries[0].SkippedBytes != realSize {
+		t.Fatalf("SkippedBytes = %d, want %d (the CRL's actual size)", entries[0].SkippedBytes, realSize)
+	}
+}
+
+// TestCollectRevocationDefaultCapIs5MB pins Task 1b's specific number so
+// a future change to the default cannot drift silently.
+func TestCollectRevocationDefaultCapIs5MB(t *testing.T) {
+	if DefaultMaxArtefactSize != 5*1024*1024 {
+		t.Fatalf("DefaultMaxArtefactSize = %d, want 5 MiB (Task 1b's measured default)", DefaultMaxArtefactSize)
+	}
+}
+
+func TestApplyReportsTooLargeReason(t *testing.T) {
+	ca, _, leaf := buildTestChain(t, "", "")
+	doc, _ := buildPlaceholderDoc(t)
+	entries := []Entry{
+		{Certificate: leaf, TooLarge: true, SkippedBytes: 30136214},
+		{Certificate: ca},
+	}
+
+	result, err := Apply(doc, []byte("cms"), []*x509.Certificate{leaf, ca}, entries)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if result.Complete {
+		t.Fatal("Complete = true, want false")
+	}
+	if !result.TooLarge {
+		t.Fatal("TooLarge = false, want true (Task 1c needs to distinguish this from plain unavailability)")
+	}
+	if result.LargestSkippedBytes != 30136214 {
+		t.Fatalf("LargestSkippedBytes = %d, want 30136214", result.LargestSkippedBytes)
+	}
+}
+
 func TestApplyIncompleteWhenCollectionFails(t *testing.T) {
 	ca, _, leaf := buildTestChain(t, "", "") // no OCSP/CRL configured
-	doc, _ := buildPlaceholderDoc(t)
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca})
+	doc, src := buildPlaceholderDoc(t)
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
 
 	result, err := Apply(doc, []byte("cms"), []*x509.Certificate{leaf, ca}, entries)
 	if err != nil {
@@ -244,5 +317,43 @@ func TestApplyIncompleteWhenCollectionFails(t *testing.T) {
 	}
 	if result.Complete {
 		t.Fatal("Complete = true, want false (no evidence was collected for the signer certificate)")
+	}
+	if result.TooLarge {
+		t.Fatal("TooLarge = true, want false (nothing was fetched at all here, so this is plain unavailability, not an oversized artefact)")
+	}
+	// D-079: no OCSP and no CRL for any certificate means nothing gets
+	// embedded, so Apply must not write a revision at all — Bytes stays
+	// doc's own original, unmodified bytes.
+	if !bytes.Equal(result.Bytes, src) {
+		t.Fatal("Bytes != doc's original bytes, want no revision written when there is no revocation evidence at all")
+	}
+}
+
+// TestApplyWritesNoRevisionWhenAllEntriesAreTooLarge is D-079's other
+// no-evidence case: every entry has OCSP/CRL evidence that was fetched
+// but discarded for exceeding the size cap (TooLarge), not simply
+// missing. A /DSS carrying only /Certs is exactly as unjustified in
+// this case as in the plain-unavailability one, so Apply must still
+// skip writing the revision.
+func TestApplyWritesNoRevisionWhenAllEntriesAreTooLarge(t *testing.T) {
+	ca, _, leaf := buildTestChain(t, "", "")
+	doc, src := buildPlaceholderDoc(t)
+	entries := []Entry{
+		{Certificate: leaf, TooLarge: true, SkippedBytes: 30136214},
+		{Certificate: ca},
+	}
+
+	result, err := Apply(doc, []byte("cms"), []*x509.Certificate{leaf, ca}, entries)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if result.Complete {
+		t.Fatal("Complete = true, want false")
+	}
+	if !result.TooLarge {
+		t.Fatal("TooLarge = false, want true")
+	}
+	if !bytes.Equal(result.Bytes, src) {
+		t.Fatal("Bytes != doc's original bytes, want no revision written when the only evidence was too large to embed")
 	}
 }

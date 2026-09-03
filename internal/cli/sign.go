@@ -56,6 +56,7 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 	tsaP12Password := fs.String("tsa-client-cert-password", "", "TSA TLS client certificate password")
 	onTSAFailure := fs.String("on-tsa-failure", "abort", "abort or b-b")
 	reserve := fs.Int("reserve", 0, "bytes reserved for /Contents (default 32768)")
+	maxRevocationSize := fs.Int64("max-revocation-size", 0, "largest CRL/OCSP response embedded into /DSS, in bytes (default 5242880 = 5 MB; Task 1b)")
 	force := fs.Bool("force", false, "overwrite an existing output file")
 	stamp := fs.Bool("stamp", false, "add a visible signature stamp (F4); off by default")
 	stampPosition := fs.String("stamp-position", "", "bottom-right (default) | bottom-left | top-right | top-left")
@@ -163,7 +164,7 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 		if out == "" {
 			out = defaultOutputPath(in)
 		}
-		if err := signOneFile(ctx, in, out, *force, session, client, requestedLevel, abortOnTSAFailure, *reserve, deps.TrustStore, stampOpts, stdout, stderr, c); err != nil {
+		if err := signOneFile(ctx, in, out, *force, session, client, requestedLevel, abortOnTSAFailure, *reserve, *maxRevocationSize, deps.TrustStore, stampOpts, stdout, stderr, c); err != nil {
 			failures++
 			fprintln(stderr, "liro-bridge: sign:", in+":", errMessage(err, c))
 			if len(files) == 1 {
@@ -184,7 +185,7 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 	return 0
 }
 
-func signOneFile(ctx context.Context, in, out string, force bool, session keysource.Session, client *tsa.Client, level pades.Level, abortOnTSAFailure bool, reserve int, trustStore []*x509.Certificate, stamp *pades.StampOptions, stdout, stderr io.Writer, c *i18n.Catalogue) error {
+func signOneFile(ctx context.Context, in, out string, force bool, session keysource.Session, client *tsa.Client, level pades.Level, abortOnTSAFailure bool, reserve int, maxRevocationSize int64, trustStore []*x509.Certificate, stamp *pades.StampOptions, stdout, stderr io.Writer, c *i18n.Catalogue) error {
 	if !force {
 		if _, err := os.Stat(out); err == nil {
 			return errors.New(c.T("sign.output_exists"))
@@ -196,13 +197,14 @@ func signOneFile(ctx context.Context, in, out string, force bool, session keysou
 	}
 
 	result, err := pades.SignDocument(ctx, pdfBytes, session, pades.Options{
-		ReservedBytes:     reserve,
-		RequestedLevel:    level,
-		OnTSAFailureAbort: abortOnTSAFailure,
-		TSA:               client,
-		TrustStore:        trustStore,
-		Now:               time.Now(),
-		Stamp:             stamp,
+		ReservedBytes:             reserve,
+		RequestedLevel:            level,
+		OnTSAFailureAbort:         abortOnTSAFailure,
+		TSA:                       client,
+		TrustStore:                trustStore,
+		Now:                       time.Now(),
+		Stamp:                     stamp,
+		MaxRevocationArtefactSize: maxRevocationSize,
 	})
 	if err != nil {
 		return err
@@ -213,14 +215,47 @@ func signOneFile(ctx context.Context, in, out string, force bool, session keysou
 	}
 
 	fprintln(stdout, c.T("sign.signed_label"), out)
-	levelLine := string(result.AchievedLevel)
-	if len(result.Notes) > 0 {
-		levelLine += "  (" + strings.Join(result.Notes, "; ") + ")"
-	}
-	fprintln(stdout, " ", c.T("sign.level_label"), levelLine)
+	fprintln(stdout, " ", c.T("sign.level_label"), levelLine(result, c))
 	fprintln(stdout, " ", c.T("sign.certificate_label"), thumbprintTail(session.Certificate().Thumbprint))
 	printTestKeyWarning(stderr, session, c)
+	printClockDriftWarning(stderr, result, c)
 	return nil
+}
+
+// levelLine builds the text shown after "Level:" (Task 1c): the achieved
+// level plus, when there is one, a parenthesised explanation.
+// RevocationTooLarge gets its own localised, specific message — not the
+// English Notes sentence (SPEC §9.2 reserves English for logs) — naming
+// what happened and why, exactly as the task requires; every other
+// degradation still uses the existing (English-only) Notes join.
+func levelLine(result *pades.Result, c *i18n.Catalogue) string {
+	line := string(result.AchievedLevel)
+	switch {
+	case result.RevocationTooLarge:
+		line += "  (" + fmt.Sprintf(c.T("sign.revocation_too_large"), formatBytesApprox(result.LargestSkippedBytes)) + ")"
+	case len(result.Notes) > 0:
+		line += "  (" + strings.Join(result.Notes, "; ") + ")"
+	}
+	return line
+}
+
+// formatBytesApprox renders n as whole megabytes for Task 1c's message
+// ("Revocation data was too large to embed (32 MB)") — precise enough to
+// be useful, without a fractional MB a user has no reason to care about.
+func formatBytesApprox(n int64) string {
+	return fmt.Sprintf("%.0f MB", float64(n)/(1024*1024))
+}
+
+// printClockDriftWarning prints Task 3's localised warning when the
+// timestamp's genTime and the machine clock (the /M value) disagreed by
+// more than five minutes. Like printTestKeyWarning, this is advisory
+// output on stderr — it never affects the exit code or the file written.
+func printClockDriftWarning(w io.Writer, result *pades.Result, c *i18n.Catalogue) {
+	if !result.ClockDriftWarning {
+		return
+	}
+	fprintln(w, fmt.Sprintf(c.T("sign.clock_drift_warning"),
+		result.MachineTime.Format(time.RFC3339), result.TimestampTime.Format(time.RFC3339)))
 }
 
 func parseLevel(s string) (pades.Level, bool) {

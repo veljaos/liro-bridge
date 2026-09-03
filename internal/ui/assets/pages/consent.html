@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://liro.local/tokens.css" />
+<link rel="stylesheet" href="https://liro.local/intents.css" />
+<link rel="stylesheet" href="https://liro.local/pages/consent.css" />
+</head>
+<body>
+
+<main id="state-waiting">
+  <p class="liro-display" id="signer-name"></p>
+  <p class="liro-text-secondary" id="document-count"></p>
+
+  <div id="select-prompt" class="liro-text-small" data-i18n="consent.select_certificate_prompt"></div>
+  <div id="no-usable-cert" class="liro-text-small" hidden data-i18n="consent.no_usable_certificate"></div>
+
+  <section id="cert-list" role="listbox" aria-label="Certificates"></section>
+
+  <div class="liro-row secondary-row">
+    <span class="liro-text-secondary" data-i18n="consent.application_label"></span>
+    <span class="liro-text-secondary" id="application-name"></span>
+  </div>
+
+  <details class="liro-disclosure" id="details">
+    <summary data-i18n="consent.details_toggle"></summary>
+    <div class="liro-card liro-text-small">
+      <div class="liro-row">
+        <span data-i18n="consent.fingerprint_label"></span>
+        <code id="fingerprint"></code>
+      </div>
+      <div data-i18n="consent.files_label"></div>
+      <ul id="file-list"></ul>
+      <div id="file-overflow"></div>
+    </div>
+  </details>
+
+  <div class="actions">
+    <button id="cancel-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.cancel"></button>
+    <button id="approve-btn" class="liro-btn liro-btn-primary" data-i18n="consent.approve" disabled></button>
+  </div>
+</main>
+
+<main id="state-preparing" hidden>
+  <p class="liro-heading" data-i18n="consent.state_preparing_card"></p>
+  <div class="liro-progress liro-progress-indeterminate"><span></span></div>
+</main>
+
+<main id="state-signing" hidden>
+  <p class="liro-heading" id="signing-label"></p>
+  <div class="liro-progress"><span id="signing-bar" style="width:0%"></span></div>
+  <p id="eta" class="liro-text-small"></p>
+  <p id="per-signature-warning" class="liro-text-small" hidden data-i18n="consent.per_signature_pin_warning"></p>
+</main>
+
+<main id="state-done" hidden>
+  <p class="liro-display" data-i18n="consent.state_done"></p>
+  <p id="done-summary"></p>
+  <p id="done-output" class="liro-text-small"></p>
+  <div class="actions">
+    <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="consent.close"></button>
+  </div>
+</main>
+
+<main id="state-failed" hidden>
+  <p class="liro-display" data-i18n="consent.state_failed"></p>
+  <p id="failed-message" class="liro-error-box"></p>
+  <div class="actions">
+    <button id="copy-details-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.copy_technical_details"></button>
+    <button id="close-failed-btn" class="liro-btn liro-btn-primary" data-i18n="consent.close"></button>
+  </div>
+</main>
+
+<script src="https://liro.local/bridge.js"></script>
+<script src="https://liro.local/pages/consent.js"></script>
+</body>
+</html>

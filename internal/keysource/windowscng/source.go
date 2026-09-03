@@ -47,3 +47,22 @@ func (s Source) Open(ctx context.Context, thumbprint keysource.Thumbprint) (keys
 	}
 	return openSession(conn, thumbprint, s.windowHandle)
 }
+
+// Presence reports whether the hardware backing one certificate is
+// currently present (Task 2 / SPEC §11.10): unlike a machine-wide "is any
+// card in any reader" answer, this is evaluated per certificate, by
+// attempting to open its own key — silently, since opening a key never
+// prompts for a PIN (F2 §2.3) — so a certificate whose card has been
+// removed is reported CARD_NOT_PRESENT on its own, rather than every
+// hardware-backed certificate sharing one answer because some other card
+// happens to be in some other reader.
+func (s Source) Presence(ctx context.Context, thumbprint keysource.Thumbprint) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	conn := s.conn
+	if conn == nil {
+		conn = newConn()
+	}
+	return conn.probePresence(string(thumbprint))
+}

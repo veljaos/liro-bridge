@@ -37,6 +37,16 @@ const (
 	LevelBLT Level = "B-LT"
 )
 
+// clockDriftWarnThreshold is Task 3's threshold for warning that the
+// signer's machine clock (the /M value) disagrees with the qualified
+// timestamp's genTime. This is deliberately below the TSA client's own
+// ±10-minute hard skew window (internal/pades/tsa.maxSkew): that check
+// protects the timestamp's own trustworthiness and aborts the whole
+// operation when tripped; this one exists purely to tell the user their
+// clock looks wrong before it embarrasses them on more documents, so it
+// fires earlier and never blocks anything.
+const clockDriftWarnThreshold = 5 * time.Minute
+
 // Options configures SignDocument (F3 §9).
 type Options struct {
 	// ReservedBytes is the /Contents reservation. Zero means
@@ -79,6 +89,13 @@ type Options struct {
 	// is completely unchanged in that case, byte for byte (F4 §6),
 	// because every line that reads opts.Stamp is skipped entirely.
 	Stamp *StampOptions
+
+	// MaxRevocationArtefactSize caps how large a single OCSP response or
+	// CRL embedded into /DSS may be (Task 1b). Zero or negative means
+	// dss.DefaultMaxArtefactSize (5 MB) — see that constant's own
+	// comment for the measurement (a real MUP CRL: 30,136,214 bytes)
+	// that motivates the default.
+	MaxRevocationArtefactSize int64
 }
 
 // StampOptions configures the visual signature stamp (F4 §7's CLI
@@ -113,10 +130,37 @@ type StampOptions struct {
 // explaining any degradation. Notes are for local CLI/log output, not
 // an API boundary — SPEC §7's "codes, not sentences" governs
 // internal/api's future HTTP surface, which this phase does not build.
+// Notes is English-only (SPEC §9.2: log content is never localised);
+// RevocationTooLarge and ClockDriftWarning below exist alongside it
+// specifically so a caller that *does* localise its own output (the
+// CLI, SPEC §9.2) has the structured facts (a byte count, two times) to
+// build that message in the user's locale, rather than displaying an
+// English Notes sentence — this package has no access to internal/i18n
+// (see StampOptions.Label's doc comment for the same reasoning).
 type Result struct {
 	Bytes         []byte
 	AchievedLevel Level
 	Notes         []string
+
+	// RevocationTooLarge is true when B-LT was requested but at least
+	// one certificate's OCSP response or CRL exceeded
+	// Options.MaxRevocationArtefactSize and was therefore not embedded
+	// (Task 1b/1c) — the achieved level is B-T, and this is why, as
+	// opposed to no revocation endpoint answering at all.
+	// LargestSkippedBytes is the biggest single skipped artefact's size.
+	RevocationTooLarge  bool
+	LargestSkippedBytes int64
+
+	// ClockDriftWarning is true when the timestamp's genTime differed
+	// from the signer's machine clock (the /M value written into the
+	// signature dictionary, captured before the TSA round trip) by more
+	// than clockDriftWarnThreshold (Task 3). It is a warning, never a
+	// failure: the document is saved exactly as it would have been
+	// otherwise. MachineTime and TimestampTime are the two values
+	// compared, so a caller can name both.
+	ClockDriftWarning bool
+	MachineTime       time.Time
+	TimestampTime     time.Time
 }
 
 // SignDocument signs pdfBytes with session, on the document's first
@@ -207,6 +251,28 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 		case tsaErr == nil:
 			builder.AddUnsignedAttribute(cms.OIDSignatureTimeStampToken, resp.TokenDER)
 			result.AchievedLevel = LevelBT
+			// Task 3: the /M value (signingDate) was fixed before this
+			// round trip even began — it is the signer's own machine
+			// clock, unverified. Now that a qualified timestamp exists,
+			// compare the two: a document whose visible stamp date and
+			// cryptographically attested time disagree by more than a
+			// few minutes means the machine clock is wrong, and the
+			// user should find out now, not after a hundred more
+			// documents carry the same wrong date. This never fails the
+			// operation — it is a warning attached to an otherwise
+			// successful result (SPEC's stamp-clock decision, docs/decisions.md).
+			drift := resp.GenTime.Sub(signingDate)
+			if drift < 0 {
+				drift = -drift
+			}
+			if drift > clockDriftWarnThreshold {
+				result.ClockDriftWarning = true
+				result.MachineTime = signingDate
+				result.TimestampTime = resp.GenTime
+				result.Notes = append(result.Notes, fmt.Sprintf(
+					"machine clock reads %s but the timestamp reads %s (drift %s)",
+					signingDate.Format(time.RFC3339), resp.GenTime.Format(time.RFC3339), drift.Round(time.Second)))
+			}
 		case opts.OnTSAFailureAbort:
 			return nil, errs.New(classifyTSAError(tsaErr), tsaErr)
 		default:
@@ -224,7 +290,7 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 	result.Bytes = ph.Bytes
 
 	if result.AchievedLevel == LevelBT && opts.RequestedLevel == LevelBLT {
-		applyDSS(ctx, result, cmsDER, signerCert, chain)
+		applyDSS(ctx, result, cmsDER, signerCert, chain, opts.MaxRevocationArtefactSize)
 	}
 
 	return result, nil
@@ -351,15 +417,18 @@ func classifyTSAError(err error) errs.Code {
 
 // applyDSS attempts F3 §7's B-LT upgrade in place on result, degrading
 // to B-T with a note on any failure rather than returning an error —
-// DSS embedding is best-effort by design (F3 §7.3).
-func applyDSS(ctx context.Context, result *Result, cmsDER []byte, signerCert *x509.Certificate, chain []*x509.Certificate) {
+// DSS embedding is best-effort by design (F3 §7.3). maxArtefactSize is
+// Options.MaxRevocationArtefactSize, forwarded to
+// dss.CollectRevocation (Task 1b); zero or negative means
+// dss.DefaultMaxArtefactSize.
+func applyDSS(ctx context.Context, result *Result, cmsDER []byte, signerCert *x509.Certificate, chain []*x509.Certificate, maxArtefactSize int64) {
 	doc, err := pdf.Parse(result.Bytes)
 	if err != nil {
 		result.Notes = append(result.Notes, fmt.Sprintf("B-LT requested; re-parsing for DSS failed: %v", err))
 		return
 	}
 	allCerts := append([]*x509.Certificate{signerCert}, chain...)
-	entries := dss.CollectRevocation(ctx, allCerts)
+	entries := dss.CollectRevocation(ctx, allCerts, maxArtefactSize)
 	dssResult, err := dss.Apply(doc, cmsDER, allCerts, entries)
 	if err != nil {
 		result.Notes = append(result.Notes, fmt.Sprintf("B-LT requested; embedding /DSS failed: %v", err))
@@ -368,6 +437,18 @@ func applyDSS(ctx context.Context, result *Result, cmsDER []byte, signerCert *x5
 	result.Bytes = dssResult.Bytes
 	if dssResult.Complete {
 		result.AchievedLevel = LevelBLT
+		return
+	}
+	if dssResult.TooLarge {
+		// Task 1c: the achieved level is B-T, and the reason must be
+		// reported honestly, not folded into the generic "unavailable"
+		// message below — this Note stays English-only (SPEC §9.2); the
+		// structured RevocationTooLarge/LargestSkippedBytes fields on
+		// Result are what a localising caller (the CLI) actually uses.
+		result.RevocationTooLarge = true
+		result.LargestSkippedBytes = dssResult.LargestSkippedBytes
+		result.Notes = append(result.Notes, fmt.Sprintf(
+			"revocation data too large to embed (%d bytes); saved at B-T", dssResult.LargestSkippedBytes))
 		return
 	}
 	result.Notes = append(result.Notes, "B-LT requested; OCSP/CRL unavailable for at least one certificate")

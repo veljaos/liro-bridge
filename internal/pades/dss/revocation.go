@@ -25,13 +25,47 @@ const (
 	maxCRLSize          = 64 * 1024 * 1024
 )
 
+// DefaultMaxArtefactSize is the largest single OCSP response or CRL this
+// package will embed into a document's /DSS dictionary (Task 1b). Zero or
+// negative passed to CollectRevocation means "use this".
+//
+// Measured directly, against a real MUP Gradjani CA 4 certificate: MUP's
+// OCSP responder (http://ocsp.mup.gov.rs/MUPGradjaniCAocsp, from the
+// certificate's own AIA per SPEC §11.9) does not answer at all — TCP
+// connections to ocsp.mup.gov.rs on both port 80 and 443 time out after
+// 10-20s, repeatedly, while ca.mup.gov.rs (the CRL host on the same
+// domain) accepts a connection immediately. This is the responder being
+// unreachable at the network level, not a bug in this project's OCSP
+// client — see docs/decisions.md. The code therefore falls back to
+// MUPGradjaniCA4.crl: the revocation list for every Serbian identity
+// card, which measured exactly 30,136,214 bytes. Embedding that CRL
+// produced a 30,813,989-byte PDF that Adobe Acrobat could not open at
+// all; the same document signed at B-T (no /DSS) was 673,111 bytes and
+// opened normally. 5 MB is comfortably above any OCSP response or any
+// CRL scoped to something short of "every card the state has issued",
+// and comfortably below the point where embedding one makes a document
+// unusable.
+const DefaultMaxArtefactSize = 5 * 1024 * 1024
+
 // Entry is one certificate's collected revocation evidence: an OCSP
-// response if one could be obtained, else a CRL. Both nil means
-// collection failed for this certificate entirely.
+// response if one could be obtained, else a CRL. All three of
+// OCSPResponse, CRL and TooLarge false/empty means collection failed for
+// this certificate entirely (no responder answered, no CRL could be
+// fetched) — a caller-visible different situation from TooLarge, which
+// means evidence *was* obtained but exceeded the size cap and was
+// deliberately not embedded (Task 1b/1c).
 type Entry struct {
 	Certificate  *x509.Certificate
 	OCSPResponse []byte // DER
 	CRL          []byte // DER
+
+	// TooLarge is true when a CRL or OCSP response was actually fetched
+	// and validated but exceeded the configured size cap, so it was
+	// discarded rather than embedded. SkippedBytes is that artefact's
+	// size — needed by a caller reporting why B-LT was not reached
+	// (Task 1c: "Revocation data was too large to embed (32 MB)").
+	TooLarge     bool
+	SkippedBytes int64
 }
 
 // CollectRevocation fetches revocation evidence for every certificate
@@ -43,12 +77,21 @@ type Entry struct {
 // issuer is therefore unknown here — it was excluded as the root — so
 // it is skipped rather than guessed at.
 //
+// maxArtefactSize caps how large a single OCSP response or CRL may be
+// before this function refuses to hand it back for embedding (Task 1b).
+// Zero or negative means DefaultMaxArtefactSize.
+//
 // A certificate with no OCSP responder and no CRL distribution point,
 // or one whose endpoints all fail, is not an error: it simply
 // contributes no Entry, and the caller (F3 §7.3) reports the resulting
 // level as B-T rather than claiming B-LT for a document some of whose
-// certificates have no embedded revocation evidence.
-func CollectRevocation(ctx context.Context, certs []*x509.Certificate) []Entry {
+// certificates have no embedded revocation evidence. The same is true,
+// with a more specific reason, when evidence exists but is too large
+// (Entry.TooLarge).
+func CollectRevocation(ctx context.Context, certs []*x509.Certificate, maxArtefactSize int64) []Entry {
+	if maxArtefactSize <= 0 {
+		maxArtefactSize = DefaultMaxArtefactSize
+	}
 	out := make([]Entry, len(certs))
 	for i, cert := range certs {
 		out[i] = Entry{Certificate: cert}
@@ -56,10 +99,30 @@ func CollectRevocation(ctx context.Context, certs []*x509.Certificate) []Entry {
 			continue // no issuer available (it was the excluded root): leave empty
 		}
 		issuer := certs[i+1]
-		if resp := fetchOCSP(ctx, cert, issuer); resp != nil {
+
+		if resp, skipped := fetchOCSP(ctx, cert, issuer, maxArtefactSize); resp != nil {
 			out[i].OCSPResponse = resp
-		} else if crl := fetchCRL(ctx, cert); crl != nil {
+			continue
+		} else if skipped > 0 {
+			// An oversized OCSP response is not expected in practice —
+			// real responses are a few KB — but is handled the same way
+			// as an oversized CRL for symmetry. This project does not
+			// additionally try a CRL after an oversized OCSP response:
+			// a responder returning megabytes of OCSP data is anomalous
+			// enough on its own, and trying every remaining fallback
+			// after every possible oversized artefact multiplies this
+			// function's cases for a scenario that has never been
+			// measured to occur.
+			out[i].TooLarge = true
+			out[i].SkippedBytes = skipped
+			continue
+		}
+
+		if crl, skipped := fetchCRL(ctx, cert, maxArtefactSize); crl != nil {
 			out[i].CRL = crl
+		} else if skipped > 0 {
+			out[i].TooLarge = true
+			out[i].SkippedBytes = skipped
 		}
 	}
 	return out
@@ -67,14 +130,16 @@ func CollectRevocation(ctx context.Context, certs []*x509.Certificate) []Entry {
 
 // fetchOCSP tries every OCSP responder URL the certificate's AIA
 // extension names, up to ocspAttempts times each, with a ocspTimeout
-// per attempt.
-func fetchOCSP(ctx context.Context, cert, issuer *x509.Certificate) []byte {
+// per attempt. skipped is non-zero only when a response was obtained and
+// validated but exceeded maxArtefactSize (Task 1b) — in which case resp
+// is nil and the certificate's OCSP evidence is not embedded.
+func fetchOCSP(ctx context.Context, cert, issuer *x509.Certificate, maxArtefactSize int64) (resp []byte, skipped int64) {
 	if len(cert.OCSPServer) == 0 {
-		return nil
+		return nil, 0
 	}
 	reqDER, err := ocsp.CreateRequest(cert, issuer, nil)
 	if err != nil {
-		return nil
+		return nil, 0
 	}
 	for _, url := range cert.OCSPServer {
 		for attempt := 0; attempt < ocspAttempts; attempt++ {
@@ -85,15 +150,21 @@ func fetchOCSP(ctx context.Context, cert, issuer *x509.Certificate) []byte {
 			if _, err := ocsp.ParseResponseForCert(body, cert, issuer); err != nil {
 				continue // malformed or not-for-this-cert: try again/next
 			}
-			return body
+			if int64(len(body)) > maxArtefactSize {
+				return nil, int64(len(body))
+			}
+			return body, 0
 		}
 	}
-	return nil
+	return nil, 0
 }
 
 // fetchCRL tries every CRL distribution point the certificate names,
-// once each, with crlTimeout.
-func fetchCRL(ctx context.Context, cert *x509.Certificate) []byte {
+// once each, with crlTimeout. skipped is non-zero only when a CRL was
+// downloaded and parsed successfully but exceeded maxArtefactSize (Task
+// 1b: MUP Gradjani CA 4's CRL measured 30,136,214 bytes) — in which case
+// crl is nil and the certificate's CRL evidence is not embedded.
+func fetchCRL(ctx context.Context, cert *x509.Certificate, maxArtefactSize int64) (crl []byte, skipped int64) {
 	for _, url := range cert.CRLDistributionPoints {
 		body, err := getWithTimeout(ctx, url, crlTimeout, maxCRLSize)
 		if err != nil {
@@ -102,9 +173,12 @@ func fetchCRL(ctx context.Context, cert *x509.Certificate) []byte {
 		if _, err := x509.ParseRevocationList(body); err != nil {
 			continue // not a parseable CRL: do not embed it
 		}
-		return body
+		if int64(len(body)) > maxArtefactSize {
+			return nil, int64(len(body))
+		}
+		return body, 0
 	}
-	return nil
+	return nil, 0
 }
 
 func postWithTimeout(ctx context.Context, url, contentType string, body []byte, timeout time.Duration, maxResp int64) ([]byte, error) {

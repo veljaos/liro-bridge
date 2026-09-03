@@ -176,7 +176,7 @@ func TestSignDigestPropagatesOpenErrorAsLocalisedCode(t *testing.T) {
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero when Open fails")
 	}
-	if !strings.Contains(stderr.String(), "The card is not in the reader.") {
+	if !strings.Contains(stderr.String(), "Insert your card into the reader.") {
 		t.Fatalf("expected the localised CARD_NOT_PRESENT message, got: %s", stderr.String())
 	}
 }

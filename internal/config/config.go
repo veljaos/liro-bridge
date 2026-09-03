@@ -23,6 +23,49 @@ type Config struct {
 	// PortRangeStart and PortRangeEnd bound the loopback listener search.
 	PortRangeStart int `json:"portRangeStart"`
 	PortRangeEnd   int `json:"portRangeEnd"`
+
+	// StartWithWindows controls the HKCU autostart registration (F5
+	// §3/§7). Defaults on — SPEC's product shape is a background agent
+	// that is simply there, not something the user remembers to launch.
+	StartWithWindows bool `json:"startWithWindows"`
+
+	// TSAURL is the configured timestamp authority (F5 §7). Empty means
+	// "none configured" — D-067 (F3) already established that sign
+	// fails rather than falling back to a hard-coded default endpoint
+	// when a level is requested and no TSA is set; this field is what
+	// the settings window writes.
+	TSAURL string `json:"tsaURL"`
+
+	// TSAUser and TSAPassword are HTTP Basic credentials for TSAURL
+	// (Task 6, F5 review): SPEC §12.7's Pošta test endpoint requires
+	// them, and the CLI has carried --tsa-user/--tsa-password since F3
+	// — this is that same credential pair, reachable from Settings.
+	// Empty means no Basic auth header is sent. Never logged: see
+	// tray_windows.go's handleSettingsAction, which only ever logs a
+	// save failure's error, not the Config value itself.
+	TSAUser     string `json:"tsaUser"`
+	TSAPassword string `json:"tsaPassword"`
+
+	// TSAClientCertPath and TSAClientCertPassword configure TLS client
+	// certificate authentication (Task 6): a PKCS#12 file and its
+	// password, matching the CLI's --tsa-client-cert/
+	// --tsa-client-cert-password (SPEC §12.7's second Pošta test
+	// endpoint exercises this; production TSAs generally require it).
+	// Empty means no client certificate is presented.
+	TSAClientCertPath     string `json:"tsaClientCertPath"`
+	TSAClientCertPassword string `json:"tsaClientCertPassword"`
+
+	// OutputSuffix is F3 §12.11's default-output-naming suffix, exposed
+	// as a setting per F5 §7. "document.pdf" -> "document-signed.pdf".
+	OutputSuffix string `json:"outputSuffix"`
+
+	// SignatureLevel is "b-t" or "b-lt" (SPEC §12.6); B-LT is the
+	// project's default.
+	SignatureLevel string `json:"signatureLevel"`
+
+	// UpdateCheckEnabled toggles the daily GitHub Releases check (SPEC
+	// §6.8/§15.2). On by default; disableable, never silently ignored.
+	UpdateCheckEnabled bool `json:"updateCheckEnabled"`
 }
 
 const (
@@ -33,16 +76,25 @@ const (
 
 	minPort = 1024
 	maxPort = 65535
+
+	defaultStartWithWindows   = true
+	defaultOutputSuffix       = "-signed"
+	defaultSignatureLevel     = "b-lt"
+	defaultUpdateCheckEnabled = true
 )
 
 // Default returns the configuration used when no file exists and when a
 // field is missing or invalid.
 func Default() Config {
 	return Config{
-		Locale:         defaultLocale,
-		LogLevel:       defaultLogLevel,
-		PortRangeStart: defaultPortRangeStart,
-		PortRangeEnd:   defaultPortRangeEnd,
+		Locale:             defaultLocale,
+		LogLevel:           defaultLogLevel,
+		PortRangeStart:     defaultPortRangeStart,
+		PortRangeEnd:       defaultPortRangeEnd,
+		StartWithWindows:   defaultStartWithWindows,
+		OutputSuffix:       defaultOutputSuffix,
+		SignatureLevel:     defaultSignatureLevel,
+		UpdateCheckEnabled: defaultUpdateCheckEnabled,
 	}
 }
 
@@ -109,6 +161,13 @@ func validate(cfg *Config) {
 	if cfg.PortRangeEnd < minPort || cfg.PortRangeEnd > maxPort {
 		slog.Warn("config: portRangeEnd out of range, using default", "value", cfg.PortRangeEnd, "default", defaultPortRangeEnd)
 		cfg.PortRangeEnd = defaultPortRangeEnd
+	}
+	if cfg.SignatureLevel != "b-t" && cfg.SignatureLevel != "b-lt" {
+		slog.Warn("config: invalid signatureLevel, using default", "value", cfg.SignatureLevel, "default", defaultSignatureLevel)
+		cfg.SignatureLevel = defaultSignatureLevel
+	}
+	if cfg.OutputSuffix == "" {
+		cfg.OutputSuffix = defaultOutputSuffix
 	}
 }
 

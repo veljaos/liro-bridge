@@ -24,7 +24,15 @@ jobs:
           fi
 
       - name: go vet
-        run: go vet ./...
+        # unsafeptr is disabled project-wide: internal/ui's hand-written
+        # COM vtable implementations (F5 §2.1) must reinterpret the raw
+        # "this" machine word a callback receives from foreign code as a
+        # *T — the exact pattern this analyzer exists to catch for
+        # accidental misuse, but unavoidable and correct for implementing
+        # a native callback ABI (verified: isolating the conversion in
+        # its own helper function does not change vet's verdict, since
+        # the check is per-expression, not per-package). See D-080.
+        run: go vet -unsafeptr=false ./...
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
@@ -33,6 +41,12 @@ jobs:
 
       - name: dependency rule check
         run: go run ./scripts/checkdeps
+
+      # F5 §4.2: a hex colour literal anywhere in the agent's CSS is a
+      # lint failure, not a warning — enforced by a checker we own, the
+      # same discipline as the dependency-rule check above.
+      - name: CSS token rule check
+        run: go run ./scripts/checkcss
 
       - name: test
         run: go test ./... -race -count=1
@@ -247,3 +261,41 @@ jobs:
           CGO_ENABLED: 0
           GOOS: linux
           GOARCH: amd64
+
+  # windows-latest is the only runner that actually compiles and runs
+  # this project's *_windows.go files (internal/ui's COM/WebView2 host,
+  # the tray, cmd/liro-bridge's interactive/settings/certificates/audit
+  # log windows). The ubuntu job above cross-compiles windows/amd64
+  # (build windows/amd64, above) but a cross-compiled build is never
+  # executed, so it proves the package compiles, not that a window ever
+  # renders or that a click ever reaches Go — every one of the F5
+  # first-real-run findings this job exists to catch (empty window
+  # text: the Go-level view-model tests passed while ExecuteScript
+  # raced Navigate; approve/cancel silently dropped: bridge.js's
+  # postMessage(JSON.stringify(...)) double-encoded every page->Go
+  # message) lived entirely in code this project's CI had never once
+  # built with GOOS=windows, let alone run. See docs/decisions.md.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: go vet
+        run: go vet -unsafeptr=false ./...
+
+      - name: test (real WebView2 windows, no hardware)
+        # -tags softtoken so the interactive consent/sign path
+        # (cmd/liro-bridge's *_windows_test.go) can exercise a real
+        # window, a real certificate list and a real signature with no
+        # smart card present — the same soft token the ubuntu job's
+        # sign-digest/PDF-signing steps already rely on for the same
+        # reason (F2 §3). windows-latest ships the WebView2 Evergreen
+        # Runtime (bundled with Microsoft Edge) that every window this
+        # test suite creates depends on.
+        run: go test -tags softtoken ./... -count=1
+        env:
+          CGO_ENABLED: 0

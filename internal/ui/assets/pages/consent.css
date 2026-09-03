@@ -1,0 +1,55 @@
+body {
+  padding: var(--liro-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+}
+
+#signer-name {
+  margin-bottom: 0;
+}
+
+#document-count {
+  margin-top: 0;
+}
+
+#cert-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.secondary-row {
+  font-size: var(--liro-font-size-small);
+}
+
+#file-list {
+  margin: var(--liro-space-1) 0;
+  padding-left: var(--liro-space-4);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+#file-list li {
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--liro-space-2);
+  margin-top: var(--liro-space-2);
+}
+
+.cert-role,
+.cert-thumbprint {
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-text-secondary);
+}
+
+.cert-reason {
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-danger);
+}

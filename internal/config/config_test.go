@@ -95,10 +95,15 @@ func TestLoadOutOfRangePortIsReplaced(t *testing.T) {
 func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	want := Config{
-		Locale:         "sr-Cyrl",
-		LogLevel:       "debug",
-		PortRangeStart: 18000,
-		PortRangeEnd:   18010,
+		Locale:             "sr-Cyrl",
+		LogLevel:           "debug",
+		PortRangeStart:     18000,
+		PortRangeEnd:       18010,
+		StartWithWindows:   false,
+		TSAURL:             "https://tsa.example.rs",
+		OutputSuffix:       "-signed",
+		SignatureLevel:     "b-t",
+		UpdateCheckEnabled: false,
 	}
 
 	if err := Save(path, want); err != nil {
@@ -144,5 +149,35 @@ func TestInvalidLogLevelIsReplaced(t *testing.T) {
 	}
 	if cfg.LogLevel != defaultLogLevel {
 		t.Fatalf("LogLevel = %q, want default %q", cfg.LogLevel, defaultLogLevel)
+	}
+}
+
+func TestInvalidSignatureLevelIsReplaced(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"signatureLevel":"b-lta"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SignatureLevel != defaultSignatureLevel {
+		t.Fatalf("SignatureLevel = %q, want default %q", cfg.SignatureLevel, defaultSignatureLevel)
+	}
+}
+
+func TestEmptyOutputSuffixIsReplaced(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"outputSuffix":""}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.OutputSuffix != defaultOutputSuffix {
+		t.Fatalf("OutputSuffix = %q, want default %q", cfg.OutputSuffix, defaultOutputSuffix)
 	}
 }

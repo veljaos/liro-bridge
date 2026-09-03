@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource"
+	"github.com/veljaos/liro-bridge/internal/pades"
 )
 
 // fakeSignPDFSession is a real RSA-backed keysource.Session — unlike
@@ -327,5 +329,70 @@ func TestRunSignStampMissingGlyphNamesCharacterAndCodePoint(t *testing.T) {
 	want := "The stamp contains a character the font does not support: 中 (U+4E2D)."
 	if !strings.Contains(stderr.String(), want) {
 		t.Fatalf("stderr = %q, want it to contain %q", stderr.String(), want)
+	}
+}
+
+// TestLevelLineReportsRevocationTooLargeLocalised is Task 1c: the
+// specific, localised message — not the generic English Notes join —
+// naming what happened (revocation data too large) and the size, in
+// every locale.
+func TestLevelLineReportsRevocationTooLargeLocalised(t *testing.T) {
+	result := &pades.Result{
+		AchievedLevel:       pades.LevelBT,
+		RevocationTooLarge:  true,
+		LargestSkippedBytes: 30136214, // the real measured MUP CRL size (Task 1b)
+		Notes:               []string{"revocation data too large to embed (30136214 bytes); saved at B-T"},
+	}
+	cases := map[string]string{
+		"en":      "Revocation data was too large to embed (29 MB); saved at B-T.",
+		"sr-Latn": "Podaci o opozivu su bili preveliki za ugrađivanje (29 MB); sačuvano na nivou B-T.",
+		"sr-Cyrl": "Подаци о опозиву су били превелики за уграђивање (29 MB); сачувано на нивоу B-T.",
+	}
+	for locale, want := range cases {
+		t.Run(locale, func(t *testing.T) {
+			got := levelLine(result, i18n.Load(locale))
+			if !strings.Contains(got, want) {
+				t.Fatalf("levelLine(%s) = %q, want it to contain %q", locale, got, want)
+			}
+		})
+	}
+}
+
+// TestLevelLineFallsBackToNotesWhenNotTooLarge proves RevocationTooLarge
+// is the only case with a dedicated message — an ordinary degradation
+// (e.g. a TSA falling back to B-B) still uses the existing Notes join.
+func TestLevelLineFallsBackToNotesWhenNotTooLarge(t *testing.T) {
+	result := &pades.Result{AchievedLevel: pades.LevelBB, Notes: []string{"no timestamp (saved at B-B): boom"}}
+	got := levelLine(result, i18n.Load("en"))
+	want := "B-B  (no timestamp (saved at B-B): boom)"
+	if got != want {
+		t.Fatalf("levelLine = %q, want %q", got, want)
+	}
+}
+
+// TestPrintClockDriftWarningLocalised is Task 3: the warning names both
+// times and is silent when there is no drift, in every locale.
+func TestPrintClockDriftWarningLocalised(t *testing.T) {
+	machine := time.Date(2026, 9, 2, 13, 5, 0, 0, time.UTC)
+	tsaTime := machine.Add(12 * time.Minute)
+	result := &pades.Result{ClockDriftWarning: true, MachineTime: machine, TimestampTime: tsaTime}
+
+	for _, locale := range []string{"en", "sr-Latn", "sr-Cyrl"} {
+		t.Run(locale, func(t *testing.T) {
+			var buf bytes.Buffer
+			printClockDriftWarning(&buf, result, i18n.Load(locale))
+			out := buf.String()
+			if !strings.Contains(out, machine.Format(time.RFC3339)) || !strings.Contains(out, tsaTime.Format(time.RFC3339)) {
+				t.Fatalf("printClockDriftWarning(%s) = %q, want it to name both times", locale, out)
+			}
+		})
+	}
+}
+
+func TestPrintClockDriftWarningSilentWithoutDrift(t *testing.T) {
+	var buf bytes.Buffer
+	printClockDriftWarning(&buf, &pades.Result{ClockDriftWarning: false}, i18n.Load("en"))
+	if buf.Len() != 0 {
+		t.Fatalf("printClockDriftWarning wrote %q, want nothing when ClockDriftWarning is false", buf.String())
 	}
 }

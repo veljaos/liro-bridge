@@ -1,0 +1,32 @@
+body {
+  padding: var(--liro-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+}
+
+#entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.audit-entry {
+  border: 1px solid var(--liro-color-border);
+  border-radius: var(--liro-radius-sm);
+  padding: var(--liro-space-2);
+}
+
+.audit-meta {
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-text-secondary);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--liro-space-2);
+  margin-top: var(--liro-space-2);
+}

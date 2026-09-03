@@ -22,6 +22,15 @@ type Result struct {
 	// OCSP response or a CRL. False means the caller reports B-T, not
 	// B-LT.
 	Complete bool
+
+	// TooLarge is true when Complete is false specifically because at
+	// least one certificate's OCSP response or CRL was obtained but
+	// exceeded the configured size cap (Task 1b), rather than because no
+	// evidence could be obtained at all. A caller reporting the
+	// degradation honestly (Task 1c) needs to say which; LargestSkippedBytes
+	// is the biggest single skipped artefact's size, for that message.
+	TooLarge            bool
+	LargestSkippedBytes int64
 }
 
 // VRIKey computes the /VRI dictionary key for one signature: the
@@ -44,6 +53,12 @@ func VRIKey(cms []byte) string {
 // evidence. certs and entries must be the same length and in the same
 // order (entries[i] is certs[i]'s evidence, or a zero Entry if none was
 // collected).
+//
+// If entries carries no OCSP response or CRL at all — every certificate's
+// evidence missing, too large, or simply never fetched — no revision is
+// written: Result.Bytes is doc's own unmodified bytes (D-079). A /DSS
+// whose /Certs is its only content asserts nothing a CMS signature does
+// not already carry, so it is not worth a revision.
 func Apply(doc *pdf.Document, cmsBytes []byte, certs []*x509.Certificate, entries []Entry) (*Result, error) {
 	if len(certs) == 0 {
 		return nil, fmt.Errorf("dss: no certificates to embed")
@@ -56,6 +71,8 @@ func Apply(doc *pdf.Document, cmsBytes []byte, certs []*x509.Certificate, entrie
 
 	var certRefs, ocspRefs, crlRefs pdf.Array
 	complete := true
+	var tooLarge bool
+	var largestSkipped int64
 	for i, cert := range certs {
 		certRefs = append(certRefs, addStream(u, cert.Raw))
 
@@ -64,12 +81,29 @@ func Apply(doc *pdf.Document, cmsBytes []byte, certs []*x509.Certificate, entrie
 			ocspRefs = append(ocspRefs, addStream(u, entries[i].OCSPResponse))
 		case len(entries[i].CRL) > 0:
 			crlRefs = append(crlRefs, addStream(u, entries[i].CRL))
+		case entries[i].TooLarge:
+			complete = false
+			tooLarge = true
+			if entries[i].SkippedBytes > largestSkipped {
+				largestSkipped = entries[i].SkippedBytes
+			}
 		case i+1 < len(certs):
 			// Every certificate except the last (whose issuer is the
 			// excluded root, see CollectRevocation) was expected to
 			// have evidence.
 			complete = false
 		}
+	}
+
+	if len(ocspRefs) == 0 && len(crlRefs) == 0 {
+		// D-079: certificates alone never justify a /DSS revision — they
+		// are already in the CMS, so a DSS carrying only /Certs asserts
+		// long-term validation evidence the document does not actually
+		// have. Skip the revision entirely and hand back doc's own bytes,
+		// untouched (Document.Data's own contract: "the same slice, never
+		// a copy"), so the caller's result stays exactly the B-T bytes it
+		// already had.
+		return &Result{Bytes: doc.Data(), Complete: complete, TooLarge: tooLarge, LargestSkippedBytes: largestSkipped}, nil
 	}
 
 	dssDict := pdf.Dict{Name("Certs"): certRefs}
@@ -109,7 +143,7 @@ func Apply(doc *pdf.Document, cmsBytes []byte, certs []*x509.Certificate, entrie
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Bytes: out, Complete: complete}, nil
+	return &Result{Bytes: out, Complete: complete, TooLarge: tooLarge, LargestSkippedBytes: largestSkipped}, nil
 }
 
 // addStream registers raw as a new plain-stream object (no filter, no

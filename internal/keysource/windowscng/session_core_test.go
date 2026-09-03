@@ -24,6 +24,9 @@ type fakeConn struct {
 	signFunc func(digest []byte) ([]byte, error)
 	freed    []ncryptKeyHandle
 	freeErr  error
+
+	presencePresent bool
+	presenceErr     error
 }
 
 func (f *fakeConn) findAndAcquire(string) ([]byte, ncryptKeyHandle, bool, error) {
@@ -48,6 +51,10 @@ func (f *fakeConn) signHash(_ ncryptKeyHandle, digest []byte) ([]byte, error) {
 func (f *fakeConn) freeKey(key ncryptKeyHandle) error {
 	f.freed = append(f.freed, key)
 	return f.freeErr
+}
+
+func (f *fakeConn) probePresence(string) (bool, error) {
+	return f.presencePresent, f.presenceErr
 }
 
 func TestOpenSessionSetsWindowHandleToZeroInThisPhase(t *testing.T) {
@@ -214,6 +221,31 @@ func TestSignDigestRespectsContextCancellation(t *testing.T) {
 	cancel()
 	if _, err := sess.SignDigest(ctx, keysource.DigestSHA256, make([]byte, 32)); err == nil {
 		t.Fatal("SignDigest on a cancelled context must fail")
+	}
+}
+
+// TestIsCardAbsentStatus is Task 2's own measurement, pinned: exactly
+// NTE_BAD_KEYSET and SCARD_W_REMOVED_CARD mean "not present" — nothing
+// else, including codes mapStatus (errors.go) treats as related-but-
+// different failures (e.g. NTE_NO_KEY), is misclassified as absence.
+func TestIsCardAbsentStatus(t *testing.T) {
+	cases := []struct {
+		name   string
+		status uint32
+		want   bool
+	}{
+		{"NTE_BAD_KEYSET", nteBadKeyset, true},
+		{"SCARD_W_REMOVED_CARD", scardWRemovedCard, true},
+		{"NTE_NO_KEY", nteNoKey, false},
+		{"SCARD_W_WRONG_CHV", scardWWrongCHV, false},
+		{"anything else", 0xDEADBEEF, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isCardAbsentStatus(c.status); got != c.want {
+				t.Fatalf("isCardAbsentStatus(0x%08X) = %v, want %v", c.status, got, c.want)
+			}
+		})
 	}
 }
 
