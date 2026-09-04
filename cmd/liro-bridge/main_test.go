@@ -42,7 +42,7 @@ func TestHelpFlag(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	if !strings.Contains(out.String(), "Usage of liro-bridge") {
+	if !strings.Contains(out.String(), "Usage: liro-bridge <command> [flags]") {
 		t.Fatalf("expected usage text, got %q", out.String())
 	}
 }
@@ -55,7 +55,7 @@ func TestNoArgsPrintsUsageAndExitsZero(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	if !strings.Contains(out.String(), "Usage of liro-bridge") {
+	if !strings.Contains(out.String(), "Usage: liro-bridge <command> [flags]") {
 		t.Fatalf("expected usage text, got %q", out.String())
 	}
 }

@@ -4,6 +4,21 @@
   box-sizing: border-box;
 }
 
+/* [hidden] is how every page in this project shows and hides a screen
+   or a control (consent.js's showState, the stamp corner selector, the
+   empty-list notice). The browser's own "[hidden] { display: none }"
+   comes from the user-agent stylesheet, and an author rule as ordinary
+   as ".liro-field { display: flex }" outranks it in the cascade
+   regardless of specificity — which is how a hidden element kept
+   displaying. Verified by looking at the window: the corner selector
+   was on screen with its checkbox unticked, while the page's own
+   el.hidden property was correctly true, so no property-level test saw
+   it. !important is the one thing that makes the intent unconditional
+   here. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: var(--liro-font-family);
@@ -49,7 +64,7 @@ body {
   font-size: var(--liro-font-size-body);
   font-weight: var(--liro-font-weight-semibold);
   border-radius: var(--liro-radius-sm);
-  padding: var(--liro-space-2) var(--liro-space-4);
+  padding: var(--liro-space-3) var(--liro-space-5);
   border: 1px solid transparent;
   cursor: pointer;
 }
@@ -66,12 +81,48 @@ body {
 }
 
 .liro-btn-secondary {
-  background: var(--liro-color-surface);
+  background: var(--liro-color-neutral);
   color: var(--liro-color-text-primary);
   border-color: var(--liro-color-border);
 }
 .liro-btn-secondary:hover {
-  background: var(--liro-color-disabled-bg);
+  background: var(--liro-color-neutral-hover);
+}
+.liro-btn-secondary:active {
+  background: var(--liro-color-neutral-active);
+}
+
+/* Task 3 (F5 third-real-run review): the quietest of the three button
+   weights, for an action that must stay reachable without competing
+   with the two real choices beside it. Two neutral buttons side by side
+   read as equals, which is wrong wherever one of them is Cancel — so
+   this one gives up the filled background and the border entirely and
+   keeps only secondary text, and takes the neutral fill back on hover
+   so it still answers to the pointer. Colours from tokens, like every
+   other rule here. */
+.liro-btn-quiet {
+  background: transparent;
+  color: var(--liro-color-text-secondary);
+  border-color: transparent;
+}
+.liro-btn-quiet:hover {
+  background: var(--liro-color-neutral);
+  color: var(--liro-color-text-primary);
+}
+.liro-btn-quiet:active {
+  background: var(--liro-color-neutral-active);
+  color: var(--liro-color-text-primary);
+}
+
+/* Task 2 (F5 second-real-run review): a compact button for an action
+   that sits inline next to the value it acts on (the Details card's
+   "Copy" next to the batch fingerprint), rather than in its own actions
+   row. Same colours and shape as any other button — only the padding
+   and weight differ. */
+.liro-btn-compact {
+  padding: var(--liro-space-1) var(--liro-space-2);
+  font-size: var(--liro-font-size-small);
+  font-weight: var(--liro-font-weight-regular);
 }
 
 .liro-btn:disabled {
@@ -80,8 +131,28 @@ body {
   cursor: default;
 }
 
+/* Every text/password input shares this shape (Task 5): taller than
+   the browser default, consistent border and padding from tokens, and
+   a brand-coloured border on focus so the visible :focus-visible
+   outline below is not the only thing that changes. */
+input[type="text"],
+input[type="password"] {
+  font-family: inherit;
+  font-size: var(--liro-font-size-body);
+  color: var(--liro-color-text-primary);
+  background: var(--liro-color-surface-raised);
+  border: 1px solid var(--liro-color-border);
+  border-radius: var(--liro-radius-sm);
+  padding: var(--liro-space-2) var(--liro-space-3);
+}
+input[type="text"]:focus-visible,
+input[type="password"]:focus-visible {
+  border-color: var(--liro-color-brand);
+}
+
 .liro-badge {
   display: inline-block;
+  align-self: flex-start;
   font-size: var(--liro-font-size-small);
   font-weight: var(--liro-font-weight-semibold);
   border-radius: var(--liro-radius-full);
@@ -117,11 +188,106 @@ body {
   gap: var(--liro-space-2);
 }
 
+/* Task 2 (F5 second-real-run review): a flex item's default
+   min-width:auto refuses to shrink below its content's intrinsic
+   width, so one long unbreakable token inside a .liro-row pushed the
+   whole row — and with it the card, and the window's layout — wider
+   than the window itself. Every row child may shrink; long text breaks
+   inside the word rather than overflowing. Values that cannot usefully
+   break at all (a 64-character hex digest) are truncated in Go before
+   they ever reach the page. */
+.liro-row > * {
+  min-width: 0;
+}
+
+.liro-wrap {
+  overflow-wrap: anywhere;
+}
+
+/* Task 2 (F5 fourth-real-run review): a form field whose label sits
+   above its input, left-aligned, with the input taking the full width
+   beneath it. This replaces .liro-row for every labelled text input in
+   the settings window. A side-by-side row divides the width between a
+   label and an input, and Serbian labels are considerably longer than
+   their English equivalents — "Klijentski sertifikat za servis za
+   vremenske zigove (PKCS#12)" against "TSA client certificate
+   (PKCS#12)" — so a row that fits in English wraps to two lines in
+   Serbian regardless of how wide the window is made. Stacking gives
+   the label the whole width and stops the two competing for it. */
+.liro-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-1);
+  min-width: 0;
+}
+
+.liro-field > .liro-field-label {
+  color: var(--liro-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.liro-field > input,
+.liro-field > select {
+  width: 100%;
+}
+
+/* A checkbox or radio keeps its label beside it — that pairing is what
+   makes the control legible, and neither one is a long field label
+   competing with an input for the same line. */
+.liro-check {
+  display: flex;
+  align-items: center;
+  gap: var(--liro-space-2);
+}
+
+.liro-check > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A <select> is styled to match the text inputs above, so a form does
+   not mix the browser's default control shape with the project's. */
+select {
+  font-family: inherit;
+  font-size: var(--liro-font-size-body);
+  color: var(--liro-color-text-primary);
+  background: var(--liro-color-surface-raised);
+  border: 1px solid var(--liro-color-border);
+  border-radius: var(--liro-radius-sm);
+  padding: var(--liro-space-2) var(--liro-space-3);
+}
+
+/* Task 5 (F5 fourth-real-run review): the shape every window's page
+   uses so that its action buttons are always on screen. The page is a
+   fixed-height column — the window's own height, never taller — inside
+   which exactly one region is allowed to grow and scroll
+   (.liro-scroll-region). A primary action that scrolls off the bottom
+   is the same defect as a button that does nothing, and the only way
+   to make that impossible rather than merely unlikely is to stop the
+   page itself from being scrollable at all. */
+.liro-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.liro-scroll-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Anything that must never be squeezed out by a growing scroll region:
+   a header, an actions row, a status line. */
+.liro-fixed-region {
+  flex: 0 0 auto;
+}
+
 .liro-cert-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: var(--liro-space-2) var(--liro-space-3);
+  gap: var(--liro-space-1);
+  padding: var(--liro-space-3);
   border: 1px solid var(--liro-color-border);
   border-radius: var(--liro-radius-sm);
   cursor: pointer;
@@ -136,6 +302,44 @@ body {
   cursor: default;
   color: var(--liro-color-disabled-text);
   background: var(--liro-color-disabled-bg);
+}
+
+/* Task 4/6: the name is the largest text in a certificate row; role and
+   issuer sit under it, quieter; the thumbprint tail — sometimes the
+   only thing distinguishing two certificates with an identical subject
+   (SPEC §11.5) — is a quiet monospace suffix on that same line, never
+   its own prominent field. */
+.liro-cert-name {
+  font-size: var(--liro-font-size-heading);
+  font-weight: var(--liro-font-weight-semibold);
+  color: var(--liro-color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.liro-cert-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--liro-space-2);
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.liro-cert-thumb {
+  font-family: var(--liro-font-family-mono);
+  color: var(--liro-color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* Task 6: an outcome renders as a single word, right-aligned, coloured
+   from the intent family it belongs to — never a hand-picked colour.
+   The four .liro-outcome-<name> colour rules are appended below,
+   generated from IntentFamilyColor (see intentOutcomeCSS). */
+.liro-outcome {
+  font-weight: var(--liro-font-weight-semibold);
+  text-align: right;
+  white-space: nowrap;
 }
 
 .liro-disclosure summary {
@@ -177,4 +381,21 @@ body {
   color: var(--liro-color-danger);
   border-radius: var(--liro-radius-sm);
   padding: var(--liro-space-3);
+  overflow-wrap: anywhere;
+}
+
+.liro-outcome-caution {
+  color: var(--liro-color-caution);
+}
+
+.liro-outcome-negative {
+  color: var(--liro-color-negative);
+}
+
+.liro-outcome-positive {
+  color: var(--liro-color-positive);
+}
+
+.liro-outcome-warning {
+  color: var(--liro-color-warning);
 }

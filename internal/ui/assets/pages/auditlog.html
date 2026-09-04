@@ -6,15 +6,15 @@
 <link rel="stylesheet" href="https://liro.local/intents.css" />
 <link rel="stylesheet" href="https://liro.local/pages/auditlog.css" />
 </head>
-<body>
+<body class="liro-page">
 
 <main>
-  <p class="liro-display" data-i18n="auditwindow.title"></p>
+  <p class="liro-display liro-fixed-region" data-i18n="auditwindow.title"></p>
   <div id="empty" class="liro-text-small" hidden data-i18n="auditwindow.empty"></div>
 
-  <section id="entry-list" role="list" aria-label="Audit log entries"></section>
+  <section id="entry-list" class="liro-scroll-region" role="list" aria-label="Audit log entries"></section>
 
-  <div class="actions">
+  <div class="actions liro-fixed-region">
     <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="settings.close"></button>
   </div>
 </main>

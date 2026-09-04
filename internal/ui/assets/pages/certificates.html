@@ -6,15 +6,15 @@
 <link rel="stylesheet" href="https://liro.local/intents.css" />
 <link rel="stylesheet" href="https://liro.local/pages/certificates.css" />
 </head>
-<body>
+<body class="liro-page">
 
 <main>
-  <p class="liro-display" data-i18n="certswindow.title"></p>
+  <p class="liro-display liro-fixed-region" data-i18n="certswindow.title"></p>
   <div id="empty" class="liro-text-small" hidden data-i18n="certswindow.empty"></div>
 
-  <section id="cert-list" role="list" aria-label="Certificates"></section>
+  <section id="cert-list" class="liro-scroll-region" role="list" aria-label="Certificates"></section>
 
-  <div class="actions">
+  <div class="actions liro-fixed-region">
     <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="settings.close"></button>
   </div>
 </main>

@@ -36,6 +36,8 @@ package ui
 //     why that is safe here.
 import (
 	"fmt"
+	"runtime"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -105,6 +107,121 @@ func coTaskMemFree(p uintptr) {
 	}
 }
 
+// --- Handing Go memory to foreign code: pinning ---
+//
+// Everything in this package that gives WebView2 the bare address of Go
+// memory has to answer one question: is that address still the address
+// of that memory when the callee uses it? Two separate mechanisms can
+// invalidate it, and D-101 records both being hit for real:
+//
+//  1. The garbage collector may free memory nothing points at any more.
+//     A uintptr is a number, not a pointer — the collector cannot see
+//     it, so an object whose only remaining reference is one WebView2
+//     holds is, as far as Go is concerned, garbage.
+//  2. A goroutine's stack moves. When a goroutine needs more stack than
+//     it has, the runtime allocates a bigger one and copies every frame
+//     to a new address, rewriting the Go pointers it can find. It
+//     cannot rewrite a uintptr already handed to a COM method, and it
+//     cannot rewrite one the WebView2 runtime is holding at all. A
+//     stack-allocated object handed to foreign code is therefore valid
+//     for exactly as long as nothing on this goroutine calls a function
+//     that needs to grow the stack — which is not a property any code
+//     can rely on.
+//
+// runtime.Pinner answers both at once: a pinned object is guaranteed
+// not to be moved and not to be freed until Unpin. Pinning also forces
+// the object onto the heap in the first place (escape analysis follows
+// the pointer into Pin), which is the half that actually fixed the
+// intermittent hang D-101 measured — the completion handlers were
+// stack-allocated, and a stack copy while WebView2 still held their
+// address made the completion land in the abandoned copy.
+//
+// Two shapes are used:
+//
+//   - pinPtr, for memory a single call reads or writes and is done with
+//     by the time that call returns (out-parameters, GUIDs, RECTs,
+//     string buffers). The caller owns a runtime.Pinner on its own
+//     stack and unpins on the way out.
+//   - pinHandler and (*comBase).release, for the handler objects
+//     WebView2 keeps a reference to and calls back into later. Those
+//     cannot be unpinned when a function returns; they are unpinned
+//     when their COM reference count reaches zero, which is what the
+//     reference count was always for.
+
+// pinPtr pins v for as long as p is not unpinned, and returns v's
+// address in the form a COM or Win32 parameter takes.
+//
+// The type parameter is not decoration: it keeps the address and the
+// pinned object provably the same value, so no call site can pin one
+// thing and pass the address of another.
+func pinPtr[T any](p *runtime.Pinner, v *T) uintptr {
+	p.Pin(v)
+	return uintptr(unsafe.Pointer(v))
+}
+
+// handlerPins holds one runtime.Pinner per live handler object this
+// package has handed to WebView2, keyed by the object's own address —
+// the same value WebView2 passes back as `this`. An entry exists for
+// exactly as long as that object's COM reference count is above zero.
+var (
+	handlerPinsMu sync.Mutex
+	handlerPins   = map[uintptr]*runtime.Pinner{}
+)
+
+// pinHandler pins h — a handler object whose first field is comBase —
+// and returns its address, which is both its COM interface pointer and
+// its key in handlerPins. Every handler is created with a reference
+// count of 1, this package's own reference, so it stays pinned until
+// that reference is dropped with (*comBase).release and every reference
+// WebView2 took has been released too.
+func pinHandler[T any](h *T) uintptr {
+	p := new(runtime.Pinner)
+	p.Pin(h)
+	this := uintptr(unsafe.Pointer(h))
+	handlerPinsMu.Lock()
+	handlerPins[this] = p
+	handlerPinsMu.Unlock()
+	return this
+}
+
+// unpinHandler drops the pin on the handler at this, if any. Called
+// only from releaseHandlerRef, when the reference count has reached
+// zero: after it returns, the object is ordinary garbage.
+func unpinHandler(this uintptr) {
+	handlerPinsMu.Lock()
+	p := handlerPins[this]
+	delete(handlerPins, this)
+	handlerPinsMu.Unlock()
+	if p != nil {
+		p.Unpin()
+	}
+}
+
+// handlerPinCount reports how many handler objects are currently pinned.
+// Only TestHandlersArePinnedUntilReleased reads it — it is the one
+// observable that distinguishes "the object is reachable by luck" from
+// "the object is pinned for as long as WebView2 may touch it".
+func handlerPinCount() int {
+	handlerPinsMu.Lock()
+	defer handlerPinsMu.Unlock()
+	return len(handlerPins)
+}
+
+// releaseHandlerRef is IUnknown::Release's actual behaviour for every
+// handler this package implements, shared by the vtable thunk WebView2
+// calls and by (*comBase).release, which this package calls for its own
+// reference. Reaching zero unpins the object — the one moment at which
+// it becomes safe for the collector to reclaim it, because it is the
+// one moment at which nothing outside Go holds its address.
+func releaseHandlerRef(this uintptr) int32 {
+	b := (*comBase)(unsafe.Pointer(this))
+	n := atomic.AddInt32(&b.refs, -1)
+	if n <= 0 {
+		unpinHandler(this)
+	}
+	return n
+}
+
 // comBase is the first field of every COM object this package
 // implements (see the package doc comment, direction 2). Its address
 // equals the address of the whole struct, which is what makes an
@@ -113,6 +230,18 @@ type comBase struct {
 	vtbl uintptr
 	refs int32
 }
+
+// addr is the object's COM interface pointer: comBase is field 0, so
+// its address is the address of the whole handler. Call sites pass
+// h.addr() rather than converting with unsafe at each one, which keeps
+// every such conversion in this file, next to the pinning that makes it
+// safe.
+func (b *comBase) addr() uintptr { return uintptr(unsafe.Pointer(b)) }
+
+// release drops this package's own reference to a handler it created
+// and pinned — exactly once per pinHandler. The WebView2 runtime's own
+// references are dropped through releaseThunk.
+func (b *comBase) release() { releaseHandlerRef(b.addr()) }
 
 // simpleHandlerVtbl is the vtable shape shared by every completion/event
 // handler this package implements: IUnknown's three methods plus one
@@ -162,18 +291,19 @@ func addRefThunk(this uintptr) uintptr {
 	return uintptr(atomic.AddInt32(&b.refs, 1))
 }
 
-// releaseThunk decrements the refcount and reports it, exactly like a
-// real COM object, but never frees anything: these handler objects are
-// ordinary Go values, collected by the garbage collector once nothing
-// reachable from a Go root points at them any more. Nothing in this
-// package keeps one alive past the point its result has been consumed
-// (each caller holds its own local reference on the stack until it has
-// read the outcome — see window_windows.go), so there is no leak; there
-// is also nothing for Release to free, since freeing Go memory
-// explicitly is not a thing.
+// releaseThunk decrements the reference count and reports it, exactly
+// like a real COM object. It frees nothing — these are ordinary Go
+// values, and freeing Go memory explicitly is not a thing — but
+// reaching zero does do something now: it unpins the object, which is
+// what finally allows the collector to reclaim it (see the pinning
+// commentary above). Before D-101 this was a bare decrement whose
+// result nothing acted on, and the handler objects were kept alive only
+// by whatever local variable happened to still reference them — which
+// for the completion handlers was a stack slot that could move, and for
+// the navigation-completed handler was nothing at all once
+// setUpWebView2 returned.
 func releaseThunk(this uintptr) uintptr {
-	b := (*comBase)(unsafe.Pointer(this))
-	return uintptr(atomic.AddInt32(&b.refs, -1))
+	return uintptr(releaseHandlerRef(this))
 }
 
 // Vtable singletons: one per Invoke shape, created once and shared by
@@ -262,26 +392,33 @@ func comRelease(obj uintptr) {
 // legitimately differ and always QueryInterfaces explicitly rather than
 // assuming they are numerically equal.
 func queryInterface(obj uintptr, iid windows.GUID) (uintptr, error) {
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	var out uintptr
 	iidCopy := iid
-	_, err := comCall(obj, 0, uintptr(unsafe.Pointer(&iidCopy)), uintptr(unsafe.Pointer(&out)))
+	_, err := comCall(obj, 0, pinPtr(&pin, &iidCopy), pinPtr(&pin, &out))
 	if err != nil {
 		return 0, err
 	}
 	return out, nil
 }
 
-// utf16Ptr encodes s as a NUL-terminated UTF-16 string and returns a
-// pointer to it. The caller must runtime.KeepAlive the returned slice's
-// backing array — via the string itself is not enough, since only the
-// pointer crosses into the syscall — until the call using it returns;
-// every call site below does so explicitly.
-func utf16Ptr(s string) (*uint16, []uint16, error) {
-	u, err := windows.UTF16FromString(s)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &u[0], u, nil
+// utf16Buf encodes s as a NUL-terminated UTF-16 buffer, which callers
+// hand to WebView2 through pinUTF16 rather than by converting the slice
+// themselves: whether such a buffer lands on the heap or the stack is
+// an escape-analysis outcome no call site should be depending on, and a
+// stack buffer moves (see the pinning commentary at the top of this
+// file). Pinning is strictly stronger than the runtime.KeepAlive these
+// call sites used to rely on — KeepAlive stops memory being collected
+// and does nothing at all about it being copied to a new address.
+func utf16Buf(s string) ([]uint16, error) {
+	return windows.UTF16FromString(s)
+}
+
+// pinUTF16 pins buf and returns the address of its first element, which
+// is the LPCWSTR a COM or Win32 parameter takes.
+func pinUTF16(p *runtime.Pinner, buf []uint16) uintptr {
+	return pinPtr(p, &buf[0])
 }
 
 // stringFromLPWSTR reads a NUL-terminated UTF-16 string the runtime

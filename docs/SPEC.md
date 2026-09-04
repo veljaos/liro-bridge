@@ -473,7 +473,7 @@ Exactly three, always with the script subtag:
 - One message catalogue per locale, in `internal/i18n/`, embedded in the binary.
 - Message keys mirror error codes where they correspond: the code `CARD_NOT_PRESENT` has the key `error.card_not_present`.
 - The UI selects a locale from user configuration, falling back to OS locale, falling back to `sr-Latn`.
-- CLI output is localised. Log files are **not** — logs are always English, because they are read by developers.
+- The split is by audience, not by "CLI vs window": code, comments, documentation, and every command's `--help`/usage text are English, like everything else developer-facing — a person invoking `liro-bridge --help` to learn what the program does is reading it the same way they'd read a comment. Everything a non-developer reads at runtime — CLI *output* (a certs listing, an error message, a progress line) and every window's text — is localised in all three catalogues. Log files are English regardless, for the reason already given: they are read by developers, not signers (D-092).
 - A missing translation falls back to `en` and logs a warning. It never renders the raw key to the user.
 
 ### 9.3 Text that is not localised

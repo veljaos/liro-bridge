@@ -17,13 +17,33 @@ package ui
 // any other thread is undefined behaviour, so PostJSON and Close must
 // never touch a COM pointer directly — they hand a closure to the
 // owning thread via wmRunFunc instead (see invoke below).
+//
+// Teardown obeys the same rule, and D-101 records what happened when it
+// only nearly did. One thread owns the WebView2 controller — the thread
+// that created it — and it is the only thread that may release it.
+// Everything else asks: Close posts WM_CLOSE and waits on closedCh for
+// that thread to say it is done, and touches no COM pointer of its own.
+//
+// Owning the release is necessary but not sufficient, because the
+// owning thread can be asked to do it twice, and can be asked while it
+// is already doing it: ICoreWebView2Controller::Close runs a nested
+// message loop, which dispatches whatever else is in this window's
+// queue — including a second WM_CLOSE — back into wndProc, on this same
+// thread, from inside the first Close. Making the release idempotent by
+// zeroing pointers afterwards does not help against that, because the
+// second entry reads the pointers before the first entry has finished
+// with them and zeroed them. The teardown is therefore guarded by a
+// flag set on entry rather than on exit (tearingDown, below), which is
+// what actually makes "exactly once" true.
 import (
 	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -44,15 +64,44 @@ type window struct {
 	cw2        uintptr // ICoreWebView2 (base)
 	cw2v3      uintptr // ICoreWebView2_3, QueryInterface'd once at setup
 
-	webMessageHandler *webMessageReceivedHandler // see coreWebView2AddWebMessageReceived's doc comment: must outlive the subscription
+	// Both handlers must outlive their subscriptions — see
+	// coreWebView2AddWebMessageReceived's doc comment. They are this
+	// package's own COM references to those objects, and closeWebView
+	// releases them after ICoreWebView2Controller::Close has released
+	// WebView2's.
+	webMessageHandler *webMessageReceivedHandler
+	navHandler        *navigationCompletedHandler
 
 	widthPts, heightPts int
 
-	workCh   chan func()
-	closedCh chan struct{}
+	// threadID is the OS thread that created this window's WebView2
+	// controller and is the only one allowed to release it (see this
+	// file's package doc comment). Written once, before NewWindow's
+	// ready channel is signalled, and only read afterwards.
+	threadID uintptr
+
+	workCh    chan func()
+	closedCh  chan struct{}
+	closeOnce sync.Once
 
 	onClosed      func()
 	closingFromGo atomic.Bool
+
+	// tearingDown is set by the owning thread, on entry to the teardown
+	// and before it releases anything, so that a second WM_CLOSE — from
+	// the title bar, from Close, or dispatched by the nested message
+	// loop inside ICoreWebView2Controller::Close itself — is a no-op
+	// rather than a second release of the same pointers. Only ever
+	// touched by the owning thread, which is why it is a plain bool: a
+	// mutex here would make two threads take turns at a teardown only
+	// one of them is allowed to perform at all.
+	tearingDown bool
+
+	// webViewReleased says the COM pointers below have already been
+	// released. Separate from tearingDown because closeWebView is also
+	// reached from setUpWebView2's failure path, which is not a WM_CLOSE
+	// at all; both flags are set on entry, never on exit.
+	webViewReleased bool
 }
 
 // NewWindow implements ui.NewWindow (window.go) on Windows: it spawns
@@ -81,6 +130,7 @@ func NewWindow(opts Options) (Window, error) {
 
 func (w *window) run(opts Options, ready chan<- error) {
 	runtime.LockOSThread()
+	w.threadID = currentThreadID()
 	// Deliberately never unlocked: this goroutine and the OS thread it
 	// is pinned to live exactly as long as the window. Ending the
 	// goroutine (after WM_QUIT, at the bottom of this function) ends the
@@ -103,6 +153,10 @@ func (w *window) run(opts Options, ready chan<- error) {
 	}
 	w.hwnd = hwnd
 	setWindowUserData(hwnd, unsafe.Pointer(w))
+	// Task 4 (F5 second-real-run review): the real Liro mark in the
+	// title bar and in Alt+Tab, for every window this package creates —
+	// the tray icon already came from icon.ico, the windows did not.
+	setWindowIcons(hwnd)
 
 	// The window's actual monitor — and so its actual DPI — is only
 	// known once CreateWindowExW has placed it; correct the size
@@ -196,6 +250,10 @@ func (w *window) setUpWebView2(opts Options) error {
 		if err != nil {
 			return fmt.Errorf("ui: add_NavigationCompleted: %w", err)
 		}
+		// Kept on the window, not just for the length of this function:
+		// the subscription lives as long as the window does, and WebView2
+		// holds this object's bare address for all of it (D-101).
+		w.navHandler = navDone
 		if err := coreWebView2Navigate(cw2, "https://"+opts.VirtualHost+opts.StartPage); err != nil {
 			return fmt.Errorf("ui: Navigate: %w", err)
 		}
@@ -274,7 +332,15 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		// so there is never more than one waiting when this fires.
 		select {
 		case fn := <-w.workCh:
-			fn()
+			// Not once teardown has begun. The nested message loop that
+			// ICoreWebView2Controller::Close runs dispatches whatever is
+			// queued, and a closure queued by Eval or PostJSON would call
+			// into COM pointers that are in the middle of being released.
+			// The caller is not left hanging: it also selects on closedCh,
+			// which wmDestroy closes moments later.
+			if !w.tearingDown {
+				fn()
+			}
 		default:
 		}
 		return 0
@@ -292,6 +358,18 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		return 0
 
 	case wmClose:
+		// Exactly one WM_CLOSE per window does any work. Every later one
+		// — a second close request, or one the nested message loop inside
+		// ICoreWebView2Controller::Close dispatches back into here while
+		// the first is still running — returns immediately. See this
+		// file's package doc comment for why the flag is set here, on
+		// entry, rather than inferred from pointers zeroed on the way
+		// out.
+		if w.tearingDown {
+			return 0
+		}
+		w.tearingDown = true
+
 		// F5 §2.3: closing the window is equivalent to Cancel. A
 		// Go-initiated Close (window.go's Close method) sets
 		// closingFromGo first, so OnClosed only fires for a user-driven
@@ -313,7 +391,11 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 
 	case wmDestroy:
 		coUninitialize()
-		close(w.closedCh)
+		// Once: DestroyWindow is reached from the WM_CLOSE path and from
+		// setUpWebView2's failure path, and a closed channel closed twice
+		// panics — which would turn a teardown ordering bug into a dead
+		// process rather than a harmless repeat.
+		w.closeOnce.Do(func() { close(w.closedCh) })
 		postQuitMessage(0)
 		return 0
 
@@ -323,9 +405,26 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 }
 
 // closeWebView closes the WebView2 controller and releases every
-// interface pointer this window holds. Must run before DestroyWindow —
-// see the comment on wndProc's wmClose case.
+// interface pointer and handler object this window holds. Must run
+// before DestroyWindow — see the comment on wndProc's wmClose case —
+// and must run on the thread that created the controller, which is the
+// only thread allowed to touch it at all (this file's package doc
+// comment).
+//
+// Runs at most once per window, guarded by tearingDown on entry. The
+// previous guard — zeroing each pointer after releasing it — was set
+// too late to help: ICoreWebView2Controller::Close pumps this window's
+// message queue, so a second WM_CLOSE could be dispatched into wndProc
+// and reach this function again while the first call was still inside
+// controllerClose, with every pointer still non-zero. That is the
+// access violation D-101 records: the controller was read, released,
+// and read again before the first release had finished.
 func (w *window) closeWebView() {
+	if w.webViewReleased {
+		return
+	}
+	w.webViewReleased = true
+
 	if w.controller != 0 {
 		controllerClose(w.controller)
 	}
@@ -333,6 +432,21 @@ func (w *window) closeWebView() {
 	comRelease(w.cw2)
 	comRelease(w.controller)
 	comRelease(w.env)
+	w.cw2v3, w.cw2, w.controller, w.env = 0, 0, 0, 0
+
+	// This package's own references to the two event handlers, dropped
+	// after ICoreWebView2Controller::Close has dropped WebView2's. Each
+	// unpins its handler object once the last reference goes, which is
+	// the point at which nothing outside Go holds its address any more
+	// (com_windows.go's pinning commentary).
+	if w.navHandler != nil {
+		w.navHandler.release()
+		w.navHandler = nil
+	}
+	if w.webMessageHandler != nil {
+		w.webMessageHandler.release()
+		w.webMessageHandler = nil
+	}
 }
 
 // invoke marshals fn onto the window's owning OS thread (see this
@@ -381,9 +495,61 @@ func (w *window) Eval(script string) (string, error) {
 	}
 }
 
+// closeTeardownTimeout bounds how long Close waits for the window's own
+// OS thread to finish tearing down the WebView2 controller and
+// releasing every COM reference it holds (Task 8) before giving up and
+// returning anyway — a bug in that teardown must not hang the whole
+// agent forever, only fail to fully suppress the shutdown noise it
+// exists to avoid.
+const closeTeardownTimeout = 5 * time.Second
+
 // Close implements Window.Close (window.go).
+//
+// Waits for the window's dedicated OS thread to finish processing
+// WM_CLOSE — closeWebView (releasing the WebView2 controller and every
+// COM interface pointer this window holds) and DestroyWindow — before
+// returning, rather than posting WM_CLOSE and returning immediately
+// (Task 8, F5 first-real-run review). Every caller in this codebase
+// already calls Close in a deferred, blocking position right before
+// its own function returns (runSettingsWindow, runCertificatesWindow,
+// runAuditLogWindow, runSignInteractive), so this was always the
+// point at which the caller intended to be done with the window; it
+// just was not actually done *waiting* for it. Returning before our
+// own COM references were released gave the WebView2 runtime's
+// browser-process teardown as little time as possible to run before
+// the whole agent process could reach ExitProcess — which is what let
+// its own "Failed to unregister class Chrome_WidgetWin_0" console line
+// (emitted by that browser process, inheriting this process's
+// stderr — not something this codebase logs) fire during or after a
+// visible shutdown instead of quietly, before the user ever notices
+// the window is gone.
 func (w *window) Close() error {
 	w.closingFromGo.Store(true)
+
+	// Called from the owning thread — from an OnMessage or OnClosed
+	// callback, which run there — there is no other thread to wait for
+	// and nothing to wait on: this goroutine IS the message loop, so a
+	// posted WM_CLOSE would never be dispatched and the wait below would
+	// block until the timeout with the window still open. Dispatch it
+	// synchronously instead. SendMessage to a window owned by the
+	// calling thread calls wndProc directly, so the teardown still runs
+	// on the one thread allowed to run it.
+	if currentThreadID() == w.threadID {
+		sendMessage(w.hwnd, wmClose, 0, 0)
+		return nil
+	}
+
 	postMessage(w.hwnd, wmClose, 0, 0)
+	select {
+	case <-w.closedCh:
+	case <-time.After(closeTeardownTimeout):
+	}
 	return nil
+}
+
+// Handle implements Window.Handle (window.go). w.hwnd is set once, in
+// run, before NewWindow's ready channel is signalled — safe to read
+// without synchronisation for the window's entire remaining lifetime.
+func (w *window) Handle() uintptr {
+	return w.hwnd
 }

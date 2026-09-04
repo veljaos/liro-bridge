@@ -94,3 +94,20 @@ func TestCodeKey(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryErrorCodeHasAMessageInEveryCatalogue is Task 4's general
+// check of the error-code mapping, mechanised: a code with no message
+// renders its own key ("error.pin_locked") to the user, and nothing
+// before this test would have said so. It is the reason errs.AllCodes
+// exists.
+func TestEveryErrorCodeHasAMessageInEveryCatalogue(t *testing.T) {
+	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+		c := Load(locale)
+		for _, code := range errs.AllCodes() {
+			key := CodeKey(code)
+			if _, ok := c.data[key]; !ok {
+				t.Errorf("locale %s has no message for %s (key %q)", locale, code, key)
+			}
+		}
+	}
+}

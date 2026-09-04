@@ -66,6 +66,32 @@ func TestBuildCertificateOptionsDistinguishesIdenticalSubjects(t *testing.T) {
 	}
 }
 
+// TestBuildCertificateOptionsSortsUsableFirst is Task 4 (F5
+// first-real-run review): a certificate the user can actually pick
+// must sort above one they cannot, without the unusable one
+// disappearing — and the relative order within each group must be
+// left exactly as Gather produced it (a stable sort, not an arbitrary
+// reordering).
+func TestBuildCertificateOptionsSortsUsableFirst(t *testing.T) {
+	certs := []classify.Info{
+		{Thumbprint: "UNUSABLE-1", NotUsableReason: errs.CodeCertExpired},
+		{Thumbprint: "USABLE-1", Usable: true},
+		{Thumbprint: "UNUSABLE-2", NotUsableReason: errs.CodeCertNotUsable},
+		{Thumbprint: "USABLE-2", Usable: true},
+	}
+	got := BuildCertificateOptions(certs)
+
+	want := []string{"USABLE-1", "USABLE-2", "UNUSABLE-1", "UNUSABLE-2"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d options, want %d", len(got), len(want))
+	}
+	for i, thumb := range want {
+		if got[i].Thumbprint != thumb {
+			t.Fatalf("position %d: got thumbprint %q, want %q (full order: %v)", i, got[i].Thumbprint, thumb, got)
+		}
+	}
+}
+
 func TestThumbprintTail(t *testing.T) {
 	if got := thumbprintTail("0123456789ABCDEF", 8); got != "89ABCDEF" {
 		t.Fatalf("got %q, want %q", got, "89ABCDEF")

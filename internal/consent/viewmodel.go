@@ -35,9 +35,46 @@ type ViewModel struct {
 	Certificates []CertificateOption
 
 	// Details, collapsed by default (F5 §5.1).
-	Fingerprint   string // hex-encoded SHA-256 over the concatenated digests
+	Fingerprint string // hex-encoded SHA-256 over the concatenated digests
+
+	// FingerprintShort is what the window actually renders:
+	// ShortFingerprint(Fingerprint). Fingerprint itself is still carried
+	// in full, because the Copy action puts the whole 64 characters on
+	// the clipboard — which is the only form that is any use for the
+	// comparison SPEC §6.6 says the fingerprint exists for.
+	FingerprintShort string
+
 	Files         []string
 	FilesOverflow int
+
+	// Stamp is the visible-signature-stamp decision the window offers
+	// (Task 1, F5 fourth-real-run review). BuildViewModel fills it with
+	// DefaultStampChoice; a caller holding the user's saved
+	// configuration assigns that instead, because the choice is a
+	// persisted preference rather than a property of this batch —
+	// everything else in this struct is computed from the batch's own
+	// inputs, and this one deliberately is not.
+	Stamp StampChoice
+}
+
+// FingerprintPrefixLength is how much of the 64-character hex
+// fingerprint the consent window shows before eliding the rest (Task 2,
+// F5 second-real-run review). Sixteen hex characters is 64 bits — far
+// beyond what anyone compares by eye, and the full value is one click
+// away on the clipboard; the whole string rendered as one unbroken
+// token overflowed the Details card and pushed the window's layout
+// apart, which is the defect this exists to prevent.
+const FingerprintPrefixLength = 16
+
+// ShortFingerprint returns the first FingerprintPrefixLength characters
+// of fingerprint followed by truncationMark, or fingerprint unchanged
+// when it is already that short. The mark is the same three ASCII
+// periods every other truncation in this project uses (D-057).
+func ShortFingerprint(fingerprint string) string {
+	if len(fingerprint) <= FingerprintPrefixLength {
+		return fingerprint
+	}
+	return fingerprint[:FingerprintPrefixLength] + truncationMark
 }
 
 // BuildViewModel assembles a ViewModel from a batch's raw inputs. Every
@@ -46,13 +83,16 @@ type ViewModel struct {
 // un-sanitised name (F5 §5.3).
 func BuildViewModel(applicationName string, digests [][]byte, fileNames []string, certs []classify.Info) ViewModel {
 	files, overflow := CapFileNames(fileNames)
+	full := hex.EncodeToString(fingerprint(digests))
 	return ViewModel{
-		DocumentCount:   len(digests),
-		ApplicationName: applicationName,
-		Certificates:    BuildCertificateOptions(certs),
-		Fingerprint:     hex.EncodeToString(fingerprint(digests)),
-		Files:           files,
-		FilesOverflow:   overflow,
+		DocumentCount:    len(digests),
+		ApplicationName:  applicationName,
+		Certificates:     BuildCertificateOptions(certs),
+		Fingerprint:      full,
+		FingerprintShort: ShortFingerprint(full),
+		Files:            files,
+		FilesOverflow:    overflow,
+		Stamp:            DefaultStampChoice(),
 	}
 }
 

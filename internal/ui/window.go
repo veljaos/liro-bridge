@@ -94,6 +94,13 @@ type Window interface {
 	// OnClosed — that callback fires only for a user-initiated close (see
 	// Options.OnClosed).
 	Close() error
+
+	// Handle returns the native HWND backing this window, so callers
+	// that must parent an OS dialog to it — the smart card KSP's PIN
+	// prompt via NCRYPT_WINDOW_HANDLE_PROPERTY (Task 2, F2 §2.3) — have
+	// something other than 0 to hand it. Never 0 once NewWindow has
+	// returned successfully.
+	Handle() uintptr
 }
 
 // DetectRuntime reports whether the WebView2 Evergreen Runtime is
@@ -115,4 +122,13 @@ func DetectRuntime() (available bool, version string, err error) {
 // between internal/ui, internal/api and internal/cli.
 func ShowRuntimeMissingMessage(title, body string) {
 	showRuntimeMissingMessage(title, body)
+}
+
+// ChooseFolder shows the OS folder chooser parented to the window
+// whose HWND is owner (Window.Handle), returning the chosen path and
+// whether the user chose one at all. A cancelled dialog is ok == false
+// with a nil error — cancelling is a normal outcome, not a failure.
+// title arrives already localised, like ShowRuntimeMissingMessage's.
+func ChooseFolder(owner uintptr, title string) (path string, ok bool, err error) {
+	return pickFolder(owner, title)
 }

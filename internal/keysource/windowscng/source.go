@@ -18,6 +18,18 @@ type Source struct {
 // NewSource returns a Source backed by the real Windows CNG APIs.
 func NewSource() Source { return Source{} }
 
+// WithWindowHandle returns a copy of s that sets
+// NCRYPT_WINDOW_HANDLE_PROPERTY to hwnd on every session it opens
+// (Task 2, F2 §2.3), so the smart card KSP's PIN dialog is parented to
+// a real, visible window instead of appearing behind it — or not
+// appearing to exist at all, from the user's point of view. Callers
+// with no window (the headless CLI paths: certs, sign, sign-digest)
+// simply never call this, leaving windowHandle at its zero value.
+func (s Source) WithWindowHandle(hwnd uintptr) Source {
+	s.windowHandle = hwnd
+	return s
+}
+
 // Name implements keysource.Source.
 func (Source) Name() string { return "windows-cng" }
 

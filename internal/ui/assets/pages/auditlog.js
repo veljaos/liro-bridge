@@ -17,19 +17,40 @@
       row.className = "audit-entry";
       row.setAttribute("role", "listitem");
 
+      // Task 6: timestamp on the left, the outcome as a single word,
+      // right-aligned, coloured by intent — never a sentence mixing
+      // both together.
       var top = document.createElement("div");
-      var outcomeText = entry.outcomeText;
-      if (entry.isTestKey) outcomeText += " — " + entry.testKeyLabel;
-      window.liroSetText(top, entry.timestampText + " — " + outcomeText);
-      if (entry.outcome !== "approved") {
-        top.className = "liro-badge liro-badge-warning";
-      }
+      top.className = "liro-row";
+      var timestamp = document.createElement("span");
+      window.liroSetText(timestamp, entry.timestampText);
+      top.appendChild(timestamp);
+      var outcome = document.createElement("span");
+      outcome.className = "liro-outcome liro-outcome-" + entry.outcomeIntent;
+      window.liroSetText(outcome, entry.outcomeText);
+      top.appendChild(outcome);
       row.appendChild(top);
 
       var meta = document.createElement("div");
       meta.className = "audit-meta";
-      window.liroSetText(meta, entry.applicationText + " — " + entry.documentCountText + " — …" + entry.thumbprintTail);
+      var metaText = entry.applicationText + " — " + entry.documentCountText;
+      if (entry.isTestKey) metaText += " — " + entry.testKeyLabel;
+      window.liroSetText(meta, metaText);
+      meta.appendChild(document.createTextNode(" · "));
+      var thumb = document.createElement("span");
+      thumb.className = "liro-cert-thumb";
+      window.liroSetText(thumb, entry.thumbprintTail);
+      meta.appendChild(thumb);
       row.appendChild(meta);
+
+      // Task 1: the level the batch actually reached, marked when it is
+      // B-B. Absent entirely for an entry that produced no signature.
+      if (entry.levelText) {
+        var level = document.createElement("div");
+        level.className = "audit-level" + (entry.levelIntent ? " liro-outcome-" + entry.levelIntent : "");
+        window.liroSetText(level, entry.levelText);
+        row.appendChild(level);
+      }
 
       list.appendChild(row);
     });

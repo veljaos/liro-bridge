@@ -26,6 +26,38 @@ func TestSourceOpenUsesInjectedConn(t *testing.T) {
 	}
 }
 
+// TestSourceWithWindowHandlePropagatesToSession proves the consent
+// window's HWND, once attached via WithWindowHandle, reaches
+// NCryptSetProperty on every session the resulting Source opens (Task
+// 2, F2 §2.3) — the fix for the PIN dialog opening behind the agent
+// window.
+func TestSourceWithWindowHandlePropagatesToSession(t *testing.T) {
+	conn := &fakeConn{der: []byte("cert"), key: 1}
+	src := Source{conn: conn}.WithWindowHandle(0x1234)
+	if _, err := src.Open(context.Background(), keysource.Thumbprint("ABC")); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if conn.windowHandleSet != 0x1234 {
+		t.Fatalf("windowHandleSet = %#x, want 0x1234", conn.windowHandleSet)
+	}
+}
+
+// TestSourceWithWindowHandleLeavesOriginalUnchanged proves
+// WithWindowHandle returns a modified copy rather than mutating s in
+// place — a headless caller (certs, sign, sign-digest) that never
+// calls it must still see windowHandle at its zero value even if some
+// other Source derived from the same zero value has called it.
+func TestSourceWithWindowHandleLeavesOriginalUnchanged(t *testing.T) {
+	original := Source{}
+	withHandle := original.WithWindowHandle(0x1234)
+	if original.windowHandle != 0 {
+		t.Fatalf("original.windowHandle = %#x, want 0", original.windowHandle)
+	}
+	if withHandle.windowHandle != 0x1234 {
+		t.Fatalf("withHandle.windowHandle = %#x, want 0x1234", withHandle.windowHandle)
+	}
+}
+
 func TestSourceOpenRejectsCancelledContext(t *testing.T) {
 	src := Source{conn: &fakeConn{der: []byte("cert"), key: 1}}
 	ctx, cancel := context.WithCancel(context.Background())

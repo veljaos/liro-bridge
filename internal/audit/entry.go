@@ -54,6 +54,20 @@ type Entry struct {
 	FailureCode   errs.Code
 	IsTestKey     bool
 
+	// AchievedLevel is the PAdES level the batch actually reached —
+	// "b-b", "b-t" or "b-lt", lowest across the batch — or empty when no
+	// signature was produced at all (a denied batch, a batch that failed
+	// before signing). Task 1 (F5 second-real-run review): a signature
+	// saved without a timestamp is B-B, and SPEC §12.8/§18.11 require
+	// that to be visible rather than merely not claimed; the audit log
+	// is where a user goes to find out what was actually produced weeks
+	// later, so "no timestamp" has to be recorded there, not only shown
+	// once in a window that has since closed. It is a level string, not
+	// a boolean: recording only "was it downgraded" would lose the
+	// distinction between B-T and B-LT, which is the same question asked
+	// one step further up.
+	AchievedLevel string
+
 	// PrevHash is the previous entry's Hash — zero-length for the
 	// first entry in the whole chain.
 	PrevHash []byte
@@ -78,6 +92,18 @@ func (e Entry) CanonicalBytes() []byte {
 	buf = appendString(buf, string(e.FailureCode))
 	buf = appendBool(buf, e.IsTestKey)
 	buf = appendBytes(buf, e.PrevHash)
+	// AchievedLevel is appended last, and only when it is set. That is
+	// what lets it be added to an audit log that already has entries in
+	// it: an entry written before this field existed has no level, and
+	// canonicalises to exactly the bytes it always did, so its stored
+	// hash still matches and the chain across the change still verifies.
+	// The encoding stays unambiguous because the field is last and
+	// length-prefixed like every other — "absent" and "empty" are the
+	// same fact here (no signature was produced), never two different
+	// ones that could collide.
+	if e.AchievedLevel != "" {
+		buf = appendString(buf, e.AchievedLevel)
+	}
 	return buf
 }
 

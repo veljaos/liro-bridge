@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -28,10 +29,17 @@ type environmentCompletedHandler struct {
 	done bool
 }
 
+// newEnvironmentCompletedHandler creates the handler and pins it. Every
+// handler constructor in this file ends with pinHandler for the reason
+// com_windows.go's pinning commentary sets out: WebView2 is handed the
+// object's bare address and calls back into it later, so the object
+// must neither move nor be collected in between, and neither property
+// holds for an ordinary Go value.
 func newEnvironmentCompletedHandler() *environmentCompletedHandler {
 	h := &environmentCompletedHandler{}
 	h.vtbl = uintptr(unsafe.Pointer(environmentCompletedVtbl))
 	h.refs = 1
+	pinHandler(h)
 	return h
 }
 
@@ -73,6 +81,7 @@ func newControllerCompletedHandler() *controllerCompletedHandler {
 	h := &controllerCompletedHandler{}
 	h.vtbl = uintptr(unsafe.Pointer(controllerCompletedVtbl))
 	h.refs = 1
+	pinHandler(h)
 	return h
 }
 
@@ -111,6 +120,7 @@ func newNavigationCompletedHandler() *navigationCompletedHandler {
 	h := &navigationCompletedHandler{}
 	h.vtbl = uintptr(unsafe.Pointer(navigationCompletedVtbl))
 	h.refs = 1
+	pinHandler(h)
 	return h
 }
 
@@ -137,6 +147,7 @@ func newWebMessageReceivedHandler(onMessage func(Message)) *webMessageReceivedHa
 	h := &webMessageReceivedHandler{onMessage: onMessage}
 	h.vtbl = uintptr(unsafe.Pointer(webMessageReceivedVtbl))
 	h.refs = 1
+	pinHandler(h)
 	return h
 }
 
@@ -147,8 +158,10 @@ func newWebMessageReceivedHandler(onMessage func(Message)) *webMessageReceivedHa
 // acted on (F5 §2.4).
 func webMessageReceivedInvoke(this, _sender, args uintptr) uintptr {
 	h := (*webMessageReceivedHandler)(unsafe.Pointer(this))
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	var jsonPtr uintptr
-	if _, err := comCall(args, 4, uintptr(unsafe.Pointer(&jsonPtr))); err != nil {
+	if _, err := comCall(args, 4, pinPtr(&pin, &jsonPtr)); err != nil {
 		slog.Warn("ui: WebMessageAsJson failed", "error", err)
 		return sOK
 	}
@@ -180,6 +193,7 @@ func newExecuteScriptCompletedHandler() *executeScriptCompletedHandler {
 	h := &executeScriptCompletedHandler{}
 	h.vtbl = uintptr(unsafe.Pointer(executeScriptCompletedVtbl))
 	h.refs = 1
+	pinHandler(h)
 	return h
 }
 
@@ -206,9 +220,20 @@ func executeScriptCompletedInvoke(this, hr, result uintptr) uintptr {
 // environmentCreateController calls
 // ICoreWebView2Environment::CreateCoreWebView2Controller (IDL slot 3)
 // and pumps the message loop until the completion handler fires.
+//
+// This is the call D-101 measured hanging roughly one time in
+// twenty-five. The handler was stack-allocated; pumpUntil is a deep
+// call chain that runs foreign callbacks on this goroutine, so it
+// regularly needs more stack than the goroutine has, and growing a
+// stack copies it to a new address. WebView2 then invoked the handler
+// at the address it had been given — inside the abandoned copy — so
+// `done` was set on memory nothing reads, and the loop below waited
+// forever. newControllerCompletedHandler now pins the handler, which
+// both puts it on the heap and keeps it there.
 func environmentCreateController(env uintptr, hwnd uintptr) (uintptr, error) {
 	h := newControllerCompletedHandler()
-	if _, err := comCall(env, 3, hwnd, uintptr(unsafe.Pointer(h))); err != nil {
+	defer h.release()
+	if _, err := comCall(env, 3, hwnd, h.addr()); err != nil {
 		return 0, fmt.Errorf("CreateCoreWebView2Controller: %w", err)
 	}
 	pumpUntil(func() bool { return h.done })
@@ -222,8 +247,10 @@ func environmentCreateController(env uintptr, hwnd uintptr) (uintptr, error) {
 // slot 6: 3=get_IsVisible? no — slots: 3 propget IsVisible, 4 propput
 // IsVisible, 5 propget Bounds, 6 propput Bounds).
 func controllerSetBounds(controller uintptr, x, y, w, h int32) error {
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	r := rect{Left: x, Top: y, Right: x + w, Bottom: y + h}
-	_, err := comCall(controller, 6, uintptr(unsafe.Pointer(&r)))
+	_, err := comCall(controller, 6, pinPtr(&pin, &r))
 	return err
 }
 
@@ -247,8 +274,10 @@ func controllerClose(controller uintptr) { _, _ = comCall(controller, 24) }
 // ICoreWebView2Controller::get_CoreWebView2 (IDL slot 25, immediately
 // after Close).
 func controllerGetCoreWebView2(controller uintptr) (uintptr, error) {
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	var out uintptr
-	if _, err := comCall(controller, 25, uintptr(unsafe.Pointer(&out))); err != nil {
+	if _, err := comCall(controller, 25, pinPtr(&pin, &out)); err != nil {
 		return 0, err
 	}
 	return out, nil
@@ -262,29 +291,30 @@ func controllerGetCoreWebView2(controller uintptr) (uintptr, error) {
 // (window_windows.go does this once at setup), not the base
 // ICoreWebView2 pointer — slot 71 does not exist on the base vtable.
 func coreWebView2SetVirtualHost(cw2v3 uintptr, hostName, folderPath string, accessKindDeny uintptr) error {
-	h, hBuf, err := utf16Ptr(hostName)
+	hBuf, err := utf16Buf(hostName)
 	if err != nil {
 		return err
 	}
-	f, fBuf, err := utf16Ptr(folderPath)
+	fBuf, err := utf16Buf(folderPath)
 	if err != nil {
 		return err
 	}
-	_, err = comCall(cw2v3, 71, uintptr(unsafe.Pointer(h)), uintptr(unsafe.Pointer(f)), accessKindDeny)
-	_ = hBuf
-	_ = fBuf
+	var pin runtime.Pinner
+	defer pin.Unpin()
+	_, err = comCall(cw2v3, 71, pinUTF16(&pin, hBuf), pinUTF16(&pin, fBuf), accessKindDeny)
 	return err
 }
 
 // coreWebView2Navigate calls ICoreWebView2::Navigate (IDL slot 5:
 // 3=get_Settings, 4=get_Source, 5=Navigate).
 func coreWebView2Navigate(cw2 uintptr, uri string) error {
-	u, uBuf, err := utf16Ptr(uri)
+	uBuf, err := utf16Buf(uri)
 	if err != nil {
 		return err
 	}
-	_, err = comCall(cw2, 5, uintptr(unsafe.Pointer(u)))
-	_ = uBuf
+	var pin runtime.Pinner
+	defer pin.Unpin()
+	_, err = comCall(cw2, 5, pinUTF16(&pin, uBuf))
 	return err
 }
 
@@ -295,10 +325,19 @@ func coreWebView2Navigate(cw2 uintptr, uri string) error {
 // 13/14=add/remove_HistoryChanged, 15=add_NavigationCompleted). Must be
 // called before coreWebView2Navigate so the subscription is active
 // before the navigation it needs to observe starts.
+// The returned handler must be kept until the subscription ends, and
+// released with (*comBase).release then — exactly like the
+// WebMessageReceived handler below, and for exactly the same reason.
+// Before D-101 it was dropped on the floor the moment setUpWebView2
+// returned, leaving WebView2 holding the address of an object Go was
+// free to collect and reuse.
 func coreWebView2AddNavigationCompleted(cw2 uintptr) (*navigationCompletedHandler, error) {
 	h := newNavigationCompletedHandler()
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	var token uintptr
-	if _, err := comCall(cw2, 15, uintptr(unsafe.Pointer(h)), uintptr(unsafe.Pointer(&token))); err != nil {
+	if _, err := comCall(cw2, 15, h.addr(), pinPtr(&pin, &token)); err != nil {
+		h.release()
 		return nil, err
 	}
 	return h, nil
@@ -320,9 +359,12 @@ func coreWebView2AddNavigationCompleted(cw2 uintptr) (*navigationCompletedHandle
 // 0xc0000005 before this field was added — see D-080).
 func coreWebView2AddWebMessageReceived(cw2 uintptr, onMessage func(Message)) (*webMessageReceivedHandler, error) {
 	h := newWebMessageReceivedHandler(onMessage)
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	var token uintptr // EventRegistrationToken is a single __int64; 8 bytes fits one uintptr on amd64
-	_, err := comCall(cw2, 34, uintptr(unsafe.Pointer(h)), uintptr(unsafe.Pointer(&token)))
+	_, err := comCall(cw2, 34, h.addr(), pinPtr(&pin, &token))
 	if err != nil {
+		h.release()
 		return nil, err
 	}
 	return h, nil
@@ -337,14 +379,22 @@ func coreWebView2AddWebMessageReceived(cw2 uintptr, onMessage func(Message)) (*w
 // executeScriptCompletedHandler's doc comment for why this channel,
 // not a new Message type, backs Window.Eval).
 func coreWebView2ExecuteScript(cw2 uintptr, script string) (string, error) {
-	s, sBuf, err := utf16Ptr(script)
+	sBuf, err := utf16Buf(script)
 	if err != nil {
 		return "", err
 	}
+	// ExecuteScript is asynchronous: it keeps reading the script buffer
+	// after this call returns, and it invokes the completion handler
+	// later still. Both are pinned for the whole wait below, not merely
+	// across comCall — and pinned rather than runtime.KeepAlive'd, which
+	// is what this used to do: KeepAlive stops the collector freeing
+	// memory and does nothing at all about a stack copy moving it, which
+	// is the failure D-101 measured.
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	h := newExecuteScriptCompletedHandler()
-	_, err = comCall(cw2, 29, uintptr(unsafe.Pointer(s)), uintptr(unsafe.Pointer(h)))
-	_ = sBuf
-	if err != nil {
+	defer h.release()
+	if _, err := comCall(cw2, 29, pinUTF16(&pin, sBuf), h.addr()); err != nil {
 		return "", err
 	}
 	pumpUntil(func() bool { return h.done })

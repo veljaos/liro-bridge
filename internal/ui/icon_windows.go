@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"unsafe"
 
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
@@ -42,6 +41,17 @@ const (
 var (
 	procLoadImageW       = user32DLL.NewProc("LoadImageW")
 	procGetSystemMetrics = user32DLL.NewProc("GetSystemMetrics")
+
+	// procGetSystemMetricsForDpi resolves the icon-size metrics for an
+	// explicit DPI (Task 7, F5 first-real-run review) rather than
+	// whatever GetSystemMetrics implicitly associates with the calling
+	// thread — the tray's message-only window has no monitor of its own
+	// to derive that from, so plain GetSystemMetrics is not reliably
+	// correct for it on a per-monitor-DPI-aware process (win32_windows.go's
+	// ensureDPIAware sets DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2).
+	// Available since Windows 10 1607, the same release
+	// SetProcessDpiAwarenessContext (already required) shipped in.
+	procGetSystemMetricsForDpi = user32DLL.NewProc("GetSystemMetricsForDpi")
 )
 
 // ensureTrayIconExtracted writes the embedded .ico to a stable path
@@ -68,24 +78,95 @@ func ensureTrayIconExtracted() (string, error) {
 	return path, nil
 }
 
-// loadTrayIcon loads the real Liro mark at the current DPI's small-icon
-// size, picking the sharpest matching frame from the multi-size .ico
-// scripts/genicon produced (LoadImageW selects the best frame itself
-// when given desired dimensions). Falls back to 0 (the caller's own
-// IDI_APPLICATION fallback) on any failure — a missing or unreadable
-// icon file must never stop the tray from starting.
-func loadTrayIcon() uintptr {
+// loadTrayIcon loads the real Liro mark at hwnd's actual DPI's
+// small-icon size, picking the sharpest matching frame from the
+// multi-size .ico scripts/genicon produced (LoadImageW selects the
+// best frame itself when given desired dimensions). Falls back to 0
+// (the caller's own IDI_APPLICATION fallback) on any failure — a
+// missing or unreadable icon file must never stop the tray from
+// starting.
+//
+// hwnd's own DPI (via GetDpiForWindow, win32_windows.go) — not the
+// implicit "current thread" DPI plain GetSystemMetrics would use — is
+// what GetSystemMetricsForDpi is asked for: a message-only window has
+// no monitor of its own for GetSystemMetrics to correctly associate on
+// a per-monitor-DPI-aware process (Task 7). Getting this wrong is
+// exactly the kind of defect that silently produces a blurry or
+// wrong-sized icon at anything other than 100% scaling — never a
+// crash, so it goes unnoticed until someone actually looks at 150%.
+func loadTrayIcon(hwnd uintptr) uintptr {
+	cx, cy := systemIconSize(hwnd, smCXSMICON, smCYSMICON)
+	return loadIconAt(cx, cy)
+}
+
+// Window-title-bar icons (Task 4, F5 second-real-run review). The tray
+// already showed the real Liro mark; every WebView2 window still showed
+// the Windows placeholder in its title bar and in Alt+Tab, because the
+// window class registered in win32_windows.go carries no hIcon/hIconSm
+// and nothing ever sent WM_SETICON. Both sizes are set explicitly —
+// Windows does not derive one from the other, so setting only
+// ICON_SMALL leaves Alt+Tab (which reads ICON_BIG) on the placeholder,
+// and setting only ICON_BIG leaves the title bar on it.
+const (
+	wmSetIcon = 0x0080
+
+	iconSmall = 0
+	iconBig   = 1
+
+	// SM_CXICON / SM_CYICON — the large-icon size Alt+Tab and the task
+	// switcher read, as opposed to smCXSMICON/smCYSMICON above.
+	smCXICON = 11
+	smCYICON = 12
+)
+
+var procSendMessageW = user32DLL.NewProc("SendMessageW")
+
+// systemIconSize returns the icon dimensions Windows expects at hwnd's
+// own DPI for the given SM_CX*/SM_CY* metric pair, preferring the
+// per-DPI API for the reason loadTrayIcon's doc comment gives.
+func systemIconSize(hwnd uintptr, cxMetric, cyMetric uintptr) (cx, cy uintptr) {
+	dpi := getDpiForWindow(hwnd)
+	if dpi == 0 {
+		dpi = 96
+	}
+	cx, _, _ = procGetSystemMetricsForDpi.Call(cxMetric, uintptr(dpi))
+	cy, _, _ = procGetSystemMetricsForDpi.Call(cyMetric, uintptr(dpi))
+	if cx == 0 || cy == 0 {
+		cx, _, _ = procGetSystemMetrics.Call(cxMetric)
+		cy, _, _ = procGetSystemMetrics.Call(cyMetric)
+	}
+	return cx, cy
+}
+
+// loadIconAt loads the embedded Liro mark from its extracted file at
+// exactly cx x cy pixels, letting LoadImageW pick the sharpest frame in
+// the multi-size .ico. Returns 0 on any failure.
+func loadIconAt(cx, cy uintptr) uintptr {
 	path, err := ensureTrayIconExtracted()
 	if err != nil {
 		return 0
 	}
-	cx, _, _ := procGetSystemMetrics.Call(uintptr(smCXSMICON))
-	cy, _, _ := procGetSystemMetrics.Call(uintptr(smCYSMICON))
-	pathPtr, pathBuf, bufErr := utf16Ptr(path)
+	pathBuf, bufErr := utf16Buf(path)
 	if bufErr != nil {
 		return 0
 	}
-	h, _, _ := procLoadImageW.Call(0, uintptr(unsafe.Pointer(pathPtr)), imageIcon, cx, cy, lrLoadFromFile|lrDefaultColor)
-	runtime.KeepAlive(pathBuf)
+	var pin runtime.Pinner
+	defer pin.Unpin()
+	h, _, _ := procLoadImageW.Call(0, pinUTF16(&pin, pathBuf), imageIcon, cx, cy, lrLoadFromFile|lrDefaultColor)
 	return h
+}
+
+// setWindowIcons puts the real Liro mark in hwnd's title bar
+// (ICON_SMALL) and in Alt+Tab / the task switcher (ICON_BIG). A failure
+// to load either size is silently left as the Windows placeholder — a
+// missing icon must never stop a window from opening.
+func setWindowIcons(hwnd uintptr) {
+	smallCX, smallCY := systemIconSize(hwnd, smCXSMICON, smCYSMICON)
+	if h := loadIconAt(smallCX, smallCY); h != 0 {
+		_, _, _ = procSendMessageW.Call(hwnd, wmSetIcon, iconSmall, h)
+	}
+	bigCX, bigCY := systemIconSize(hwnd, smCXICON, smCYICON)
+	if h := loadIconAt(bigCX, bigCY); h != 0 {
+		_, _, _ = procSendMessageW.Call(hwnd, wmSetIcon, iconBig, h)
+	}
 }

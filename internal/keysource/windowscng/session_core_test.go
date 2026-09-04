@@ -57,13 +57,28 @@ func (f *fakeConn) probePresence(string) (bool, error) {
 	return f.presencePresent, f.presenceErr
 }
 
-func TestOpenSessionSetsWindowHandleToZeroInThisPhase(t *testing.T) {
+func TestOpenSessionSetsWindowHandleToZeroForHeadlessCallers(t *testing.T) {
 	conn := &fakeConn{der: []byte("cert"), key: 1}
 	if _, err := openSession(conn, "ABC", 0); err != nil {
 		t.Fatalf("openSession: %v", err)
 	}
 	if conn.windowHandleSet != 0 {
-		t.Fatalf("windowHandleSet = %d, want 0 (F2 §2.3: no window exists yet)", conn.windowHandleSet)
+		t.Fatalf("windowHandleSet = %d, want 0 (headless CLI paths pass no window)", conn.windowHandleSet)
+	}
+}
+
+// TestOpenSessionPassesThroughRealWindowHandle proves openSession
+// forwards a non-zero windowHandle to conn.setWindowHandle unchanged
+// (Task 2, F2 §2.3): the consent window passes its own HWND through
+// Source.WithWindowHandle so the OS PIN dialog is parented to it
+// instead of appearing behind it.
+func TestOpenSessionPassesThroughRealWindowHandle(t *testing.T) {
+	conn := &fakeConn{der: []byte("cert"), key: 1}
+	if _, err := openSession(conn, "ABC", 0xDEADBEEF); err != nil {
+		t.Fatalf("openSession: %v", err)
+	}
+	if conn.windowHandleSet != 0xDEADBEEF {
+		t.Fatalf("windowHandleSet = %#x, want 0xDEADBEEF", conn.windowHandleSet)
 	}
 }
 

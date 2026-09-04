@@ -104,6 +104,11 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		OutputSuffix:       "-signed",
 		SignatureLevel:     "b-t",
 		UpdateCheckEnabled: false,
+		// Task 1 (F5 fourth-real-run review): the stamp choice is
+		// persisted like any other setting, so the round trip has to
+		// carry it. Both values are deliberately not the defaults.
+		VisibleStamp:  false,
+		StampPosition: "top-left",
 	}
 
 	if err := Save(path, want); err != nil {
@@ -179,5 +184,67 @@ func TestEmptyOutputSuffixIsReplaced(t *testing.T) {
 	}
 	if cfg.OutputSuffix != defaultOutputSuffix {
 		t.Fatalf("OutputSuffix = %q, want default %q", cfg.OutputSuffix, defaultOutputSuffix)
+	}
+}
+
+// TestDefaultVisibleStampIsOn is Task 1's default, pinned where it is
+// decided (D-103): a signature the signer cannot see reads as one that
+// was never applied, so the visible stamp is on out of the box and the
+// invisible signature is the deliberate choice.
+func TestDefaultVisibleStampIsOn(t *testing.T) {
+	cfg := Default()
+	if !cfg.VisibleStamp {
+		t.Error("Default().VisibleStamp = false, want true")
+	}
+	if cfg.StampPosition != "bottom-right" {
+		t.Errorf("Default().StampPosition = %q, want bottom-right (SPEC §13.1)", cfg.StampPosition)
+	}
+}
+
+// TestVisibleStampFalseSurvivesLoad guards the one thing a bool default
+// of true can get wrong: a user who switched the stamp off must not
+// have it switched back on by the defaults being applied over their
+// file.
+func TestVisibleStampFalseSurvivesLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"visibleStamp": false}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.VisibleStamp {
+		t.Error("VisibleStamp = true after loading a file that says false")
+	}
+}
+
+// TestSignatureLevelBBIsValid is Task 3: a user who has deliberately
+// decided against a timestamp has a level to choose, and it is not
+// replaced by the default on the next load.
+func TestSignatureLevelBBIsValid(t *testing.T) {
+	for _, level := range []string{"b-b", "b-t", "b-lt"} {
+		cfg := Config{SignatureLevel: level}
+		validate(&cfg)
+		if cfg.SignatureLevel != level {
+			t.Errorf("validate replaced signatureLevel %q with %q", level, cfg.SignatureLevel)
+		}
+	}
+}
+
+func TestInvalidStampPositionFallsBackToTheDefaultCorner(t *testing.T) {
+	for _, position := range []string{"", "middle", "BOTTOM-RIGHT", "centre"} {
+		cfg := Config{StampPosition: position}
+		validate(&cfg)
+		if cfg.StampPosition != defaultStampPosition {
+			t.Errorf("validate(%q) left %q, want %q", position, cfg.StampPosition, defaultStampPosition)
+		}
+	}
+	for _, position := range []string{"bottom-right", "bottom-left", "top-right", "top-left"} {
+		cfg := Config{StampPosition: position}
+		validate(&cfg)
+		if cfg.StampPosition != position {
+			t.Errorf("validate replaced valid position %q with %q", position, cfg.StampPosition)
+		}
 	}
 }

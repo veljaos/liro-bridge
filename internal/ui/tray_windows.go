@@ -31,6 +31,17 @@ const (
 	nifIcon    = 0x00000002
 	nifTip     = 0x00000004
 
+	// nifGuid tells Shell_NotifyIconW to identify this icon by
+	// NOTIFYICONDATA.GUIDItem rather than by (hWnd, uID) (Task 7, F5
+	// first-real-run review). Without it, Windows falls back to
+	// identifying the icon by the executable's path plus that pair —
+	// fragile the moment the icon's owning window is a message-only
+	// window created fresh on every launch (as this tray's is), and
+	// exactly why a user's choice to promote the icon out of the
+	// overflow area was not being remembered across restarts: Windows
+	// had no stable identity to remember it *by*.
+	nifGuid = 0x00000020
+
 	nimAdd    = 0x00000000
 	nimModify = 0x00000001
 	nimDelete = 0x00000002
@@ -84,6 +95,18 @@ type notifyIconDataW struct {
 	InfoFlags       uint32
 	GUIDItem        windows.GUID
 	BalloonIcon     uintptr
+}
+
+// trayIconGUID is this tray icon's permanent identity (Task 7): fixed
+// forever, never regenerated or derived from anything build- or
+// machine-specific, so Shell_NotifyIconW's NIF_GUID promotion state
+// (the user having dragged the icon out of the overflow area) survives
+// every future restart of the agent, not just this one.
+var trayIconGUID = windows.GUID{
+	Data1: 0x4fc9e32a,
+	Data2: 0xd77f,
+	Data3: 0x4142,
+	Data4: [8]byte{0x91, 0xd3, 0xb3, 0x54, 0x75, 0xde, 0x27, 0x68},
 }
 
 const (
@@ -160,7 +183,7 @@ func (t *tray) run(ready chan<- error) {
 	// only if the embedded .ico can't be extracted or loaded, so a
 	// packaging problem degrades the tray icon rather than stopping the
 	// agent from starting at all.
-	icon := loadTrayIcon()
+	icon := loadTrayIcon(hwnd)
 	if icon == 0 {
 		icon, _, _ = procLoadIconW.Call(0, uintptr(idiApplication))
 	}
@@ -169,15 +192,29 @@ func (t *tray) run(ready chan<- error) {
 	nid.CbSize = uint32(unsafe.Sizeof(nid))
 	nid.Hwnd = hwnd
 	nid.ID = 1
-	nid.Flags = nifMessage | nifIcon | nifTip
+	nid.Flags = nifMessage | nifIcon | nifTip | nifGuid
 	nid.CallbackMessage = wmTrayCallback
 	nid.Icon = icon
+	nid.GUIDItem = trayIconGUID
 	copyUTF16(nid.Tip[:], trayTooltip(t.opts.Version))
 
 	if r, _, _ := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid))); r == 0 {
-		_, _, _ = procDestroyWindow.Call(hwnd)
-		ready <- fmt.Errorf("ui: Shell_NotifyIconW(NIM_ADD) failed")
-		return
+		// NIM_ADD can fail for a GUID Windows still has stale state for
+		// (e.g. a previous instance that crashed instead of reaching
+		// NIM_DELETE) — NIM_DELETE-then-retry is Microsoft's own
+		// documented recovery for exactly this, and strictly safer than
+		// falling back to an unstable (hWnd, uID) identity that would
+		// reintroduce the bug this GUID exists to fix.
+		var stale notifyIconDataW
+		stale.CbSize = uint32(unsafe.Sizeof(stale))
+		stale.Flags = nifGuid
+		stale.GUIDItem = trayIconGUID
+		_, _, _ = procShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&stale)))
+		if r, _, _ := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid))); r == 0 {
+			_, _, _ = procDestroyWindow.Call(hwnd)
+			ready <- fmt.Errorf("ui: Shell_NotifyIconW(NIM_ADD) failed")
+			return
+		}
 	}
 
 	ready <- nil
@@ -187,6 +224,8 @@ func (t *tray) run(ready chan<- error) {
 	del.CbSize = uint32(unsafe.Sizeof(del))
 	del.Hwnd = hwnd
 	del.ID = 1
+	del.Flags = nifGuid
+	del.GUIDItem = trayIconGUID
 	_, _, _ = procShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&del)))
 }
 

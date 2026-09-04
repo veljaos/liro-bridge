@@ -43,7 +43,8 @@ var (
 	procSetForegroundWindow   = user32DLL.NewProc("SetForegroundWindow")
 	procSetFocus              = user32DLL.NewProc("SetFocus")
 
-	procGetModuleHandleW = kernel32DLL.NewProc("GetModuleHandleW")
+	procGetModuleHandleW   = kernel32DLL.NewProc("GetModuleHandleW")
+	procGetCurrentThreadID = kernel32DLL.NewProc("GetCurrentThreadId")
 )
 
 type rect struct{ Left, Top, Right, Bottom int32 }
@@ -171,6 +172,25 @@ func postQuitMessage(code int32) { _, _, _ = procPostQuitMessage.Call(uintptr(co
 
 func postMessage(hwnd uintptr, msg uint32, wparam, lparam uintptr) {
 	_, _, _ = procPostMessageW.Call(hwnd, uintptr(msg), wparam, lparam)
+}
+
+// currentThreadID identifies the OS thread this goroutine is running
+// on. window_windows.go records it for the thread that creates a
+// window's WebView2 controller, and compares against it to answer the
+// only question that matters for a single-threaded-apartment object:
+// am I the thread allowed to touch this? See (*window).Close.
+func currentThreadID() uintptr {
+	id, _, _ := procGetCurrentThreadID.Call()
+	return id
+}
+
+// sendMessage dispatches msg synchronously. Used only by
+// (*window).Close, for the one case where the caller is already on the
+// window's own thread and so cannot wait for it — SendMessageW to a
+// window the calling thread owns calls its window procedure directly,
+// without going near the message queue.
+func sendMessage(hwnd uintptr, msg uint32, wparam, lparam uintptr) {
+	_, _, _ = procSendMessageW.Call(hwnd, uintptr(msg), wparam, lparam)
 }
 
 // pumpUntil runs the Win32 message loop until done reports true or the

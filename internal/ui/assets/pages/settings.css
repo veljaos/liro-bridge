@@ -1,11 +1,28 @@
 body {
   padding: var(--liro-space-4);
+}
+
+/* main fills the window (body is .liro-page, a fixed-height column)
+   and is itself a column: title, scrolling form, status line, actions.
+   The gap here separates those four; the gaps between the form's own
+   fields belong to .settings-form below.
+
+   The gap has to live on a real container: body's own flex+gap only
+   ever separated body's single <main> child from nothing, which is why
+   every label row once relied on the browser's default zero margin
+   (F5 first-real-run review, Task 5). */
+main {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--liro-space-2);
+  gap: var(--liro-space-3);
 }
 
 fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
   border: 1px solid var(--liro-color-border);
   border-radius: var(--liro-radius-sm);
 }
@@ -27,9 +44,57 @@ fieldset {
   margin-top: var(--liro-space-2);
 }
 
-input[type="text"] {
-  font-family: inherit;
-  border: 1px solid var(--liro-color-border);
-  border-radius: var(--liro-radius-sm);
-  padding: var(--liro-space-1) var(--liro-space-2);
+/* Task 1c (F5 second-real-run review): a timestamp-authority preset is
+   a radio, its name, and — for freetsa.org — the one warning it must
+   carry. The row wraps rather than pushing the fieldset wider. */
+.tsa-preset {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--liro-space-2);
+}
+
+.tsa-preset > span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-1);
+  align-items: flex-start;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tsa-preset-name {
+  font-weight: var(--liro-font-weight-semibold);
+}
+
+.tsa-preset-note {
+  color: var(--liro-color-text-tertiary);
+}
+
+/* Task 3: the one line that says what Export audit log / Check for
+   updates actually did. */
+#action-status {
+  margin: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+legend {
+  color: var(--liro-color-text-secondary);
+}
+
+/* Task 5 (F5 fourth-real-run review): the form scrolls, the page does
+   not. main is the window's full height (body carries .liro-page);
+   .settings-form is the single scrolling region inside it, and the
+   title, the status line and the Save/Close row are fixed, so Save is
+   on screen no matter how tall the form becomes. The previous
+   "main { overflow-y: auto; max-height: 100vh }" scrolled the whole
+   page instead, which took the buttons with it — the defect this
+   replaces. */
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+  /* Room for the focus ring on the first and last fields, which an
+     overflow container would otherwise clip. */
+  padding: var(--liro-space-1);
 }

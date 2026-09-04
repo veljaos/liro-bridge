@@ -1,5 +1,15 @@
 body {
   padding: var(--liro-space-4);
+}
+
+/* Task 5 (F5 fourth-real-run review): the page is the window's height
+   and never scrolls as a whole; the certificate list is the one region
+   that grows and scrolls, so Close is always on screen however many
+   certificates are installed. A fixed max-height did that only as long
+   as nothing else on the page changed size. */
+main {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--liro-space-3);
@@ -9,13 +19,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--liro-space-2);
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.cert-role {
-  font-size: var(--liro-font-size-small);
-  color: var(--liro-color-text-secondary);
+  /* Room for a row's focus ring, which the overflow container would
+     otherwise clip. */
+  padding: var(--liro-space-1);
 }
 
 .cert-reason {

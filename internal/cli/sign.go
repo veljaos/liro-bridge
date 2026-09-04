@@ -309,6 +309,17 @@ func thumbprintTail(t keysource.Thumbprint) string {
 	return "…" + s[len(s)-8:]
 }
 
+// ErrorMessage renders err the way this package's own output does, for
+// a caller outside it that shows the same errors to the same person —
+// the consent window (cmd/liro-bridge's pushFailure), which had been
+// rendering the bare catalogue message and so printed a stamp-glyph
+// failure with its two "%s" placeholders unfilled. One renderer, one
+// behaviour: a code's Details reach the user in exactly one shape,
+// whichever front door the signature was started from.
+func ErrorMessage(err error, c *i18n.Catalogue) string {
+	return errMessage(err, c)
+}
+
 // errMessage renders err for the CLI's own local, English-or-localised
 // output — not an API boundary (SPEC §7 governs internal/api's future
 // JSON responses; this phase builds no such surface). A structured

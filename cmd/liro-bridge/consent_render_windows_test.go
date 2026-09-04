@@ -39,21 +39,7 @@ func TestConsentWindowRendersAndRoundTrips(t *testing.T) {
 	digests := [][]byte{{1, 2, 3}}
 	vm := consent.BuildViewModel(consent.ApplicationLocal, digests, []string{"document.pdf"}, []classify.Info{usable})
 
-	messages := make(chan ui.Message, 8)
-	win, err := ui.NewWindow(ui.Options{
-		Title:       c.T("consent.window_title"),
-		Width:       480,
-		Height:      420,
-		Assets:      assetsFS,
-		VirtualHost: liroVirtualHost,
-		StartPage:   "/pages/consent.html",
-		OnMessage:   func(m ui.Message) { messages <- m },
-		OnClosed:    func() { messages <- ui.Message{Type: ui.MessageTypeCancel} },
-	})
-	if err != nil {
-		t.Fatalf("NewWindow: %v", err)
-	}
-	defer func() { _ = win.Close() }()
+	win, messages := sharedConsentWindow(t)
 
 	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
 		t.Fatalf("PostJSON: %v", err)

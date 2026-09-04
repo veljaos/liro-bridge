@@ -106,6 +106,7 @@ func TestComputeHashChangesWithEveryField(t *testing.T) {
 		func() Entry { e := base; e.FailureCode = errs.CodeCardNotPresent; return e }(),
 		func() Entry { e := base; e.IsTestKey = true; return e }(),
 		func() Entry { e := base; e.PrevHash = []byte{9, 9, 9}; return e }(),
+		func() Entry { e := base; e.AchievedLevel = "b-b"; return e }(),
 	}
 	for i, v := range variants {
 		if bytes.Equal(v.ComputeHash(), baseHash) {

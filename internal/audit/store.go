@@ -34,6 +34,7 @@ type jsonEntry struct {
 	Outcome       Outcome   `json:"outcome"`
 	FailureCode   string    `json:"failureCode,omitempty"`
 	IsTestKey     bool      `json:"isTestKey"`
+	AchievedLevel string    `json:"achievedLevel,omitempty"`
 	PrevHash      string    `json:"prevHash"`
 	Hash          string    `json:"hash"`
 }
@@ -48,6 +49,7 @@ func toJSONEntry(e Entry) jsonEntry {
 		Outcome:       e.Outcome,
 		FailureCode:   string(e.FailureCode),
 		IsTestKey:     e.IsTestKey,
+		AchievedLevel: e.AchievedLevel,
 		PrevHash:      hexEncode(e.PrevHash),
 		Hash:          hexEncode(e.Hash),
 	}
@@ -71,6 +73,7 @@ func fromJSONEntry(j jsonEntry) (Entry, error) {
 		Outcome:       j.Outcome,
 		FailureCode:   errCode(j.FailureCode),
 		IsTestKey:     j.IsTestKey,
+		AchievedLevel: j.AchievedLevel,
 		PrevHash:      prevHash,
 		Hash:          hash,
 	}, nil

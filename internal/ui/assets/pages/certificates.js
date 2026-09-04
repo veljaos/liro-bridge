@@ -18,12 +18,23 @@
       row.setAttribute("role", "listitem");
 
       var nameLine = document.createElement("div");
+      nameLine.className = "liro-cert-name";
       window.liroSetText(nameLine, cert.displayName);
       row.appendChild(nameLine);
 
+      // Task 6: role and issuer read as a sentence; the thumbprint tail
+      // is not part of that sentence — it is a quiet monospace suffix,
+      // present because SPEC §11.5 sometimes needs it, never dressed up
+      // as more text to read.
       var metaLine = document.createElement("div");
-      metaLine.className = "cert-role";
-      window.liroSetText(metaLine, cert.roleText + " — " + cert.issuerText + " — …" + cert.thumbprintTail);
+      metaLine.className = "liro-cert-meta";
+      var metaText = document.createElement("span");
+      window.liroSetText(metaText, cert.roleText + " — " + cert.issuerText);
+      metaLine.appendChild(metaText);
+      var thumb = document.createElement("span");
+      thumb.className = "liro-cert-thumb";
+      window.liroSetText(thumb, cert.thumbprintTail);
+      metaLine.appendChild(thumb);
       row.appendChild(metaLine);
 
       if (cert.isTestKey) {

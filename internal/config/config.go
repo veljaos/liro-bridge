@@ -59,9 +59,29 @@ type Config struct {
 	// as a setting per F5 §7. "document.pdf" -> "document-signed.pdf".
 	OutputSuffix string `json:"outputSuffix"`
 
-	// SignatureLevel is "b-t" or "b-lt" (SPEC §12.6); B-LT is the
+	// SignatureLevel is "b-b", "b-t" or "b-lt" (SPEC §12.6); B-LT is the
 	// project's default.
+	//
+	// "b-b" is a deliberate decision, not a fallback: a user who has
+	// settled that they do not want a timestamp has said so once, here,
+	// and the consent window then never asks them again (D-105). SPEC
+	// §12.6 calls B-B "fallback only, on explicit user choice" — this
+	// field is where that explicit choice lives.
 	SignatureLevel string `json:"signatureLevel"`
+
+	// VisibleStamp requests the visual signature stamp (SPEC §13) for
+	// signatures started from the consent window. On by default: a
+	// signature nobody can see reads as a signature that was never
+	// applied, which is exactly how the invisible default was first
+	// reported (D-103). The command line is unchanged — there, --stamp
+	// is still the only thing that draws one.
+	VisibleStamp bool `json:"visibleStamp"`
+
+	// StampPosition is one of the four page corners the consent window
+	// offers: "bottom-right" (SPEC §13.1's own default),
+	// "bottom-left", "top-right", "top-left". A visual placement picker
+	// is a later phase (SPEC §13.1).
+	StampPosition string `json:"stampPosition"`
 
 	// UpdateCheckEnabled toggles the daily GitHub Releases check (SPEC
 	// §6.8/§15.2). On by default; disableable, never silently ignored.
@@ -81,7 +101,28 @@ const (
 	defaultOutputSuffix       = "-signed"
 	defaultSignatureLevel     = "b-lt"
 	defaultUpdateCheckEnabled = true
+	defaultVisibleStamp       = true
+	defaultStampPosition      = "bottom-right"
 )
+
+// validSignatureLevels are the three levels the settings window offers
+// (SPEC §12.6). B-B is included because a user may decide against a
+// timestamp deliberately; it is never selected for them.
+var validSignatureLevels = map[string]bool{
+	"b-b":  true,
+	"b-t":  true,
+	"b-lt": true,
+}
+
+// validStampPositions are the four corners SPEC §13.1 names. Explicit
+// x/y coordinates remain a command-line-only capability (--stamp-xy);
+// the window offers corners alone until the placement picker phase.
+var validStampPositions = map[string]bool{
+	"bottom-right": true,
+	"bottom-left":  true,
+	"top-right":    true,
+	"top-left":     true,
+}
 
 // Default returns the configuration used when no file exists and when a
 // field is missing or invalid.
@@ -95,6 +136,8 @@ func Default() Config {
 		OutputSuffix:       defaultOutputSuffix,
 		SignatureLevel:     defaultSignatureLevel,
 		UpdateCheckEnabled: defaultUpdateCheckEnabled,
+		VisibleStamp:       defaultVisibleStamp,
+		StampPosition:      defaultStampPosition,
 	}
 }
 
@@ -162,9 +205,13 @@ func validate(cfg *Config) {
 		slog.Warn("config: portRangeEnd out of range, using default", "value", cfg.PortRangeEnd, "default", defaultPortRangeEnd)
 		cfg.PortRangeEnd = defaultPortRangeEnd
 	}
-	if cfg.SignatureLevel != "b-t" && cfg.SignatureLevel != "b-lt" {
+	if !validSignatureLevels[cfg.SignatureLevel] {
 		slog.Warn("config: invalid signatureLevel, using default", "value", cfg.SignatureLevel, "default", defaultSignatureLevel)
 		cfg.SignatureLevel = defaultSignatureLevel
+	}
+	if !validStampPositions[cfg.StampPosition] {
+		slog.Warn("config: invalid stampPosition, using default", "value", cfg.StampPosition, "default", defaultStampPosition)
+		cfg.StampPosition = defaultStampPosition
 	}
 	if cfg.OutputSuffix == "" {
 		cfg.OutputSuffix = defaultOutputSuffix

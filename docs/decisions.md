@@ -5110,3 +5110,1362 @@ which `slog` calls exist today.
   configuration and to Settings" — a plain text field for a path is
   consistent with every other Settings field's own input style
   (`tsa-url`, `output-suffix`) and required no new Win32 surface.
+
+## D-092 — `--help`/usage text is English only; SPEC §9.2's en/localised split gains a third category
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** `liro-bridge --help` (and the bare, no-argument
+invocation, which prints the same thing) is English, unconditionally —
+it no longer calls `i18n.Load` at all. The top-level command list and
+synopsis in `cmd/liro-bridge/main.go`'s `topLevelUsage` are now plain
+string literals instead of catalogue keys, and the seven `cli.help_*`
+keys are removed from all three locale catalogues (`en.json`,
+`sr-Latn.json`, `sr-Cyrl.json`) — they had no other caller. SPEC §9.2
+is amended: it previously drew one line ("CLI output is localised; log
+files are not"). The line now reads:
+
+> Code, comments, documentation, help and usage text are English.
+> Everything a non-developer reads at runtime — CLI *output* (certs
+> listings, error messages), window text — is localised in all three
+> catalogues. Log files are English regardless, for the reason already
+> given (read by developers).
+
+This also removes the second, hand-rolled `"Usage of %s:\n"` block
+(`fs.PrintDefaults()`, listing only `-version`) that `topLevelUsage`
+printed after the command list — it was a second, differently
+formatted "usage" header in the same output, and everything it added
+over the synopsis above it was one flag a user can just as well
+discover by running `liro-bridge --version`. `TestHelpFlag` and
+`TestNoArgsPrintsUsageAndExitsZero` (`cmd/liro-bridge/main_test.go`)
+are updated to assert on `"Usage: liro-bridge <command> [flags]"`
+instead of the removed `"Usage of liro-bridge"` string.
+
+**Why.** The owner's own framing, from an actual run: `--help` mixed
+Serbian ("Komande:", localised one-line descriptions) with the
+standard library's English `flag` package output in the same block —
+readable to no single audience. Every subcommand's own `--help`
+(`sign --help`, `certs --help`, ...) was already English by construction
+(none of them set `fs.Usage`, so they fall through to `flag`'s own
+English default) — only the top-level command was inconsistent with
+itself. Help and usage text is developer-facing in the same sense code
+comments are: it explains *how to invoke the program*, not something a
+signer reads mid-signature. SPEC §9.2 previously had no place to say
+this because it only ever distinguished "CLI output" (assumed to mean
+everything the CLI prints) from "log files" — this decision narrows
+"CLI output" to mean the certs listing, error messages and other
+*runtime* text a user reading their own certificates or a failure
+sees, and gives help/usage its own, English-only rule alongside code
+and documentation.
+
+**Verified in the running binary**, not only by the updated tests:
+built the binary and ran `liro-bridge --help`, `liro-bridge`, and
+`liro-bridge sign --help` with `LIRO_LOCALE`/config locale set to
+`sr-Cyrl` — every line of `--help`/bare-invocation output is English,
+every line of `sign --help` was already English, and `liro-bridge
+certs` (with no certificates present) still prints in Cyrillic,
+confirming runtime CLI output is untouched by this change.
+
+**Rejected.**
+- **Keeping the command descriptions localised and only fixing the
+  duplicate flag block.** Rejected: the owner's decision was explicit
+  that help/usage is English "like everything else developer-facing,"
+  not merely that the two usage blocks look inconsistent with each
+  other — leaving the command list localised would still mix English
+  and Serbian in the same `--help` output.
+- **Leaving `cli.help_flags_heading` and `cli.help_flag_version` in the
+  catalogues, unused, in case a future flags section wants them.**
+  Rejected: they were already dead (never referenced by any code path
+  even before this change) and would now additionally contradict the
+  "help text is English" rule if anyone ever wired them back in;
+  removed rather than left as a trap.
+
+## D-093 — Outcome colours come from `IntentFamilyColor`, a single generated map, never chosen per call site
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** The certificates and audit log windows render an outcome
+(and, more generally, any future status this project wants to colour
+the same way) as a single word, right-aligned, in one of exactly four
+colours: positive, warning, negative, caution. The mapping from those
+four names to tokens lives in exactly one place —
+`IntentFamilyColor` (`scripts/synctokens/intents.go`), a
+`map[string]string` from intent name to `--liro-color-*` token name —
+and `intentOutcomeCSS` generates the four `.liro-outcome-<name>` CSS
+rules directly from it (sorted by name for a stable diff), appended to
+the generated `intents.css`. Four new tokens back it:
+`--liro-color-positive` (green), `--liro-color-negative` (the existing
+danger red, aliased under its intent name), `--liro-color-caution`
+(orange, distinct from warning), and the existing `--liro-color-warning`
+(amber) is reused rather than duplicated.
+
+`internal/ui` gains a small, dependency-free `Intent` string type
+(`IntentPositive`/`IntentWarning`/`IntentNegative`/`IntentCaution`) so
+Go call sites — `cmd/liro-bridge/auditlog_windows.go`'s new
+`outcomeIntent(audit.Outcome) ui.Intent` — have a typed value to pass
+through the JSON payload (`jsAuditEntry.OutcomeIntent`) rather than a
+bare string assembled ad hoc at each call site. The mapping
+`approved`->positive, `denied`->warning, `failed`->negative,
+`partial`->caution is fixed by `outcomeIntent` alone; nothing else in
+`cmd/liro-bridge` or the page JS decides an outcome's colour.
+
+**Why.** Two independent problems, one cause. First, every button in
+the agent's windows was rendered in `--liro-color-brand`, which was set
+to the real Liro turquoise (`#038387`, D-070's logo colour) — turquoise
+read as "green" to an actual person clicking Approve/Save, even though
+no literal hex anywhere said so (`scripts/checkcss` was never the gap;
+the *token itself* was wrong). `--liro-color-brand` is now `#0078D4`,
+the design system's actual brand blue; the turquoise stays exactly
+where D-070 put it (`internal/pades/appearance`, `scripts/genicon`,
+`scripts/genlogo`) and is never read by this token pipeline again.
+Second, the audit log window coloured every non-`approved` outcome
+identically (`liro-badge-warning`, regardless of whether the batch was
+merely denied, partially failed, or failed outright) — a user could
+not tell "cancelled, no big deal" from "failed, something is wrong" at
+a glance, which is the entire point of colouring an outcome at all.
+Naming the mapping `IntentFamilyColor` and generating the CSS from it,
+rather than hand-writing four `color: var(...)` rules and a parallel
+Go `switch`, keeps the two from drifting apart the way the four
+outcomes and one badge class already had.
+
+**Verified in the running binary**, not only by
+`scripts/synctokens`'s own new tests (`TestIntentFamilyColorHasExactly...`,
+`TestIntentOutcomeCSSGeneratesOneRulePerIntent`): built four audit log
+entries (approved, denied, failed, partial — `internal/audit.Entry`
+written directly to a test profile's audit store) and opened the Audit
+log window; each outcome renders as one right-aligned word in a
+visibly different colour (green/amber/red/orange), and every button in
+every window (consent, pairing, settings, certificates, audit log) is
+the same blue, with no green anywhere. `go run ./scripts/checkcss`
+stays green.
+
+**Rejected.**
+- **Reusing `--liro-color-danger` for `negative` instead of adding
+  `--liro-color-negative` as its own token.** Rejected: `danger` is
+  already load-bearing elsewhere (`.liro-error-box`, disabled-reason
+  text) for a general "something is wrong" meaning unrelated to the
+  four-way outcome taxonomy; giving the outcome-negative case its own
+  name in `IntentFamilyColor` keeps that map self-describing even
+  though the two tokens happen to share a value today.
+- **A hand-written `switch` in JS mapping `entry.outcome` strings
+  straight to CSS class names, with no Go-side `Intent` type.**
+  Rejected: it would have put the outcome -> colour-family decision in
+  the one layer (page JS) explicitly forbidden from choosing its own
+  colours, and duplicated the same four-way mapping a second time
+  instead of computing it once in Go and handing the page an
+  already-resolved intent name.
+
+## D-094 — Visual verification never simulates mouse or keyboard input on this machine; a screenshot needing an interaction asks the owner to perform it
+
+**Date:** 2026-09-03
+**Phase:** F5
+
+**Decision.** Verifying a window "by looking at it" means launching the
+real (or a throwaway preview) binary and taking a screenshot of it —
+nothing more. `SetCursorPos`/`mouse_event` (or any other
+programmatic-input API) are never used to drive a window during
+verification on this machine, for any reason, at any level of care.
+When a screenshot genuinely needs an interaction to be meaningful — a
+selected certificate row so the enabled Approve button's colour is
+visible, for instance — the assistant pauses and asks the owner to
+perform that one click, then screenshots, rather than simulating it.
+This applies beyond this task: the same judgement — stop and ask
+before any action that would reach outside the project's own files and
+windows — extends to any future verification step with similar reach.
+
+**Why.** While verifying Task 4's consent-window layout, a
+`mouse_event` call intended to click a certificate row in a throwaway
+preview window instead landed on the owner's real, live desktop — the
+foreground window at the moment the click actually fired was a browser
+tab playing an unrelated YouTube video, not the preview window.
+`SetCursorPos`/`mouse_event` are global on Windows: there is no
+mechanism that confines them to one process's window, because which
+window is in the foreground depends on a race against everything else
+running on the machine at that instant. This was a browser tab; the
+same race could as easily land a synthetic click on a delete
+confirmation, a "send" button, or — directly relevant to this
+project — the operating system's own PIN dialog (Task 2), where a
+synthetic Approve/OK means a qualified signature the certificate's
+owner never actually authorised. No amount of "target only the test
+window's HWND" care closes that gap, because the click is delivered to
+whatever the OS foreground is at the moment it fires, not to whatever
+this process most recently called `SetForegroundWindow` on — the two
+can and did diverge. The risk is categorically unacceptable, not a
+matter of degree, so it is not something a more careful implementation
+of the same approach can fix.
+
+**Verified.** N/A — this is a process decision about how verification
+itself is done, not a code change.
+
+**Rejected.**
+- **Simulating input more carefully (e.g. re-checking the foreground
+  window immediately before each `mouse_event` call).** Rejected per
+  the "why" above: the race is inherent to global input injection on
+  Windows, not a bug in any particular calling pattern, so no amount of
+  additional care around it removes the risk.
+- **Confining verification to Go-level/WebView2 `Eval`-driven clicks
+  only (as the existing `*_windows_test.go` suite already does via
+  `Window.Eval("...click()")`), and calling that sufficient without
+  ever screenshotting.** Rejected: an `Eval`-driven click is safe (it
+  runs inside the target page's own DOM, never touches the real
+  cursor) and remains the right tool for automated tests, but the
+  actual task at hand — confirming what a window *looks like* — still
+  requires a real screenshot; the fix is "screenshot without
+  synthetic input," not "skip the screenshot."
+
+---
+
+## D-095 — No default timestamp authority; the consent window asks the user instead of refusing; RS-GOV TSA's endpoint is `https://tsa.gov.rs/`, contract-gated, and was unreachable when probed
+
+**Date:** 2026-09-04
+**Phase:** F5 — second real-run review (Task 1)
+
+**Decision.** Three parts, one subject.
+
+*(a) There is no default timestamp authority.* `config.Default().TSAURL`
+stays empty, and nothing in this project contacts a timestamp authority
+that the user did not configure. [[D-067]]'s reasoning for not
+hard-coding a live government endpoint stands unchanged; what changes
+is what happens next.
+
+*(b) The consent window asks.* When a batch is about to be signed and
+either no TSA is configured, or a configured one did not answer after
+`internal/pades/tsa`'s existing retry policy ([[D-045]]: three
+attempts, 15 s each, 1 s then 3 s backoff), the consent window enters a
+new state (`consent.StateTSAChoice`) offering exactly three actions:
+
+- **Sign without a timestamp** — proceeds at B-B.
+- **Configure a timestamp authority** — opens the Settings window,
+  re-reads the configuration when it closes, rebuilds the TSA client,
+  and continues at the requested level if one is now configured; asks
+  again if not.
+- **Cancel** — nothing is signed; the audit entry records `denied`.
+
+The achieved level is then reported in all three places a user could
+look: on the consent window's done screen (`consent.level_bb`, "Nivo
+B-B — bez vremenskog žiga", in the warning intent family), in
+`pades.Result.AchievedLevel` as it always was, and in the audit entry,
+which gains an `AchievedLevel` field carrying the *weakest* level any
+document in the batch reached. The audit-log window renders it, marked
+in the warning family when it is B-B.
+
+The question is asked *before* the card session is opened, so a user
+who cancels never enters a PIN for a batch that was never going to be
+saved. A TSA that fails mid-batch asks the same question, then retries
+that document — the batch is not abandoned (SPEC §12.10).
+
+`--on-tsa-failure`'s command-line default stays `abort`. The finding
+this fixes is "the user is given no way forward from inside the
+application"; on the command line the flag *is* the way forward, it is
+documented in `--help`, and a script that silently starts emitting B-B
+where it used to emit B-LT is a worse outcome than one that stops and
+says why.
+
+*(c) Settings offers two named presets plus the free-text URL.*
+Neither is preselected: a preset radio is checked only when the saved
+URL is byte-identical to that preset's own, so the factory-default
+(empty) configuration selects nothing, and a hand-typed URL never
+silently claims to be one of them. The URL field remains the only thing
+actually saved; a preset is a shortcut for filling it in.
+
+- **freetsa.org** — `https://freetsa.org/tsr`, labelled exactly "nije
+  kvalifikovan u Srbiji" / "not qualified in Serbia" / "није
+  квалификован у Србији" and nothing more.
+- **Office for IT and eGovernment (RS-GOV TSA)** —
+  `https://tsa.gov.rs/`, with the note that it requires an approved
+  request to the Office and a client certificate.
+
+**Verified.** Measured, not assumed:
+
+*The authority that timestamped `testdata/pdfs/local/mup.pdf`.* Both of
+that document's CMS blobs were extracted and every embedded certificate
+parsed. The timestamp token's signer is
+`CN=RS-GOV TSA-3 200103828, O=Kancelarija za informacione tehnologije i
+elektronsku upravu, SERIALNUMBER=CA:RS-200103828`, `extendedKeyUsage`
+`timeStamping`, issued by `CN=Pošta Srbije CA 1`, certificate policies
+`0.4.0.194112.1.3` and `1.3.6.1.4.1.15672.10.812.1.0`. Both tokens
+carry the TSTInfo policy OID `1.3.6.1.4.1.55016.1.1.0` — exactly the
+OID SPEC §12.7 names for this provider, confirmed by searching the
+decoded DER for its encoding `06 0B 2B 06 01 04 01 83 AD 68 01 01 00`.
+No certificate in the document carries a URL for the TSA *service*;
+the AIA and CRL URLs all point at Pošta's repository, so the endpoint
+could not be derived from the fixture.
+
+*The endpoint.* The Office's own eUprava service page for the service
+(euprava.gov.rs/usluge/1635) states the address as `https://tsa.gov.rs/`,
+that client applications must support certificate authentication, and
+that the service is for "државних органа, органа локалне самоуправе и
+јавних служби" — state bodies, local self-government bodies and public
+services — which must submit a request through the eUprava portal. The
+Office's own pages (ite.gov.rs) describe the RS-GOV TSA infrastructure
+but publish no endpoint.
+
+*What one RFC 3161 request actually returned.* A well-formed
+`TimeStampReq` (version 1, SHA-256 imprint, 8-byte nonce, `certReq`
+true — the same shape `internal/pades/tsa.buildRequest` produces) was
+POSTed to `https://tsa.gov.rs/` with
+`Content-Type: application/timestamp-query`, from this machine, on
+2026-09-04. Result:
+
+- The host is live. TLS completes; the server certificate is
+  `CN=tsa.gov.rs`.
+- The server **does** request a TLS client certificate, and the CA list
+  it will accept is every Serbian qualified issuer: Pošta Srbije CA
+  Root/CA 1/CA 2/CA Root 2026, MUPCA Root 3 / Resursi 3 / Sluzbenici 3,
+  Halcom BG Root CA and its two e-signature CAs, PKS CA Root/Class1,
+  E-Smart ESS RQCA/IQCA1, and the Office's own EID RS PRIV Root /
+  EID RS Infr Mgt.
+- The response was **HTTP 400 Bad Request** with
+  `Content-Type: text/html` and a 769 141-byte eUprava-branded error
+  page reading "Поштовани корисници, У току је унапређење система.
+  Доступност сервиса очекује се убрзо." ("Dear users, a system upgrade
+  is in progress. Service availability is expected shortly.") —
+  `Response Code: 400`, application `VS-tsa.gov.rs`.
+- Not a timestamp token, not an RFC 3161 rejection, not a network
+  failure: an HTTP error page from the gateway in front of the service.
+- Identical for `GET /`, `POST /`, `POST /tsa/timestamp` and
+  `POST /TSAServer`, and identical again on a repeat 20 s later, so it
+  is not a transient or a wrong-path artefact.
+
+So: **it does not accept requests without a contract, and at the moment
+of probing it was not answering RFC 3161 requests at all.** The preset
+still ships, because the task's condition for leaving it out was being
+unable to establish the URL — the URL *is* established, by its operator's
+own published service description and by a live host presenting a
+`CN=tsa.gov.rs` certificate and asking for exactly the client
+certificates that page says are required. It ships with a label saying
+what it needs, and it is not preselected, so no user reaches it by
+accident.
+
+*freetsa.org, for contrast.* The same request to
+`https://freetsa.org/tsr` returned HTTP 200,
+`Content-Type: application/timestamp-reply`, 4642 bytes, beginning
+`30 82 12 1E 30 03 02 01 00 …` — `PKIStatus 0`, granted.
+
+**Rejected.**
+- **Configuring `https://tsa.gov.rs/` (or any other authority) as the
+  default TSA URL.** Rejected on the owner's own instruction and on
+  [[D-067]]'s reasoning, now reinforced by measurement: the endpoint
+  requires an approved request to the Office and a Serbian qualified
+  client certificate, so as a default it would fail for essentially
+  every user of this program, and the failure would be an HTML error
+  page rather than anything a TSA client can explain.
+- **Leaving the RS-GOV preset out because the probe did not return a
+  token.** Considered seriously — the instruction says to ship nothing
+  that does not work. Rejected because what the probe established is
+  that the *endpoint* is right (correct host, correct certificate,
+  correct client-certificate demand) and the *service* is gated and
+  currently in maintenance. A user who has the contract and the card
+  needs this URL; withholding it would help nobody, and the note on the
+  preset states the precondition plainly.
+- **Keeping SPEC §12.8's choice at the `--on-tsa-failure` level only,
+  as [[D-083]] decided.** Superseded, for this one screen. D-083's
+  reasoning was that a mid-failure re-decision had nowhere to travel
+  through a three-message page->Go surface without overloading
+  `approve` and blurring what the audit log records that click as. That
+  is now solved the same way the settings window solved it: the two
+  proceeding actions send `approve` and record *which* they were in
+  `window.__liroTSAChoice()`, which Go reads back through
+  `Window.Eval`'s own return value. The disambiguation is explicit data
+  reported by the page, not an inference from which state the window
+  happened to be in — which is precisely the thing D-083 rejected. The
+  message surface is still exactly three types.
+- **Making the timestamp choice a checkbox on the waiting screen ("sign
+  without a timestamp") shown up front.** Rejected: it asks every user,
+  every time, about a situation most of them will never be in, and a
+  pre-ticked or easily-ticked box is how a downgrade becomes routine.
+  The question is only worth asking at the moment it actually matters.
+- **Recording only a boolean "downgraded" in the audit entry instead of
+  the level string.** Rejected: it would lose the B-T/B-LT distinction,
+  which is the same question one step further up, and the field costs
+  nothing extra to carry as a string.
+- **Appending `AchievedLevel` to `audit.Entry.CanonicalBytes`
+  unconditionally.** Rejected: it changes the canonical bytes of every
+  entry ever written, so every audit log already on disk would read as
+  tampered with. Appending it only when set — it is the last field, and
+  length-prefixed like every other — leaves a pre-change entry
+  canonicalising to exactly the bytes it always did.
+  `TestCanonicalBytesWithoutAchievedLevelIsUnchanged` pins that.
+
+---
+
+## D-096 — The batch fingerprint is shown as 16 hex characters plus a Copy action; no value in these windows may widen its container
+
+**Date:** 2026-09-04
+**Phase:** F5 — second real-run review (Task 2)
+
+**Decision.** `consent.ViewModel` now carries two forms of the batch
+fingerprint: `Fingerprint` (the full 64 hex characters, unchanged) and
+`FingerprintShort` (`ShortFingerprint`: the first 16 characters plus
+`...`, the same three-ASCII-period mark [[D-057]] established). The
+consent window renders only the short form, in monospace, with a
+compact "Copy" button that puts the full value on the clipboard. The
+full value never appears in the DOM.
+
+Separately, every value in these windows that has no length bound now
+wraps rather than overflows: `.liro-row > *` gets `min-width: 0` (a
+flex item's default `min-width: auto` is what actually refused to
+shrink), and `overflow-wrap: anywhere` is applied to certificate names
+and meta lines, the error box, the fingerprint, the output path and the
+done summary.
+
+**Why.** SPEC §6.6 says the fingerprint exists "so a technical user can
+verify what was approved against what the calling application says it
+sent". A clipboard copy serves that comparison exactly; sixty-four
+characters rendered on screen do not — nobody compares a hex digest by
+eye, and the string has no break opportunities, so it pushed the
+Details card, the row, and the window's whole layout apart.
+
+**Verified.** `TestConsentDetailsFingerprintDoesNotWidenItsContainer`
+renders the Details section in a real WebView2 window at the size
+`runSignInteractive` uses, measures the card's
+`getBoundingClientRect().width` with no fingerprint and again with the
+full 64-character one from the report
+(`d54aeba8571c16922cb7cd1f6b758824bc7b26e6865daa4bba47be47c906135e`),
+and asserts they are equal — plus that neither the body nor the card
+scrolls horizontally, that the rendered text is the elided form, and
+that the full value appears nowhere in `document.body.textContent`.
+Confirmed to fail against the pre-fix rendering: with the CSS and the
+short form reverted, the same test reports "body scrollWidth 583
+exceeds clientWidth 520" and "Details card scrollWidth 566 exceeds
+clientWidth 486".
+`TestConsentLongFileNameDoesNotWidenTheWindow` does the same for a
+300-character file name, and
+`TestSettingsWindowFitsWithoutHorizontalOverflow` for a 200-character
+TSA URL and client-certificate path.
+
+**Rejected.**
+- **CSS truncation (`text-overflow: ellipsis`) instead of truncating in
+  Go.** Rejected: the full string would still be in the DOM, one
+  stylesheet change away from overflowing again, and a Copy action
+  would then be copying something the page is pretending is shorter
+  than it is. Truncating where the value is computed means the page
+  never holds a form it must not render.
+- **Wrapping the fingerprint across lines instead of eliding it.** It
+  fits, but four lines of hex is noise in a section whose other content
+  is the thing the user actually reads (the file names).
+
+---
+
+## D-097 — Export audit log writes to a folder the user chooses and says where; Check for updates says the update channel is not built yet
+
+**Date:** 2026-09-04
+**Phase:** F5 — second real-run review (Task 3)
+
+**Decision.** Both Settings buttons now produce visible output.
+
+*Export audit log* opens the OS folder chooser
+(`ui.ChooseFolder`, `SHBrowseForFolderW` with
+`BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE`, on its own OS thread with
+its own OLE apartment), writes `liro-audit-<stamp>.jsonl` and
+`liro-audit-<stamp>-report.json` there, and reports the destination
+folder on a status line in the window. A cancelled chooser reports
+nothing — the user withdrew the request. A chain that fails
+verification is reported as its own distinct message, because "the
+export failed" and "the export succeeded and the log is broken" call
+for different reactions.
+
+*Check for updates* states, on the same status line, that automatic
+updates are not available in this version yet. SPEC §15.2's update
+channel — the embedded public key, the GitHub Releases check, the
+release-signature verification and the ask-before-installing prompt —
+is F10's work, built with the packaging it belongs to.
+
+The status line is a new Go->page payload type (`"status"`), not a new
+page->Go message type: the three-message surface is untouched.
+
+**Why.** Both handlers already existed and both already ran. Export
+wrote its two files into `%LOCALAPPDATA%\Liro\audit\exports\` and
+logged the paths; the update check logged a line saying it was not
+implemented. On screen, both were indistinguishable from a dead button
+— the same objection that applied to the tray menu items in the
+previous round ([[D-089]]). A button that appears enabled and produces
+no response reads as a broken program.
+
+**Verified.** `TestSettingsStatusLineRendersWhatAnActionDid` posts a
+real status through `postSettingsStatus` into a real WebView2 window
+and reads the DOM back: the line is hidden before any action, carries
+the catalogue's own text afterwards, has a non-zero rendered height,
+and takes its colour from the intent family ([[D-093]]) rather than a
+colour chosen at the call site. The folder chooser itself was opened
+and photographed — parented to the Settings window, with its localised
+prompt — see [[D-100]] for how. `audit.Store.Export` writing both files
+was already covered by `TestExportWritesEntriesAndReport`.
+
+Confirming that the export *completes* — files on disk, destination
+named on screen — needs someone to press OK in that dialog, which
+[[D-094]] means is the owner's click, not a simulated one.
+
+**Rejected.**
+- **`IFileOpenDialog` with `FOS_PICKFOLDERS`.** The modern API, but
+  this package's COM interop is hand-written vtable work ([[D-080]]);
+  it would mean several more interfaces implemented by hand for a
+  chooser with no requirement `SHBrowseForFolderW` does not already
+  meet.
+- **Keeping the fixed `exports/` directory and just naming it on
+  screen.** Rejected: the task asks for a location the user chooses,
+  and an export the user cannot put on a USB stick or attach to an
+  email is most of the way to not being an export.
+- **Building enough of the update channel to make the button do
+  something real.** Rejected as F10's work, and as exactly the
+  build-beyond-your-phase move SPEC §0 warns against; saying plainly
+  that it is not there yet is what this round was asked for.
+
+---
+
+## D-098 — Every window carries the real Liro mark, at both icon sizes, set with WM_SETICON
+
+**Date:** 2026-09-04
+**Phase:** F5 — second real-run review (Task 4)
+
+**Decision.** `internal/ui`'s window creation sends `WM_SETICON` for
+both `ICON_SMALL` (the title bar) and `ICON_BIG` (Alt+Tab and the task
+switcher), loading the already-embedded `assets/icon.ico` at each
+size's own `GetSystemMetricsForDpi` dimensions. `loadTrayIcon` is now a
+two-line call into the same helpers.
+
+**Why.** The window class registered in `win32_windows.go` carries no
+`hIcon`/`hIconSm`, and nothing ever sent `WM_SETICON`, so every window
+showed the Windows placeholder even though the tray icon had come from
+the real mark since [[D-090]]. Both sizes are set explicitly because
+Windows derives neither from the other: setting only `ICON_SMALL`
+leaves Alt+Tab on the placeholder, and only `ICON_BIG` leaves the title
+bar on it.
+
+**Verified.** `TestWindowsCarryTheLiroIcon` (cmd/liro-bridge) creates a
+real window and reads the icons back out of it with `WM_GETICON` for
+both sizes, rather than asserting that `setWindowIcons` was called — a
+`LoadImageW` failure returns 0 and is deliberately silent, so "the call
+happened" proves nothing about what the user sees.
+`TestSystemIconSizeIsPositive` (internal/ui) guards the size
+arithmetic, because `LoadImageW` treats a zero dimension as "use the
+resource's own size" and silently produces a wrong-sized icon rather
+than an error.
+
+The window half of that pair lives in `cmd/liro-bridge`, with every
+other window test, and not next to the code it exercises. Written first
+in `internal/ui`, it deadlocked `go test ./...`: `go test` runs
+packages in parallel, every window in this project opens WebView2
+against the one user data folder under `%LOCALAPPDATA%\Liro`, and
+WebView2 will not open a second instance of a user data folder from
+another process — so `internal/ui`'s window and `cmd/liro-bridge`'s
+window blocked on each other inside
+`CreateCoreWebView2Controller`, with no error, until the test binary's
+own timeout fired. Keeping every window test in one package is what
+keeps them serialised.
+
+**Rejected.**
+- **Putting the icon on the window class (`WNDCLASSEX.hIcon` /
+  `hIconSm`) instead.** It works, but the class is registered once per
+  process before any window's DPI is known, so both sizes would be
+  resolved at whatever the first monitor's scaling happened to be.
+  `WM_SETICON` per window resolves each at that window's own DPI.
+
+---
+
+## D-099 — `ui.NewWindow` intermittently never completes; measured, unfixed, and the window-test suite reshaped around it
+
+**Date:** 2026-09-04
+**Phase:** F5 — second real-run review (found while verifying Tasks 1–4)
+
+**Decision.** Recorded as a known defect, not fixed in this pass. Two
+things were done about it: every test that opens a WebView2 window now
+lives in `cmd/liro-bridge` and shares one consent window and one
+settings window between them, and this entry states the measurement so
+the next person does not rediscover it from scratch.
+
+**Why — what was measured.** `go test ./cmd/liro-bridge/` intermittently
+hangs. Every hang has the same shape: a goroutine parked in
+`pumpUntil` inside `environmentCreateController` (occasionally
+`createEnvironment` or `coreWebView2ExecuteScript`), waiting for a
+WebView2 completion handler that never fires, until the test binary's
+own deadline kills it. No error, no HRESULT, no log line.
+
+Rates measured on this machine, this build, with nothing else of ours
+running:
+
+| What ran | Windows opened | Result |
+|---|---|---|
+| `TestConsentWindowRendersAndRoundTrips` alone, ×8 | 1 | 7 ok, 1 hung |
+| `TestSettingsWindowRendersLocalisedText` alone, ×6 | 1 | 6 ok |
+| Consent + settings tests, ×6 | 2 | 5 ok, 1 hung |
+| Whole package, ×8 | 2 | 6 ok, 2 hung |
+
+So it is roughly one window creation in twenty to thirty, and it is
+present with a single window — it is not caused by opening several.
+More windows per run simply means more chances to hit it.
+
+Two hypotheses were tried and both were wrong, which is worth
+recording so they are not tried again:
+
+- **"The pump is asleep in GetMessage with the flag already set."**
+  Plausible — the completion handlers are raw hand-written COM vtables
+  ([[D-080]]) handed to the runtime as bare pointers, so nothing
+  guarantees the runtime invokes them on the waiting thread. Replacing
+  `GetMessage` with a `PeekMessage` + `MsgWaitForMultipleObjectsEx`
+  loop that re-checks the flag every 50 ms, and making the flags
+  atomic, changed nothing: 2 hangs in 4 runs, the same as before. The
+  completion genuinely never arrives. Both changes were reverted rather
+  than left in on a theory that measurement had disproved.
+- **"A per-run WebView2 user data folder isolates the tests."** A
+  `TestMain` pointing `LOCALAPPDATA` at a fresh temp directory made it
+  *much* worse — every run then hung on the very first window. Removed.
+
+A second symptom of the same fragility, seen once: after a run in which
+every test passed, the process crashed during teardown with an access
+violation inside the WebView2 runtime, reached from
+`(*window).closeWebView`'s `ICoreWebView2Controller::Close` — a
+controller pointer that was no longer valid. `closeWebView` now zeroes
+every pointer it releases, so a second WM_CLOSE from any source is a
+no-op instead of a call on freed memory. That is correct regardless of
+what sent the second close, which was not established.
+
+One real bug was found on the way and kept: `coreWebView2ExecuteScript`
+ended `_ = sBuf` after handing the script's UTF-16 buffer to an
+asynchronous call. That is not a use the compiler has to honour, so the
+buffer could be collected while ExecuteScript was still reading it; it
+is now `runtime.KeepAlive(sBuf)`, along with the same fix for
+`coreWebView2Navigate`'s URI and `coreWebView2SetVirtualHost`'s two
+strings. It did not fix the hang and was not its cause — it is a latent
+defect found by inspection.
+
+**What was actually changed.** The window tests were moved into one
+package and reduced from thirteen window creations per run to two, both
+shared. That cut the package from 27.7 s to 5.6 s and cut the hang rate
+roughly in proportion, without hiding anything: a hang still fails the
+run, loudly, at the test binary's deadline.
+
+Not attempted here, and the two candidates for whoever fixes this
+properly: creating every window on **one** UI thread with one COM
+apartment and one WebView2 environment, instead of this project's
+thread-per-window model (F5 §2.1) — the environment is the object the
+runtime deduplicates per user data folder, and one environment per
+process is what every WebView2 sample does; or giving each completion
+wait a deadline so a stuck call reports an error instead of hanging,
+which is what SPEC §12.8's "never hang" asks for everywhere else in
+this program.
+
+**This is a user-facing defect, not only a test one.** The same code
+opens the tray's Settings, Certificates and Audit log windows, and the
+consent window. One in twenty-odd of those will not open, and the
+program will sit there. It has not been seen in manual use because
+manual use opens a handful of windows, not hundreds.
+
+**Rejected.**
+- **Retrying `NewWindow` on a timeout inside the test helpers.** That
+  hides a defect a user will hit, in the one place that would otherwise
+  keep reporting it.
+- **Fixing the thread model as part of this pass.** It is a rewrite of
+  `internal/ui`'s concurrency design, and this pass is four bounded
+  fixes to what the second real run exposed. Recorded here instead.
+
+---
+
+## D-100 — Verification screenshots come from the real binary where a window can be reached without a click, and from a throwaway harness where it cannot
+
+**Date:** 2026-09-04
+**Phase:** F5 — second real-run review
+
+**Decision.** [[D-094]] forbids simulating mouse or keyboard input on
+this machine, and most of the screens this pass changed are reachable
+only by clicking. They were verified like this:
+
+- **The real binary, screenshotted directly.**
+  `liro-bridge.exe sign --interactive --in <file>` was run and its
+  consent window photographed. That is where the title-bar icon
+  (Task 4) was confirmed: the window shows the Liro mark, not the
+  Windows placeholder. The certificate list showed the owner's two
+  real Halcom certificates, correctly marked unusable with no card in
+  the reader.
+- **A throwaway test file, created, used and deleted in the same
+  session**, holding each window open for six seconds so it could be
+  photographed, and driving the page only through `Window.Eval` — which
+  runs inside the page's own DOM and never touches the real cursor
+  ([[D-094]]'s own carve-out for `Eval`-driven clicks). It used the
+  real page assets, the real payload builders
+  (`buildConsentInit`, `consentTSAChoicePayload`, `consentDonePayload`,
+  `buildSettingsInit`, `buildAuditLogInit`) and the real window host —
+  everything except the CLI dispatch that would have required a click
+  to reach. Screens confirmed this way: the Details section with an
+  elided fingerprint and its Copy action; the timestamp choice screen;
+  the done screen stating B-B; the settings window's two presets and
+  its status line; the audit log window's level lines; and the folder
+  chooser, opened parented to the settings window with its localised
+  prompt.
+
+Two windows were resized as a direct result of *looking* at them, which
+no test would have caught: Settings from 480 to 880 points (the preset
+group and the status line had pushed Save and Close below the fold —
+the window scrolled) and the audit log from 440 to 520 (four entries
+plus their new level lines no longer fitted).
+
+**Why.** The alternative was to ask the owner for six or seven separate
+clicks across four windows, most of which prove nothing a screenshot of
+the same rendered page does not. The one thing this approach cannot
+prove — that the whole flow works end to end from a real card, with a
+real PIN — is asked of the owner explicitly instead, as one run rather
+than seven interruptions.
+
+**Rejected.**
+- **Adding a permanent `preview` subcommand or build tag to the
+  shipped binary.** Verification scaffolding does not belong in the
+  product; a file created and deleted in one session leaves nothing
+  behind.
+- **Screenshotting only what the real binary reaches without a click.**
+  That is the consent window's waiting state and nothing else — every
+  screen this pass actually changed would have gone unlooked-at, which
+  is the exact failure mode [[D-087]] recorded.
+
+---
+
+## D-101 — Both window-layer defects were one bug: Go memory handed to WebView2 as a bare address, with nothing keeping it where it was put
+
+**Date:** 2026-09-04
+**Phase:** F5 — third real-run review
+
+**Decision.** Every Go object and buffer whose raw address crosses into
+WebView2 or Win32 is pinned with `runtime.Pinner` for as long as the
+callee may use it — the completion and event handler objects for as
+long as their COM reference count says so, everything else for the
+length of the call. `runtime.KeepAlive`, which is what this code used
+before, is not enough and never was.
+
+Separately, and independently correct: the WebView2 controller is
+released by exactly one thread, the one that created it, exactly once,
+guarded by a flag set on entry to the teardown rather than inferred
+from pointers zeroed on the way out.
+
+**Why — the two symptoms turned out to have one cause.**
+
+[[D-099]] recorded `ui.NewWindow` hanging roughly one call in
+twenty-five, always parked in `pumpUntil` inside
+`environmentCreateController`, waiting for a completion that never
+came. It also recorded an access violation during teardown, reached
+from `closeWebView`'s `ICoreWebView2Controller::Close`, and guessed at
+a second WM_CLOSE arriving after teardown. Both guesses about *why*
+were wrong, and the two symptoms are the same defect wearing different
+clothes: **a Go value handed to foreign code as a `uintptr`, which the
+Go runtime is under no obligation to leave where it was.**
+
+Two separate runtime mechanisms invalidate such an address:
+
+- **The stack moves.** When a goroutine needs more stack, the runtime
+  allocates a bigger one and *copies every frame to a new address*. It
+  rewrites the Go pointers it can find; it cannot rewrite a number, and
+  it cannot reach into the WebView2 runtime at all.
+- **The collector frees.** A `uintptr` is not a reference. An object
+  whose only remaining holder is WebView2 is, as far as Go is
+  concerned, garbage.
+
+`go build -gcflags=-m` named the first one outright:
+
+```
+webview2_windows.go:211:36: &controllerCompletedHandler{} does not escape
+webview2_windows.go:345:39: &executeScriptCompletedHandler{} does not escape
+```
+
+Those two handlers were **on the stack**. `pumpUntil` is a deep call
+chain that runs foreign callbacks on the same goroutine, so it grows
+the stack routinely — and when it did, WebView2 set `done = true` in
+the abandoned copy while the loop read the moved one. Forever. That is
+the hang, and the two functions escape analysis named are exactly the
+two [[D-099]] measured it in.
+
+**Measurements.** All on this machine, this build, `-count=1`.
+
+| What | Before | After |
+|---|---|---|
+| `ui.NewWindow`, plain runs | 2 hangs in 25 | **0 hangs in 300** |
+| `ui.NewWindow`, stack moved on every call | 10 hangs in 10 | **0 hangs in 25** |
+| Close racing a user close, real page and handlers | crashed 0xc0000005 within 40 | **0 crashes in 150** |
+| `sign --interactive`, real binary, closed by a real WM_CLOSE | — | 3 runs, exit 0 |
+
+The second row is the proof rather than the fix. Building with
+`-gcflags=all=-d=maymorestack=runtime.mayMoreStackMove` makes the
+runtime move the stack at *every* function entry, which turns a
+one-in-twenty-five race into a certainty; before the fix that build
+could not create a single window — it failed instantly and differently,
+in `controllerGetCoreWebView2`, whose stack-allocated out-parameter
+moved between the address being taken and the call using it, the same
+bug in its synchronous form. After the fix it opens twenty-five without
+complaint. That command is the reproduction recipe for whoever touches
+these files next:
+
+```
+go test -gcflags=all=-d=maymorestack=runtime.mayMoreStackMove \
+    ./internal/ui/ -run TestNewWindowAlwaysCompletes
+```
+
+**The teardown crash was the collector, not two threads.** The reported
+dump showed the main goroutine blocked in `(*window).Close` and the
+window thread crashing in `wndProc -> closeWebView -> controllerClose`,
+which reads as two threads racing over one controller. It is not.
+`ICoreWebView2Controller::Close` releases every event handler
+registered against the controller — the codebase already knew this,
+which is why `webMessageHandler` was kept on the `*window` — and the
+navigation-completed handler, added later, was **dropped on the floor
+the moment `setUpWebView2` returned**. WebView2 kept its address for
+the window's whole life and called `Release` on it during teardown. If
+a collection had run in between, that call landed on reclaimed memory.
+
+Confirmed by re-creating exactly that state — un-pinning the navigation
+handler, keeping every other fix — and running the new close-race test,
+which reproduced the reported stack character for character:
+
+```
+Exception 0xc0000005
+ui.comCall -> ui.controllerClose -> ui.(*window).closeWebView -> ui.wndProc(0x10)
+```
+
+With the pin restored, 150 iterations pass. The test forces a
+collection before each close, which is what turns a lifetime bug from
+an occasional mystery into something a test can be relied on to catch.
+
+**The ownership fix is still made, on its own merits.** Two WM_CLOSEs
+for one window are ordinary — the title bar sends one, `Close` sends
+one — and `ICoreWebView2Controller::Close` runs a nested message loop
+that dispatches whatever is queued straight back into `wndProc` on the
+same thread, from inside the first close. Idempotency-by-zeroing cannot
+help there: the second entry reads the pointers before the first entry
+has finished with them and zeroed them. So `tearingDown` is set on
+entry; `wmRunFunc` stops running queued closures once teardown starts,
+since a queued `Eval` would otherwise call into pointers being
+released; `closedCh` is closed under a `sync.Once`; and the window
+records the thread that owns it, so `Close` can tell "post and wait"
+from "I am that thread, dispatch it here" rather than deadlocking.
+Measurably this changed nothing on its own — with the lifetime bug
+fixed, disabling these guards still passed 100 close races — and it is
+kept because "usually correct" is not a property to build F6's extra
+windows on.
+
+**What else the audit found.** Every remaining pointer handed to a COM
+or Win32 method was converted to the same discipline: the UTF-16
+script, URI, virtual-host and user-data-folder buffers (pinned across
+the whole asynchronous call, not merely `KeepAlive`d across the
+synchronous half); `queryInterface`'s GUID and out-parameter;
+`controllerSetBounds`'s RECT; `controllerGetCoreWebView2`'s
+out-parameter; both event registration tokens; `WebMessageAsJson`'s
+out-parameter; `SHBrowseForFolderW`'s BROWSEINFO and the two buffers it
+points at, which sit under a modal message loop for as long as the
+dialog is open; `LoadImageW`'s path. `IUnknown::Release` also stopped
+being a decrement whose result nothing read: reaching zero is now what
+unpins an object, so a handler lives exactly as long as something
+outside Go can still call it and not one reference longer — checked
+directly by `TestHandlerObjectsAreUnpinnedWhenReleased`, because the
+opposite mistake is a leak that grows with every `ExecuteScript`.
+
+**Rejected.**
+- **A mutex around the teardown.** It is the wrong shape: two threads
+  politely taking turns at an apartment-threaded object is still two
+  threads touching it. Ownership is the property that makes it correct;
+  the flag is only there because the owning thread can be re-entered by
+  its own nested pump.
+- **Keeping `runtime.KeepAlive` and adding more of it.** KeepAlive
+  stops memory being *collected*. It says nothing about it being
+  *copied*, which is what was actually happening. Every KeepAlive on
+  this path is now a pin.
+- **Pinning every handler forever and never unpinning.** Simpler, and a
+  slow leak for the one handler allocated per `ExecuteScript` call —
+  which is to say per `PostJSON`, in a tray process meant to run for
+  weeks.
+- **The one-UI-thread rewrite [[D-099]] proposed as the likely fix.** A
+  reasonable guess at a defect that turned out to have nothing to do
+  with thread count: the hang reproduces on a single window in a fresh
+  process, and now does not reproduce at all. Rewriting the concurrency
+  model would have been a large change made for a wrong reason.
+
+---
+
+## D-102 — On the timestamp-choice screen, signing without a timestamp is the primary action and Cancel is quieter than the secondary
+
+**Date:** 2026-09-04
+**Phase:** F5 — third real-run review
+
+**Decision.** The three actions get three distinct weights, not two:
+*Sign without a timestamp* is `liro-btn-primary` (brand blue),
+*Configure a timestamp authority* is `liro-btn-secondary` (neutral,
+bordered), and *Cancel* is a new `liro-btn-quiet` — no fill, no border,
+secondary text colour, taking the neutral fill back only on hover.
+
+**Why.** This project ships no default timestamp authority ([[D-095]]),
+so this screen exists precisely because none is configured, and signing
+without one is what most people who reach it will choose. It was styled
+as the secondary while *Configure* — the action that sends the user off
+to the settings window in the middle of a signature — wore the brand
+colour.
+
+The third weight exists because two neutral buttons stacked together
+read as equals, and Cancel is not the equal of either real choice.
+`liro-btn-quiet` joins `scripts/synctokens/intents.go` next to the
+other button variants, so it is generated into `intents.css` with the
+rest and takes its colours from tokens; `checkcss` stays green.
+Verified by looking at the rendered screen, by [[D-100]]'s method.
+
+**Rejected.** *Leaving Cancel as a second secondary and only swapping
+the other two.* That fixes the wrong emphasis and leaves the ambiguity
+the task actually described: the screen would still offer two
+equal-looking neutral buttons, one of which does nothing.
+
+---
+
+## D-103 — The consent window offers a visible stamp, on by default, in one of four corners, and remembers both answers
+
+**Date:** 2026-09-04
+**Phase:** F5 — fourth real-run review (Task 1)
+
+**Decision.** The consent window gains a checkbox, *Add a visible
+stamp*, **ticked by default**, and — while it is ticked — a corner
+selector offering exactly SPEC §13.1's four corners, `bottom-right`
+first because that is SPEC's own default. Both answers are read back
+when Approve is pressed (through `window.__liroStampChoice()` and
+`Window.Eval`'s return value, the same channel the settings form and
+the timestamp choice already use — [[D-083]]), saved to
+`config.json` as `visibleStamp` and `stampPosition`, and used as the
+window's starting state on the next run.
+
+Nothing else about the stamp is exposed here. The reference line and
+the identity-document-number line stay command-line capabilities
+(`--stamp-reference`, `--stamp-show-document-id`); SPEC §13.5 is
+explicit that the identity document number is never a default, and it
+is not offered where it could become one by accident. Explicit x/y
+coordinates stay on the command line too, since SPEC §13.1 defers a
+visual placement picker to a later phase.
+
+The command line is unchanged: `--stamp` is still the only thing that
+draws a stamp there, and a `sign` run without it still produces the
+byte-identical invisible signature the F3 golden file pins.
+
+**Why the default is on.** A completed `sign --interactive` run
+produced a correct signature the owner could not see, and their first
+reaction was that the signature had not been applied. The evidence in
+the output was
+
+```
+field 2073 | T = Liro-Signature-1 | Rect = [0, 0, 0, 0] | no appearance stream
+```
+
+which is SPEC §13.4's invisible default, correctly implemented — and
+unreachable from the window, because the window never asked. A
+signature nobody can see is indistinguishable, to the person who just
+signed, from no signature at all.
+
+The direction of the default follows from who is on each side of it.
+Someone who wants an invisible signature is making a specialist choice
+about a document that will be checked by a validator, and they know it;
+they untick a box. Someone who wants to see their signature on the page
+is the ordinary case — a contract, an invoice, a form that a human will
+open and look at — and they should not have to discover a setting to
+get it. SPEC §13.4's rule is about the *code path* ("stamp generation
+is a separate module, invoked only when a visual stamp is requested"),
+which is unchanged: `interactiveStampOptions` returns `nil` when the box
+is unticked, and every line that reads `opts.Stamp` is skipped exactly
+as before. What changed is who does the requesting.
+
+Persisting both answers follows from the same reasoning as the choice
+itself: this is a preference about how the user's own documents should
+look, not a per-batch security decision. SPEC §18.15 forbids
+remembering a *certificate* across sessions — because on a machine
+holding several clients' cards a remembered default becomes a
+wrong-signer incident — and that reasoning does not reach a stamp: no
+choice here can sign anything with the wrong key, and the certificate
+is still chosen explicitly, every time, with nothing preselected.
+
+**Verified.** Not by reading the payload builder — by the bytes that
+come out of it, which is what the finding was about:
+
+- `TestInteractiveSignatureIsVisibleWhenTheStampIsAskedFor` signs
+  `testdata/pdfs/blank.pdf` through `signInteractiveOne` with exactly
+  the options `runSignInteractive` builds, and asserts the produced
+  document has a `/Rect` that is not `[0 0 0 0]`, an `/AP` appearance
+  stream, and the embedded `LIROBR` font subset. Against the previous
+  build's behaviour (no stamp options at all) every one of those three
+  assertions fails.
+- `TestInteractiveSignatureStaysInvisibleWhenTheStampIsOff` asserts the
+  opposite for an unticked box — every `/Rect` degenerate, no font
+  subset — so SPEC §13.4's default path is provably still there.
+- `TestInteractiveStampCornerReachesTheOutput` signs the same document
+  twice, bottom-left and top-right, and asserts the two rectangles
+  differ: the corner is not decorative.
+- `TestConsentStampCheckboxIsOnByDefaultAndOffersFourCorners` and
+  `TestConsentStampPositionHidesWhenTheStampIsOff` measure the real
+  WebView2 DOM: the box is checked out of the box, the selector holds
+  exactly `bottom-right,bottom-left,top-right,top-left` with localised
+  labels, and the corner selector is hidden while no stamp is being
+  drawn.
+- `TestReadStampChoiceReadsWhatThePageHolds` proves the answer travels
+  back to Go; `TestSettingsSavePreservesTheStampChoice` proves saving an
+  unrelated setting does not silently switch it off again (see below).
+- In the running binary: `liro-bridge sign --interactive --in
+  testdata\pdfs\local\mup.pdf` shows the checkbox ticked and the corner
+  selector on `Dole desno`, above the Details disclosure.
+
+**A defect this exposed.** `handleSettingsAction` built a fresh
+`config.Config` from the form's own fields, so every field the settings
+window does not show was reset on save — the log level and the port
+range to hard-coded literals, and, once this task added them, the stamp
+choice to its zero value (invisible, no corner). Saving any setting
+would have quietly undone the stamp choice. It now starts from the
+configuration the window was opened with and overwrites only what the
+form holds. `TestSettingsSavePreservesTheStampChoice` pins it.
+
+**Rejected.**
+- **Leaving the stamp off by default and only offering the checkbox.**
+  This is the literal reading of SPEC §13.4, and it fixes the
+  discoverability half of the finding while leaving the substance: the
+  first signature a new user makes is still invisible, and they still
+  conclude nothing happened. §13.4's rule is about the code path, not
+  about which way a checkbox points, and the code path is untouched.
+- **Making the visible stamp unconditional in the window (no
+  checkbox).** Rejected: the invisible signature is a legitimate,
+  specified default with real users — a document that will only ever be
+  validated by a machine gains nothing from a stamp, and a stamp
+  overlays whatever is under it. Removing the choice trades one
+  complaint for another.
+- **Putting the choice in Settings instead of on the consent window.**
+  Rejected: the position and the visibility are decisions about *this
+  document* as often as they are standing preferences — the corner
+  depends on where the page's own content is. Settings would be the
+  right home for a default, but the moment of signing is where the
+  question is actually being asked. Persisting the answer gives the
+  Settings behaviour anyway, without the trip.
+- **Offering a full placement picker, or x/y coordinates, in the
+  window.** Out of scope by SPEC §13.1's own words ("a visual position
+  picker comes in a later phase"), and four corners cover what a corner
+  stamp is for.
+- **Changing the command line's `--stamp` default to match.** Rejected:
+  a script that has been producing invisible signatures must not start
+  producing stamped ones because the desktop default changed. The two
+  front doors are allowed to have different defaults precisely because
+  one has a human looking at it and the other does not — the same
+  reasoning [[D-095]] applied to `--on-tsa-failure`.
+
+---
+
+## D-104 — An existing output file is a choice with its own error code, not an "unexpected error"; every code now has a message in all three catalogues
+
+**Date:** 2026-09-04
+**Phase:** F5 — fourth real-run review (Task 4)
+
+**Decision.** Three parts.
+
+*(a) The consent window asks.* When the file a signature would be
+written to already exists, the window shows a new state
+(`consent.StateOutputExists`) naming the existing file and offering
+three actions:
+
+- **Save as `<name>-2.pdf`** — the primary action, naming the file it
+  would actually write, computed by `nextFreeOutputPath` (the first
+  free numeric suffix, counting from 2, bounded at 1000).
+- **Overwrite** — the neutral secondary.
+- **Cancel** — `liro-btn-quiet`, the third weight [[D-102]] introduced.
+
+Saving under a different name is the primary because it is the only one
+of the three that loses nothing. The answer is remembered for the rest
+of the batch: a hundred-document batch signed a second time asks once,
+not a hundred times. Cancel ends the batch, nothing is written, and the
+audit entry records `denied` exactly as any other cancellation does.
+
+SPEC §12.11 and §18.10 forbid *silently* replacing a file. Overwriting
+one the user has just been shown and asked about is not silent, and the
+rule is not softened: with no window (the command line) the refusal
+stands unchanged, and its message already names `--force` in all three
+catalogues.
+
+The question is asked **before the card session is opened**, for the
+same reason [[D-095]] moved the timestamp question there: every output
+path is known before signing begins — it comes from the input name and
+the configured suffix, not from anything the signature produces — so a
+user who answers Cancel has not spent a PIN entry on a batch that was
+never going to be saved.
+
+*(b) The condition gets its own code.* `errs.CodeOutputExists`
+(`OUTPUT_EXISTS`) replaces the bare `fmt.Errorf("output file already
+exists: %s", …)` that `codeOfInteractive` was mapping to
+`errs.CodeInternal` — and so to "Дошло је до неочекиване грешке", the
+message reserved for genuinely unclassified failures. Alongside it,
+three more conditions that had the same problem: `OUTPUT_WRITE_FAILED`
+(the signature succeeded, the disk write did not — `SIGN_FAILED` would
+send the user to check the card for a problem that is on the disk),
+`TSA_CLIENT_CERT_UNREADABLE` and `TSA_CLIENT_CERT_INVALID` (a wrong
+path and a wrong password: two clear causes needing two different
+corrections, so two codes rather than one).
+
+*(c) Every code has a message, and the failed screen renders Details.*
+Seven codes had no catalogue entry at all — `NOT_PAIRED`,
+`AUTH_FAILED`, `CONSENT_TIMEOUT`, `PIN_REQUIRED`, `CERT_EXPIRED`,
+`CERT_REVOKED`, `VERSION_TOO_OLD` — and would have rendered their own
+key ("error.cert_revoked") to the user. `errs.AllCodes` now enumerates
+the code set and `TestEveryErrorCodeHasAMessageInEveryCatalogue` fails
+the build if a future code arrives without one. Separately, the consent
+window's `pushFailure` rendered the bare catalogue string, so
+`STAMP_GLYPH_MISSING` — whose message is a sentence with two
+placeholders — would have reached the screen as "…does not support: %s
+(%s)". It now goes through `cli.ErrorMessage`, the same renderer the
+command line uses. [[D-103]] makes that path reachable by turning the
+stamp on by default, which is why it is fixed in the same round.
+
+**Why.** The owner signed to a path that already held a signed
+document and was told the program had failed unexpectedly. It had not:
+it had protected their file, which is the behaviour SPEC asks for. The
+whole cost of the defect was in the presentation — a deliberate refusal
+wearing the words reserved for a bug — and the remedy the user was left
+with was to delete the file by hand and run the command again, which is
+the work the program should have offered to do.
+
+`CodeInternal` is the bucket for failures nothing understands. Every
+condition that is understood, and that a user can act on, belongs
+outside it; that is the general rule this round applies, and the new
+test is what keeps it applied.
+
+**Verified.**
+- `TestResolveOutputConflictAppliesTheChoice` drives the whole loop
+  against a real WebView2 window: a free path asks nothing, `--force`
+  answers without asking, Overwrite returns the original path with
+  permission to replace it, Save-as returns `…-2.pdf`, each answer is
+  remembered so the next conflicting document is settled silently, and
+  Cancel returns "do not proceed". The clicks are `Eval`-driven inside
+  the page's own DOM — [[D-094]]'s carve-out; nothing touches the real
+  cursor.
+- `TestConsentOutputExistsScreenShowsBothPaths` measures the rendered
+  screen: the existing path, a rename button naming
+  `ugovor-potpisan-2.pdf`, the localised Overwrite label, initial focus
+  on Cancel (nothing that writes a file is focused first), and each
+  button recording its own choice for Go to read back.
+- `TestOutputExistsIsItsOwnErrorCode` asserts `signInteractiveOne`
+  returns `OUTPUT_EXISTS`, never `INTERNAL`, and that all three
+  catalogues have a message for it that is not the unexpected-error
+  message.
+- `TestNextFreeOutputPathCountsFromTwo` covers the suffix search.
+- `TestResolveInteractiveOutputsSettlesTheWholeBatchBeforeSigning`
+  covers the pre-session pass: three documents, two of them already
+  having a signed output, produce exactly one question, and the single
+  Save-as answer settles all three (`prvi-potpisan-2.pdf`,
+  `drugi-potpisan-2.pdf`, and the unconflicted `treci-potpisan.pdf`
+  untouched).
+- `TestEveryErrorCodeHasAMessageInEveryCatalogue` covers (c); it fails
+  against the pre-change catalogues with seven missing keys.
+
+**Rejected.**
+- **Asking once per conflicting document rather than remembering the
+  answer for the batch.** Rejected: SPEC §12.10 already establishes
+  that a batch is not to be turned into an obstacle course, and a
+  hundred identical questions is not a hundred choices.
+- **Making Overwrite the primary action.** Rejected: the primary weight
+  belongs to the action that cannot destroy anything. A user who means
+  to overwrite still reaches it in one click.
+- **Silently writing `…-2.pdf` with no question at all.** Rejected: it
+  is not destructive, but it leaves the user with two files and no idea
+  why, and the next run makes a third.
+- **Mapping the existing-file refusal onto an existing code
+  (`SIGN_FAILED`).** Rejected for the reason [[D-066]] rejected the
+  same shortcut for a missing glyph: a code whose message names the
+  card sends the user to look at hardware for something that has
+  nothing to do with hardware.
+- **Changing the command line to overwrite, or to auto-rename, when
+  `--force` is absent.** Rejected: SPEC §18.10 stands, the flag is
+  documented in `--help`, and a script that starts overwriting files
+  because a desktop window learned to ask is a worse failure than the
+  one being fixed.
+
+---
+
+## D-105 — B-B is a signature level the user can choose in Settings, and choosing it silences the timestamp question
+
+**Date:** 2026-09-04
+**Phase:** F5 — fourth real-run review (Task 3)
+
+**Decision.** Settings' signature-level group gains **B-B** as its
+first option, and all three options say in words what they contain:
+
+```
+B-B    signature only, no timestamp
+B-T    signature + timestamp
+B-LT   signature + timestamp + revocation evidence
+```
+
+`config.Config.SignatureLevel` accepts `"b-b"` alongside `"b-t"` and
+`"b-lt"`; the default is unchanged (`b-lt`). When B-B is the configured
+level, `runSignInteractive` never builds a TSA client, never contacts an
+authority, and never shows [[D-095]]'s timestamp-choice screen — the
+question it asks has already been answered. `internal/pades` treats a
+*requested* level of B-B the same way: no timestamp is attempted and
+none is reported as missing, because nothing failed.
+
+The achieved level is still reported exactly as [[D-047]] requires — on
+the done screen as "Nivo B-B — bez vremenskog žiga" in the warning
+intent family, in `pades.Result.AchievedLevel`, and in the audit entry
+— because a B-B signature carries no proof of when it was made whether
+the user chose that or fell into it, and the log is where they find out
+weeks later.
+
+The command line is untouched: `--level` still takes `b-t` or `b-lt`,
+and B-B is reached there by not configuring a TSA or by
+`--on-tsa-failure=b-b`, which is where a script's version of this
+decision already lived.
+
+**Why.** SPEC §12.6 calls B-B "fallback only, on explicit user choice"
+— and until now there was nowhere to make that choice explicitly. A
+user who has decided against timestamps (no contract with an authority,
+an internal document, a machine with no network) met [[D-095]]'s
+choice screen on every single signature and answered it the same way
+every time. A question that is always answered identically is not a
+choice; it is a toll. Settings is where a standing decision belongs,
+and the screen remains for the case it was built for: a level that
+*needs* a timestamp and cannot get one.
+
+Spelling the levels out is the same judgement [[D-095]] made for the
+audit log's own B-B line. "B-T" tells a specialist everything and a
+signer nothing, and this is the screen where someone decides what their
+signatures will legally be.
+
+**Verified.**
+- `TestSettingsOffersThreeLevelsWithBBFirst` reads the real DOM: three
+  radios in the order `b-b,b-t,b-lt`, B-B checked when it is what the
+  configuration holds, its label the catalogue's own, and
+  `__liroCollectState` reporting `"b-b"` back — the value that is
+  actually saved.
+- `TestSignatureLevelBBIsValid` proves `config.validate` no longer
+  replaces it with the default on the next load (it did: the old check
+  accepted only two strings).
+- `TestInteractiveLevelMapsConfiguredLevels` maps all three plus the
+  empty string.
+- `TestConfiguredBBSignsWithoutATimestampAndReportsBB` signs a real
+  document at a configured B-B with no TSA client at all, with
+  `allowBB` deliberately false — proving nothing was attempted that
+  could fail — and asserts the achieved level is B-B and that no
+  degradation note was produced.
+
+**Rejected.**
+- **Adding `b-b` to the command line's `--level` too.** Considered; not
+  done. The flag's two values are what F3 specified, the outcome is
+  already reachable there two other ways, and a third spelling of the
+  same thing is how a CLI accumulates surface. If a script ever needs
+  it, it is one line — and it will arrive with a reason.
+- **Keeping the timestamp-choice screen even at B-B, "so the user is
+  reminded".** Rejected: that is exactly the toll being removed, and
+  the reminder already exists where it belongs — the done screen and
+  the audit entry both say B-B, in the warning family, every time.
+- **Labelling the levels with their ETSI names alone.** Rejected: see
+  the "why" above.
+
+---
+
+## D-106 — Every window is a fixed-height page with one scrolling region and pinned actions; settings labels sit above their inputs
+
+**Date:** 2026-09-04
+**Phase:** F5 — fourth real-run review (Tasks 2 and 5)
+
+**Decision.** Two changes with one shape behind them.
+
+*(a) Labels above inputs.* Every labelled text input and select in the
+settings window is now a `.liro-field`: the label on its own line,
+left-aligned, the input full width beneath it. Checkboxes and radios
+keep their label beside them (`.liro-check`) — there the label *is* the
+control's name, and it is not competing with an input for the same
+line. The window's size is unchanged (520 × 880).
+
+*(b) One scrolling region per window.* `body` carries `.liro-page`
+(`height: 100vh`, a flex column), `main` fills it and cannot grow past
+it, exactly one descendant is a `.liro-scroll-region` (`flex: 1 1 auto;
+min-height: 0; overflow-y: auto`), and everything else — headers,
+status lines, action rows — is fixed. Per window: the certificate list
+(consent, certificates), the entry list (audit log), the form
+(settings). One exception, deliberate: the consent window's file list
+keeps its own 120-point cap and scrolls inside the Details card — it is
+capped at ten names by SPEC §6.6 precisely so "a long name cannot push
+the Approve/Cancel buttons off screen", and the disclosure holding it
+is closed by default, so it is never a second scrollbar competing for
+the same glance. `TestConsentWindowFitsWithTenLongFileNames` holds that
+case to the same standard: ten names at the 120-character display cap,
+Details open, six certificates behind it, page still fixed and buttons
+still on screen. The fixed `max-height`s those lists used to carry are gone:
+a fixed height is only correct while nothing else on the page changes
+size, and things did.
+
+Two windows were resized as a direct result of measuring them. The
+certificates window grew from 440 to 640 points: with six certificates
+— the realistic case for a machine holding several clients' cards, SPEC
+§14.1 — 440 showed 305 of the list's 701, under three rows of six. It
+scrolls correctly at either size; this is simply enough of a reference
+list to read without scrolling.
+
+The consent window grew from 720 to 860 points for the same reason: the
+stamp checkbox and its corner selector joined the
+fixed content below the list, and six certificate rows plus their gaps
+are 544 points, of which 720 showed 408. At 860 the list is 548 and all
+six fit without scrolling. 860 plus a title bar still sits inside this
+machine's 1032-point work area.
+
+**Why.** Serbian labels run considerably longer than their English
+equivalents — "Klijentski sertifikat za servis za vremenske žigove
+(PKCS#12)" against "TSA client certificate (PKCS#12)" — so a
+side-by-side row that fits in English wraps to two lines in Serbian
+however wide the window is made. Widening is not a fix, it is a delay;
+stacking gives the label the whole width and ends the competition.
+
+The scrolling shape exists because "the buttons are visible" cannot be
+a property that holds for the content someone happened to test with. A
+page that can scroll at all can scroll its Save button off the bottom,
+and no test of the payload will ever notice. Making the page itself
+unscrollable turns that from something to check into something that
+cannot happen; the one region that genuinely grows scrolls, and the
+actions are outside it.
+
+**Verified.** Measured in real WebView2 windows at each window's own
+fixed size, with realistic content — six certificates (two usable
+signing certificates, their identical-subject authentication twins per
+SPEC §11.5, an expired one, one with its card out), twenty audit
+entries across all four outcomes and all three levels, and every
+settings field populated with values of the length real ones have:
+
+| Window | Size | Page scrolls | Scrolling region | Actions |
+|---|---|---|---|---|
+| Consent (waiting) | 520 × 860 | no | `#cert-list`, 548 of 548 — all six rows fit | Cancel/Approve visible |
+| Consent (details open) | 520 × 860 | no | `#cert-list` shrinks and scrolls | Cancel/Approve visible |
+| Consent (done, timestamp choice, output exists, failed) | 520 × 860 | no | none needed | all visible |
+| Certificates | 460 × 640 | no | `#cert-list`, 505 of 701 | Close visible |
+| Audit log | 460 × 520 | no | `#entry-list` scrolls | Close visible |
+| Settings | 520 × 880 | no | `.settings-form`, 715 of 954 | Save/Close visible |
+
+`assertPageDoesNotScroll` additionally walks every element in the
+document and fails if any element outside the named scrolling region
+has `overflow-y: auto|scroll` *and* actually overflows — which is the
+double-scrollbar defect an earlier round reported, now ruled out by
+construction rather than by inspection.
+`TestSettingsLabelsSitAboveTheirInputs` asserts, for every field, that
+the label's bottom edge is at or above the input's top edge, that the
+input spans the field's full width, and that no label wraps onto a
+second line in `sr-Cyrl`. Before the change the same assertion fails on
+the TSA client-certificate and password labels.
+
+**A defect the screenshots caught that no test had.** The stamp's
+corner selector is hidden with `el.hidden = true` while the checkbox is
+unticked, and the property was correctly `true` — while the selector
+was plainly on screen in the running binary. `[hidden] { display:
+none }` comes from the *user-agent* stylesheet, and an author rule as
+ordinary as `.liro-field { display: flex }` outranks it in the cascade
+regardless of specificity — the same trap `consent.css` had already
+documented for `main[hidden]` and solved locally. `intents.css` now
+carries a global `[hidden] { display: none !important }`, so every page
+in this project can keep using `el.hidden` and mean it. The test that
+missed it read the property; it now reads `getComputedStyle(...).display`
+and the element's height, and fails against the pre-fix stylesheet with
+"the corner selector still renders with the stamp off (display: flex)".
+
+**Rejected.**
+- **Widening the settings window further.** The task's own instruction,
+  and correct: 880 was already the second widening, and the next long
+  Serbian label would have needed a third.
+- **Keeping `max-height` on the lists and simply making the numbers
+  bigger.** Rejected: it is the same defect one round later. A fixed
+  height is a guess about everything else on the page; `flex: 1` is not
+  a guess.
+- **Letting the settings page scroll as a whole and accepting that Save
+  scrolls with it.** Rejected — that is the defect being fixed, in the
+  window where it was first seen.
+- **Truncating long labels with `text-overflow: ellipsis`.** Rejected
+  for the reason [[D-096]] rejected it for the fingerprint: a label the
+  user cannot read in full is not a label, and a settings form is
+  exactly where the full words matter.

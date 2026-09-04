@@ -1,5 +1,13 @@
 body {
   padding: var(--liro-space-4);
+}
+
+/* Task 5 (F5 fourth-real-run review): the entry list is the one region
+   that grows and scrolls; the title above it and Close below it are
+   fixed, so the button stays on screen with any number of entries. */
+main {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--liro-space-3);
@@ -9,14 +17,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--liro-space-2);
-  max-height: 360px;
-  overflow-y: auto;
+  padding: var(--liro-space-1);
 }
 
 .audit-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-1);
   border: 1px solid var(--liro-color-border);
   border-radius: var(--liro-radius-sm);
-  padding: var(--liro-space-2);
+  padding: var(--liro-space-3);
 }
 
 .audit-meta {
@@ -29,4 +39,12 @@ body {
   justify-content: flex-end;
   gap: var(--liro-space-2);
   margin-top: var(--liro-space-2);
+}
+
+/* Task 1 (F5 second-real-run review): the signature level of a batch,
+   under its own line, in the small type the rest of the entry's
+   metadata uses. Coloured only when it is a downgrade. */
+.audit-level {
+  font-size: var(--liro-font-size-small);
+  font-weight: var(--liro-font-weight-semibold);
 }

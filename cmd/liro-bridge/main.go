@@ -18,7 +18,6 @@ import (
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/errs"
-	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
@@ -86,7 +85,7 @@ func run(args []string, out io.Writer) int {
 	fs := flag.NewFlagSet("liro-bridge", flag.ContinueOnError)
 	fs.SetOutput(out)
 	showVersion := fs.Bool("version", false, "print version information and exit")
-	fs.Usage = topLevelUsage(fs, cfg.Locale)
+	fs.Usage = topLevelUsage(fs)
 
 	if parseErr := fs.Parse(args); parseErr != nil {
 		if parseErr == flag.ErrHelp {
@@ -209,40 +208,44 @@ func caCertificatesFromTSL(list *tsl.List) []*x509.Certificate {
 	return out
 }
 
-// topLevelCommands lists every liro-bridge subcommand and the
-// catalogue key for its one-line description (Task 3): certs, sign,
-// sign-digest and tray are the only four the binary actually
-// recognises (see run, above) — none of them was previously
-// discoverable from --help, which is what this list and topLevelUsage
-// fix.
-var topLevelCommands = []struct{ name, descKey string }{
-	{"certs", "cli.help_cmd_certs"},
-	{"sign", "cli.help_cmd_sign"},
-	{"sign-digest", "cli.help_cmd_sign_digest"},
-	{"tray", "cli.help_cmd_tray"},
+// topLevelCommands lists every liro-bridge subcommand and its one-line
+// description: certs, sign, sign-digest and tray are the only four the
+// binary actually recognises (see run, above) — none of them was
+// previously discoverable from --help, which is what this list and
+// topLevelUsage fix.
+//
+// Help and usage text is always English (D-0xx, SPEC §9.2) — developer-
+// facing like code, comments and documentation — regardless of the
+// configured UI locale, so these are plain string literals rather than
+// catalogue keys.
+var topLevelCommands = []struct{ name, desc string }{
+	{"certs", "List available signing certificates"},
+	{"sign", "Sign a PDF file"},
+	{"sign-digest", "Sign a pre-computed digest (advanced/integration use)"},
+	{"tray", "Run the agent in the system tray"},
 }
 
-// topLevelUsage returns fs.Usage for the top-level flag set: a
-// localised synopsis, every subcommand with its one-line description,
-// the flag set's own (English, from the standard library) usage block
-// — kept so the exact "Usage of liro-bridge" text existing tests assert
-// on is still present — and a pointer to each subcommand's own --help,
-// since sign --help etc. already work but were undiscoverable without
-// already knowing the subcommand's name.
-func topLevelUsage(fs *flag.FlagSet, locale string) func() {
+// topLevelUsage returns fs.Usage for the top-level flag set: an English
+// synopsis, every subcommand with its one-line description, and a
+// pointer to each subcommand's own --help, since sign --help etc.
+// already work but were undiscoverable without already knowing the
+// subcommand's name.
+//
+// This used to also print the flag package's own "Usage of
+// liro-bridge:" block (fs.PrintDefaults, listing only -version) — a
+// second, differently-formatted "usage" block that duplicated the
+// command synopsis above it without adding anything a user couldn't
+// get from `liro-bridge --version`. Removed (Task 1).
+func topLevelUsage(fs *flag.FlagSet) func() {
 	return func() {
-		c := i18n.Load(locale)
 		w := fs.Output()
-		fprintln(w, c.T("cli.help_usage"))
+		fprintln(w, "Usage: liro-bridge <command> [flags]")
 		fprintln(w)
-		fprintln(w, c.T("cli.help_commands_heading"))
+		fprintln(w, "Commands:")
 		for _, cmd := range topLevelCommands {
-			fprintf(w, "  %-14s %s\n", cmd.name, c.T(cmd.descKey))
+			fprintf(w, "  %-14s %s\n", cmd.name, cmd.desc)
 		}
 		fprintln(w)
-		fprintf(w, "Usage of %s:\n", fs.Name())
-		fs.PrintDefaults()
-		fprintln(w)
-		fprintln(w, c.T("cli.help_more"))
+		fprintln(w, "Run 'liro-bridge <command> --help' for details about a command.")
 	}
 }

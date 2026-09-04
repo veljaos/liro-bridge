@@ -1,24 +1,71 @@
+/* Task 5 (F5 fourth-real-run review): the page is exactly the
+   window's height and never scrolls as a whole — body carries
+   .liro-page (intents.css) for the fixed-height column, and this adds
+   the padding inside it. Only the certificate list grows and scrolls;
+   the header above it and everything below it — the application row,
+   the stamp options, the Details disclosure and the Approve/Cancel
+   buttons — keep their size, so the primary action can never leave the
+   screen no matter how many certificates are installed. */
 body {
   padding: var(--liro-space-4);
+}
+
+/* Task 4 (F5 first-real-run review): body's own flex+gap only ever
+   separated the *five* <main id="state-..."> alternatives from each
+   other — never the elements inside whichever one is actually visible,
+   since none of them were flex children of body. That left every
+   section inside a state (the certificate list, the application row,
+   the actions row...) touching its neighbour with no declared gap at
+   all, which is what read as the application row "overlapping" the
+   certificate list. Every state gets its own consistent spacing here
+   instead. */
+main {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--liro-space-3);
 }
 
-#signer-name {
-  margin-bottom: 0;
+/* consent.html's five states are all <main>, toggled with the [hidden]
+   attribute (consent.js's showState) rather than a class — an author
+   stylesheet's plain "main { display: flex }" above outranks the
+   browser's own "[hidden] { display: none }" default regardless of
+   selector specificity, because author styles always beat user-agent
+   styles in the cascade. Without this rule every state rendered at
+   once, stacked, the moment `main` got a display of its own. */
+main[hidden] {
+  display: none;
 }
 
+#signer-name,
 #document-count {
-  margin-top: 0;
+  margin: 0;
 }
 
+/* The header and footer groups hold the fixed content on either side
+   of the scrolling certificate list; each keeps the same internal
+   spacing the flat layout had. */
+.waiting-header,
+.waiting-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+}
+
+/* Task 4 (first real run) asked for at least six certificate entries
+   visible without scrolling, which a fixed 460px max-height gave — but
+   only as long as nothing else on the screen grew. It is now the
+   flexible region instead (.liro-scroll-region, intents.css): it takes
+   whatever height is left after the fixed content and scrolls past
+   that, so opening Details or ticking the stamp box shortens the list
+   rather than pushing the buttons off the bottom. The minimum keeps
+   it from collapsing to nothing on a very crowded screen. */
 #cert-list {
   display: flex;
   flex-direction: column;
   gap: var(--liro-space-2);
-  max-height: 140px;
-  overflow-y: auto;
+  min-height: 120px;
 }
 
 .secondary-row {
@@ -26,7 +73,7 @@ body {
 }
 
 #file-list {
-  margin: var(--liro-space-1) 0;
+  margin: 0;
   padding-left: var(--liro-space-4);
   max-height: 120px;
   overflow-y: auto;
@@ -40,16 +87,86 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: var(--liro-space-2);
-  margin-top: var(--liro-space-2);
-}
-
-.cert-role,
-.cert-thumbprint {
-  font-size: var(--liro-font-size-small);
-  color: var(--liro-color-text-secondary);
 }
 
 .cert-reason {
   font-size: var(--liro-font-size-small);
   color: var(--liro-color-danger);
+}
+
+/* Task 2 (F5 second-real-run review): the Details card's fingerprint
+   row. The value and its Copy action stay together on the right, in
+   monospace, and — because the value handed to the page is already
+   elided (consent.js / consent.ShortFingerprint) — never wider than
+   the row that holds them. */
+.fingerprint-row {
+  align-items: baseline;
+}
+
+.fingerprint-value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--liro-space-2);
+  min-width: 0;
+}
+
+#fingerprint {
+  font-family: var(--liro-font-family-mono);
+  color: var(--liro-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Every remaining free-text value in this window: the output path on
+   the done screen, and the failure message. Neither is bounded in
+   length by anything this project controls. */
+#done-output,
+#done-summary {
+  overflow-wrap: anywhere;
+}
+
+/* Task 1 (F5 second-real-run review): the timestamp choice's three
+   actions. Stacked, full width, in the order the choice is described —
+   proceeding without a timestamp first, configuring second, cancelling
+   last — rather than crowded into one right-aligned row where the
+   longest label would decide the layout.
+
+   Task 3 (F5 third-real-run review) settled their weights, which the
+   order alone had left ambiguous: signing without a timestamp is the
+   primary action, in brand blue, because with no default timestamp
+   authority configured — which is what this project ships (D-095) — it
+   is what most people reaching this screen will choose. Configuring an
+   authority is the neutral secondary beneath it, and Cancel is quieter
+   than both, so that two neutral buttons do not sit here reading as
+   equals. */
+.tsa-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+}
+
+#tsa-reason {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+#done-level {
+  margin: 0;
+  text-align: left;
+}
+
+/* Task 1 (F5 fourth-real-run review): the visible-stamp checkbox and,
+   while it is ticked, the corner to draw it in. */
+.stamp-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+}
+
+/* Task 4: the existing output path, in monospace, wrapping rather than
+   widening the window — a path is as long as the user's folder
+   structure makes it. */
+.output-path {
+  font-family: var(--liro-font-family-mono);
+  color: var(--liro-color-text-secondary);
+  overflow-wrap: anywhere;
 }

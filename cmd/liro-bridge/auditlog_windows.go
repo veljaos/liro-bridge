@@ -16,6 +16,7 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/audit"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/pades"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
@@ -35,9 +36,12 @@ func runAuditLogWindow(locale string) error {
 
 	messages := make(chan ui.Message, 8)
 	win, err := ui.NewWindow(ui.Options{
-		Title:       c.T("auditwindow.title"),
-		Width:       460,
-		Height:      440,
+		Title: c.T("auditwindow.title"),
+		Width: 460,
+		// Task 1 (F5 second-real-run review): every entry gained a
+		// signature-level line, so 440 points no longer fits four of
+		// them plus the Close button without the list scrolling.
+		Height:      520,
 		AlwaysOnTop: true,
 		Assets:      assetsFS,
 		VirtualHost: liroVirtualHost,
@@ -67,11 +71,35 @@ type jsAuditEntry struct {
 	TimestampText     string `json:"timestampText"`
 	Outcome           string `json:"outcome"`
 	OutcomeText       string `json:"outcomeText"`
+	OutcomeIntent     string `json:"outcomeIntent"`
 	ApplicationText   string `json:"applicationText"`
 	DocumentCountText string `json:"documentCountText"`
 	ThumbprintTail    string `json:"thumbprintTail"`
 	IsTestKey         bool   `json:"isTestKey"`
 	TestKeyLabel      string `json:"testKeyLabel"`
+	LevelText         string `json:"levelText"`
+	LevelIntent       string `json:"levelIntent"`
+}
+
+// outcomeIntent maps an audit.Outcome to its Task 6 colour family:
+// approved -> positive, denied -> warning, failed -> negative, partial
+// -> caution. The page renders this as the CSS class
+// "liro-outcome-<intent>" (intents.css) — the colour itself always
+// comes from IntentFamilyColor (scripts/synctokens), never chosen
+// here.
+func outcomeIntent(o audit.Outcome) ui.Intent {
+	switch o {
+	case audit.OutcomeApproved:
+		return ui.IntentPositive
+	case audit.OutcomeDenied:
+		return ui.IntentWarning
+	case audit.OutcomeFailed:
+		return ui.IntentNegative
+	case audit.OutcomePartial:
+		return ui.IntentCaution
+	default:
+		return ui.IntentNegative
+	}
 }
 
 // outcomeText maps an audit.Outcome to its localised display text —
@@ -105,6 +133,32 @@ func auditThumbprintTail(thumbprint string) string {
 	return thumbprint[len(thumbprint)-n:]
 }
 
+// auditLevelText renders the PAdES level a batch reached (Task 1, F5
+// second-real-run review). B-B says what B-B means, in words, because
+// "B-B" alone tells a non-specialist nothing; B-T and B-LT stand on
+// their own. An entry with no level (a denied batch, or one written
+// before Entry.AchievedLevel existed) renders nothing at all rather
+// than a guess.
+func auditLevelText(c *i18n.Catalogue, level string) string {
+	switch pades.Level(level) {
+	case pades.LevelBB:
+		return c.T("auditwindow.level_bb")
+	case pades.LevelBT, pades.LevelBLT:
+		return level
+	default:
+		return ""
+	}
+}
+
+// auditLevelIntent colours B-B in the warning family — a signature
+// with no proof of when it was made — and everything else neutrally.
+func auditLevelIntent(level string) string {
+	if pades.Level(level) == pades.LevelBB {
+		return string(ui.IntentWarning)
+	}
+	return ""
+}
+
 func buildAuditLogInit(c *i18n.Catalogue, entries []audit.Entry) map[string]any {
 	// Newest first: a plain append-only log is written oldest-first, but
 	// the window's whole point is "what happened most recently" (F5
@@ -116,20 +170,24 @@ func buildAuditLogInit(c *i18n.Catalogue, entries []audit.Entry) map[string]any 
 			TimestampText:     src.Timestamp.Local().Format("2006-01-02 15:04:05"),
 			Outcome:           string(src.Outcome),
 			OutcomeText:       outcomeText(c, src.Outcome),
+			OutcomeIntent:     string(outcomeIntent(src.Outcome)),
 			ApplicationText:   applicationDisplayName(c, src.Application),
 			DocumentCountText: fmt.Sprintf(c.T("auditwindow.document_count"), src.DocumentCount),
 			ThumbprintTail:    auditThumbprintTail(src.Thumbprint),
 			IsTestKey:         src.IsTestKey,
 			TestKeyLabel:      c.T("certs.test_key_marker"),
+			LevelText:         auditLevelText(c, src.AchievedLevel),
+			LevelIntent:       auditLevelIntent(src.AchievedLevel),
 		}
 	}
 
 	return map[string]any{
 		"type": "init",
 		"strings": map[string]string{
-			"auditwindow.title": c.T("auditwindow.title"),
-			"auditwindow.empty": c.T("auditwindow.empty"),
-			"settings.close":    c.T("settings.close"),
+			"auditwindow.title":    c.T("auditwindow.title"),
+			"auditwindow.empty":    c.T("auditwindow.empty"),
+			"auditwindow.level_bb": c.T("auditwindow.level_bb"),
+			"settings.close":       c.T("settings.close"),
 		},
 		"model": map[string]any{
 			"entries": js,

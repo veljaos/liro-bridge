@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -76,8 +75,45 @@ func ensureLoader() error {
 		}
 		procCreateEnvWithOptions = loaderDLL.NewProc("CreateCoreWebView2EnvironmentWithOptions")
 		procGetAvailableVersionStr = loaderDLL.NewProc("GetAvailableCoreWebView2BrowserVersionString")
+
+		// Task 8 (F5 first-real-run review): quitting printed Chromium's
+		// own "[...:ERROR:ui\gfx\win\window_impl.cc:172] Failed to
+		// unregister class Chrome_WidgetWin_0" to the console during the
+		// WebView2 browser process's teardown — its logging, not this
+		// project's, and CreateCoreWebView2EnvironmentWithOptions has no
+		// options object here to configure it through (see
+		// createEnvironment's nil third argument). The WebView2 loader
+		// also reads WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS straight from
+		// the environment and forwards it to every browser process it
+		// starts, and --disable-logging is the documented way to turn
+		// off Chromium's own logging destinations — set here on general
+		// principle (it silences other Chromium console noise too), but
+		// verified NOT to reliably suppress this specific line on its
+		// own: it reproduced again in testing with this set. The window
+		// class in the message appears to belong to a component that
+		// runs in-process (loaded alongside WebView2Loader.dll itself)
+		// rather than to the sandboxed browser process this flag
+		// reaches, and its teardown fires at this process's own exit —
+		// window_windows.go's Close (which now waits for this process's
+		// own COM teardown before returning) and tray_windows.go's
+		// webView2ExitGrace (a short pause before the tray process
+		// actually exits, after any WebView2 window has been used) are
+		// what actually reduce how often this fires, by giving that
+		// teardown more time to finish before ExitProcess — not this.
+		setAdditionalBrowserArguments("--disable-logging")
 	})
 	return loaderErr
+}
+
+// setAdditionalBrowserArguments appends args to
+// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS rather than overwriting it, so
+// a value the user or an admin policy has already set in the
+// environment is preserved rather than silently dropped.
+func setAdditionalBrowserArguments(args string) {
+	if existing := os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"); existing != "" {
+		args = existing + " " + args
+	}
+	_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", args)
 }
 
 // detectRuntime implements F5 §2.2: calls
@@ -93,8 +129,10 @@ func detectRuntime() (available bool, version string, err error) {
 	if err := ensureLoader(); err != nil {
 		return false, "", err
 	}
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	var versionPtr uintptr
-	r1, _, _ := procGetAvailableVersionStr.Call(0, uintptr(unsafe.Pointer(&versionPtr)))
+	r1, _, _ := procGetAvailableVersionStr.Call(0, pinPtr(&pin, &versionPtr))
 	if int32(r1) < 0 {
 		// A failing HRESULT here — most commonly
 		// HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) — means the Evergreen
@@ -128,14 +166,23 @@ func createEnvironment(userDataFolder string) (uintptr, error) {
 	if err := ensureLoader(); err != nil {
 		return 0, err
 	}
-	udf, udfBuf, err := utf16Ptr(userDataFolder)
+	udfBuf, err := utf16Buf(userDataFolder)
 	if err != nil {
 		return 0, err
 	}
 
+	// The user data folder path and the completion handler are both
+	// pinned across the whole wait below, not just across the call that
+	// starts it: CreateCoreWebView2EnvironmentWithOptions is
+	// asynchronous, so WebView2 holds both addresses until it invokes
+	// the handler, and pumpUntil is exactly the kind of deep call chain
+	// that grows — and therefore moves — this goroutine's stack. See
+	// com_windows.go's pinning commentary and D-101.
+	var pin runtime.Pinner
+	defer pin.Unpin()
 	h := newEnvironmentCompletedHandler()
-	r1, _, callErr := procCreateEnvWithOptions.Call(0, uintptr(unsafe.Pointer(udf)), 0, uintptr(unsafe.Pointer(h)))
-	runtime.KeepAlive(udfBuf)
+	defer h.release()
+	r1, _, callErr := procCreateEnvWithOptions.Call(0, pinUTF16(&pin, udfBuf), 0, h.addr())
 	if int32(r1) < 0 {
 		return 0, fmt.Errorf("CreateCoreWebView2EnvironmentWithOptions: HRESULT 0x%08X (%v)", uint32(r1), callErr)
 	}

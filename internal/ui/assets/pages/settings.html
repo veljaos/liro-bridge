@@ -6,86 +6,132 @@
 <link rel="stylesheet" href="https://liro.local/intents.css" />
 <link rel="stylesheet" href="https://liro.local/pages/settings.css" />
 </head>
-<body>
+<body class="liro-page">
 
 <main>
-  <p class="liro-display" data-i18n="settings.window_title"></p>
+  <p class="liro-display liro-fixed-region" data-i18n="settings.window_title"></p>
 
-  <label class="liro-row">
-    <span data-i18n="settings.language_label"></span>
-    <select id="locale">
-      <option value="sr-Latn">Srpski (latinica)</option>
-      <option value="sr-Cyrl">Srpski (ćirilica)</option>
-      <option value="en">English</option>
-    </select>
-  </label>
+  <!-- Task 2 (F5 fourth-real-run review): every labelled input is now
+       a .liro-field — label above, left-aligned, input full width
+       beneath. A side-by-side row divides the width between the two,
+       and Serbian labels run considerably longer than their English
+       equivalents, so a row that fits in English wraps to two lines in
+       Serbian however wide the window is made. Checkboxes and radios
+       keep their label beside them (.liro-check): the label is what
+       makes the control legible, and it is not competing with an input
+       for the same line.
 
-  <label class="liro-row">
-    <span data-i18n="settings.start_with_windows"></span>
-    <input type="checkbox" id="start-with-windows" />
-  </label>
-
-  <label class="liro-row">
-    <span data-i18n="settings.tsa_label"></span>
-    <input type="text" id="tsa-url" data-i18n-placeholder="settings.tsa_custom_url_placeholder" />
-  </label>
-
-  <label class="liro-row">
-    <span data-i18n="settings.tsa_user_label"></span>
-    <input type="text" id="tsa-user" autocomplete="off" />
-  </label>
-
-  <label class="liro-row">
-    <span data-i18n="settings.tsa_password_label"></span>
-    <input type="password" id="tsa-password" autocomplete="off" />
-  </label>
-
-  <label class="liro-row">
-    <span data-i18n="settings.tsa_client_cert_label"></span>
-    <input type="text" id="tsa-client-cert-path" data-i18n-placeholder="settings.tsa_client_cert_placeholder" autocomplete="off" />
-  </label>
-
-  <label class="liro-row">
-    <span data-i18n="settings.tsa_client_cert_password_label"></span>
-    <input type="password" id="tsa-client-cert-password" autocomplete="off" />
-  </label>
-
-  <label class="liro-row">
-    <span data-i18n="settings.output_suffix_label"></span>
-    <input type="text" id="output-suffix" />
-  </label>
-
-  <fieldset>
-    <legend data-i18n="settings.signature_level_label"></legend>
-    <label class="liro-row">
-      <span data-i18n="settings.level_bt"></span>
-      <input type="radio" name="level" value="b-t" id="level-bt" />
+       Task 5: the form is the one region allowed to grow and scroll;
+       the title above it and the Save/Close row below it are fixed, so
+       the buttons are on screen whatever the form does. -->
+  <div class="settings-form liro-scroll-region">
+    <label class="liro-field">
+      <span class="liro-field-label" data-i18n="settings.language_label"></span>
+      <select id="locale">
+        <option value="sr-Latn">Srpski (latinica)</option>
+        <option value="sr-Cyrl">Srpski (ćirilica)</option>
+        <option value="en">English</option>
+      </select>
     </label>
-    <label class="liro-row">
-      <span data-i18n="settings.level_blt"></span>
-      <input type="radio" name="level" value="b-lt" id="level-blt" />
+
+    <label class="liro-check">
+      <input type="checkbox" id="start-with-windows" />
+      <span data-i18n="settings.start_with_windows"></span>
     </label>
-  </fieldset>
 
-  <div class="actions-row">
-    <button id="export-audit-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.export_audit_log"></button>
+    <fieldset>
+      <legend data-i18n="settings.tsa_label"></legend>
+      <!-- Task 1c: two named presets, neither preselected. Choosing one
+           fills the URL below; the URL is what is actually saved, so a
+           preset is a shortcut and never a second source of truth. -->
+      <label class="tsa-preset">
+        <input type="radio" name="tsa-preset" value="freetsa" id="tsa-preset-freetsa" />
+        <span>
+          <span class="tsa-preset-name" data-i18n="settings.tsa_preset_freetsa"></span>
+          <span class="liro-badge liro-badge-warning" data-i18n="settings.tsa_preset_freetsa_warning"></span>
+        </span>
+      </label>
+      <label class="tsa-preset">
+        <input type="radio" name="tsa-preset" value="rsgov" id="tsa-preset-rsgov" />
+        <span>
+          <span class="tsa-preset-name" data-i18n="settings.tsa_preset_rsgov"></span>
+          <span class="tsa-preset-note liro-text-small" data-i18n="settings.tsa_preset_rsgov_note"></span>
+        </span>
+      </label>
+      <label class="liro-field">
+        <span class="liro-field-label" data-i18n="settings.tsa_url_label"></span>
+        <input type="text" id="tsa-url" data-i18n-placeholder="settings.tsa_custom_url_placeholder" />
+      </label>
+    </fieldset>
+
+    <label class="liro-field">
+      <span class="liro-field-label" data-i18n="settings.tsa_user_label"></span>
+      <input type="text" id="tsa-user" autocomplete="off" />
+    </label>
+
+    <label class="liro-field">
+      <span class="liro-field-label" data-i18n="settings.tsa_password_label"></span>
+      <input type="password" id="tsa-password" autocomplete="off" />
+    </label>
+
+    <label class="liro-field">
+      <span class="liro-field-label" data-i18n="settings.tsa_client_cert_label"></span>
+      <input type="text" id="tsa-client-cert-path" data-i18n-placeholder="settings.tsa_client_cert_placeholder" autocomplete="off" />
+    </label>
+
+    <label class="liro-field">
+      <span class="liro-field-label" data-i18n="settings.tsa_client_cert_password_label"></span>
+      <input type="password" id="tsa-client-cert-password" autocomplete="off" />
+    </label>
+
+    <label class="liro-field">
+      <span class="liro-field-label" data-i18n="settings.output_suffix_label"></span>
+      <input type="text" id="output-suffix" />
+    </label>
+
+    <!-- Task 3 (F5 fourth-real-run review): B-B comes first, so a user
+         who has decided against a timestamp has something to choose
+         and is never asked again mid-signature. Each level says what
+         it contains, in words, because "B-T" alone tells a
+         non-specialist nothing. -->
+    <fieldset>
+      <legend data-i18n="settings.signature_level_label"></legend>
+      <label class="liro-check">
+        <input type="radio" name="level" value="b-b" id="level-bb" />
+        <span data-i18n="settings.level_bb"></span>
+      </label>
+      <label class="liro-check">
+        <input type="radio" name="level" value="b-t" id="level-bt" />
+        <span data-i18n="settings.level_bt"></span>
+      </label>
+      <label class="liro-check">
+        <input type="radio" name="level" value="b-lt" id="level-blt" />
+        <span data-i18n="settings.level_blt"></span>
+      </label>
+    </fieldset>
+
+    <div class="actions-row">
+      <button id="export-audit-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.export_audit_log"></button>
+    </div>
+
+    <label class="liro-check">
+      <input type="checkbox" id="check-updates-daily" />
+      <span data-i18n="settings.check_updates_daily"></span>
+    </label>
+    <div class="actions-row">
+      <button id="check-updates-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.check_updates_now"></button>
+    </div>
+
+    <div class="liro-row secondary-row">
+      <span data-i18n="settings.version_label"></span>
+      <span id="version"></span>
+      <button id="copy-version-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.copy"></button>
+    </div>
   </div>
 
-  <label class="liro-row">
-    <span data-i18n="settings.check_updates_daily"></span>
-    <input type="checkbox" id="check-updates-daily" />
-  </label>
-  <div class="actions-row">
-    <button id="check-updates-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.check_updates_now"></button>
-  </div>
+  <p id="action-status" class="liro-fixed-region" hidden></p>
 
-  <div class="liro-row secondary-row">
-    <span data-i18n="settings.version_label"></span>
-    <span id="version"></span>
-    <button id="copy-version-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.copy"></button>
-  </div>
-
-  <div class="actions">
+  <div class="actions liro-fixed-region">
     <button id="close-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.close"></button>
     <button id="save-btn" class="liro-btn liro-btn-primary" data-i18n="settings.save"></button>
   </div>

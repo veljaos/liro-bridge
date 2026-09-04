@@ -232,13 +232,17 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 
 	// A level was requested (the CLI's --level always sets one; only
 	// this package's own tests pass Options{} to mean "no particular
-	// level, whatever B-B gives you"). Reaching B-T requires a TSA — if
+	// level, whatever B-B gives you"). A requested level of B-B is the
+	// caller stating that outcome deliberately — Settings' own B-B
+	// option (D-105) — so no timestamp is attempted at all and none is
+	// reported as missing; the result is B-B because that is what was
+	// asked for, not because something failed. Reaching B-T requires a TSA — if
 	// none is configured, that is treated exactly like a TSA that was
 	// contacted and failed (Task 7/SPEC §12.8/§18.11: the achieved level
 	// must never fall below the requested one without the caller being
 	// told why, and "nobody configured a TSA" is not an exception to
 	// that rule).
-	if opts.RequestedLevel != "" {
+	if opts.RequestedLevel != "" && opts.RequestedLevel != LevelBB {
 		var resp *tsa.Response
 		var tsaErr error
 		if opts.TSA == nil {

@@ -95,8 +95,10 @@ type session struct {
 
 // openSession opens a signing session for the certificate with the
 // given thumbprint (F2 §2). windowHandle becomes
-// NCRYPT_WINDOW_HANDLE_PROPERTY; F2 has no agent window yet, so callers
-// pass 0 here — F5 supplies the real value once a window exists.
+// NCRYPT_WINDOW_HANDLE_PROPERTY; the headless CLI paths (certs, sign,
+// sign-digest) have no window and pass 0, while the interactive
+// consent window (F5, Task 2) passes its own HWND via
+// Source.WithWindowHandle so the OS PIN dialog is parented correctly.
 func openSession(conn ncryptConn, thumbprint keysource.Thumbprint, windowHandle uintptr) (keysource.Session, error) {
 	der, key, callerFree, err := conn.findAndAcquire(string(thumbprint))
 	if err != nil {

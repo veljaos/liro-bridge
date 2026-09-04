@@ -6,38 +6,61 @@
 <link rel="stylesheet" href="https://liro.local/intents.css" />
 <link rel="stylesheet" href="https://liro.local/pages/consent.css" />
 </head>
-<body>
+<body class="liro-page">
 
 <main id="state-waiting">
-  <p class="liro-display" id="signer-name"></p>
-  <p class="liro-text-secondary" id="document-count"></p>
+  <div class="waiting-header liro-fixed-region">
+    <p class="liro-display" id="signer-name"></p>
+    <p class="liro-text-secondary" id="document-count"></p>
 
-  <div id="select-prompt" class="liro-text-small" data-i18n="consent.select_certificate_prompt"></div>
-  <div id="no-usable-cert" class="liro-text-small" hidden data-i18n="consent.no_usable_certificate"></div>
-
-  <section id="cert-list" role="listbox" aria-label="Certificates"></section>
-
-  <div class="liro-row secondary-row">
-    <span class="liro-text-secondary" data-i18n="consent.application_label"></span>
-    <span class="liro-text-secondary" id="application-name"></span>
+    <div id="select-prompt" class="liro-text-small" data-i18n="consent.select_certificate_prompt"></div>
+    <div id="no-usable-cert" class="liro-text-small" hidden data-i18n="consent.no_usable_certificate"></div>
   </div>
 
-  <details class="liro-disclosure" id="details">
-    <summary data-i18n="consent.details_toggle"></summary>
-    <div class="liro-card liro-text-small">
-      <div class="liro-row">
-        <span data-i18n="consent.fingerprint_label"></span>
-        <code id="fingerprint"></code>
-      </div>
-      <div data-i18n="consent.files_label"></div>
-      <ul id="file-list"></ul>
-      <div id="file-overflow"></div>
-    </div>
-  </details>
+  <section id="cert-list" class="liro-scroll-region" role="listbox" aria-label="Certificates"></section>
 
-  <div class="actions">
-    <button id="cancel-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.cancel"></button>
-    <button id="approve-btn" class="liro-btn liro-btn-primary" data-i18n="consent.approve" disabled></button>
+  <div class="waiting-footer liro-fixed-region">
+    <div class="liro-row secondary-row">
+      <span class="liro-text-secondary" data-i18n="consent.application_label"></span>
+      <span class="liro-text-secondary" id="application-name"></span>
+    </div>
+
+    <!-- Task 1 (F5 fourth-real-run review): the visible stamp is asked
+         for here, not only on the command line. On by default — a
+         signature the signer cannot see reads as one that was never
+         applied (D-103) — with the corner shown only while it is on,
+         since a position for a stamp nobody is drawing is noise. -->
+    <div class="stamp-options">
+      <label class="liro-check">
+        <input type="checkbox" id="stamp-visible" />
+        <span data-i18n="consent.stamp_visible"></span>
+      </label>
+      <div class="liro-field" id="stamp-position-field">
+        <label class="liro-field-label liro-text-small" for="stamp-position" data-i18n="consent.stamp_position_label"></label>
+        <select id="stamp-position"></select>
+      </div>
+    </div>
+
+    <details class="liro-disclosure" id="details">
+      <summary data-i18n="consent.details_toggle"></summary>
+      <div class="liro-card liro-text-small">
+        <div class="liro-row fingerprint-row">
+          <span data-i18n="consent.fingerprint_label"></span>
+          <span class="fingerprint-value">
+            <code id="fingerprint"></code>
+            <button id="copy-fingerprint-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="consent.copy_fingerprint"></button>
+          </span>
+        </div>
+        <div data-i18n="consent.files_label"></div>
+        <ul id="file-list"></ul>
+        <div id="file-overflow"></div>
+      </div>
+    </details>
+
+    <div class="actions">
+      <button id="cancel-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.cancel"></button>
+      <button id="approve-btn" class="liro-btn liro-btn-primary" data-i18n="consent.approve" disabled></button>
+    </div>
   </div>
 </main>
 
@@ -56,9 +79,45 @@
 <main id="state-done" hidden>
   <p class="liro-display" data-i18n="consent.state_done"></p>
   <p id="done-summary"></p>
+  <p id="done-level"></p>
   <p id="done-output" class="liro-text-small"></p>
   <div class="actions">
     <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="consent.close"></button>
+  </div>
+</main>
+
+<!-- Task 1 (F5 second-real-run review): SPEC §12.8's choice, made by
+     the person signing. Never preselected, and never taken silently —
+     "Sign without a timestamp" says what it produces (B-B) right on
+     the button's own explanation, above it. -->
+<main id="state-tsachoice" hidden>
+  <p class="liro-display" data-i18n="consent.tsa_choice_title"></p>
+  <p id="tsa-reason" class="liro-text-secondary"></p>
+  <p class="liro-text-small" data-i18n="consent.tsa_choice_explain"></p>
+  <div class="tsa-actions">
+    <button id="tsa-without-btn" class="liro-btn liro-btn-primary" data-i18n="consent.tsa_save_without_timestamp"></button>
+    <button id="tsa-configure-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.tsa_configure"></button>
+    <button id="tsa-cancel-btn" class="liro-btn liro-btn-quiet" data-i18n="consent.cancel"></button>
+  </div>
+</main>
+
+<!-- Task 4 (F5 fourth-real-run review): the output file already
+     exists. SPEC §12.11 forbids replacing it silently, which is why
+     this screen exists at all — but the previous build honoured that
+     rule by reporting "an unexpected error occurred", so a deliberate
+     protection read as a defect. Saving under a different name is the
+     primary action: it is the one that loses nothing. -->
+<main id="state-outputexists" hidden>
+  <p class="liro-display" data-i18n="consent.output_exists_title"></p>
+  <p class="liro-text-secondary" data-i18n="consent.output_exists_explain"></p>
+  <div class="liro-field">
+    <span class="liro-field-label liro-text-small" data-i18n="consent.output_exists_path_label"></span>
+    <code id="output-exists-path" class="output-path"></code>
+  </div>
+  <div class="tsa-actions">
+    <button id="output-rename-btn" class="liro-btn liro-btn-primary"></button>
+    <button id="output-overwrite-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.output_exists_overwrite"></button>
+    <button id="output-cancel-btn" class="liro-btn liro-btn-quiet" data-i18n="consent.cancel"></button>
   </div>
 </main>
 

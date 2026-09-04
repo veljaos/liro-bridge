@@ -1,6 +1,8 @@
 package consent
 
 import (
+	"sort"
+
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/trust/classify"
 )
@@ -76,12 +78,19 @@ func thumbprintTail(thumbprint string, n int) string {
 }
 
 // BuildCertificateOptions converts every classify.Info the caller knows
-// about into a CertificateOption row, preserving order. Nothing is
-// filtered out here (F5 §5.2's "shown disabled... not hidden") — the
-// caller passes exactly the certificates it wants offered at all
-// (e.g. internal/cli's existing "default hides not-qualified,
-// not-a-signing-certificate" rule, D-023, is a decision for the caller
-// building this input, not for this function).
+// about into a CertificateOption row. Nothing is filtered out here (F5
+// §5.2's "shown disabled... not hidden") — the caller passes exactly
+// the certificates it wants offered at all (e.g. internal/cli's
+// existing "default hides not-qualified, not-a-signing-certificate"
+// rule, D-023, is a decision for the caller building this input, not
+// for this function).
+//
+// Usable certificates sort to the top, unusable ones follow (Task 4,
+// F5 first-real-run review): a real choice belongs above a row the
+// user cannot act on, but that row still stays visible with its
+// reason rather than being pushed out of sight entirely. The sort is
+// stable, so within each group the caller's own order (e.g. Gather's
+// enumeration order) is preserved.
 func BuildCertificateOptions(certs []classify.Info) []CertificateOption {
 	out := make([]CertificateOption, 0, len(certs))
 	for _, c := range certs {
@@ -97,5 +106,8 @@ func BuildCertificateOptions(certs []classify.Info) []CertificateOption {
 			IsTestKey:      c.IsTestKey,
 		})
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Usable && !out[j].Usable
+	})
 	return out
 }

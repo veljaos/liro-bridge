@@ -27,16 +27,29 @@ func runCertificatesWindow(locale string) error {
 	if err != nil {
 		return err
 	}
+	// Task 3: same default visibility rule as "liro-bridge certs" (no
+	// --all) and the consent window — a certificate that is both
+	// PurposeUnknown and not qualified is a Windows-internal artefact
+	// the user has never heard of and cannot sign with.
 	certInfos := make([]classify.Info, 0, len(report.Certificates))
 	for _, row := range report.Certificates {
+		if row.Hidden() {
+			continue
+		}
 		certInfos = append(certInfos, row.Info)
 	}
 
 	messages := make(chan ui.Message, 8)
 	win, err := ui.NewWindow(ui.Options{
-		Title:       c.T("certswindow.title"),
-		Width:       460,
-		Height:      440,
+		Title: c.T("certswindow.title"),
+		Width: 460,
+		// Task 5 (F5 fourth-real-run review): measured with six
+		// certificates — the realistic case for a machine holding
+		// several clients' cards (SPEC §14.1) — 440 points showed 305
+		// of the list's 701, under three rows of six. The list scrolls
+		// correctly at either size; this is simply enough of it to read
+		// without scrolling for what is a reference list.
+		Height:      640,
 		AlwaysOnTop: true,
 		Assets:      assetsFS,
 		VirtualHost: liroVirtualHost,
