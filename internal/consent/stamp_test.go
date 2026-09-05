@@ -2,9 +2,11 @@ package consent
 
 import "testing"
 
-// TestDefaultStampChoiceIsVisibleBottomRight pins Task 1's default in
-// the package that defines it: on, bottom-right (SPEC §13.1's own
-// default corner). D-103 records why it is on.
+// TestDefaultStampChoiceIsVisibleBottomRight pins the answer step 3
+// offers a first-time user, in the package that defines it: visible,
+// bottom-right (SPEC §13.1's own default corner). D-103 records why it
+// is visible — a signature the signer cannot see reads, to them, as one
+// that was never applied.
 func TestDefaultStampChoiceIsVisibleBottomRight(t *testing.T) {
 	got := DefaultStampChoice()
 	if !got.Visible {
@@ -15,7 +17,7 @@ func TestDefaultStampChoiceIsVisibleBottomRight(t *testing.T) {
 	}
 }
 
-// TestStampPositionsAreTheFourCornersInOrder: the window offers the
+// TestStampPositionsAreTheFourCornersInOrder: step 3 offers the
 // default first, then the remaining three, and offers nothing else —
 // a visual placement picker is a later phase (SPEC §13.1).
 func TestStampPositionsAreTheFourCornersInOrder(t *testing.T) {
@@ -58,16 +60,5 @@ func TestNormalisedReplacesAnUnknownCorner(t *testing.T) {
 	kept := StampChoice{Visible: false, Position: StampPositionTopLeft}.Normalised()
 	if kept.Position != StampPositionTopLeft || kept.Visible {
 		t.Errorf("Normalised() changed a valid choice: %+v", kept)
-	}
-}
-
-// TestBuildViewModelStartsFromTheDefaultStampChoice: a caller that
-// knows nothing about the user's saved preference still gets a
-// sensible, documented answer rather than the zero value (an invisible
-// stamp in an empty corner).
-func TestBuildViewModelStartsFromTheDefaultStampChoice(t *testing.T) {
-	vm := BuildViewModel(ApplicationLocal, [][]byte{{1}}, []string{"a.pdf"}, nil)
-	if vm.Stamp != DefaultStampChoice() {
-		t.Errorf("BuildViewModel(...).Stamp = %+v, want %+v", vm.Stamp, DefaultStampChoice())
 	}
 }

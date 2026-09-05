@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/veljaos/liro-bridge/internal/pades/pdf"
 )
@@ -35,12 +36,17 @@ const truncationMark = "..."
 // no code path into this package at all — "unreachable from this
 // package" is true by construction, not by convention.
 type Options struct {
-	// Label is already localised (F4 §5.3): "Digitally signed by" /
-	// "Digitalno potpisao" / "Дигитално потписао".
+	// Label is line 1, already localised by the caller (F4 §5.3):
+	// "Digitally signed" / "Digitalno potpisano" / "Дигитално
+	// потписано". It is the one line whose script follows the interface
+	// language rather than the certificate.
 	Label string
 
-	// SignerName is never localised (F4 §5.3/SPEC §9.3): whatever script
-	// the certificate's givenName/surname carry, rendered as-is.
+	// SignerName is never localised and never transliterated (F4
+	// §5.3/SPEC §9.3): whatever script the certificate's
+	// givenName/surname carry is the script it is drawn in, in a
+	// Cyrillic, Latin or English interface alike. buildLines
+	// upper-cases it, which is a change of case, not of script.
 	SignerName string
 
 	// Reference is the caller-supplied document reference line
@@ -53,9 +59,11 @@ type Options struct {
 	// "opt-in... never the default").
 	DocumentID string
 
-	// SerialHex and SigningTime build the mandatory fourth line.
+	// SerialHex is the certificate serial, upper-case hexadecimal, and
+	// SigningTime the already-formatted signing date. They are lines 3
+	// and 4, one each; buildLines adds the "SN " prefix.
 	SerialHex   string
-	SigningTime string // already formatted by the caller
+	SigningTime string
 
 	// Corner anchors the stamp when UseXY is false (the default path).
 	Corner Corner
@@ -134,23 +142,51 @@ func Render(doc *pdf.Document, pageDict pdf.Dict, u *pdf.Update, opts Options) (
 	return pdf.Appearance{Rect: rect, FormXObject: pdf.Reference{Num: formNum}}, nil
 }
 
-// buildLines assembles the stamp's text lines in order (F4 §5): label
-// and signer name are always present, reference and the identity
-// document number are each independently optional. Up to five lines
-// results (heightsByLineCount's fifth entry exists for exactly the case
-// where both optional lines are present at once).
+// serialPrefix labels the certificate serial on line 3. Not localised
+// and not translated: it is a field name for a hexadecimal number, read
+// the same way in every locale, and the three-character form is what
+// fits beside a 36pt logo.
+const serialPrefix = "SN "
+
+// buildLines assembles the stamp's text lines, in the order they are
+// drawn. Four are always present and always on their own line:
+//
+//	Дигитално потписано      the label, in the interface's language
+//	ВЕЉКО СТАНОЈЕВИЋ         the signer, in the certificate's own script
+//	SN 20F048A768F56F099E    the certificate serial
+//	04.09.2026. 15:04:33     the signing date and time
+//
+// then the caller's reference line, then the identity document number,
+// each only when supplied — six lines at most.
+//
+// The four base lines used to be three, with the serial and the time
+// sharing one: two facts crowded onto one line, neither readable at a
+// glance. Splitting them is why the height table (geometry.go) is sized
+// the way it is rather than the other way round.
+//
+// Only the label follows the interface language. The signer's name is
+// never transliterated — SPEC §9.3 makes certificate subject fields
+// data, so a MUP certificate reads Cyrillic and a Halcom one Latin
+// whatever language the window is in. The name is upper-cased, which
+// changes its case and not its script: strings.ToUpper is
+// Unicode-aware, so "Zoran Milovanović" becomes "ZORAN MILOVANOVIĆ"
+// and "ВЕЉКО СТАНОЈЕВИЋ" is already what it will be.
 func buildLines(opts Options) ([]string, error) {
 	if opts.Label == "" || opts.SignerName == "" {
 		return nil, fmt.Errorf("appearance: Label and SignerName are required")
 	}
-	lines := []string{opts.Label, opts.SignerName}
+	lines := []string{
+		opts.Label,
+		strings.ToUpper(opts.SignerName),
+		serialPrefix + opts.SerialHex,
+		opts.SigningTime,
+	}
 	if opts.Reference != "" {
 		lines = append(lines, opts.Reference)
 	}
 	if opts.DocumentID != "" {
 		lines = append(lines, opts.DocumentID)
 	}
-	lines = append(lines, fmt.Sprintf("SN %s  %s", opts.SerialHex, opts.SigningTime))
 	return lines, nil
 }
 

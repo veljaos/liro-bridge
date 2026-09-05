@@ -16,6 +16,8 @@ package ui
 import (
 	"fmt"
 	"runtime"
+	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -34,10 +36,36 @@ const (
 	bifReturnOnlyFSDirs = 0x00000001
 	bifNewDialogStyle   = 0x00000040
 
+	// bffmInitialized is BFFM_INITIALIZED, the one callback message
+	// this dialog is used for: it fires once, when the dialog is ready
+	// to be told what to select. bffmSetSelectionW is
+	// BFFM_SETSELECTIONW (WM_USER+103), whose lParam is a wide path.
+	bffmInitialized   = 1
+	bffmSetSelectionW = 0x0400 + 103
+
 	// maxPathW is the classic MAX_PATH the SHGetPathFromIDListW contract
 	// is defined against — it writes at most this many wide characters.
 	maxPathW = 260
 )
+
+// browseCallback is BFFM_INITIALIZED's handler: when the dialog is
+// ready, tell it to select the path BROWSEINFOW.lParam points at.
+//
+// It is created once, as a package-level singleton, rather than per
+// call: syscall.NewCallback's trampolines are never released, so one
+// per folder chooser would be a slow leak in a tray process meant to
+// run for weeks — the same reasoning com_windows.go's vtable
+// singletons are built on. It needs no per-call state, because the
+// path travels in lParam, which Windows hands back as the data
+// argument.
+func browseCallbackProc(hwnd uintptr, msg uint32, _ uintptr, data uintptr) uintptr {
+	if msg == bffmInitialized && data != 0 {
+		_, _, _ = procSendMessageW.Call(hwnd, bffmSetSelectionW, 1, data)
+	}
+	return 0
+}
+
+var browseCallback = syscall.NewCallback(browseCallbackProc)
 
 // browseInfoW mirrors BROWSEINFOW.
 type browseInfoW struct {
@@ -67,7 +95,7 @@ type browseInfoW struct {
 // into a COM apartment of its own (window_windows.go's package doc
 // comment). Owning a thread for the dialog's lifetime is the only way
 // to be sure of what apartment it is in.
-func pickFolder(owner uintptr, title string) (path string, ok bool, err error) {
+func pickFolder(owner uintptr, title, initial string) (path string, ok bool, err error) {
 	type result struct {
 		path string
 		ok   bool
@@ -103,6 +131,21 @@ func pickFolder(owner uintptr, title string) (path string, ok bool, err error) {
 			DisplayName: &display[0],
 			Title:       &titleBuf[0],
 			Flags:       bifReturnOnlyFSDirs | bifNewDialogStyle,
+		}
+		// With no starting selection this dialog opens on the Desktop
+		// with the Desktop itself selected, so pressing OK — the thing
+		// a person does when they meant to look around and changed
+		// their mind — silently answers "the Desktop". That is how the
+		// agent came to be writing every signed document there
+		// (docs/decisions.md). Starting on the folder already chosen,
+		// when there is one, makes OK mean "keep this".
+		if initial != "" {
+			initialBuf, convErr := utf16Buf(initial)
+			if convErr == nil {
+				pin.Pin(&initialBuf[0])
+				bi.LParam = uintptr(unsafe.Pointer(&initialBuf[0]))
+				bi.Callback = browseCallback
+			}
 		}
 		idList, _, _ := procSHBrowseForFolderW.Call(pinPtr(&pin, &bi))
 		if idList == 0 {

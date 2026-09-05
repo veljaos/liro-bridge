@@ -29,22 +29,24 @@ import (
 	"github.com/veljaos/liro-bridge/internal/audit"
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
-	"github.com/veljaos/liro-bridge/internal/consent"
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/jobs"
-	"github.com/veljaos/liro-bridge/internal/pades"
 	"github.com/veljaos/liro-bridge/internal/signing"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
-// mainWindowSize is measured, not guessed: at 560x720 the document list
-// shows eight rows without scrolling, which covers the ordinary batch,
-// and the footer's two setting rows plus the three actions stay on
-// screen with a two-hundred-document list scrolling above them (D-106).
+// mainWindowSize is measured, not guessed: the document list shows
+// eight rows without scrolling, which covers the ordinary batch, and
+// the footer plus the three actions stay on screen with a
+// two-hundred-document list scrolling above them (D-106).
+//
+// 690 rather than 720 because step 1 now asks one thing: the stamp
+// summary row left the footer when the stamp question moved to step 3,
+// and the footer measured 34 points shorter for it.
 const (
 	mainWindowWidth  = 560
-	mainWindowHeight = 720
+	mainWindowHeight = 690
 )
 
 // mainWindow is one open main window and everything it is driving.
@@ -109,10 +111,10 @@ func runMainWindowWatching(ctx context.Context, cfg config.Config, locale string
 		VirtualHost: liroVirtualHost,
 		StartPage:   "/pages/main.html",
 		OnMessage:   func(msg ui.Message) { m.messages <- msg },
-		// F6 §1: files dropped from Explorer. The callback runs on the
-		// window's own thread, so it does nothing but hand the paths
-		// over — reading two hundred files' sizes there would freeze
-		// the window mid-drop.
+		// F6 §1: files dropped from Explorer. It hands the paths to
+		// the loop and does nothing else — reading two hundred files'
+		// sizes here would hold up every callback behind it, and the
+		// loop is where the queue lives anyway.
 		OnFilesDropped: func(paths []string) { m.dropped <- paths },
 		OnClosed:       func() { close(m.closed) },
 	})
@@ -247,8 +249,8 @@ func (m *mainWindow) handleAction(ctx context.Context) bool {
 		m.postFiles()
 	case "chooseOutputFolder":
 		m.chooseOutputFolder()
-	case "stampSettings":
-		m.openStampWindow()
+	case "clearOutputFolder":
+		m.clearOutputFolder()
 	case "sign":
 		m.sign(ctx)
 	case "stop":
@@ -271,8 +273,28 @@ func (m *mainWindow) handleAction(ctx context.Context) bool {
 }
 
 func (m *mainWindow) addPaths(paths []string) {
-	_, notices := m.queue.Add(paths)
+	before := m.queue.Len()
+	added, notices := m.queue.Add(paths)
 	m.notices = notices
+	// Counts only — never a name or a path (SPEC §18.3). This is what
+	// settles "it added a duplicate anyway" from a machine that is not
+	// this one: added plus duplicates plus anything unreadable accounts
+	// for every path that arrived, and the queue length says what the
+	// list should be showing.
+	duplicates := 0
+	unreadable := 0
+	for _, n := range notices {
+		switch n.Kind {
+		case jobs.NoticeDuplicate:
+			duplicates++
+		case jobs.NoticeUnreadable:
+			unreadable++
+		}
+	}
+	slog.Info("main window: documents added",
+		"arrived", len(paths), "added", added,
+		"duplicates", duplicates, "unreadable", unreadable,
+		"queueWas", before, "queueNow", m.queue.Len())
 	m.postFiles()
 }
 
@@ -305,8 +327,14 @@ func (m *mainWindow) browse() {
 	m.addPaths(paths)
 }
 
+// chooseOutputFolder asks for a folder to write signatures into.
+//
+// The chooser starts on the folder already chosen, so an accidental OK
+// keeps what was there instead of answering "the Desktop" — which is
+// what it did answer, silently, and why every signed document was
+// landing there (docs/decisions.md).
 func (m *mainWindow) chooseOutputFolder() {
-	dir, ok, err := ui.ChooseFolder(m.win.Handle(), m.c.T("main.choose_output_folder"))
+	dir, ok, err := ui.ChooseFolder(m.win.Handle(), m.c.T("main.choose_output_folder"), m.cfg.OutputFolder)
 	if err != nil {
 		slog.Warn("main window: the folder chooser failed", "error", err)
 		return
@@ -315,6 +343,16 @@ func (m *mainWindow) chooseOutputFolder() {
 		return
 	}
 	m.cfg.OutputFolder = dir
+	m.saveConfig()
+	m.postFiles()
+}
+
+// clearOutputFolder goes back to the default: each signature beside its
+// own input. Without it a chosen folder was a one-way door — the main
+// window could set one and had no way to unset it, so the only way back
+// was the Settings window's text field or editing config.json by hand.
+func (m *mainWindow) clearOutputFolder() {
+	m.cfg.OutputFolder = ""
 	m.saveConfig()
 	m.postFiles()
 }
@@ -334,7 +372,11 @@ func (m *mainWindow) postFiles() {
 }
 
 type jsFile struct {
-	Name      string `json:"name"`
+	Name string `json:"name"`
+	// Folder is set only for a document whose name alone does not
+	// identify it in this list (jobs.NeedsFolder). Empty for every
+	// other row, which is nearly all of them.
+	Folder    string `json:"folder,omitempty"`
 	SizeText  string `json:"sizeText"`
 	State     string `json:"state,omitempty"`
 	StateText string `json:"stateText,omitempty"`
@@ -348,9 +390,14 @@ type jsNotice struct {
 
 func (m *mainWindow) filesPayload(kind string) map[string]any {
 	items := m.queue.Items()
+	needsFolder := jobs.NeedsFolder(items)
 	files := make([]jsFile, 0, len(items))
-	for _, it := range items {
-		files = append(files, jsFile{Name: it.DisplayName, SizeText: m.sizeText(it)})
+	for i, it := range items {
+		f := jsFile{Name: it.DisplayName, SizeText: m.sizeText(it)}
+		if needsFolder[i] {
+			f.Folder = it.Folder
+		}
+		files = append(files, f)
 	}
 	payload := map[string]any{
 		"type":             kind,
@@ -358,7 +405,10 @@ func (m *mainWindow) filesPayload(kind string) map[string]any {
 		"countText":        m.countText(),
 		"notices":          m.noticeTexts(),
 		"outputFolderText": m.outputFolderText(),
-		"stampSummary":     m.stampSummary(),
+		// Only shown when there is something to undo: a "beside each
+		// document" button next to a row that already says exactly that
+		// is a button that does nothing.
+		"outputFolderChosen": m.cfg.OutputFolder != "",
 	}
 	if kind == "init" {
 		payload["strings"] = m.staticStrings()
@@ -413,39 +463,14 @@ func (m *mainWindow) outputFolderText() string {
 	return m.cfg.OutputFolder
 }
 
-func (m *mainWindow) stampSummary() string {
-	if !m.cfg.VisibleStamp {
-		return m.c.T("main.stamp_summary_off")
-	}
-	return fmt.Sprintf(m.c.T("main.stamp_summary_on"),
-		m.c.T(stampPositionKey(m.cfg.StampPosition)),
-		m.stampPageText())
-}
-
-func (m *mainWindow) stampPageText() string {
-	return stampPageLabel(m.c, m.cfg.StampPage)
-}
-
-func stampPositionKey(position string) string {
-	switch position {
-	case consent.StampPositionBottomLeft:
-		return "stampwindow.position_bottom_left"
-	case consent.StampPositionTopRight:
-		return "stampwindow.position_top_right"
-	case consent.StampPositionTopLeft:
-		return "stampwindow.position_top_left"
-	default:
-		return "stampwindow.position_bottom_right"
-	}
-}
-
 // staticStrings is every data-i18n key this page resolves, resolved in
 // Go so the page never sees a catalogue or a locale.
 func (m *mainWindow) staticStrings() map[string]string {
 	keys := []string{
 		"main.empty_title", "main.empty_hint", "main.browse", "main.clear",
-		"main.sign", "main.remove_file", "main.output_label", "main.output_change",
-		"main.stamp_change", "main.queue_title", "main.stop", "main.stopping",
+		"main.sign", "main.sign_opening", "main.remove_file",
+		"main.output_label", "main.output_change",
+		"main.output_beside", "main.queue_title", "main.stop", "main.stopping",
 		"main.report_failures_title", "main.report_output_label",
 		"main.report_level_label", "main.open_output", "main.export_report",
 		"main.new_batch", "consent.per_signature_pin_warning",
@@ -483,7 +508,7 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 
 	wrapped := signing.WrapSession(d.session)
 	trustStore := interactiveTrustStore(ctx)
-	stampOpts := m.stampOptions()
+	stampOpts := stampOptionsFor(m.c, m.cfg)
 
 	// The run is on its own goroutine so the message loop keeps
 	// answering — Stop must reach the runner while it is signing, and a
@@ -546,23 +571,6 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	m.postReport(report)
 }
 
-func (m *mainWindow) stampOptions() *pades.StampOptions {
-	if !m.cfg.VisibleStamp {
-		return nil
-	}
-	opts := interactiveStampOptions(m.c, consent.StampChoice{
-		Visible:  true,
-		Position: m.cfg.StampPosition,
-	}.Normalised())
-	if opts == nil {
-		return nil
-	}
-	opts.Page = stampPageNumber(m.cfg.StampPage)
-	opts.Reference = m.cfg.StampReference
-	opts.ShowDocumentID = m.cfg.StampShowDocumentID
-	return opts
-}
-
 // stampPageNumber turns the configured page selection into the page
 // number pades.StampOptions expects: 1 for the first page, -1 for the
 // last (its own existing convention), or the number itself.
@@ -617,12 +625,20 @@ func (m *mainWindow) postQueue(p jobs.Progress, stopping bool) {
 // states — including all five at once, which a real run passes through
 // but never rests in.
 func (m *mainWindow) queuePayload(items []jobs.Item, p jobs.Progress, stopping bool) map[string]any {
+	// The same list, one screen later, so the same rule: a name that
+	// appears twice says which folder it came from. Watching two rows
+	// called "ugovor.pdf" and being told one of them failed is the
+	// document-list defect happening two seconds further on.
+	needsFolder := jobs.NeedsFolder(items)
 	files := make([]jsFile, 0, len(items))
-	for _, it := range items {
+	for i, it := range items {
 		f := jsFile{
 			Name:      it.DisplayName,
 			State:     string(it.State),
 			StateText: m.stateText(it.State),
+		}
+		if needsFolder[i] {
+			f.Folder = it.Folder
 		}
 		if it.State == jobs.StateFailed {
 			f.Reason = cli.ErrorMessage(errs.New(it.FailureCode, nil), m.c)
@@ -781,7 +797,7 @@ func (m *mainWindow) exportReport() {
 	if m.report == nil {
 		return
 	}
-	dir, ok, err := ui.ChooseFolder(m.win.Handle(), m.c.T("main.export_report_title"))
+	dir, ok, err := ui.ChooseFolder(m.win.Handle(), m.c.T("main.export_report_title"), m.cfg.OutputFolder)
 	if err != nil || !ok {
 		if err != nil {
 			slog.Warn("main window: the folder chooser failed", "error", err)
@@ -831,15 +847,4 @@ func (m *mainWindow) postStatus(text, intent string) {
 	}); err != nil {
 		slog.Warn("main window: posting a status line failed", "error", err)
 	}
-}
-
-// openStampWindow shows F6 §6's stamp settings and re-reads the
-// configuration when it closes, so the summary line and the next batch
-// both reflect whatever was saved.
-func (m *mainWindow) openStampWindow() {
-	if err := runStampWindow(m.cfg, m.locale); err != nil {
-		slog.Warn("main window: the stamp window failed", "error", err)
-	}
-	m.cfg = currentStampConfig(m.cfg)
-	m.postFiles()
 }

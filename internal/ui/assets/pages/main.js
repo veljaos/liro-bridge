@@ -85,15 +85,31 @@
       });
       row.appendChild(remove);
 
+      // Only for a name that appears more than once in this list: the
+      // folder is what makes the two rows tell themselves apart. It
+      // goes on its own line, which is what flex-wrap on .file-row is
+      // for.
+      if (f.folder) {
+        var folder = document.createElement("span");
+        folder.className = "file-folder";
+        window.liroSetText(folder, f.folder);
+        row.appendChild(folder);
+      }
+
       list.appendChild(row);
     });
 
     renderNotices(payload.notices || []);
 
-    document.getElementById("sign-btn").disabled = files.length === 0;
+    // Sign goes back to being Sign on every re-render, which is what
+    // brings it out of the busy state below when the consent window was
+    // cancelled and the list is shown again.
+    var sign = document.getElementById("sign-btn");
+    window.liroSetText(sign, window.liroT("main.sign"));
+    sign.disabled = files.length === 0;
     document.getElementById("clear-btn").disabled = files.length === 0;
     window.liroSetText(document.getElementById("output-folder"), payload.outputFolderText || "");
-    window.liroSetText(document.getElementById("stamp-summary"), payload.stampSummary || "");
+    document.getElementById("output-beside-btn").hidden = payload.outputFolderChosen !== true;
   }
 
   function renderNotices(notices) {
@@ -150,6 +166,15 @@
       state.className = "file-state";
       window.liroSetText(state, f.stateText);
       row.appendChild(state);
+
+      // Same rule as the document list: only where the name is not
+      // enough on its own.
+      if (f.folder) {
+        var qFolder = document.createElement("span");
+        qFolder.className = "file-folder";
+        window.liroSetText(qFolder, f.folder);
+        row.appendChild(qFolder);
+      }
 
       if (f.reason) {
         var reason = document.createElement("span");
@@ -209,9 +234,23 @@
 
   on("browse-btn", "browse");
   on("clear-btn", "clear");
-  on("sign-btn", "sign");
+
+  // Sign is the one action with a wait behind it: the consent window is
+  // a WebView2 window of its own, and creating one is measured at a
+  // little over two seconds on the machine this was reported from. Two
+  // seconds of a button that looks untouched is two seconds in which a
+  // person presses it again. So the first press takes the button out of
+  // service and says what is happening; renderFiles above puts it back.
+  document.getElementById("sign-btn").addEventListener("click", function () {
+    var sign = document.getElementById("sign-btn");
+    if (sign.disabled) return;
+    sign.disabled = true;
+    window.liroSetText(sign, window.liroT("main.sign_opening"));
+    act("sign");
+  });
+
   on("output-change-btn", "chooseOutputFolder");
-  on("stamp-change-btn", "stampSettings");
+  on("output-beside-btn", "clearOutputFolder");
   on("stop-btn", "stop");
   on("report-open-btn", "openOutput");
   on("report-export-btn", "exportReport");

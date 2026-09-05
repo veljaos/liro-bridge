@@ -239,26 +239,105 @@ func (sf *subsetFont) buildHhea(numGlyphs uint16) []byte {
 			maxAdv = uint16(g.advance)
 		}
 	}
-	binary.BigEndian.PutUint16(b[10:], maxAdv) // advanceWidthMax
-	binary.BigEndian.PutUint16(b[12:], 0)      // minLeftSideBearing
-	binary.BigEndian.PutUint16(b[14:], 0)      // minRightSideBearing
-	binary.BigEndian.PutUint16(b[16:], maxAdv) // xMaxExtent
-	binary.BigEndian.PutUint16(b[18:], 1)      // caretSlopeRise
-	binary.BigEndian.PutUint16(b[20:], 0)      // caretSlopeRun
-	binary.BigEndian.PutUint16(b[22:], 0)      // caretOffset
+	// The three horizontal-extent fields are what they say they are, now
+	// that the bearings are real (buildHmtx): a reader that trusts them
+	// and finds them contradicting hmtx has been handed a font that
+	// disagrees with itself.
+	minLSB, minRSB, xMaxExtent := int16(0x7FFF), int16(0x7FFF), int16(-0x8000)
+	for _, g := range sf.glyphs {
+		if len(g.contours) == 0 {
+			continue
+		}
+		lsb := glyphXMin(g)
+		xMax := glyphXMax(g)
+		if lsb < minLSB {
+			minLSB = lsb
+		}
+		if rsb := int16(g.advance) - xMax; rsb < minRSB {
+			minRSB = rsb
+		}
+		if xMax > xMaxExtent {
+			xMaxExtent = xMax
+		}
+	}
+	binary.BigEndian.PutUint16(b[10:], maxAdv)         // advanceWidthMax
+	binary.BigEndian.PutUint16(b[12:], uint16(minLSB)) // minLeftSideBearing
+	binary.BigEndian.PutUint16(b[14:], uint16(minRSB)) // minRightSideBearing
+	binary.BigEndian.PutUint16(b[16:], uint16(xMaxExtent))
+	binary.BigEndian.PutUint16(b[18:], 1) // caretSlopeRise
+	binary.BigEndian.PutUint16(b[20:], 0) // caretSlopeRun
+	binary.BigEndian.PutUint16(b[22:], 0) // caretOffset
 	// bytes 24..31: four reserved int16 fields, left zero
 	binary.BigEndian.PutUint16(b[32:], 0)         // metricDataFormat
 	binary.BigEndian.PutUint16(b[34:], numGlyphs) // numberOfHMetrics: one entry per glyph, no compaction
 	return b
 }
 
+// buildHmtx writes each glyph's advance width and its real left side
+// bearing.
+//
+// The bearing is not decoration and not optional. A TrueType rasteriser
+// positions a glyph's outline by shifting it horizontally by
+// (hmtx.leftSideBearing - glyf.xMin) — the outline is authored wherever
+// the designer put it, and hmtx is what says where its origin actually
+// is. Writing zero for every glyph therefore moves every glyph left by
+// its own xMin, which is a different amount for every letter.
+//
+// Measured on the committed subset before this was fixed: Cyrillic Ј
+// (U+0408) has xMin -78 and advance 273, so a written bearing of 0
+// shifted it 78 units right, leaving its ink ending at 260 of its 273
+// advance and crowding whatever followed. Cyrillic О has xMin 60 and
+// was shifted 60 units left, opening a gap before it. Both appear in
+// one word: "СТАНОЈЕВИЋ" rendered with a visible gap between О and Ј
+// and none at all between Ј and Е, which is what the owner reported
+// from a signed document.
+//
+// For a glyph with no outline (.notdef) the bearing is 0, which is what
+// the spec asks for and what glyphXMin returns.
 func (sf *subsetFont) buildHmtx() []byte {
 	b := make([]byte, len(sf.glyphs)*4)
 	for i, g := range sf.glyphs {
 		binary.BigEndian.PutUint16(b[i*4:], uint16(g.advance))
-		binary.BigEndian.PutUint16(b[i*4+2:], 0) // left side bearing: not used by this project's rendering path
+		binary.BigEndian.PutUint16(b[i*4+2:], uint16(glyphXMin(g)))
 	}
 	return b
+}
+
+// glyphXMax is the rightmost x of a glyph's own outline. Zero for an
+// outline-less glyph.
+func glyphXMax(g glyphOutline) int16 {
+	first := true
+	var maxX int16
+	for _, c := range g.contours {
+		for _, pt := range c {
+			if first || pt.x > maxX {
+				maxX, first = pt.x, false
+			}
+		}
+	}
+	if first {
+		return 0
+	}
+	return maxX
+}
+
+// glyphXMin is the leftmost x of a glyph's own outline, which is both
+// the value glyf records as xMin and the left side bearing hmtx must
+// carry for the two to agree. Zero for an outline-less glyph.
+func glyphXMin(g glyphOutline) int16 {
+	first := true
+	var minX int16
+	for _, c := range g.contours {
+		for _, pt := range c {
+			if first || pt.x < minX {
+				minX, first = pt.x, false
+			}
+		}
+	}
+	if first {
+		return 0
+	}
+	return minX
 }
 
 func (sf *subsetFont) buildMaxp(numGlyphs uint16) []byte {
@@ -330,11 +409,24 @@ func (sf *subsetFont) buildCmap() ([]byte, error) {
 	searchRange := uint16(1<<entrySelector) * 2
 	rangeShift := segCountX2 - searchRange
 
-	subtableLen := 16 + 2*4*segCount // header fields (excluding format/length/language) + 4 parallel arrays
+	// The whole subtable: seven uint16 header fields (format, length,
+	// language, segCountX2, searchRange, entrySelector, rangeShift),
+	// then endCode[segCount], one reservedPad, then startCode, idDelta
+	// and idRangeOffset — four parallel arrays of segCount uint16s.
+	// 14 + 2 + 8*segCount.
+	subtableLen := 16 + 2*4*segCount
 	var sub []byte
 	put16 := func(v uint16) { sub = append(sub, byte(v>>8), byte(v)) }
 	put16(4) // format
-	put16(uint16(14 + subtableLen))
+	// length is the subtable's own total, header included. It used to
+	// be written as 14 + subtableLen, counting the header twice: the
+	// committed asset declared 238 bytes and carried 224, and fontTools
+	// refuses to parse it ("corrupt cmap table format 4"). Nothing in
+	// this project's own rendering path reads this table — Identity-H
+	// addresses glyphs by CID (§3.3) — which is exactly why a
+	// self-contradicting length could sit in a shipped font asset
+	// unnoticed.
+	put16(uint16(subtableLen))
 	put16(0) // language
 	put16(segCountX2)
 	put16(searchRange)

@@ -100,6 +100,17 @@ body.drag-over #file-list {
   flex: 0 0 auto;
 }
 
+/* The folder a document is in, shown only when its name alone appears
+   twice in the list (jobs.NeedsFolder). flex-basis: 100% puts it on its
+   own line under the name, which the row's flex-wrap allows — the same
+   arrangement .file-reason already uses for a failure. */
+.file-folder {
+  flex: 1 1 100%;
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
 .file-state {
   flex: 0 0 auto;
   font-size: var(--liro-font-size-small);

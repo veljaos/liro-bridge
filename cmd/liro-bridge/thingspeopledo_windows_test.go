@@ -15,6 +15,7 @@ package main
 // and named.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -332,19 +333,130 @@ func TestAlreadySignedDocumentSignsAgain(t *testing.T) {
 	}
 }
 
-// TestTheSameFileListedTwiceIsOneDocument is F6 §7's duplicate case
-// reaching the window's own queue rather than internal/jobs directly.
+// TestTheSameFileListedTwiceIsOneDocument is F6 §7's duplicate case,
+// reaching the window through the path a person actually uses.
+//
+// The previous version of this test handed all three paths to the queue
+// in one call, as the command line's initial paths, and passed. That is
+// not what a person does: they drop a file, look at the list, and drop
+// it again — one Add call each time, minutes apart, with a render in
+// between. Both shapes are covered here, and so is the shape that
+// produced the report, which is neither of them (below).
 func TestTheSameFileListedTwiceIsOneDocument(t *testing.T) {
 	dir := t.TempDir()
 	in := writeTestPDF(t, dir, "ugovor.pdf", 10)
+	c := i18n.Load("sr-Latn")
 
-	m, _ := testMainWindow(t, "sr-Latn", config.Default(), []string{in, in, strings.ToUpper(in)})
-	if m.queue.Len() != 1 {
-		t.Fatalf("the queue holds %d documents for one file listed three times", m.queue.Len())
+	rows := func(m *mainWindow) float64 {
+		return evalNumber(t, m.win, "document.querySelectorAll('#file-list .file-row').length")
 	}
-	rows := evalNumber(t, m.win, "document.querySelectorAll('#file-list .file-row').length")
-	if rows != 1 {
-		t.Fatalf("the list shows %v rows for one document", rows)
+
+	t.Run("dropped again, later", func(t *testing.T) {
+		m, _ := testMainWindow(t, "sr-Latn", config.Default(), nil)
+		m.addPaths([]string{in})
+		m.addPaths([]string{in})
+		// The refusal is said out loud, naming the file that was
+		// dropped — the whole point of the check being visible.
+		notices := evalText(t, m.win, "document.getElementById('notices').textContent")
+		if want := fmt.Sprintf(c.T("main.notice_duplicate"), "ugovor.pdf"); !strings.Contains(notices, want) {
+			t.Fatalf("the window says %q; it should say %q", notices, want)
+		}
+		// A Windows path differing only in case is the same document.
+		m.addPaths([]string{strings.ToUpper(in)})
+		if m.queue.Len() != 1 {
+			t.Fatalf("the queue holds %d documents for one file dropped three times", m.queue.Len())
+		}
+		if got := rows(m); got != 1 {
+			t.Fatalf("the list shows %v rows for one document", got)
+		}
+	})
+
+	t.Run("named twice in one drop", func(t *testing.T) {
+		m, _ := testMainWindow(t, "sr-Latn", config.Default(), nil)
+		m.addPaths([]string{in, in, strings.ToUpper(in)})
+		if m.queue.Len() != 1 {
+			t.Fatalf("the queue holds %d documents for one file named three times in one drop", m.queue.Len())
+		}
+		if got := rows(m); got != 1 {
+			t.Fatalf("the list shows %v rows for one document", got)
+		}
+	})
+
+	t.Run("a folder and a file inside it in one drop", func(t *testing.T) {
+		m, _ := testMainWindow(t, "sr-Latn", config.Default(), nil)
+		m.addPaths([]string{dir, in})
+		if m.queue.Len() != 1 {
+			t.Fatalf("the queue holds %d documents for one file reached two ways", m.queue.Len())
+		}
+		if got := rows(m); got != 1 {
+			t.Fatalf("the list shows %v rows for one document", got)
+		}
+	})
+}
+
+// TestTwoDocumentsWithOneNameAreBothKeptAndBothLegible is the case the
+// duplicate report was actually about.
+//
+// Two files called "ugovor.pdf" in two folders are two documents and
+// both belong in the list — the queue compares full paths, which is
+// right, and neither is refused. What went wrong is what that looked
+// like: two rows reading "ugovor.pdf", one above the other, next to a
+// message about a *different* file already being in the list. From the
+// outside that is indistinguishable from a duplicate check that ran and
+// was ignored, which is how it was reported.
+//
+// So the check is not what changed. What changed is that a name which
+// does not identify a document in this list is no longer the only thing
+// shown about it.
+func TestTwoDocumentsWithOneNameAreBothKeptAndBothLegible(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "Klijent A")
+	second := filepath.Join(root, "Klijent B")
+	for _, d := range []string{first, second} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := writeTestPDF(t, first, "ugovor.pdf", 10)
+	b := writeTestPDF(t, second, "ugovor.pdf", 20)
+	alone := writeTestPDF(t, root, "izjava.pdf", 30)
+
+	m, _ := testMainWindow(t, "sr-Latn", config.Default(), nil)
+	m.addPaths([]string{a, b, alone})
+
+	if m.queue.Len() != 3 {
+		t.Fatalf("the queue holds %d documents; two files with one name in two folders are two documents", m.queue.Len())
+	}
+	if got := evalNumber(t, m.win, "document.querySelectorAll('#file-list .file-row').length"); got != 3 {
+		t.Fatalf("the list shows %v rows for three documents", got)
+	}
+
+	// The two rows that share a name each say which folder they came
+	// from; the one whose name is already unambiguous does not.
+	folders := evalNumber(t, m.win, "document.querySelectorAll('#file-list .file-folder').length")
+	if folders != 2 {
+		t.Fatalf("%v rows carry a folder; exactly the two sharing a name should", folders)
+	}
+	text := evalText(t, m.win, "document.getElementById('file-list').textContent")
+	for _, want := range []string{"Klijent A", "Klijent B"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("the list does not say which %q is which; it reads %q", "ugovor.pdf", text)
+		}
+	}
+	// And nothing was reported as a duplicate, because nothing was.
+	if notices := evalText(t, m.win, "document.getElementById('notices').textContent"); notices != "" {
+		t.Fatalf("two different documents produced a notice: %q", notices)
+	}
+
+	// The queue screen is the same list one screen later, and follows
+	// the same rule: watching two rows called "ugovor.pdf" and being
+	// told one of them failed is this defect happening two seconds on.
+	if err := m.win.PostJSON(m.queuePayload(m.queue.Items(),
+		jobs.Progress{Phase: jobs.PhaseSigning, Current: 1, Total: 3}, false)); err != nil {
+		t.Fatal(err)
+	}
+	if got := evalNumber(t, m.win, "document.querySelectorAll('#queue-list .file-folder').length"); got != 2 {
+		t.Fatalf("%v rows of the queue carry a folder; exactly the two sharing a name should", got)
 	}
 }
 

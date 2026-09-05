@@ -205,7 +205,6 @@ func TestConsentWindowFitsWithSixCertificates(t *testing.T) {
 
 	vm := consent.BuildViewModel(consent.ApplicationLocal,
 		[][]byte{{1}, {2}, {3}}, []string{"ugovor.pdf", "aneks.pdf", "izjava.pdf"}, sixCertificates())
-	vm.Stamp = consent.DefaultStampChoice()
 	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
@@ -314,7 +313,7 @@ func TestSettingsWindowFitsWithEveryFieldPopulated(t *testing.T) {
 
 	// A status line is part of the fixed content too, and appears
 	// exactly when an action has run.
-	postSettingsStatus(win, fmt.Sprintf(c.T("settings.export_done"), `C:\Users\Veljko\Desktop\Izvoz`), ui.IntentPositive)
+	postWindowStatus(win, fmt.Sprintf(c.T("settings.export_done"), `C:\Users\Veljko\Desktop\Izvoz`), ui.IntentPositive)
 
 	assertPageDoesNotScroll(t, win, "settings", ".settings-form")
 	assertButtonsVisible(t, win, "settings", ".settings-form")

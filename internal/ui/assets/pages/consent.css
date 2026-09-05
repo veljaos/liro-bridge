@@ -3,8 +3,8 @@
    .liro-page (intents.css) for the fixed-height column, and this adds
    the padding inside it. Only the certificate list grows and scrolls;
    the header above it and everything below it — the application row,
-   the stamp options, the Details disclosure and the Approve/Cancel
-   buttons — keep their size, so the primary action can never leave the
+   the Details disclosure and the Approve/Cancel buttons — keep their
+   size, so the primary action can never leave the
    screen no matter how many certificates are installed. */
 body {
   padding: var(--liro-space-4);
@@ -58,8 +58,8 @@ main[hidden] {
    only as long as nothing else on the screen grew. It is now the
    flexible region instead (.liro-scroll-region, intents.css): it takes
    whatever height is left after the fixed content and scrolls past
-   that, so opening Details or ticking the stamp box shortens the list
-   rather than pushing the buttons off the bottom. The minimum keeps
+   that, so opening Details shortens the list rather than pushing the
+   buttons off the bottom. The minimum keeps
    it from collapsing to nothing on a very crowded screen. */
 #cert-list {
   display: flex;
@@ -152,14 +152,6 @@ main[hidden] {
 #done-level {
   margin: 0;
   text-align: left;
-}
-
-/* Task 1 (F5 fourth-real-run review): the visible-stamp checkbox and,
-   while it is ticked, the corner to draw it in. */
-.stamp-options {
-  display: flex;
-  flex-direction: column;
-  gap: var(--liro-space-2);
 }
 
 /* Task 4: the existing output path, in monospace, wrapping rather than

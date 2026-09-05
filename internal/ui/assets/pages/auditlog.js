@@ -2,10 +2,27 @@
   "use strict";
 
   window.__liroOnMessage = function (payload) {
+    if (payload.type === "status") {
+      renderStatus(payload.status || {});
+      return;
+    }
     if (payload.type !== "init") return;
     window.liroApplyStaticStrings();
+    // A freshly opened window says nothing about what an action did.
+    document.getElementById("action-status").hidden = true;
     renderEntries(payload.model.entries || []);
   };
+
+  // The status line says where the export went, or why it did not, in
+  // the intent family Go chose — never a colour picked here (D-093).
+  function renderStatus(status) {
+    var el = document.getElementById("action-status");
+    window.liroSetText(document.getElementById("action-status-text"), status.text || "");
+    window.liroRenderStatusFiles(document.getElementById("action-status-files"), status.files);
+    el.className = "liro-text-small liro-fixed-region" +
+      (status.intent ? " liro-outcome-" + status.intent : "");
+    el.hidden = !status.text;
+  }
 
   function renderEntries(entries) {
     var list = document.getElementById("entry-list");
@@ -55,6 +72,10 @@
       list.appendChild(row);
     });
   }
+
+  document.getElementById("export-btn").addEventListener("click", function () {
+    window.liroSend("approve");
+  });
 
   document.getElementById("close-btn").addEventListener("click", function () {
     window.liroSend("cancel");

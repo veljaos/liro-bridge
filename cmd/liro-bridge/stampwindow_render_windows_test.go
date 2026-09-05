@@ -2,7 +2,8 @@
 
 package main
 
-// The stamp window, driven against a real WebView2 window (F6 §6).
+// Step 3 of the three-step flow — how to sign — driven against a real
+// WebView2 window.
 
 import (
 	"strings"
@@ -15,17 +16,23 @@ import (
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
-// TestStampWindowOffersEverythingF6Asks pins the window's controls:
-// on/off, the four corners, the page, the reference line and the
-// document-number toggle.
-func TestStampWindowOffersEverythingF6Asks(t *testing.T) {
+// TestStampWindowAsksVisibleOrInvisibleAndWhichCorner is step 3's one
+// question. Everything else the stamp can carry is still reachable, and
+// still here — behind the disclosure, where a decision about this batch
+// is not competing with a standing preference.
+func TestStampWindowAsksVisibleOrInvisibleAndWhichCorner(t *testing.T) {
 	c := i18n.Load("sr-Latn")
 	cfg := config.Default()
 	cfg.VisibleStamp = true
-	win, _ := sharedStampWindow(t, c, cfg)
+	win, _ := sharedStampWindow(t, c, cfg, stampRoleStep)
 
-	if !evalBool(t, win, "document.getElementById('stamp-visible').checked") {
-		t.Fatal("the visible-stamp box is unticked for a configuration that has it on")
+	modes := evalText(t, win,
+		"Array.from(document.getElementById('stamp-mode').options).map(function(o){return o.value}).join(',')")
+	if modes != "visible,invisible" {
+		t.Fatalf("modes = %q, want visible,invisible", modes)
+	}
+	if got := evalText(t, win, "document.getElementById('stamp-mode').value"); got != "visible" {
+		t.Fatalf("mode = %q for a configuration with the stamp on, want visible", got)
 	}
 
 	corners := evalText(t, win,
@@ -50,6 +57,12 @@ func TestStampWindowOffersEverythingF6Asks(t *testing.T) {
 		}
 	}
 
+	// Step 3 asks one thing: the standing preferences are not on this
+	// screen at all when this window is the last step before signing.
+	if d := evalText(t, win, "getComputedStyle(document.getElementById('stamp-more')).display"); d != "none" {
+		t.Fatalf("step 3 shows the standing preferences (display: %s), so it asks three questions instead of one", d)
+	}
+
 	// SPEC §13.5: the identity document number is never the default.
 	if evalBool(t, win, "document.getElementById('stamp-document-id').checked") {
 		t.Fatal("the identity-document-number box is ticked by default")
@@ -62,29 +75,54 @@ func TestStampWindowOffersEverythingF6Asks(t *testing.T) {
 	}
 }
 
-// TestStampWindowHidesTheDetailsWhenTheStampIsOff: controls for
+// TestStampWindowHidesTheCornerForAnInvisibleSignature: controls for
 // something nobody is drawing are noise (the same judgement D-103 made
 // for the corner selector on the consent screen).
-func TestStampWindowHidesTheDetailsWhenTheStampIsOff(t *testing.T) {
+func TestStampWindowHidesTheCornerForAnInvisibleSignature(t *testing.T) {
 	c := i18n.Load("sr-Latn")
 	cfg := config.Default()
 	cfg.VisibleStamp = false
-	win, _ := sharedStampWindow(t, c, cfg)
+	// Settings' role, because that is the one that shows every control
+	// an invisible signature has to hide.
+	win, _ := sharedStampWindow(t, c, cfg, stampRoleSettings)
 
 	// D-106's trap: `hidden` being true is not the same as the element
 	// being invisible, because an author `display` rule outranks the
 	// user-agent's [hidden] rule. Read what is rendered.
-	display := evalText(t, win, "getComputedStyle(document.getElementById('stamp-details')).display")
-	if display != "none" {
-		t.Fatalf("the stamp details still render with the stamp off (display: %s)", display)
+	for _, id := range []string{"stamp-position-field", "stamp-more"} {
+		if d := evalText(t, win, "getComputedStyle(document.getElementById('"+id+"')).display"); d != "none" {
+			t.Fatalf("%s still renders for an invisible signature (display: %s)", id, d)
+		}
 	}
 
-	if _, err := win.Eval("document.getElementById('stamp-visible').checked = true; document.getElementById('stamp-visible').dispatchEvent(new Event('change'))"); err != nil {
-		t.Fatalf("Eval(tick the box): %v", err)
+	if _, err := win.Eval("document.getElementById('stamp-mode').value = 'visible'; document.getElementById('stamp-mode').dispatchEvent(new Event('change'))"); err != nil {
+		t.Fatalf("Eval(choose visible): %v", err)
 	}
-	display = evalText(t, win, "getComputedStyle(document.getElementById('stamp-details')).display")
-	if display == "none" {
-		t.Fatal("the stamp details stay hidden after the stamp is switched on")
+	for _, id := range []string{"stamp-position-field", "stamp-more"} {
+		if d := evalText(t, win, "getComputedStyle(document.getElementById('"+id+"')).display"); d == "none" {
+			t.Fatalf("%s stays hidden after choosing a visible signature", id)
+		}
+	}
+}
+
+// TestStampWindowLabelsItsPrimaryActionForWhereItWasOpenedFrom: the
+// same window ends a signature and edits a preference, and says which.
+func TestStampWindowLabelsItsPrimaryActionForWhereItWasOpenedFrom(t *testing.T) {
+	c := i18n.Load("sr-Latn")
+	for _, tc := range []struct {
+		role               stampWindowRole
+		primary, secondary string
+	}{
+		{stampRoleStep, c.T("stampwindow.sign"), c.T("stampwindow.back")},
+		{stampRoleSettings, c.T("stampwindow.save"), c.T("stampwindow.cancel")},
+	} {
+		win, _ := sharedStampWindow(t, c, config.Default(), tc.role)
+		if got := evalText(t, win, "document.getElementById('save-btn').textContent"); got != tc.primary {
+			t.Errorf("primary action = %q, want %q", got, tc.primary)
+		}
+		if got := evalText(t, win, "document.getElementById('cancel-btn').textContent"); got != tc.secondary {
+			t.Errorf("secondary action = %q, want %q", got, tc.secondary)
+		}
 	}
 }
 
@@ -95,7 +133,7 @@ func TestStampWindowPageNumberAppearsOnlyForASpecificPage(t *testing.T) {
 	cfg := config.Default()
 	cfg.VisibleStamp = true
 	cfg.StampPage = config.StampPageFirst
-	win, _ := sharedStampWindow(t, c, cfg)
+	win, _ := sharedStampWindow(t, c, cfg, stampRoleStep)
 
 	if d := evalText(t, win, "getComputedStyle(document.getElementById('stamp-page-number-field')).display"); d != "none" {
 		t.Fatalf("the page-number box renders for 'first page' (display: %s)", d)
@@ -116,11 +154,11 @@ func TestStampWindowReportsWhatWasSaved(t *testing.T) {
 	c := i18n.Load("sr-Latn")
 	cfg := config.Default()
 	cfg.VisibleStamp = true
-	win, messages := sharedStampWindow(t, c, cfg)
+	win, messages := sharedStampWindow(t, c, cfg, stampRoleStep)
 
 	script := strings.Join([]string{
-		"document.getElementById('stamp-visible').checked = true;",
-		"document.getElementById('stamp-visible').dispatchEvent(new Event('change'));",
+		"document.getElementById('stamp-mode').value = 'visible';",
+		"document.getElementById('stamp-mode').dispatchEvent(new Event('change'));",
 		"document.getElementById('stamp-position').value = 'top-left';",
 		"document.getElementById('stamp-page').value = 'number';",
 		"document.getElementById('stamp-page').dispatchEvent(new Event('change'));",
@@ -173,7 +211,7 @@ func TestStampWindowReportsWhatWasSaved(t *testing.T) {
 // change nothing.
 func TestStampWindowCancelIsNotASave(t *testing.T) {
 	c := i18n.Load("sr-Latn")
-	win, _ := sharedStampWindow(t, c, config.Default())
+	win, _ := sharedStampWindow(t, c, config.Default(), stampRoleStep)
 
 	form, err := readStampSettings(win)
 	if err != nil {
@@ -189,7 +227,7 @@ func TestStampWindowRendersInEveryLocale(t *testing.T) {
 	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
 		t.Run(locale, func(t *testing.T) {
 			c := i18n.Load(locale)
-			win, _ := sharedStampWindow(t, c, config.Default())
+			win, _ := sharedStampWindow(t, c, config.Default(), stampRoleStep)
 			for _, id := range []string{"save-btn", "cancel-btn"} {
 				text := evalText(t, win, "document.getElementById('"+id+"').textContent")
 				if strings.TrimSpace(text) == "" {
@@ -203,44 +241,50 @@ func TestStampWindowRendersInEveryLocale(t *testing.T) {
 	}
 }
 
-// TestStampWindowDoesNotScroll is D-106's rule for the new window.
-func TestStampWindowDoesNotScroll(t *testing.T) {
+// TestStampWindowFitsBothRolesWithoutScrolling is why this window has
+// two sizes rather than one. Step 3 asks one thing; Settings shows the
+// standing preferences too. Neither may scroll — a form that scrolls is
+// a form whose last field can be the one nobody sees (D-106).
+//
+// Each role is measured in a window of its own actual size, not in the
+// shared one: a size constant checked against a window created at some
+// other size proves nothing about the window a person opens.
+func TestStampWindowFitsBothRolesWithoutScrolling(t *testing.T) {
 	c := i18n.Load("sr-Cyrl") // the longest labels of the three
 	cfg := config.Default()
 	cfg.VisibleStamp = true
-	cfg.StampReference = strings.Repeat("Ugovor 2026/114 ", 12)
-	win, _ := sharedStampWindow(t, c, cfg)
+	cfg.StampPage = "3" // the page-number box shown too
+	cfg.StampReference = "Ugovor 2026/114"
 
-	assertNoPageScroll(t, win)
-	bottom := evalNumber(t, win, "document.getElementById('save-btn').getBoundingClientRect().bottom")
-	height := evalNumber(t, win, "window.innerHeight")
-	if bottom > height {
-		t.Fatalf("Save's bottom edge is at %v, past the window's %v", bottom, height)
-	}
-}
+	for _, role := range []stampWindowRole{stampRoleStep, stampRoleSettings} {
+		win, err := ui.NewWindow(ui.Options{
+			Title:       c.T("stampwindow.title"),
+			Width:       stampWindowWidth,
+			Height:      stampWindowHeight(role),
+			Assets:      assetsFS,
+			VirtualHost: liroVirtualHost,
+			StartPage:   "/pages/stamp.html",
+		})
+		if err != nil {
+			t.Fatalf("NewWindow(role %v): %v", role, err)
+		}
+		if err := win.PostJSON(buildStampInit(c, cfg, role)); err != nil {
+			t.Fatalf("PostJSON(role %v): %v", role, err)
+		}
 
-// TestStampWindowShowsItsWholeFormWithoutScrolling is why the window is
-// 680 points rather than the 560 it started at. Every control shown at
-// once — the stamp on, a specific page chosen — must fit, because the
-// line that scrolled off at 560 was the margin note, which is the one
-// line here a person reads once and needs to have seen.
-func TestStampWindowShowsItsWholeFormWithoutScrolling(t *testing.T) {
-	c := i18n.Load("sr-Cyrl") // the longest labels of the three
-	cfg := config.Default()
-	cfg.VisibleStamp = true
-	cfg.StampPage = "3"
-	win, _ := sharedStampWindow(t, c, cfg)
-
-	if _, err := win.Eval("document.getElementById('stamp-page').value='number';document.getElementById('stamp-page').dispatchEvent(new Event('change'))"); err != nil {
-		t.Fatalf("Eval(choose a specific page): %v", err)
-	}
-
-	scrolls := evalBool(t, win,
-		"document.querySelector('.stamp-form').scrollHeight > document.querySelector('.stamp-form').clientHeight + 1")
-	if scrolls {
-		h := evalNumber(t, win, "document.querySelector('.stamp-form').scrollHeight")
-		cH := evalNumber(t, win, "document.querySelector('.stamp-form').clientHeight")
-		t.Fatalf("the form scrolls with every control shown: %v of %v visible", cH, h)
+		scrolls := evalBool(t, win,
+			"document.querySelector('.stamp-form').scrollHeight > document.querySelector('.stamp-form').clientHeight + 1")
+		if scrolls {
+			h := evalNumber(t, win, "document.querySelector('.stamp-form').scrollHeight")
+			cH := evalNumber(t, win, "document.querySelector('.stamp-form').clientHeight")
+			t.Errorf("role %v at %d points scrolls: %v of %v visible", role, stampWindowHeight(role), cH, h)
+		}
+		assertNoPageScroll(t, win)
+		bottom := evalNumber(t, win, "document.getElementById('save-btn').getBoundingClientRect().bottom")
+		if height := evalNumber(t, win, "window.innerHeight"); bottom > height {
+			t.Errorf("role %v: the primary action's bottom edge is at %v, past the window's %v", role, bottom, height)
+		}
+		_ = win.Close()
 	}
 }
 
@@ -280,5 +324,56 @@ func TestStampSettingsRejectAPageItDoesNotUnderstand(t *testing.T) {
 	})
 	if got.StampPage != "3" {
 		t.Fatalf("StampPage = %q, want the previous value kept rather than an unrecognised one written", got.StampPage)
+	}
+}
+
+// TestStepThreeIsTitledForWhatItAsksAndSaysNothingElse is Task 4 of the
+// first-use fix pass.
+//
+// The window is named for the question it asks — the method of signing
+// — rather than for the act of asking it, and it carries no subtitle:
+// the one it had said "the last step, everything else is already
+// decided", which tells a person what they can already see, on a window
+// whose whole value is being small. Settings keeps a subtitle, because
+// there the window is a standing preference and the line says which.
+func TestStepThreeIsTitledForWhatItAsksAndSaysNothingElse(t *testing.T) {
+	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+		c := i18n.Load(locale)
+		title := c.T("stampwindow.title")
+		if title == "stampwindow.title" {
+			t.Fatalf("%s: no title in the catalogue", locale)
+		}
+		for _, gone := range []string{"Kako potpisati", "Како потписати", "How to sign"} {
+			if title == gone {
+				t.Fatalf("%s: the window is still titled %q", locale, gone)
+			}
+		}
+		// The deleted key is gone from every catalogue, not merely
+		// unused by Go: a key left behind is a key someone wires back.
+		if s := c.T("stampwindow.subtitle"); s != "stampwindow.subtitle" {
+			t.Fatalf("%s: stampwindow.subtitle is still in the catalogue as %q", locale, s)
+		}
+
+		win, messages := sharedStampWindow(t, c, config.Default(), stampRoleStep)
+		_ = messages
+		if !evalBool(t, win, "document.getElementById('stamp-subtitle').hidden") {
+			text := evalText(t, win, "document.getElementById('stamp-subtitle').textContent")
+			t.Fatalf("%s: step 3 still shows a subtitle: %q", locale, text)
+		}
+		if h := evalNumber(t, win, "document.getElementById('stamp-subtitle').getBoundingClientRect().height"); h != 0 {
+			t.Fatalf("%s: the empty subtitle still takes %v points of the window", locale, h)
+		}
+		if got := evalText(t, win, "document.querySelector('.liro-display').textContent"); got != title {
+			t.Fatalf("%s: the window shows %q, want %q", locale, got, title)
+		}
+
+		// Settings' way in is the same window and does still explain
+		// itself.
+		if err := win.PostJSON(buildStampInit(c, config.Default(), stampRoleSettings)); err != nil {
+			t.Fatal(err)
+		}
+		if evalBool(t, win, "document.getElementById('stamp-subtitle').hidden") {
+			t.Fatalf("%s: the settings role lost its subtitle too", locale)
+		}
 	}
 }

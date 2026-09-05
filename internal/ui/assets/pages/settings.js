@@ -8,21 +8,23 @@
   // URL field holds, and none when it matches neither (Task 1c: neither
   // preset is preselected, and a hand-typed URL never silently claims
   // to be one of them).
+  // It registers no event handlers. It ran with a copy of the stamp
+  // button's click handler pasted into it, so every keystroke in the URL
+  // field added another: measured at seven messages for one press of
+  // the stamp button after five keystrokes, which is seven stamp
+  // windows opened one after another.
   function syncPresetSelection() {
     var url = document.getElementById("tsa-url").value;
-    document.getElementById("stamp-settings-btn").addEventListener("click", function () {
-    act("stampSettings");
-  });
-
-  document.querySelectorAll("input[name=tsa-preset]").forEach(function (el) {
+    document.querySelectorAll("input[name=tsa-preset]").forEach(function (el) {
       el.checked = presetURLs[el.value] === url && url !== "";
     });
   }
 
   function showStatus(status) {
     var el = document.getElementById("action-status");
-    window.liroSetText(el, status.text);
-    el.className = status.intent ? "liro-outcome-" + status.intent : "";
+    window.liroSetText(document.getElementById("action-status-text"), status.text);
+    window.liroRenderStatusFiles(document.getElementById("action-status-files"), status.files);
+    el.className = "liro-fixed-region" + (status.intent ? " liro-outcome-" + status.intent : "");
     el.hidden = !status.text;
   }
 

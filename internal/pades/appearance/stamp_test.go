@@ -199,10 +199,10 @@ func mustParsePageOne(t *testing.T) (*pdf.Document, pdf.Dict) {
 
 func baseOptions() Options {
 	return Options{
-		Label:       "Digitally signed by",
+		Label:       "Digitally signed",
 		SignerName:  "Test Signer",
 		SerialHex:   "DEADBEEF",
-		SigningTime: "2026-09-01 12:00 CET",
+		SigningTime: "01.09.2026. 12:00:00",
 	}
 }
 
@@ -219,7 +219,7 @@ func TestRenderExplicitXYLandsWhereSpecified(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	height, _ := HeightForLines(3) // label, name, serial+time
+	height, _ := HeightForLines(4) // label, name, serial, date
 	want := [4]float64{123, 456, 123 + StampWidth, 456 + height}
 	if appearanceResult.Rect != want {
 		t.Fatalf("Rect = %v, want %v", appearanceResult.Rect, want)
@@ -315,10 +315,10 @@ func TestBuildLinesCountsMatchOptionalFields(t *testing.T) {
 		opts Options
 		want int
 	}{
-		{"base", baseOptions(), 3},
-		{"with reference", withReference(baseOptions(), "REF-1"), 4},
-		{"with document id", withDocumentID(baseOptions(), "998877"), 4},
-		{"with both", withDocumentID(withReference(baseOptions(), "REF-1"), "998877"), 5},
+		{"base", baseOptions(), 4},
+		{"with reference", withReference(baseOptions(), "REF-1"), 5},
+		{"with document id", withDocumentID(baseOptions(), "998877"), 5},
+		{"with both", withDocumentID(withReference(baseOptions(), "REF-1"), "998877"), 6},
 	}
 	for _, tt := range tests {
 		lines, err := buildLines(tt.opts)

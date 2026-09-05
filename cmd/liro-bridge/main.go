@@ -90,7 +90,7 @@ func run(args []string, out io.Writer) int {
 		// the bare-invocation behaviour (which stays usage-and-exit,
 		// SPEC/F0's own tested contract) — an explicit subcommand, the
 		// simplest option for something F5 does not itself name (D-0xx).
-		return runTray(cfg, version, cfg.Locale)
+		return runTray(cfg, version)
 	}
 
 	fs := flag.NewFlagSet("liro-bridge", flag.ContinueOnError)

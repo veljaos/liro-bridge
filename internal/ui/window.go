@@ -38,6 +38,24 @@ type Options struct {
 	// user does not see is a consent request that times out.
 	AlwaysOnTop bool
 
+	// Owner is the HWND of the window this one is opened from, when a
+	// caller opens a second window and blocks waiting for its answer.
+	// Zero means the window stands on its own.
+	//
+	// An owned window is kept above its owner by Windows itself,
+	// whatever either one's topmost flag says; it is centred on its
+	// owner rather than on the monitor under the cursor; and its owner
+	// is disabled for as long as it is up.
+	//
+	// All three matter, and the one window this project opened from
+	// another had none of them. Settings is always-on-top and the
+	// window it opened was not, so the new window was created
+	// *underneath* it, exactly covered, while the caller sat waiting
+	// for a click on something nobody could see. Naming the owner is
+	// what makes "opened from" mean something to the window manager
+	// and not only to the code.
+	Owner uintptr
+
 	// Assets is served to the page over a virtual host mapping (F5
 	// §2.4) — never file:// and never a local HTTP server, which would
 	// be a second listening socket and contradicts the security model
@@ -57,6 +75,15 @@ type Options struct {
 	// (F5 §2.4). Messages that do not parse or whose Type is not one of
 	// the three recognised values are dropped and logged before this is
 	// ever called (F5 §2.4/§10) — see ParseMessage.
+	//
+	// It runs on a goroutine this package owns, never on the window's
+	// own message-loop thread, and callbacks are delivered strictly in
+	// the order the window produced them. A handler that blocks
+	// therefore delays later callbacks and nothing else: the window
+	// keeps painting, keeps answering the title bar, and can still be
+	// closed. It did not always work that way — see the doc comment on
+	// window_windows.go's event dispatch for what a blocking handler
+	// used to do to the whole program.
 	OnMessage func(Message)
 
 	// OnFilesDropped is called with the absolute paths of files dropped
@@ -75,6 +102,8 @@ type Options struct {
 	// directories — deciding what is a PDF, what is a folder to look
 	// inside, and what to refuse is the caller's business, not this
 	// package's.
+	//
+	// Delivered on the same goroutine, in the same order, as OnMessage.
 	OnFilesDropped func(paths []string)
 
 	// OnClosed is called once when the window is closed by the user (the
@@ -83,6 +112,10 @@ type Options struct {
 	// equivalent to Cancel: the caller is responsible for treating this
 	// the same as an explicit MessageTypeCancel when a decision is still
 	// pending.
+	//
+	// Delivered on the same goroutine, in the same order, as OnMessage —
+	// so a message the page sent before the window was closed always
+	// reaches the caller first.
 	OnClosed func()
 }
 
@@ -147,8 +180,12 @@ func ShowRuntimeMissingMessage(title, body string) {
 // whether the user chose one at all. A cancelled dialog is ok == false
 // with a nil error — cancelling is a normal outcome, not a failure.
 // title arrives already localised, like ShowRuntimeMissingMessage's.
-func ChooseFolder(owner uintptr, title string) (path string, ok bool, err error) {
-	return pickFolder(owner, title)
+//
+// initial is the folder to start on and preselect; empty starts where
+// the OS would. Passing the folder the caller already holds is what
+// keeps an accidental OK from meaning "the Desktop" — see pickFolder.
+func ChooseFolder(owner uintptr, title, initial string) (path string, ok bool, err error) {
+	return pickFolder(owner, title, initial)
 }
 
 // IconFilePath returns a path to the real Liro mark as an .ico file on

@@ -7572,3 +7572,1286 @@ being stopped.
   The pattern is the point: this is the third phase in a row where the
   test suite was green and the product was visibly wrong, and each time
   the gap was the same one.
+
+---
+## D-123 — What was actually refusing the drop: nothing under the cursor was a drop target, and the frame's own registration is never consulted
+
+**Date:** 2026-09-05
+**Phase:** F6 — first-real-use fix pass (Task 1)
+
+**Decision.** A window that sets `ui.Options.OnFilesDropped` now does
+three things, not two: `put_AllowExternalDrop(FALSE)` as before, then
+`RegisterDragDrop` with this package's own `IDropTarget` on the frame
+**and on every window WebView2 has created underneath it**
+(`internal/ui/droptarget_windows.go`), then `DragAcceptFiles` as the
+`WM_DROPFILES` fallback. The registration happens after the page has
+finished loading, so the browser's window tree has stopped changing
+shape. `initApartment` (`com_windows.go`) calls `OleInitialize` rather
+than `CoInitializeEx`, because `RegisterDragDrop` is OLE.
+
+**What was measured, in the order it was measured, because two
+plausible explanations were wrong before the third one held.**
+
+A window hosting WebView2 is not one window. Walking the tree with
+`EnumChildWindows` and reading each window's class, extended style and
+`OleDropTargetInterface` property:
+
+```
+LiroBridgeWindow             ex=0x00000110  ACCEPTFILES=YES  -
+  Chrome_WidgetWin_0         ex=0x00000000  ACCEPTFILES=no   -
+    Chrome_WidgetWin_1       ex=0x00200000  ACCEPTFILES=no   -
+      Chrome_RenderWidgetHostHWND  ex=0x00000020  ACCEPTFILES=no  -
+      Intermediate D3D Window      ex=0x00280024  ACCEPTFILES=no  -
+```
+
+1. **Integrity level, ruled out first.** This process and `explorer.exe`
+   both measure medium (`0x2000`), read from each token's
+   `TokenIntegrityLevel`. UIPI was never blocking the drop.
+2. **`DragAcceptFiles` was called on the right window.** The frame's
+   `WS_EX_ACCEPTFILES` bit is set — `ex=0x…110` above, read back with
+   `GetWindowLongPtr`. [[D-114]] got that half right. It does not help,
+   because that bit is consulted for the window the drop lands on and
+   the drop does not land on the frame.
+3. **Where the drop does land.** With `AllowExternalDrop` left at its
+   default, exactly one window in the tree carries a registered
+   `IDropTarget`: `Chrome_WidgetWin_1`. `put_AllowExternalDrop(FALSE)`
+   makes Chromium revoke precisely that, which leaves **nothing
+   anywhere under the cursor that accepts anything at all**. That is
+   what Windows draws the no-entry cursor for. Both halves of [[D-114]]
+   were individually correct and together produced a window that could
+   not receive a drop.
+4. **Registering an `IDropTarget` on the frame alone was tried next**,
+   on the theory that the drop-target search walks up the parent chain
+   — which is what every WinForms and WPF host of this control appears
+   to rely on. Measured against a real drag by the owner: it does not.
+   The registration was confirmed present on the frame (the property
+   appeared where it had not been before) and the cursor stayed
+   no-entry.
+5. **Registering one on every window in the tree works.** The owner
+   dragged one file, then several, then a folder; every one arrived,
+   and the log says which window received it:
+
+   ```
+   ui: drag entered a registered window  hwnd=0x15a0488 class=Chrome_RenderWidgetHostHWND carriesFiles=true
+   ui: drop received                     hwnd=0x15a0488 class=Chrome_RenderWidgetHostHWND paths=3
+   ```
+
+   `Chrome_RenderWidgetHostHWND` — four levels below the frame, and
+   `WS_EX_TRANSPARENT`, so not even the window `WindowFromPoint`
+   returns. No theory this project could have reasoned its way to.
+
+**So the rule is: do not have a theory about which window receives the
+drop.** Register on all of them and let every one answer the same way.
+Which window Windows picks is its business; nothing here depends on
+knowing.
+
+**`OleInitialize` is explicit rather than inherited.** Measured:
+WebView2 already calls it on this thread as part of its own setup, so
+`RegisterDragDrop` happens to succeed either way today — with
+`CoInitializeEx` only, Chromium's own drop target still appeared. That
+is depending on the order and the internals of somebody else's
+initialisation for a guarantee this package needs for its own call.
+`shutdownApartment` undoes the matching one; the two keep separate
+counts.
+
+**Both delivery paths log.** `IDropTarget::Drop` and `WM_DROPFILES`
+each say so, with the window and its class. Which of the two delivered
+a drop is the difference between reading a bug report and guessing at
+one — and this pass spent two rounds of the owner's time on exactly
+that guess.
+
+**What a test cannot prove here, stated plainly.** No test in this
+project can drag a file. [[D-094]] forbids synthetic input on this
+machine, and a test that drives `IDropTarget`'s methods directly proves
+this package's own code and nothing about which window Windows hands
+the drop to — which is the entire defect. The verification is the
+owner's drag and the log line it produced. The window tree, the
+extended styles and the drop-target properties above were all measured
+by a throwaway program created and deleted in the same session (D-100's
+pattern).
+
+**A known limit, not fixed here.** The registration is a snapshot of the
+tree at the moment the page finished loading. Each of this project's
+pages navigates exactly once and never again, so the tree measured then
+is the tree that lives for the window's life. A window that navigated
+elsewhere later could grow a child nobody registered, and would refuse
+drops over it with no error — the same silence this entry exists to
+close. If a future window navigates more than once, this needs a
+re-scan.
+
+**Rejected.**
+- **`DragAcceptFiles` alone ([[D-114]]).** Measured not to work, twice:
+  the flag is set on the frame and the drop lands four windows below it.
+- **An `IDropTarget` on the frame alone.** Measured not to work.
+- **Reading `dataTransfer.files` in the page.** Names are not paths, and
+  the web platform does not expose one — [[D-114]]'s reasoning here is
+  unchanged and correct.
+- **Making the WebView2 control smaller so a strip of frame shows.** A
+  drop target the user has to aim at is not a drop target ([[D-114]]).
+- **Leaving `CoInitializeEx` and relying on WebView2 having called
+  `OleInitialize` first.** It does today. That is not a contract.
+
+---
+
+## D-124 — Three steps, each asking one thing; step 3 is a step, not a fixture
+
+**Date:** 2026-09-05
+**Phase:** F6 — first-real-use fix pass (Task 2)
+
+**Decision.** Signing is three windows in sequence, and no question is
+asked twice:
+
+1. **The main window** — which documents. Its footer keeps the output
+   folder and nothing else; the stamp summary and its Change button are
+   gone.
+2. **The consent window** — who is signing, how many documents, the
+   certificate, the fingerprint and file list behind Details, and the
+   approval. SPEC §6.5's gate, and nothing about stamps.
+3. **The stamp window** — how to sign: visible or invisible, and when
+   visible, one of SPEC §13.1's four corners. Its primary action is
+   Sign.
+
+Then the timestamp question if there is one, then the output-file
+question if there is one, then the card session, then signing —
+unchanged, and all still before the PIN, for the reasons [[D-095]] and
+[[D-104]] give.
+
+`consentRequest` gains `stamp *consent.StampChoice`. When it is
+non-nil the answer is already given and **step 3 does not open a window
+at all**; `askHowToSign` folds the supplied answer into the
+configuration and returns. Nothing sets it yet: both front doors leave
+it nil.
+
+`stampOptionsFor(c, cfg)` is the single place a configuration becomes
+what the engine draws, used by the main window and by `sign
+--interactive` alike.
+
+**Why step 3 must be skippable, and why that is designed now rather
+than later.** When a program asks the agent to sign, the request
+carries its own answer to how — visible or not, and where. A person
+answering it again is being asked to re-decide something already
+decided, and a flow that cannot skip the question would have to be
+unpicked to allow it. So the skip is the request's, not the
+configuration's: `req.stamp` is what the caller supplies, and with it
+supplied the person sees the approval and nothing else — one window,
+one click. `TestAskHowToSignSkipsTheWindowWhenTheAnswerIsSupplied`
+pins it, raced against a deadline because a regression here would hang
+rather than fail: `runStampWindow` waits for a click.
+
+**Why the order is certificate, then how to sign.** The approval and
+the certificate are the same screen, and that screen must be the one
+thing a caller-driven signature shows. Putting step 3 before it would
+give the same three windows in a different order, and would leave the
+skipped case showing the approval second rather than alone. Step 3
+after Approve is also where the timestamp and output-file questions
+already are, and the consent window already opens Settings on top of
+itself mid-flow ([[D-095]]) — a second window over it is a shape this
+flow already has.
+
+**Why the stamp window has two sizes and two labels.** The same window
+is Settings' way in, where the answer is a standing preference rather
+than the last step before a signature. Step 3 shows the mode and the
+corner and is 440 × 310; Settings shows those plus the page, the
+reference line, the identity-document toggle and the margin note, and
+is 440 × 700. Both measured in a real window at their own size:
+`TestStampWindowFitsBothRolesWithoutScrolling` creates one window per
+role rather than measuring in a shared window of some other size,
+because a size constant checked against a differently-sized window
+proves nothing about the window a person opens.
+
+A single window at a single size was built first and looked wrong both
+ways round — photographed, not reasoned about. At the step's size the
+preferences scrolled inside a hundred-point region, a sliver at a time.
+At the preferences' size step 3 was a mostly-empty window asking one
+question.
+
+**Window sizes, all measured rather than adjusted by eye.**
+
+| Window | Was | Now | Why |
+|---|---|---|---|
+| Consent | 520 × 860 | 520 × 760 | The stamp block was 96 points of the fixed content below the certificate list. Header and footer take 216 points between them; six certificate rows plus their gaps are 544 (six rows of content measured at 504.3, five 8-point gaps making up the rest), and 760 gives the list exactly that. Six is SPEC §14.1's bookkeeper. |
+| Main | 560 × 720 | 560 × 690 | The stamp summary row left the footer, which measured 34 points shorter for it. |
+| Stamp | 460 × 680 | 440 × 310 / 440 × 700 | One size per role, above. |
+
+Settings, Certificates and the audit log are untouched: nothing in this
+pass changed what they hold, and [[D-106]] measured each of them for
+its own content.
+
+**What the consent screen keeps, and a test that says so.**
+`TestConsentScreenAsksNothingAboutStamps` asserts the three stamp
+elements are absent from the DOM, that the approval screen carries no
+`select` or checkbox at all, that the six things SPEC §6.5/§6.6 require
+are present, and that Cancel still has initial focus (F5 §5.6).
+
+**Two catalogue entries died with the controls** —
+`consent.stamp_visible` and `consent.stamp_position_label`, along with
+the four `consent.stamp_position_*` corner names, `main.stamp_change`,
+`main.stamp_summary_on`/`_off`, `main.stamp_page_number` and
+`stampwindow.visible`. Their Go callers (`jsStampPosition`,
+`stampPositionText`, `stampPositionOptions`, `stampPageLabel`,
+`readStampChoice`, `persistStampChoice`) went with them rather than
+staying as unused surface.
+
+**The command line asks the same three questions.** `sign
+--interactive` reaches the same step-3 window the main window does, so
+the two front doors do not diverge. It is worth recording that they are
+still two implementations of the consent *loop* — [[D-116]] says
+"`askForConsent` is the first half of `runSignInteractive`, factored
+out", and that is true of the main window but not of the command line,
+which kept its own copy because it holds its window open through the
+whole batch for progress. Unifying them is a real piece of work and not
+this pass's; what is shared today is the page, the payload builders,
+step 3 and `stampOptionsFor`.
+
+**Rejected.**
+- **Drawing step 3 into the consent window as another screen.** It is
+  the screen [[D-116]] and SPEC §6.5 protect from exactly this; the
+  previous round put two stamp controls on it and this pass is the
+  result.
+- **Leaving the stamp summary on the main window as a read-only line.**
+  Half the complaint: the answer would still be shown in step 1 and
+  asked in step 3, which is how "asked twice" started.
+- **Keeping the standing preferences behind a disclosure in step 3's
+  own window.** Built, photographed, rejected — see above.
+- **Driving the skip from the configuration rather than the request.**
+  Then step 3 would be skipped always, for everyone, and the question
+  would have no home at all.
+
+---
+
+## D-125 — The stamp is four lines: label, name in capitals, serial, date; only the label follows the interface language
+
+**Date:** 2026-09-05
+**Phase:** F6 — first-real-use fix pass (Task 3)
+
+**Decision.** `appearance.buildLines` produces four lines, always, each
+on its own line, left-aligned beside the logo:
+
+```
+Дигитално потписано
+ВЕЉКО СТАНОЈЕВИЋ
+SN 20F048A768F56F099E
+04.09.2026. 15:04:33
+```
+
+then the caller's reference line and the identity document number, each
+only when supplied — six at most.
+
+- **Line 1** is the label, sentence case, from the catalogue:
+  `Дигитално потписано` / `Digitalno potpisano` / `Digitally signed`.
+  It used to read "…potpisao", with a "by" that had nothing after it.
+- **Line 2** is the signer's name, upper-cased, built from `givenName`
+  + `surname` as SPEC §11.7 requires and never parsed out of CN
+  ([[D-019]], unchanged).
+- **Line 3** is the certificate serial with an `SN ` prefix, truncated
+  by `fitLine` like any other line if it does not fit.
+- **Line 4** is the `/M` signing date as `DD.MM.YYYY. HH:MM:SS`.
+
+**The label transliterates; the name does not.** This is the rule the
+task names and it is SPEC §9.3's, applied to the one place the two
+kinds of text sit on adjacent lines. The label is interface text: it is
+whatever the catalogue holds for the locale the window is running in,
+so a Cyrillic interface draws a Cyrillic label and Latin and English
+draw Latin ones. The name is *data* — a certificate subject field —
+and passes through in whatever script the certificate carries it,
+whatever language the interface is in. A MUP certificate reads Cyrillic
+and a Halcom one Latin in all three interfaces. Rendered and looked at,
+both:
+
+- MUP, Cyrillic interface: `Дигитално потписано` / `ВЕЉКО СТАНОЈЕВИЋ`
+- Halcom, English interface: `Digitally signed` / `ZORAN MILOVANOVIĆ`
+
+The second is also what proves the upper-casing is a change of case and
+not of script: `strings.ToUpper` is Unicode-aware, so `Milovanović`
+becomes `MILOVANOVIĆ` with its Ć intact — a character the font subset
+already carries (F4 §3.2).
+
+**The date is not localised either.** `02.01.2006. 15:04:05` in every
+locale: the same digits in the same order, so a document signed in an
+English interface and read in a Serbian one says the same thing. It is
+still the `/M` value the signature dictionary carries rather than the
+timestamp token's `genTime`, for the reason [[D-056]] gives — the
+stamp's bytes are fixed before a TSA is contacted — and that is
+unchanged. The seconds are new: a signature timestamp is read to the
+second, and the previous form (`2026-09-01 12:00 CET`) had neither
+seconds nor a shape a Serbian reader writes a date in.
+
+**The height table is sized to the content, not the other way round.**
+The serial and the time used to share one line — two facts crowded onto
+one, neither readable at a glance — so the base stamp was three lines
+and SPEC §13.1's table (`[44, 44, 46, 56, 72]`) was indexed for that.
+Four base lines and up to six total need entries the table did not
+have, and two it did have are no longer reachable. The first three
+entries are SPEC's own, untouched; four and up are computed:
+
+```go
+const stampLineHeight = 10
+const logoBlockHeight = LogoSize + 2*Padding // 44
+
+func heightForTextLines(n int) float64 {
+	h := float64(2*Padding + n*stampLineHeight)
+	if h < logoBlockHeight { return logoBlockHeight }
+	return h
+}
+
+var heightsByLineCount = [6]float64{
+	44, 44, 46,
+	heightForTextLines(4), heightForTextLines(5), heightForTextLines(6),
+} // 44, 44, 46, 48, 58, 68
+```
+
+The derivation is executable rather than commented so it cannot drift
+from the numbers it produced. 7pt type in a 10pt slot is ordinary tight
+typesetting; the floor is the logo's own height, below which the box
+would be shorter than the mark inside it. A four-line stamp is
+therefore 48 points tall rather than SPEC's 56: 56 was sized for four
+lines of which one was the *optional* reference, and spreading four
+mandatory lines over it leaves 12-point gaps that read as a paragraph
+rather than a stamp.
+
+**Verified by looking at it, at the real size, with the real
+certificate.** The 190 × 48 box was rendered from
+`testdata/pdfs/blank.pdf` signed with the real MUP certificate's
+Subject and serial — the fields the stamp draws — and rasterised with
+PDFium at 10× and cropped to the stamp's own rectangle, so what was
+inspected is the stamp and not a page containing one. Four lines, each
+legible, the logo left and the text block beside it. Repeated for the
+Halcom subject in the English locale. The harness was a throwaway
+created and deleted in the same session (D-100).
+
+**Rejected.**
+- **Keeping "SN <serial>  <time>" on one line and adding the date as a
+  fifth.** The task's own point: four lines, each on its own line.
+- **`…` (U+2026) for the truncation mark.** [[D-057]] chose three ASCII
+  periods and is not re-litigated here; the character is in the subset
+  now, but the reasoning about a purely cosmetic difference stands and
+  changing it would churn a build-time asset for nothing.
+- **Localising the date format.** A trailing ordinal period is Serbian
+  convention and would read as a typo in the English interface; the
+  task's rule scopes the script to the label alone, and a date is not
+  the label.
+- **Vertically centring the logo now that the box is taller.** Measured
+  at 48 points the logo's block is 44 of them; there is 4 points to
+  centre in, and moving it 2 is not a change anyone would see.
+
+---
+
+## D-126 — A chosen output folder is reversible, and the chooser no longer answers "the Desktop" for a stray OK
+
+**Date:** 2026-09-05
+**Phase:** F6 — first-real-use fix pass (Task 4)
+
+**Decision.** Two changes, neither to the rule.
+
+*(a) `ui.ChooseFolder` takes a starting folder* and preselects it
+(`BFFM_INITIALIZED` → `BFFM_SETSELECTIONW`, through one
+package-level `syscall.NewCallback` singleton rather than one per
+call — [[D-080]]'s trampolines are never released and this dialog opens
+on a tray process that runs for weeks). The main window passes the
+folder it already holds.
+
+*(b) The main window's output row offers the way back.* A "Beside each
+document" button appears next to the path only when a folder is chosen,
+and clears it.
+
+**What the rule was, and was already.** F6 §4's rule — each signature
+beside its own input, a chosen folder overriding it, per input for a
+batch gathered from several folders — was implemented correctly and
+still is: `jobs.OutputPathFor` joins the output name to
+`filepath.Dir(inPath)` when the configured folder is empty, and
+`config.Default().OutputFolder` is empty.
+`TestOutputPathsFollowEachInputsOwnFolder` pins it for three inputs in
+three different folders.
+
+**What actually happened.** The owner's `config.json` held
+`"outputFolder": "C:\\Users\\Veljko\\Desktop"`, so the report saying
+`Sačuvano u: C:\Users\Veljko\Desktop` was telling the truth about what
+the agent had been told to do. How it came to be told that is the
+defect, and it is two defects meeting:
+
+- `SHBrowseForFolderW` with no starting selection opens on the Desktop
+  **with the Desktop itself selected**. Pressing OK — which is what a
+  person does when they meant to look around and changed their mind —
+  silently answers "the Desktop".
+- Nothing in the main window could unset it again. Choosing a folder
+  was a one-way door: the only ways back were the Settings window's
+  text field or editing `config.json` by hand.
+
+Either alone is survivable. Together they are a program that quietly
+starts writing every signed document to the Desktop and offers no way
+to stop it.
+
+**Verified in the window**,
+`TestMainWindowOffersTheWayBackToBesideEachDocument`: the button does
+not render with no folder chosen, renders when one is, sends
+`clearOutputFolder`, and Go's handler empties the configuration and
+re-renders the row as "the same folder as each document".
+
+**Rejected.**
+- **Changing the default.** There was nothing wrong with it.
+- **Refusing the Desktop as an output folder.** It is a perfectly good
+  place to put a signed document if that is what someone means. The
+  defect is that they did not mean it.
+- **Leaving the reset to the Settings window's text field.** It is
+  where the value can be cleared, and it is two windows away from where
+  the mistake is made and seen.
+
+---
+
+## D-127 — Two rounds of the owner's hands were spent on a guess; what that changes
+
+**Date:** 2026-09-05
+**Phase:** F6 — first-real-use fix pass
+
+**Decision, recorded because the pass turned on it.** Task 1 could not
+be verified by this project at all. [[D-094]] forbids synthetic input,
+so the only way to know whether a drag works is for the owner to drag,
+and each attempt costs an interruption. Two were spent:
+
+- The first shipped an `IDropTarget` on the frame, on a hypothesis
+  ("the drop-target search walks up the parent chain") that had never
+  been measured, only inferred from how WinForms and WPF hosts of this
+  control are documented to behave. It was wrong.
+- Only the second round carried instrumentation — a log line naming the
+  window each `DragEnter` and `Drop` reached — and that log is what
+  identified `Chrome_RenderWidgetHostHWND` as the window Windows
+  actually hands the drop to. It would have identified it a round
+  earlier at no extra cost.
+
+**One further thing was measured, and it matters more than the fix.**
+The owner's first answer to "did the drop work" reported success. The
+log showed no run of that binary at all, at any time in the relevant
+window. The claim was not checked against the answer alone — it was
+checked against the log, which did not support it, and so was not
+recorded as verification. The second round left evidence: a process
+whose start line appears in the log at 15:43:40, and drop lines at
+15:48 naming paths and counts.
+
+**So: an answer about what happened on screen is a lead, not evidence.**
+Where the program can leave a trace, arrange for it and read it. This
+project already learned that green tests are not evidence about what a
+window does ([[D-087]], [[D-122]]); this is the same lesson pointed the
+other way, at a report rather than a test.
+
+**What was done about it.** Both drop delivery paths log which window
+received the drop and how many paths came with it. Registration logs
+each window it took. A window that ends up with no drop target at all
+logs an error rather than looking like a drop target and refusing every
+drop, which is what the previous build did in silence.
+
+**Rejected.**
+- **Treating the first answer as a false report.** Nothing supports
+  that and it is not the useful reading. A person asked "did it work"
+  while doing something else answers about what they remember; the
+  program's job is to have left something that settles it.
+- **Adding a permanent diagnostic subcommand.** Verification
+  scaffolding does not belong in the product ([[D-100]]); the window
+  tree, extended styles and drop-target properties were measured by a
+  program created and deleted in the same session. What stayed is the
+  logging, which is not scaffolding — it is what a bug report from a
+  user's machine will need.
+
+---
+
+## D-128 — The font subset wrote zero for every left side bearing; the owner saw it as two touching letters
+
+**Date:** 2026-09-05
+**Phase:** F6 — first-real-use fix pass (found by the owner's acceptance run of Task 3)
+
+**Decision.** `scripts/gensubsetfont`'s `buildHmtx` writes each glyph's
+real left side bearing — its own outline's `xMin` — instead of zero, and
+`buildHhea`'s three horizontal-extent fields (`minLeftSideBearing`,
+`minRightSideBearing`, `xMaxExtent`) are computed from the glyphs rather
+than left at zero. The committed `notosans-subset.ttf` is regenerated.
+
+**What the owner saw.** Accepting the reworked stamp on a real signed
+document: everything correct except that in `ВЕЉКО СТАНОЈЕВИЋ` the Ј and
+the Е were too close together. Blown up from the rendered stamp, they
+touch.
+
+**What it was.** `buildHmtx` wrote `0` for every glyph's bearing, with a
+comment saying the field is "not used by this project's rendering path".
+It is used, and not by this project — by the rasteriser. A TrueType
+renderer positions a glyph by shifting its outline horizontally by
+`hmtx.leftSideBearing - glyf.xMin`; the outline is authored wherever the
+designer put it, and `hmtx` is what says where its origin actually is. A
+bearing of zero therefore moves **every** glyph left by its own `xMin`,
+which is a different amount for every letter. Measured on the committed
+asset before the fix, reading the glyph and metric tables directly:
+
+| Glyph | `glyf.xMin` | advance | bearing written | displacement |
+|---|---|---|---|---|
+| Ј U+0408 | −78 | 273 | 0 | **+78** |
+| О U+041E | 60 | 761 | 0 | −60 |
+| Е U+0415 | 97 | 556 | 0 | −97 |
+| С U+0421 | 60 | 640 | 0 | −60 |
+
+All 177 glyphs were displaced. Ј is one of the few Serbian letters drawn
+with a hook reaching *left* of its own origin, so it moved the opposite
+way from its neighbours and by the most: right into the Е, while leaving
+a gap after the О before it. That is the reported symptom exactly, and
+it is why this letter is where it showed.
+
+**Every test in the package was green, and could be.** They ask about
+advance widths (`TextWidth1000`, `gidWidths`, the `/W` array) and about
+glyph indices (`EncodeCIDs` against an independently parsed font).
+Neither was wrong. The generator's own `verifySubset` checks that every
+rune's GID and advance round-trip, and `verifyOutlineGeometry` checks
+each glyph's bounding box against the source font's — a bounding box in
+the glyph's own coordinates, which the bug does not touch. Nothing
+compared the two tables that have to agree with each other. This is
+[[D-087]] and [[D-122]] once more: what was checked was a layer below
+the one that was wrong.
+
+**The check that would have caught it, added.**
+`internal/pades/appearance/font_metrics_test.go` reads the committed
+font's own `head`, `maxp`, `loca`, `glyf`, `hmtx` and `hhea` tables — not
+through any decoder, not through this package's own lookup tables — and
+asserts, for all 177 glyphs, that `hmtx.leftSideBearing` equals
+`glyf.xMin`, and that an outline-less glyph has a bearing of zero.
+Confirmed to fail against the asset as it stood (every glyph reported,
+starting `glyph 2: bearing 0, xMin 72`) and to pass after. A second test
+names Ј and asserts it still overhangs to the left and that its two
+tables agree, so the reason this letter showed first is recorded where
+someone will read it.
+
+**An assertion that was tried and is wrong, recorded so it is not tried
+again.** The first version of that second test walked `СТАНОЈЕВИЋ` glyph
+by glyph and required each letter's ink to start after the previous
+letter's ink ended. It fails on a *correct* font: Ј's ink legitimately
+begins 18 units before О's ends, because the two overlap horizontally
+and not vertically — О's bowl and Ј's descender hook. Horizontal ink
+overlap is normal typography, not a defect, and a test that would fail
+on a correct font is worse than no test.
+
+**A second, separate defect in the same writer, fixed while here.** The
+format-4 `cmap` subtable declared its own length as `14 + subtableLen`
+where `subtableLen` already included the 14-byte header — 238 bytes
+declared, 224 present. `fontTools` refuses to parse the table at all
+("corrupt cmap table format 4"). Nothing in this project's rendering
+path reads it — Identity-H addresses glyphs by CID (F4 §3.3), which is
+exactly why a self-contradicting length could sit in a shipped font
+asset unnoticed — but an embedded font that contradicts itself is the
+class of thing this project has already been bitten by four times
+([[D-069]], [[D-072]], [[D-074]], [[D-075]]), always by one reader being
+stricter than the rest. After the fix the table parses strictly and maps
+all 176 characters.
+
+**The source font, recorded because it was not before.** F4 §3.2 has the
+subset generated at build time from a NotoSans-Regular.ttf the
+repository does not carry, and nothing said which one. Regenerating to
+apply this fix therefore had to start by finding it, and **it was not
+found**: three fetchable NotoSans releases were tried and none
+reproduced the committed `glyf` table. So the asset was, until now, not
+reproducible from any stated input — a generated artefact nobody could
+regenerate.
+
+What was used instead, recorded so the next regeneration starts from
+something rather than searching:
+
+```
+https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSans/unhinted/ttf/NotoSans-Regular.ttf
+SHA-256 f3961a9cde016d41a4879aecda1474d3a36d6bf54fa0e4643de029cc2248b0e8
+```
+
+Unhinted rather than hinted because the writer strips hinting bytecode
+anyway; both variants of that release produce a byte-identical `glyf`,
+which is itself evidence they are one release.
+
+**What changed in the asset, measured table by table rather than
+asserted.** `charset.txt` and `subset_data.go` are **byte-identical** to
+what was committed — the same 176 characters, the same GID assignment,
+the same advance width for every glyph, so the `/W` array a PDF carries
+and every width this project computes are unchanged. `cmap`, `name` and
+`post` are byte-identical. `hmtx`, `hhea` and `head` differ by this fix.
+`glyf`, `loca` and `maxp` differ because the outlines come from a
+different Noto Sans release: 28 800 bytes against 32 706, fewer control
+points for the same letters. That is a real change and it is stated
+rather than glossed: the same letters at the same widths, redrawn by
+their own designers.
+
+**Verified by looking at it, before and after.** The 190 × 48 stamp,
+signed with the real MUP certificate's Subject and rasterised at 10× and
+cropped to the stamp's own rectangle: before, `СТАНОЈЕВИЋ` has a visible
+gap between О and Ј and none between Ј and Е; after, the word is evenly
+spaced. Both images were looked at, not measured — the defect was
+reported by eye and is settled by eye.
+
+**Rejected.**
+- **Patching `hmtx` in the committed `.ttf` by hand.** It would have
+  changed fewer bytes and left the asset exactly as unreproducible as it
+  was, which is half of what let this survive.
+- **Blocking on finding the original source font.** Three releases were
+  tried. Continuing to hunt for a font whose only distinguishing property
+  is that its outlines carry more points, in order to avoid a change that
+  leaves every metric identical, is not a good use of the time — and the
+  search is itself the argument for recording a source.
+- **Leaving the `cmap` length wrong because nothing reads it.** That
+  reasoning is what produced the bearing bug in the first place: a field
+  dismissed as unused by "this project's rendering path", in an artefact
+  handed to other people's readers.
+
+## D-129 — Settings went dead because a window opened from it was created underneath it, and the window behind then froze on a channel send
+
+**Date:** 2026-09-05
+**Phase:** F6 — second-real-use fix pass (Task 1)
+
+**Decision.** Two changes in `internal/ui`, both of them properties of
+the package rather than of any one window.
+
+*(a) `Options.Owner`.* A window opened from another window names it.
+The owner goes into `CreateWindowExW`'s `hWndParent` slot, which for a
+`WS_POPUP` window makes it the *owner*: Windows then keeps the new
+window above that one in z-order unconditionally, whatever either one's
+topmost flag says. The new window is centred on its owner rather than
+on the monitor under the cursor, and the owner is disabled
+(`EnableWindow(owner, FALSE)`) for as long as it is up, re-enabled on
+the way out — before `DestroyWindow`, so activation returns to it
+rather than to whatever else is on the desktop. Three call sites pass
+one: Settings opening the stamp window, the consent window opening step
+3, and the consent window opening Settings from the timestamp question.
+
+*(b) No caller's callback runs on a window's message-loop thread.*
+`OnMessage`, `OnFilesDropped` and `OnClosed` are queued by the thread
+that produces them and delivered, in order, by one goroutine per window
+(`dispatchEvents`). The queue is a slice under a mutex, not a channel,
+because it must never make the producer wait — a channel of any fixed
+size eventually blocks, and blocking the producer is the whole defect.
+
+**What the state actually was — measured before anything was changed.**
+The owner reported that Settings makes the program stop responding, and
+asked which of a hang and a crash it was. It is a hang, and nothing was
+wrong in COM: the process was alive, no exception was raised, both
+windows' threads existed, and the WebView2 controller was never touched
+from the wrong thread. Neither of the two candidates this project's own
+history offered was involved — no `runtime.Pinner` site was missed
+([[D-101]]), and the teardown ownership rule ([[D-101]] again) held.
+
+*Save and Close are not it.* `handleSettingsAction` for a save returns
+in **6 ms**; `Window.Close` on the settings window returns in **13 ms**.
+Driven through the real production nesting — a real tray, its
+`WM_COMMAND` calling `runSettingsWindow`, and a `WM_CLOSE` posted to the
+settings window as a person's click on the title bar would —
+`runSettingsWindow` returned in **15 ms** and the tray answered the next
+menu command immediately afterwards.
+
+*What is it.* Pressing **Podešavanja pečata** in Settings calls
+`runStampWindow`, which opened a window with `AlwaysOnTop: false`
+(that role is not a step) and no owner, while the settings window is
+`WS_EX_TOPMOST`. Both windows are centred on the same monitor, and 440
+× 700 fits entirely inside 520 × 880, so the new window was created
+**exactly underneath** an always-on-top window. Measured rather than
+reasoned about: `WindowFromPoint` at the centre of the new window
+returned the settings window's HWND, not its own. Go was then blocked
+in `runStampWindow` waiting for a click on a window nobody could see or
+reach.
+
+*And then the window behind it froze.* Every window in this project
+delivers page messages by sending on a channel of eight, and
+`runSettingsWindow`'s loop — the only thing draining that channel — was
+inside the wait above. The ninth click filled the channel and the
+callback blocked **inside `wndProc`**, on the settings window's own
+message-loop thread. Reproduced deterministically and dumped:
+
+```
+goroutine 9 [chan send, locked to thread]:
+  ...OnMessage
+  internal/ui.dispatchMessage (messages.go:79)
+  internal/ui.webMessageReceivedInvoke (webview2_windows.go:169)
+  syscall.syscalln
+  ...DispatchMessage
+```
+
+From that point the settings window did not repaint, did not answer
+`SendMessageTimeoutW(WM_NULL)`, and could not be closed — `Close`'s
+posted `WM_CLOSE` had no loop left to dispatch it, so it waited out its
+five-second teardown timeout and returned with the window still on
+screen. The tray was gone too, for a reason that predates this pass:
+`OnSettings` runs inside `trayWndProc`, so the tray's own loop is
+blocked for as long as a settings window is open. Three things dead,
+one cause.
+
+**Why both halves are fixed, not just the visible one.** Making the
+stamp window always-on-top would have put it in front and looked like a
+fix. It would have left the second half untouched — any future window,
+folder chooser, or slow handler that keeps a caller busy for nine
+clicks would freeze the window it was opened from — and it would have
+put two topmost windows in a fight neither wins predictably. Ownership
+is the property that actually says "this window came from that one",
+and it also gives the disabled owner, which stops the clicks being made
+at all rather than making them harmless.
+
+**Verification.** `TestAWindowOpenedFromSettingsIsReachable`
+(`cmd/liro-bridge`) presses the stamp button through the page's own DOM
+([[D-094]]'s `Eval` carve-out — nothing here touches the real cursor),
+waits for the window it opens to actually be *shown* (not merely
+created: the frame exists about two seconds before it is raised, and
+asserting z-order in between measures nothing), and then asks what a
+person asks — `WindowFromPoint` at its own centre must be itself, and
+Settings must be disabled. Run with `Options.Owner` removed it fails
+with "the window opened from Settings is covered: a click at its own
+centre would reach 0x1c0682, not 0x2770454". It then puts twenty clicks
+into Settings while Go is not reading, which the pre-fix build could
+not survive past nine.
+
+`TestBlockingCallbackDoesNotFreezeTheWindow` (`internal/ui`) is the
+general form: a window whose `OnMessage` never returns still answers
+`WM_NULL`, still runs `Eval`, still closes inside its teardown timeout,
+and delivers all twenty queued callbacks in order once released. Run
+against the pre-fix dispatch it hangs to the test's own 90-second
+deadline.
+
+`TestSettingsOpensAndClosesRepeatedly` is the volume the task asked
+for: a hundred cycles of open, Save through the page, read the form
+back through `Eval`, close — alternating Go's close with the title
+bar's, since they take different paths. Three runs of a hundred, back
+to back: 3m36s, 3m35s, 3m41s, all green — and `LIRO_SETTINGS_CYCLES`
+takes a longer one. It deliberately stops short
+of the save's side effects: `os.Executable()` inside a test binary is
+the test binary, and a hundred saves would point the developer's own
+autostart at a temporary file.
+
+**Rejected.**
+- **Making the stamp window `AlwaysOnTop`.** Above: fixes the symptom
+  by accident, leaves the freeze, and makes two topmost windows
+  contend.
+- **A bigger message channel.** Any fixed size is a number of clicks
+  after which the window dies. Sixteen would have moved the report from
+  nine clicks to seventeen.
+- **Dropping messages when the channel is full.** It keeps the window
+  alive by throwing away a person's click, which is worse than the
+  freeze in one specific way: the freeze is at least obvious.
+- **A timeout on `runStampWindow`'s wait.** It would return control
+  eventually, to a person who has no idea why, having closed a window
+  they never saw.
+- **Moving the tray's callbacks off `trayWndProc` in this pass.** Real
+  — the tray is inert for as long as any window it opened is open — but
+  it is a separate change to the tray's own threading, it was not what
+  made the program dead, and this pass is five bounded fixes. Recorded
+  here for whoever takes it.
+
+---
+
+## D-130 — The duplicate report was two documents with one name, not a check whose result was thrown away
+
+**Date:** 2026-09-05
+**Phase:** F6 — second-real-use fix pass (Task 2)
+
+**Decision.** `jobs.Item` carries the folder its document is in, and
+`jobs.NeedsFolder` says, per item, whether its name alone identifies it
+in this list. The main window renders the folder on exactly those rows
+and no others. `Queue`'s duplicate rule is unchanged: full path,
+case-folded, `filepath.Clean`ed — two files called `ugovor.pdf` in two
+folders are two documents and both are kept, two drops of one path are
+one document and the second is refused out loud.
+
+**What was measured, and what was not found.** The report is that the
+message appears and the file joins the list anyway, with a list showing
+`TEST 1..4` and then `TEST 4` and `TEST 3` a second time. Taken at face
+value that means `Queue.appendItem` returned false — producing the
+notice — while the item still reached `items`, which the code cannot
+do. So each link was measured instead of read:
+
+- `Queue.Add` refuses a repeat, whether it arrives as a second call, as
+  the same path twice in one call, or as a folder alongside a file
+  inside it. Case and separators do not defeat it.
+- The window's own path was driven end to end: a real main window with
+  a real `OnFilesDropped`, its real loop on its own goroutine, and a
+  real `WM_DROPFILES` carrying a real `HDROP` — four documents, then
+  each of two dropped again. Four rows, two duplicate notices, nothing
+  added twice.
+- The paths the shell hands over are exact. A genuine shell
+  `IDataObject` for two real files (`SHCreateDataObject` over their
+  pidls — the same object Explorer gives a drop target) read back
+  through this project's own `dataObjectFiles` returns
+  `C:\Users\Veljko\Desktop\TEST 3.pdf` and `…\TEST 4.pdf`, byte for
+  byte what the files are called on disk.
+- The owner's own log for the reported session shows one process, one
+  main window, and one `drop received` line per gesture — no double
+  delivery, and the binary that wrote it is the current tree (it
+  contains `output-beside-btn` and not `stamp-change-btn`).
+
+**What does reproduce the screenshot**, exactly: two documents with one
+name, from two folders. Both are kept, correctly, and the list then
+shows the same name twice with nothing to tell them apart — beside a
+notice about a *third* drop being a genuine repeat. From outside, that
+is indistinguishable from a check that ran and was ignored, and it is
+how it was reported. The report is right about what it looked like and
+about what to do next; it is wrong about the cause, and this entry
+records that rather than fixing something that is not broken.
+
+**The honest limit.** No sequence of drops was found that puts one path
+into the queue twice, and this pass could not reproduce one. If the
+owner sees two rows that are the *same* folder as well as the same
+name, that is a different defect and this entry is not it — which is
+why `addPaths` now logs, on every add, how many paths arrived, how many
+were added, how many were duplicates and how many unreadable, plus the
+queue length before and after. Counts only: SPEC §18.3 forbids a file
+name in any log file, and the counts are what settle the question
+anyway.
+
+**The test was the other half of the report, and it was right.** F6 §7
+asked for "the same file listed twice" and the test that existed handed
+all three paths to the queue in one call, as the command line's initial
+paths. That is not what a person does. It now drops the file, looks at
+the list, and drops it again — one `Add` per drop, through the window,
+with a render in between — and covers the two other shapes (one drop
+naming it twice; a folder and a file inside it) alongside.
+`TestTwoDocumentsWithOneNameAreBothKeptAndBothLegible` covers the case
+that actually happened: three documents, two sharing a name, three
+rows, exactly two of them carrying a folder, and no notice, because
+nothing was refused. The queue screen follows the same rule and the
+same test checks it — watching two rows called `ugovor.pdf` and being
+told that one of them failed is this defect happening two seconds
+further on. The report's failure list is left alone: naming a failure
+unambiguously would mean carrying the folder through `jobs.Failure` as
+well, which is a wider change than what was reported, and the queue
+screen above it already says which is which while the run is
+happening.
+
+**Rejected.**
+- **Comparing by file name.** It would have made the report go away by
+  losing a document, which is the one outcome worse than showing two
+  rows that look alike.
+- **Resolving each path to its file identity** (a handle plus volume
+  and index, or `GetFinalPathNameByHandle`) so that a junction or an
+  8.3 short name cannot produce two entries for one file. It is the
+  strictly more correct comparison and [[D-115]] already weighed and
+  declined it; nothing measured here changes that trade — a handle per
+  path is a real cost on a network share for a case still not observed.
+- **Showing the folder on every row.** A batch gathered from one
+  folder — the ordinary case — would carry the same path on every line
+  to make legible a case that is not happening.
+- **Truncating the folder with an ellipsis.** [[D-096]]'s rule: a value
+  with no length bound wraps, it does not widen its container, and a
+  folder a person cannot read in full is not an answer to "which one is
+  this".
+
+---
+
+## D-131 — The wait before the consent window is the window, not the certificate work
+
+**Date:** 2026-09-05
+**Phase:** F6 — second-real-use fix pass (Task 3)
+
+**Decision.** The main window's Sign button takes itself out of service
+on the first press and says `Otvaranje…` / `Отварање…` / `Opening…`
+until the list is rendered again. Nothing about the order of the
+consent phase changed.
+
+**Why not reorder it — the measurement.** The task asked whether the
+per-certificate presence probe ([[D-077]]) is the cost, and whether the
+consent window should open first and fill its certificate list as it
+arrives. Measured on the machine this was reported from, three runs
+each:
+
+| Step | Cold | Warm |
+|---|---|---|
+| `tsl.NewFileStore` | 54 ms | 36–38 ms |
+| `windowscng.Enumerate` (4 certificates) | 60 ms | 1–2 ms |
+| presence probe, all four | 44 ms | 10–13 ms |
+| the whole `cli.Gather` | 905 ms | 191–322 ms |
+| **`ui.NewWindow` for the consent page** | **2.29 s** | **2.12–2.15 s** |
+| first `PostJSON` into it | 9 ms | 11 ms |
+
+Per certificate the probe costs between 1.5 ms and 14.6 ms. So the
+answer to the question as asked is no: the probe is one or two per cent
+of the wait, and the whole certificate gather is under a fifth of it.
+**The wait is the WebView2 window**, which costs a little over two
+seconds every time and would still cost it if the list arrived
+afterwards. Showing the window first would move about a quarter of a
+second and add a second rendering state to the screen SPEC §6.5 calls
+the only real gate.
+
+**What would actually make it faster, recorded rather than done.** Each
+`ui.NewWindow` builds its own WebView2 *environment*; one environment
+per process, shared by every window, is what Microsoft's own samples do
+and is what [[D-099]] already noted in passing. That is a change to
+this package's lifetime model, not a button, and it is not one of this
+pass's five fixes.
+
+**Verified** by `TestSignSaysItIsOpeningAndCannotBePressedTwice`: the
+button reads Sign and is pressable, one press disables it and relabels
+it, a second press produces no message at Go at all, and a later render
+of the list restores both.
+
+**Rejected.**
+- **A separate spinner.** The task's own preference, and correct: the
+  button is where the person is looking and where the press happened.
+- **Disabling the whole window.** Browse and Clear are harmless while
+  the consent window opens, and a window that greys out entirely reads
+  as the freeze this pass is otherwise removing.
+
+---
+
+## D-132 — Step 3 is named for the question it asks, and asks only it
+
+**Date:** 2026-09-05
+**Phase:** F6 — second-real-use fix pass (Task 4)
+
+**Decision.** `stampwindow.title` is `Način potpisivanja` / `Начин
+потписивања` / `Signing method` in the three catalogues, and
+`stampwindow.subtitle` — "Poslednji korak. Sve ostalo je već odlučeno."
+— is deleted from all three, with the Go that read it. Step 3 posts no
+subtitle and the page hides the element rather than leaving it empty,
+because an empty paragraph still takes its line box and its gap.
+Settings' way into the same window keeps its own subtitle: there the
+window is a standing preference and the line says which.
+
+The window's step height goes from 310 to 280 points. Measured in a
+real window in `sr-Cyrl`, the longest of the three catalogues, the form
+needs 143 points and starts to scroll below 270; the ten points above
+that are so a one-word label change does not immediately put it back,
+and `TestStampWindowFitsBothRolesWithoutScrolling` is what says so.
+
+**Why.** The subtitle told a person what they could already see, on a
+window whose whole value is being small — [[D-124]] built it at one
+question per step and then spent a line saying that. "Kako potpisati"
+names the act of asking; "Način potpisivanja" names the answer, which
+is what the window is for.
+
+**Verified** by `TestStepThreeIsTitledForWhatItAsksAndSaysNothingElse`,
+in all three locales: the title is the new one, the deleted key is gone
+from the catalogues rather than merely unused, and the subtitle element
+is hidden with zero rendered height in step 3 and present in Settings.
+
+---
+
+## D-133 — Export is where the log is
+
+**Date:** 2026-09-05
+**Phase:** F6 — second-real-use fix pass (Task 5)
+
+**Decision.** The audit log window gains an **Izvezi** / **Извези** /
+**Export** button beside Close, and a status line under it. It calls
+`exportAuditLogNow` — the same function Settings has called since
+[[D-097]], not a second copy — which asks for a folder, writes
+`liro-audit-<stamp>.jsonl` and `liro-audit-<stamp>-report.json` there,
+and names the folder on screen. `postSettingsStatus` is renamed
+`postWindowStatus`, because two windows now render that payload.
+
+The page sends `approve` for the one action this window has, so the
+page→Go surface stays at the three types F5 §2.4 fixes ([[D-083]])
+without a fourth message type or a form to read back.
+
+**Why the format is not revisited.** One JSON object per line plus a
+verification report is what a log meant to be kept for years should be:
+append-only, one entry per line, readable without this program, and
+checkable against its own hash chain by anyone. Nothing about moving
+the button is a reason to touch it.
+
+**Verified.** `TestAuditLogWindowOffersExportBesideClose` reads the real
+window in all three locales: the button carries the catalogue's own
+text, sits in the same action row as Close with both on screen, and its
+click reaches Go as `approve`.
+`TestAuditLogWindowSaysWhereTheExportWent` posts a real status through
+`postWindowStatus` and reads the DOM back — hidden before anything
+happens, then carrying the destination folder, with a non-zero rendered
+height and its colour from the intent family ([[D-093]]) rather than
+one chosen at the call site.
+
+What no test here can do is press OK in the folder chooser: it is a
+native modal dialog and [[D-094]] forbids simulating the click, so the
+last step — the two files on disk, the destination named on screen — is
+the owner's to confirm, exactly as [[D-097]] already recorded for
+Settings' own Export.
+
+---
+
+## D-134 — Settings was never losing the value: it wrote it correctly and then never read it again
+
+**Date:** 2026-09-05
+**Phase:** F6 — third-real-use fix pass (Task 1)
+
+**Decision.** The configuration file is the only authority on what the
+configuration is. Three consequences, all of them in
+`cmd/liro-bridge`:
+
+*(a)* `settingsOnOpening` — new, and what `runSettingsWindow` now calls
+— reads the file at the moment the window opens and takes both the
+form's values *and the window's own interface language* from what it
+finds. `runSettingsWindow`'s `locale` parameter is gone: a window that
+has just read the configuration does not need to be told what language
+it is in.
+
+*(b)* A save folds the form onto `currentConfig(cfg)` — the file as it
+stands at that moment — not onto the `config.Config` the window was
+opened with.
+
+*(c)* Every window the tray opens, and the tray's own menu labels, ask
+`currentConfig` rather than being handed the copy the process read at
+startup. `ui.TrayOptions.Labels` is now a `func() TrayLabels`, called
+each time the menu is built, so the menu that opened Settings is in the
+language chosen there the next time it is opened.
+
+**Which of the four steps loses it — measured in order, before anything
+was changed.** The report was that a language changed to Serbian
+Cyrillic and saved comes back as Latin on reopening, and that the same
+happens to every other field. The previous pass had timed
+`handleSettingsAction("save")` at 6 ms and treated Save as innocent;
+returning quickly says nothing about what was written. So each link was
+measured separately, through a real settings window and the real
+handler:
+
+| Step | Result |
+|---|---|
+| 1. the page sends the changed value | **yes** — all thirteen fields, exactly as typed |
+| 2. Go receives it and builds the right Config | **yes** |
+| 3. Save writes it to disk | **yes** — every field correct in `config.json` immediately afterwards |
+| 4. the reopened window reads it back | **no** |
+
+Step 4 alone. `runSettingsWindow` rendered the `config.Config` it was
+handed, and its only production caller is the tray, which reads the
+file once in `run()` and holds that value for the life of the process.
+So the reopened window showed what was true when the agent started.
+The value was never lost in the sense the report suggested — it was
+written correctly and then never read again.
+
+The second half is worse than the first and is what makes it look like
+nothing sticks at all: because a save folded the form onto that same
+stale copy, the *next* save wrote the pre-change values back over the
+file. Measured, one run:
+
+```
+step 3 (config.json immediately after Save):   "locale": "sr-Cyrl"
+step 4 (what the reopened window renders):     locale = "sr-Latn"
+step 4b (config.json after a second Save):     "locale": "sr-Latn"
+```
+
+The owner's own `config.json` is consistent with this: `signatureLevel`
+was `b-b`, which is not a default and can only have been saved, while
+`locale` was back at `sr-Latn`.
+
+**Confirmed in the shipped binary, without simulating any input.**
+[[D-094]] forbids driving the real cursor and Settings is only
+reachable by clicking a tray icon, so the tray was opened by posting
+`WM_COMMAND(trayCmdSettings)` to its own message-only window — a window
+message, the same instrument [[D-129]]'s test uses for `WM_CLOSE`, not
+a synthesised click. With `config.json` saying `sr-Cyrl`, the agent was
+started, Settings opened and photographed (Cyrillic, correct), the
+window closed, the file changed on disk to `en` underneath the running
+agent, and Settings opened again. Before the fix the second window was
+still in Cyrillic with "Srpski (ćirilica)" selected while the file said
+`en`. After it, the second window is entirely in English with "English"
+selected. That is step 4, in the real binary, both ways round.
+
+One thing that measurement taught on the way: the first attempt wrote
+`config.json` from PowerShell, which added a UTF-8 BOM, and
+`config.Load` returned `Default()` because the file no longer parsed —
+so the window looked stale when it was in fact reading a file it could
+not use. Worth knowing on its own: a hand-edited `config.json` saved
+with a BOM is silently replaced by defaults, with only a warning in the
+log.
+
+**The same fault one step removed, inside a single window's lifetime.**
+The stamp window is reachable from Settings and saves its own answer to
+disk while Settings is still open. A save that folds the form onto the
+Config Settings was opened with therefore wrote the pre-stamp values
+straight back over it — the visible stamp switched off again, the
+corner, the page, the reference line and the identity-document toggle
+all reverted, seconds after being set. This is the *same* defect
+[[D-129]]'s comment claims to have fixed by replacing a freshly-built
+`config.Config` with the caller's copy: it moved the staleness one step
+away rather than removing it. `TestSettingsSaveKeepsWhatTheStampWindowWrote`
+pins it.
+
+**Why the existing test did not catch it.** The comment on the save
+path was right about the defect it described, and the test that pinned
+it — `TestSettingsSavePreservesTheStampChoice` — was structurally
+unable to see this one: it called `handleSettingsAction` with the very
+`config.Config` it then wrote its assertions from. That can only ever
+prove "a save folds the form onto whatever it is handed", which is
+exactly what the code did and exactly what was wrong. It never touched
+the file between a save and a reopen, and it never opened a second
+window at all, so there was no step 4 in it to fail. It is rewritten to
+put the unshown fields on disk and *nowhere else*, and to hand in a
+Config that deliberately disagrees with them.
+
+The general shape, which this project has now hit three times
+([[D-087]], [[D-101]], here): a test that supplies both the input and
+the expectation from the same value measures the function's internal
+consistency, not the product's behaviour. The new tests go through the
+file.
+
+**Verification.**
+`TestEverySettingsFieldSurvivesSaveCloseAndReopen` is the report as a
+test: it opens a real settings window through the real payload, changes
+all twelve controls through the page's own DOM ([[D-094]]'s `Eval`
+carve-out), presses Save through the page, runs the real
+`handleSettingsAction`, reads `config.json`, then reopens through
+`settingsOnOpening` with the stale Config a tray would still be holding
+and reads every control back — and then saves a second time and checks
+the file again. Against the pre-fix build every one of the twelve fails
+twice, once on the reopen and once on the second save.
+`TestSettingsWindowOpensInTheLanguageOnDisk` asserts the same property
+against the window `runSettingsWindow` itself opens, using the only
+thing a window shows that is readable from outside its own page: with
+`sr-Cyrl` on disk and `sr-Latn` in the caller's Config, a window titled
+"Подешавања" must appear. Pre-fix it never does.
+
+Full suite green on Windows with `-count=1`, with and without the
+`softtoken` tag; `gofmt`, `go vet` and `golangci-lint` clean in both the
+Linux and the Windows view; `checkdeps` and `checkcss` OK.
+
+**Found while measuring, and fixed: one press of the stamp button sent
+seven messages.** `syncPresetSelection` in `settings.js` had a copy of
+the stamp button's click handler pasted inside it, so it registered
+another listener every time it ran — once on init and once per
+keystroke in the TSA URL field. Measured through a real window: five
+keystrokes then one press produced **seven** `approve` messages at Go,
+which is seven stamp windows opened one after another. One paste
+deleted; `TestOneStampButtonPressSendsOneMessage` measures it as one.
+
+**Also found, deliberately not fixed here.** `internal/platform`'s own
+`TestWindowsAutostartRoundTrip` and its shell-menu tests write to the
+real `HKCU\...\Run` value and the real Explorer verb, and restore only
+whether the entry is *present*, not what it pointed at — so a full
+`go test ./...` on a developer's machine leaves their autostart entry
+reading `C:\test\liro-bridge.exe` and their context-menu label in
+whichever language ran last. It is a defect in a package neither of
+this pass's two tasks touches, so it is recorded rather than changed.
+What is changed is that no test *this pass* adds makes it worse:
+`keepThisMachinesAutostartAndMenu` snapshots both registrations and
+puts them back verbatim, and the existing save test now uses it too —
+without it, `os.Executable()` inside a test binary pointed this
+machine's autostart at a deleted file in a temporary directory, which
+was measured, not assumed.
+
+**Rejected.**
+- **Passing the saved `config.Config` back up to the tray so it can
+  update its copy.** It fixes the tray and leaves every other holder of
+  a Config — the consent window, a future caller — with the same
+  problem, and it makes the file no longer the authority. Reading the
+  file is one line and cannot be got wrong twice.
+- **Caching the file's contents behind a modification-time check.** The
+  configuration is read when a window opens, which is a few times an
+  hour at most, and `config.Load` of a 500-byte file is not a cost
+  worth a cache's failure modes.
+- **Reloading the whole tray — icon, menu, tooltip — after a save.**
+  The menu's labels are the only language-dependent part, and they are
+  now asked for at the moment the menu is built, which is strictly less
+  machinery than a rebuild and cannot leave the icon half torn down.
+- **Making Settings apply the language to windows already open.** No
+  other window is open while Settings is: [[D-129]] gives Settings its
+  owner and disables it, and the tray is inert for as long as a window
+  it opened is up. There is nothing on screen to re-render.
+
+---
+
+## D-135 — The export names both files and says what each one is; the chain check speaks in words, not in `BrokenAt`
+
+**Date:** 2026-09-05
+**Phase:** F6 — third-real-use fix pass (Task 2)
+
+**Decision.** The export confirmation carries a heading and one line per
+file:
+
+```
+Dnevnik revizije je izvezen u C:\Users\Veljko\Desktop\Izvoz
+  liro-audit-20260905-205112.jsonl        20 zapisa
+  liro-audit-20260905-205112-report.json  provera ispravnosti: u redu
+```
+
+`postWindowStatusFiles` carries a `files` array alongside the existing
+status text; `exportedFileLines` builds it. Four new catalogue keys in
+all three locales — `settings.export_entries`,
+`settings.export_entries_one`, `settings.export_check_ok`,
+`settings.export_check_broken` — and `settings.export_chain_broken`,
+which said one sentence about the folder and named no file, is deleted
+from all three rather than left unused ([[D-132]]'s rule).
+
+When the hash chain does not verify, the second line says so in words
+and names the entry:
+
+```
+  liro-audit-…-report.json   provera ispravnosti: NIJE PROŠLA —
+                             dnevnik je izmenjen kod zapisa 13
+```
+
+and the whole confirmation takes the negative intent family
+([[D-093]]), heading included. Both files are still written and the
+heading still says where they went, because they were.
+
+**Why.** The owner opened the report and asked what it was:
+
+```json
+{ "entryCount": 137, "result": { "OK": true, "BrokenAt": -1 } }
+```
+
+That is correct output and it belongs with the log — it is the
+hash-chain check SPEC §6.7 requires the log to be provable against, and
+the thing that makes an export worth keeping rather than a copy of a
+file. What was missing was any sentence on screen saying which file was
+which. Two files appearing in a folder with nothing said about either is
+how a correct verification report comes to look like debris.
+
+The failing case is the one the report exists for, and it was the worse
+of the two: `settings.export_chain_broken` said "exported to «folder»,
+but the verification report says the chain is broken" — a sentence about
+a *report*, naming neither the file nor the entry, which reads as a
+technical footnote rather than as "this log has been altered". The
+entry is now named.
+
+**Which number is shown.** `VerifyResult.BrokenAt` is a zero-based index
+into the exported entries. The exported log holds one JSON object per
+line, so it is reported as `BrokenAt + 1` — the line a person can
+actually count to in the file they have just been handed. Deliberately
+not `Entry.Sequence`: rotation means the first exported entry is not
+necessarily sequence 0, and a number that does not match the file in
+front of them is worse than no number.
+
+**Rendering.** `liroRenderStatusFiles` lives in `bridge.js` and
+`.liro-status-files` in the generated `intents.css` ([[D-086]]), because
+two windows have an Export button and render the same payload in the
+same place — the settings window at 520 points and the audit log window
+at 460. A two-column grid, the name in `--liro-font-family-mono` like
+every other technical value in this project, both columns `min-width: 0`
+with `overflow-wrap: anywhere` so a long name wraps rather than widening
+the window ([[D-096]]). Neither column sets a colour of its own: the
+status line is already coloured by its intent, and the line saying the
+chain is broken is precisely the one that must not be quieter than the
+heading above it. Every value goes in through `liroSetText`, never
+`innerHTML` (SPEC §6.6) — these are file names.
+
+The status element became a container, which had a side effect worth
+recording: `settings.js` used to set `el.className` to the intent class
+alone, throwing away `liro-fixed-region` — the one thing keeping the
+status line from being squeezed off a growing form. It now composes.
+
+**Verified.** `TestExportNamesBothFilesAndSaysWhatTheyAre` checks the
+Go half in all three catalogues, including that one entry reads as a
+sentence of its own, that a broken chain names entry 42 for a
+`BrokenAt` of 41, that it does not read the same as an intact one, and
+that the deleted key is gone from the catalogues rather than merely
+unused. `TestExportConfirmationRendersBothFiles` posts a real payload
+into both real windows in all three locales and reads the DOM back: the
+folder, both file names and both sentences are on screen, the grid has
+a non-zero rendered height and exactly four cells, neither window
+scrolls horizontally, and a status that wrote no files shows no grid.
+`TestExportConfirmationSaysPlainlyWhenTheChainIsBroken` adds that the
+report's own line is not greyed down relative to the heading.
+
+Photographed, from a real export of a real audit log through
+`store.Export` — twenty entries, a real report file — rendered in the
+real windows: `sr-Latn`, `sr-Cyrl` and `en`, intact and broken, in both
+the audit log window and Settings. What no test and no screenshot can
+do is press OK in the folder chooser, which is a native modal [[D-094]]
+forbids simulating; that step remains the owner's, exactly as
+[[D-097]] and [[D-133]] already recorded.
+
+**Rejected.**
+- **Putting the two sentences into the report JSON.** The file is
+  machine-readable evidence, read years later by whoever is checking
+  the log; a localised sentence in it would be neither.
+- **A single pre-formatted line with padding spaces.** It aligns only in
+  a monospace font at one width, and the two windows are different
+  widths in three languages.
+- **Stacking each detail under its file name.** Five lines instead of
+  three for the ordinary case, to solve a wrapping problem the grid
+  solves when it actually occurs.
+- **Leaving the heading positive and colouring only the report's line
+  when the chain is broken.** A person reads the first line; a green
+  "exported to…" above a red line about alteration is a mixed signal on
+  a screen that must not have one.
+
+---

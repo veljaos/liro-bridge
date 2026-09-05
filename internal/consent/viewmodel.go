@@ -46,15 +46,6 @@ type ViewModel struct {
 
 	Files         []string
 	FilesOverflow int
-
-	// Stamp is the visible-signature-stamp decision the window offers
-	// (Task 1, F5 fourth-real-run review). BuildViewModel fills it with
-	// DefaultStampChoice; a caller holding the user's saved
-	// configuration assigns that instead, because the choice is a
-	// persisted preference rather than a property of this batch —
-	// everything else in this struct is computed from the batch's own
-	// inputs, and this one deliberately is not.
-	Stamp StampChoice
 }
 
 // FingerprintPrefixLength is how much of the 64-character hex
@@ -92,7 +83,6 @@ func BuildViewModel(applicationName string, digests [][]byte, fileNames []string
 		FingerprintShort: ShortFingerprint(full),
 		Files:            files,
 		FilesOverflow:    overflow,
-		Stamp:            DefaultStampChoice(),
 	}
 }
 

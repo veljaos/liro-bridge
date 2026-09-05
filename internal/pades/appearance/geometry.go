@@ -32,15 +32,52 @@ const LogoImagePixels = 256
 // content (logo, text), in points.
 const Padding = 4
 
+// stampLineHeight is the vertical space one line of stamp text gets.
+// 7pt type (nominalFontSize) in a 10pt slot is ordinary tight
+// typesetting — 1.4× — and it is what makes four lines fit beside a
+// 36pt logo without either the ascenders of one line or the descenders
+// of the one above it reaching into their neighbour.
+const stampLineHeight = 10
+
 // heightsByLineCount is SPEC §13.1/F4 §2's height table, indexed by
-// (line count - 1). Five entries, not four: F4 §5's content table lists
-// four *base* lines (label, name, reference, serial+time), but the
-// identity-document-number line (F4 §5.2, opt-in via
-// --stamp-show-document-id) is a fifth, independent optional line — the
-// two opt-in lines (reference, document ID) can both be present at
-// once, which is exactly the case this table's fifth entry (72pt) is
-// for. See docs/decisions.md for this reading of "up to four lines."
-var heightsByLineCount = [5]float64{44, 44, 46, 56, 72}
+// (line count - 1) — "height grows with the number of lines actually
+// drawn, so there is no empty space".
+//
+// SPEC §13.1 gives it as [44, 44, 46, 56, 72] and the table is sized to
+// the content, not the other way round: the stamp now always draws four
+// lines (label, signer, serial, date — stamp.go's buildLines) and can
+// draw six, so entries the original table did not have are needed and
+// two it did have are no longer reachable.
+//
+// The first three entries are SPEC's own, untouched. Four lines and up
+// are 2*Padding + n*stampLineHeight, floored at 44 — the height the
+// logo itself occupies, 36pt plus its own padding above and below,
+// below which the box would be shorter than the mark inside it. That
+// gives 48, 58, 68, which is why a four-line stamp is 48pt tall rather
+// than SPEC's 56: 56 was sized for four lines of which one was the
+// optional reference, and spreading four *mandatory* lines over it
+// leaves 12pt gaps that read as a paragraph rather than a stamp.
+var heightsByLineCount = [6]float64{
+	44, 44, 46,
+	heightForTextLines(4), heightForTextLines(5), heightForTextLines(6),
+}
+
+// logoBlockHeight is what the logo alone occupies: its own 36 points
+// plus the padding above and below it. No stamp is shorter than the
+// mark inside it.
+const logoBlockHeight = LogoSize + 2*Padding
+
+// heightForTextLines is the derivation behind heightsByLineCount's
+// fourth entry onward, written out rather than commented so it cannot
+// drift from the numbers it produced: the text column's own height,
+// floored at the logo's.
+func heightForTextLines(n int) float64 {
+	h := float64(2*Padding + n*stampLineHeight)
+	if h < logoBlockHeight {
+		return logoBlockHeight
+	}
+	return h
+}
 
 // HeightForLines returns the stamp's total height for a stamp drawing
 // exactly n lines (1..5) — "height grows with the number of lines

@@ -204,7 +204,6 @@ func TestMainWindowSignAndBrowseReachGo(t *testing.T) {
 		{"browse-btn", "browse"},
 		{"clear-btn", "clear"},
 		{"output-change-btn", "chooseOutputFolder"},
-		{"stamp-change-btn", "stampSettings"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			drain(messages)
@@ -220,6 +219,72 @@ func TestMainWindowSignAndBrowseReachGo(t *testing.T) {
 				t.Fatalf("action = %q, want %q", got, tc.action)
 			}
 		})
+	}
+}
+
+// TestMainWindowAsksOnlyWhichDocuments is step 1 of the three-step
+// flow: the window that gathers documents does not also ask how to
+// sign them. The stamp summary and its Change button used to sit in
+// this footer and ask exactly what the consent screen asked next.
+func TestMainWindowAsksOnlyWhichDocuments(t *testing.T) {
+	dir := t.TempDir()
+	a := writeTestPDF(t, dir, "doc.pdf", 10)
+	m, _ := testMainWindow(t, "sr-Latn", config.Default(), []string{a})
+
+	for _, id := range []string{"stamp-summary", "stamp-change-btn"} {
+		if !evalBool(t, m.win, "document.getElementById('"+id+"') === null") {
+			t.Errorf("the document list still carries %s; how to sign is step 3's question", id)
+		}
+	}
+}
+
+// TestMainWindowOffersTheWayBackToBesideEachDocument: choosing an
+// output folder was a one-way door — the window could set one and had
+// no control to unset it, which is how every signed document came to be
+// landing on the Desktop with no way back short of editing config.json.
+func TestMainWindowOffersTheWayBackToBesideEachDocument(t *testing.T) {
+	dir := t.TempDir()
+	a := writeTestPDF(t, dir, "doc.pdf", 10)
+
+	// With no folder chosen there is nothing to undo, and the button
+	// stays out of the way.
+	m, _ := testMainWindow(t, "sr-Latn", config.Default(), []string{a})
+	if d := evalText(t, m.win, "getComputedStyle(document.getElementById('output-beside-btn')).display"); d != "none" {
+		t.Errorf("the reset button renders with no folder chosen (display: %s)", d)
+	}
+
+	cfg := config.Default()
+	cfg.OutputFolder = filepath.Join(dir, "Desktop")
+	m, messages := testMainWindow(t, "sr-Latn", cfg, []string{a})
+	if d := evalText(t, m.win, "getComputedStyle(document.getElementById('output-beside-btn')).display"); d == "none" {
+		t.Fatal("a chosen folder offers no way back to beside each document")
+	}
+	if got := evalText(t, m.win, "document.getElementById('output-folder').textContent"); got != cfg.OutputFolder {
+		t.Errorf("the chosen folder renders as %q, want %q", got, cfg.OutputFolder)
+	}
+
+	drain(messages)
+	if _, err := m.win.Eval("document.getElementById('output-beside-btn').click()"); err != nil {
+		t.Fatalf("Eval(click reset): %v", err)
+	}
+	select {
+	case <-messages:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the reset button sent nothing to Go")
+	}
+	if got := m.readAction().Action; got != "clearOutputFolder" {
+		t.Fatalf("action = %q, want clearOutputFolder", got)
+	}
+
+	// And Go acts on it: the default is beside each input, which is what
+	// an empty folder means everywhere downstream.
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	m.clearOutputFolder()
+	if m.cfg.OutputFolder != "" {
+		t.Errorf("after the reset the configuration still holds %q", m.cfg.OutputFolder)
+	}
+	if got := evalText(t, m.win, "document.getElementById('output-folder').textContent"); got != m.c.T("main.output_beside_input") {
+		t.Errorf("the row reads %q, want the beside-each-input text", got)
 	}
 }
 
@@ -616,4 +681,68 @@ func writeTestPDF(t *testing.T, dir, name string, n int) string {
 // the same renderer the command line uses.
 func cliErrorMessage(c *i18n.Catalogue, code errs.Code) string {
 	return cli.ErrorMessage(errs.New(code, nil), c)
+}
+
+// TestSignSaysItIsOpeningAndCannotBePressedTwice is Task 3 of the
+// first-use fix pass.
+//
+// Pressing Sign opens the consent window, which is a WebView2 window of
+// its own: measured on the machine this was reported from, three runs
+// of ui.NewWindow for that page took 2.29 s, 2.12 s and 2.15 s, against
+// 0.19–0.90 s for the whole certificate gather that precedes it — so
+// the wait is the window, not the card work, and it is long enough that
+// a person presses the button again. The first press therefore takes
+// the button out of service and says what is happening; a later render
+// of the list — which is what a cancelled consent window produces —
+// puts it back.
+func TestSignSaysItIsOpeningAndCannotBePressedTwice(t *testing.T) {
+	c := i18n.Load("sr-Latn")
+	dir := t.TempDir()
+	in := writeTestPDF(t, dir, "ugovor.pdf", 10)
+	m, messages := testMainWindow(t, "sr-Latn", config.Default(), []string{in})
+
+	if evalBool(t, m.win, "document.getElementById('sign-btn').disabled") {
+		t.Fatal("Sign is disabled with a document in the list")
+	}
+	if label := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); label != c.T("main.sign") {
+		t.Fatalf("Sign reads %q before it is pressed, want %q", label, c.T("main.sign"))
+	}
+
+	if _, err := m.win.Eval("document.getElementById('sign-btn').click()"); err != nil {
+		t.Fatalf("clicking Sign: %v", err)
+	}
+	select {
+	case msg := <-messages:
+		if msg.Type != ui.MessageTypeApprove {
+			t.Fatalf("Sign sent %v", msg.Type)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Sign never reached Go")
+	}
+	if !evalBool(t, m.win, "document.getElementById('sign-btn').disabled") {
+		t.Fatal("Sign is still pressable after the first press")
+	}
+	if label := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); label != c.T("main.sign_opening") {
+		t.Fatalf("Sign reads %q while it is opening, want %q", label, c.T("main.sign_opening"))
+	}
+
+	// A second press does nothing at all: no message reaches Go.
+	if _, err := m.win.Eval("document.getElementById('sign-btn').click()"); err != nil {
+		t.Fatalf("second click: %v", err)
+	}
+	select {
+	case msg := <-messages:
+		t.Fatalf("a second press of a disabled Sign reached Go as %v", msg.Type)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	// Cancelling the consent window brings the list back, and with it
+	// the button.
+	m.postFiles()
+	if evalBool(t, m.win, "document.getElementById('sign-btn').disabled") {
+		t.Fatal("Sign is still disabled after the list was shown again")
+	}
+	if label := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); label != c.T("main.sign") {
+		t.Fatalf("Sign reads %q after the list was shown again, want %q", label, c.T("main.sign"))
+	}
 }

@@ -328,12 +328,18 @@ func (t *tray) showMenu() {
 	}
 	defer func() { _, _, _ = procDestroyMenu.Call(hMenu) }()
 
-	appendMenuItem(hMenu, trayCmdOpen, t.opts.Labels.Open)
-	appendMenuItem(hMenu, trayCmdSettings, t.opts.Labels.Settings)
-	appendMenuItem(hMenu, trayCmdCertificates, t.opts.Labels.Certificates)
-	appendMenuItem(hMenu, trayCmdAuditLog, t.opts.Labels.AuditLog)
+	// Asked for every time the menu is built, so a language changed in
+	// Settings reaches the menu that opened it.
+	var labels TrayLabels
+	if t.opts.Labels != nil {
+		labels = t.opts.Labels()
+	}
+	appendMenuItem(hMenu, trayCmdOpen, labels.Open)
+	appendMenuItem(hMenu, trayCmdSettings, labels.Settings)
+	appendMenuItem(hMenu, trayCmdCertificates, labels.Certificates)
+	appendMenuItem(hMenu, trayCmdAuditLog, labels.AuditLog)
 	_, _, _ = procAppendMenuW.Call(hMenu, mfSeparator, 0, 0)
-	appendMenuItem(hMenu, trayCmdQuit, t.opts.Labels.Quit)
+	appendMenuItem(hMenu, trayCmdQuit, labels.Quit)
 
 	var pt point
 	_, _, _ = procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))

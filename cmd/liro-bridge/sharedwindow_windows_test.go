@@ -68,8 +68,8 @@ func sharedConsentWindow(t *testing.T) (ui.Window, chan ui.Message) {
 		consentShared.messages = make(chan ui.Message, 16)
 		consentShared.win, consentShared.err = ui.NewWindow(ui.Options{
 			Title:       i18n.Load("sr-Latn").T("consent.window_title"),
-			Width:       520,
-			Height:      860,
+			Width:       consentWindowWidth,
+			Height:      consentWindowHeight,
 			Assets:      assetsFS,
 			VirtualHost: liroVirtualHost,
 			StartPage:   "/pages/consent.html",
@@ -138,6 +138,13 @@ func sharedCertificatesWindow(t *testing.T) ui.Window {
 // sharedAuditLogWindow returns the package's one audit log window, at
 // the size runAuditLogWindow itself uses.
 func sharedAuditLogWindow(t *testing.T) ui.Window {
+	win, _ := sharedAuditLogWindowWithMessages(t)
+	return win
+}
+
+// sharedAuditLogWindowWithMessages is the same window, for a test that
+// needs to see what the page sends back.
+func sharedAuditLogWindowWithMessages(t *testing.T) (ui.Window, chan ui.Message) {
 	t.Helper()
 	auditLogShared.once.Do(func() {
 		auditLogShared.messages = make(chan ui.Message, 16)
@@ -156,7 +163,7 @@ func sharedAuditLogWindow(t *testing.T) ui.Window {
 		t.Fatalf("NewWindow(auditlog): %v", auditLogShared.err)
 	}
 	drain(auditLogShared.messages)
-	return auditLogShared.win
+	return auditLogShared.win, auditLogShared.messages
 }
 
 // sharedMainWindow returns the package's one main window, at the size
@@ -188,16 +195,17 @@ func sharedMainWindow(t *testing.T) (ui.Window, chan ui.Message) {
 	return mainShared.win, mainShared.messages
 }
 
-// sharedStampWindow returns the package's one stamp window (F6 §6),
-// with cfg's init payload freshly posted.
-func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config) (ui.Window, chan ui.Message) {
+// sharedStampWindow returns the package's one stamp window (step 3 of
+// the three-step flow), with cfg's init payload freshly posted in the
+// given role.
+func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config, role stampWindowRole) (ui.Window, chan ui.Message) {
 	t.Helper()
 	stampShared.once.Do(func() {
 		stampShared.messages = make(chan ui.Message, 16)
 		stampShared.win, stampShared.err = ui.NewWindow(ui.Options{
 			Title:       i18n.Load("sr-Latn").T("stampwindow.title"),
 			Width:       stampWindowWidth,
-			Height:      stampWindowHeight,
+			Height:      stampSettingsHeight,
 			Assets:      assetsFS,
 			VirtualHost: liroVirtualHost,
 			StartPage:   "/pages/stamp.html",
@@ -209,7 +217,7 @@ func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config) (ui.W
 		t.Fatalf("NewWindow(stamp): %v", stampShared.err)
 	}
 	drain(stampShared.messages)
-	if err := stampShared.win.PostJSON(buildStampInit(c, cfg)); err != nil {
+	if err := stampShared.win.PostJSON(buildStampInit(c, cfg, role)); err != nil {
 		t.Fatalf("PostJSON(stamp init): %v", err)
 	}
 	return stampShared.win, stampShared.messages

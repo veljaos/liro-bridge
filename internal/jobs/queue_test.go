@@ -334,3 +334,83 @@ func itoa(i int) string {
 	}
 	return string(b)
 }
+
+// TestOutputPathsFollowEachInputsOwnFolder is F6 §4's rule for the case
+// it exists for: a batch gathered from several folders — dropped from
+// two Explorer windows, or picked out of a folder tree — writes each
+// signature beside its own input, not all of them into whichever folder
+// the first document happened to come from.
+//
+// It is here rather than only at the window layer because it is the
+// answer to a question about paths, and a batch from several folders is
+// the ordinary case for a drop.
+func TestOutputPathsFollowEachInputsOwnFolder(t *testing.T) {
+	inputs := []string{
+		filepath.Join("C:", "Ugovori", "2026", "ugovor.pdf"),
+		filepath.Join("D:", "Racuni", "faktura.pdf"),
+		filepath.Join("C:", "Users", "Veljko", "Desktop", "izjava.pdf"),
+	}
+	want := []string{
+		filepath.Join("C:", "Ugovori", "2026", "ugovor-signed.pdf"),
+		filepath.Join("D:", "Racuni", "faktura-signed.pdf"),
+		filepath.Join("C:", "Users", "Veljko", "Desktop", "izjava-signed.pdf"),
+	}
+	for i, in := range inputs {
+		if got := OutputPathFor(in, "", "-signed"); got != want[i] {
+			t.Errorf("OutputPathFor(%q, \"\") = %q, want %q", in, got, want[i])
+		}
+	}
+
+	// A chosen folder overrides every one of them, and only then.
+	chosen := filepath.Join("E:", "Potpisano")
+	for _, in := range inputs {
+		got := OutputPathFor(in, chosen, "-signed")
+		if filepath.Dir(got) != chosen {
+			t.Errorf("with a chosen folder, OutputPathFor(%q) = %q, want it under %q", in, got, chosen)
+		}
+	}
+}
+
+// TestNeedsFolderOnlyWhereTheNameIsNotEnough covers the other half of
+// comparing by full path: two documents called "ugovor.pdf" in two
+// folders are two documents, both are kept, and the list has to be able
+// to say which is which. Every other row is left alone — a batch from
+// one folder must not carry that folder on every line to make a case
+// that is not happening legible.
+func TestNeedsFolderOnlyWhereTheNameIsNotEnough(t *testing.T) {
+	items := []Item{
+		{DisplayName: "ugovor.pdf", Folder: `C:\Klijenti\A`},
+		{DisplayName: "izjava.pdf", Folder: `C:\Klijenti\A`},
+		{DisplayName: "UGOVOR.pdf", Folder: `C:\Klijenti\B`},
+		{DisplayName: "racun.pdf", Folder: `C:\Klijenti\B`},
+	}
+	got := NeedsFolder(items)
+	want := []bool{true, false, true, false}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("item %d (%q): NeedsFolder = %v, want %v", i, items[i].DisplayName, got[i], want[i])
+		}
+	}
+}
+
+// TestItemCarriesItsFolder: the folder is recorded when a document
+// enters the queue, sanitised the same way its name is, so nothing
+// downstream has to reach for the path to render a row.
+func TestItemCarriesItsFolder(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ugovor.pdf")
+	if err := os.WriteFile(path, []byte("%PDF-1.7\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var q Queue
+	if added, _ := q.Add([]string{path}); added != 1 {
+		t.Fatalf("Add reported %d added", added)
+	}
+	it := q.Items()[0]
+	if it.Folder != dir {
+		t.Fatalf("Item.Folder = %q, want %q", it.Folder, dir)
+	}
+	if it.DisplayName != "ugovor.pdf" {
+		t.Fatalf("Item.DisplayName = %q", it.DisplayName)
+	}
+}

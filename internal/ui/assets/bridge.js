@@ -45,6 +45,32 @@
     el.textContent = text == null ? "" : String(text);
   };
 
+  // renderStatusFiles fills a status line's file list: one row per file,
+  // its name beside what it is. Both windows with an Export button
+  // render the same payload in the same place, so the rendering lives
+  // here rather than twice.
+  //
+  // Every value goes in through setText: a file name is a name, never
+  // markup (SPEC §6.6).
+  window.liroRenderStatusFiles = function (el, files) {
+    el.innerHTML = "";
+    if (!files || !files.length) {
+      el.hidden = true;
+      return;
+    }
+    files.forEach(function (f) {
+      var name = document.createElement("span");
+      name.className = "liro-status-file-name";
+      window.liroSetText(name, f.name);
+      el.appendChild(name);
+      var detail = document.createElement("span");
+      detail.className = "liro-status-file-detail";
+      window.liroSetText(detail, f.detail);
+      el.appendChild(detail);
+    });
+    el.hidden = false;
+  };
+
   // applyStaticStrings resolves every element with data-i18n to
   // liroT(key) via textContent — used for the page's own fixed labels,
   // never for batch data.

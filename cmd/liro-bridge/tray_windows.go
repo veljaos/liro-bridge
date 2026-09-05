@@ -37,8 +37,16 @@ const webView2ExitGrace = 400 * time.Millisecond
 
 // runTray implements F5 §3's product shape: the agent starts minimised
 // to tray with no window, and stays running until Quit.
-func runTray(cfg config.Config, version, locale string) int {
-	c := i18n.Load(locale)
+//
+// cfg is what the configuration said when the process started, and is
+// used as nothing but a fallback from here on. The tray outlives every
+// window it opens and every save those windows make, so each of them
+// asks the file what the configuration is *now* (currentConfig) rather
+// than being handed a copy taken at startup. Handing that copy on is
+// what made a saved language come back as the old one: the value
+// reached disk correctly and was then never read again.
+func runTray(cfg config.Config, version string) int {
+	c := i18n.Load(currentConfig(cfg).Locale)
 	quit := make(chan struct{})
 	openedAWindow := false
 
@@ -52,37 +60,41 @@ func runTray(cfg config.Config, version, locale string) int {
 
 	t, err := ui.NewTray(ui.TrayOptions{
 		Version: version,
-		Labels: ui.TrayLabels{
-			Open:         c.T("tray.open_window"),
-			Settings:     c.T("tray.settings"),
-			Certificates: c.T("tray.certificates"),
-			AuditLog:     c.T("tray.audit_log"),
-			Quit:         c.T("tray.quit"),
+		Labels: func() ui.TrayLabels {
+			c := i18n.Load(currentConfig(cfg).Locale)
+			return ui.TrayLabels{
+				Open:         c.T("tray.open_window"),
+				Settings:     c.T("tray.settings"),
+				Certificates: c.T("tray.certificates"),
+				AuditLog:     c.T("tray.audit_log"),
+				Quit:         c.T("tray.quit"),
+			}
 		},
 		OnOpen: func() {
 			// F5 §3's "left click opens the main window", finally
 			// pointing at one (F6 §1). Opened empty: the drop zone and
 			// Browse are how documents get in from here.
 			openedAWindow = true
-			if code := runMainWindow(context.Background(), currentStampConfig(cfg), locale, nil); code != 0 {
+			now := currentConfig(cfg)
+			if code := runMainWindow(context.Background(), now, now.Locale, nil); code != 0 {
 				slog.Warn("tray: the main window returned an error", "code", code)
 			}
 		},
 		OnSettings: func() {
 			openedAWindow = true
-			if err := runSettingsWindow(cfg, locale); err != nil {
+			if err := runSettingsWindow(cfg, 0); err != nil {
 				slog.Warn("tray: settings window failed", "error", err)
 			}
 		},
 		OnCertificates: func() {
 			openedAWindow = true
-			if err := runCertificatesWindow(locale); err != nil {
+			if err := runCertificatesWindow(currentConfig(cfg).Locale); err != nil {
 				slog.Warn("tray: certificates window failed", "error", err)
 			}
 		},
 		OnAuditLog: func() {
 			openedAWindow = true
-			if err := runAuditLogWindow(locale); err != nil {
+			if err := runAuditLogWindow(currentConfig(cfg).Locale); err != nil {
 				slog.Warn("tray: audit log window failed", "error", err)
 			}
 		},
@@ -120,12 +132,39 @@ type settingsFormState struct {
 	CheckUpdatesDaily     bool   `json:"checkUpdatesDaily"`
 }
 
-func runSettingsWindow(cfg config.Config, locale string) error {
-	c := i18n.Load(locale)
+// settingsOnOpening is everything a settings window decides at the
+// moment it opens: it reads the configuration file, takes its interface
+// language from what it finds, and builds the payload the page renders
+// itself from.
+//
+// One function because those three are one decision, and because a test
+// can then ask a reopened window what it would show without having to
+// reproduce the reading half — which is how the version of this that
+// only ever checked the view model came to pass while the window on
+// screen showed the old values.
+func settingsOnOpening(fallback config.Config) (*i18n.Catalogue, config.Config, map[string]any) {
+	cfg := currentConfig(fallback)
+	c := i18n.Load(cfg.Locale)
+	return c, cfg, buildSettingsInit(c, cfg)
+}
+
+// owner is the window Settings was opened from, or zero when it was
+// opened from the tray and stands on its own.
+//
+// fallback is only that: the window reads the configuration file itself,
+// here, at the moment it opens, and takes both the form's values and its
+// own interface language from what it finds. Its callers are long-lived
+// — the tray for the life of the process, the consent window for the
+// life of a batch — and a Config handed down from one of them says what
+// was true when *that* started, which is how a language saved a moment
+// ago came back as the old one on reopening.
+func runSettingsWindow(fallback config.Config, owner uintptr) error {
+	c, cfg, init := settingsOnOpening(fallback)
 	messages := make(chan ui.Message, 8)
 
 	win, err := ui.NewWindow(ui.Options{
 		Title: c.T("settings.window_title"),
+		Owner: owner,
 		Width: 520,
 		// Task 1c/3 (F5 second-real-run review): the window grew by a
 		// timestamp-authority preset group and a status line; 480 points
@@ -143,7 +182,7 @@ func runSettingsWindow(cfg config.Config, locale string) error {
 	}
 	defer func() { _ = win.Close() }()
 
-	if err := win.PostJSON(buildSettingsInit(c, cfg)); err != nil {
+	if err := win.PostJSON(init); err != nil {
 		return err
 	}
 
@@ -184,14 +223,23 @@ func runSettingsWindow(cfg config.Config, locale string) error {
 func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, state settingsFormState) bool {
 	switch state.Action {
 	case "save":
-		// Start from the configuration this window was opened with and
-		// overwrite only what the form actually holds. Building a fresh
-		// config.Config here instead reset every field the form does
-		// not show — the log level and the port range to hard-coded
-		// literals, and, once Task 1 added them, the visible-stamp
-		// choice and its corner to their zero values, so saving any
-		// setting silently switched the stamp off again.
-		newCfg := cfg
+		// Start from the configuration as it stands on disk *now* and
+		// overwrite only what the form actually holds.
+		//
+		// Building a fresh config.Config here instead reset every field
+		// the form does not show — the log level and the port range to
+		// hard-coded literals, and the visible-stamp choice and its
+		// corner to their zero values, so saving any setting silently
+		// switched the stamp off again.
+		//
+		// Starting from the caller's copy, which is what replaced it,
+		// has the same effect one step removed: that copy is as old as
+		// whoever is holding it. The stamp window is reachable from
+		// this very window and writes its own answer to disk while
+		// Settings is still open, so a save that folded the form onto
+		// the copy Settings was opened with wrote the pre-stamp values
+		// straight back over it.
+		newCfg := currentConfig(cfg)
 		newCfg.Locale = state.Locale
 		newCfg.StartWithWindows = state.StartWithWindows
 		newCfg.TSAURL = state.TSAURL
@@ -216,7 +264,7 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, s
 		// right-clicks a PDF must not still see it there.
 		if err := applyExplorerMenu(newCfg, c); err != nil {
 			slog.Warn("settings: updating the Explorer context menu failed", "error", err)
-			postSettingsStatus(win, c.T("settings.explorer_menu_failed"), ui.IntentNegative)
+			postWindowStatus(win, c.T("settings.explorer_menu_failed"), ui.IntentNegative)
 			return false
 		}
 		return true
@@ -225,9 +273,12 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, s
 		return false
 	case "stampSettings":
 		// F6 §6: the stamp window, reachable from Settings as well as
-		// from the main window. Settings stays open behind it.
-		if err := runStampWindow(currentStampConfig(cfg), localeOf(cfg)); err != nil {
-			slog.Warn("settings: the stamp window failed", "error", err)
+		// from the main window. Settings stays open behind it, owned by
+		// it and inert until it is answered — without the ownership it
+		// was drawn over the new window entirely, which is what made
+		// the whole program look dead (D-129).
+		if _, ok := runStampWindow(currentConfig(cfg), localeOf(cfg), stampRoleSettings, win.Handle()); !ok {
+			slog.Debug("settings: the stamp window was closed without saving")
 		}
 		return false
 	case "checkUpdatesNow":
@@ -239,21 +290,41 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, s
 		// looks enabled and produces no response reads as a broken
 		// program, which is the whole finding this replaces.
 		slog.Info("settings: check-for-updates requested (the update channel arrives with packaging, F10)")
-		postSettingsStatus(win, c.T("settings.updates_not_available"), ui.IntentWarning)
+		postWindowStatus(win, c.T("settings.updates_not_available"), ui.IntentWarning)
 		return false
 	default:
 		return false
 	}
 }
 
-// postSettingsStatus shows one line of feedback under the settings
-// window's action buttons. intent picks its colour family, never a
-// colour (D-093).
-func postSettingsStatus(win ui.Window, text string, intent ui.Intent) {
+// postWindowStatus shows one line of feedback under a window's action
+// buttons. intent picks its colour family, never a colour (D-093).
+//
+// Named for windows rather than for Settings because the audit log
+// window renders the same payload in the same place: both have an
+// Export button, and both have to say where the files went.
+func postWindowStatus(win ui.Window, text string, intent ui.Intent) {
+	postWindowStatusFiles(win, text, nil, intent)
+}
+
+// exportedFile is one file an action wrote: its name, and in one line,
+// in the person's own language, what that file is.
+type exportedFile struct {
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
+}
+
+// postWindowStatusFiles is postWindowStatus for an action that wrote
+// files. The heading says where they went; each file then names itself
+// and says what it is, because two files appearing in a folder with
+// nothing on screen about either of them is how the verification report
+// came to be opened and asked about.
+func postWindowStatusFiles(win ui.Window, text string, files []exportedFile, intent ui.Intent) {
 	_ = win.PostJSON(map[string]any{
 		"type": "status",
 		"status": map[string]any{
 			"text":   text,
+			"files":  files,
 			"intent": string(intent),
 		},
 	})
@@ -263,19 +334,28 @@ func postSettingsStatus(win ui.Window, text string, intent ui.Intent) {
 // a folder the user chooses (Task 3), and says on screen where they
 // went. A cancelled folder chooser is silent: the user withdrew the
 // request, and there is nothing to report about it.
+//
+// One implementation, two buttons. Settings has had this since F5; the
+// audit log window now offers the same action, because that is where a
+// person is when they decide they want the log — walking to Settings
+// to export what is already on screen is a trip with no purpose. The
+// format is the one already in use, and the one this log should keep:
+// one JSON object per line plus a verification report, append-only,
+// readable years later without this program, and checkable against the
+// hash chain by anyone.
 func exportAuditLogNow(win ui.Window, c *i18n.Catalogue) {
 	dir := filepath.Join(platform.ConfigDir("windows", platform.OSEnv), "audit")
 	store, err := audit.NewStore(dir)
 	if err != nil {
 		slog.Warn("settings: opening audit store for export failed", "error", err)
-		postSettingsStatus(win, c.T("settings.export_failed"), ui.IntentNegative)
+		postWindowStatus(win, c.T("settings.export_failed"), ui.IntentNegative)
 		return
 	}
 
-	target, chosen, err := ui.ChooseFolder(win.Handle(), c.T("settings.export_choose_folder"))
+	target, chosen, err := ui.ChooseFolder(win.Handle(), c.T("settings.export_choose_folder"), "")
 	if err != nil {
 		slog.Warn("settings: choosing an export folder failed", "error", err)
-		postSettingsStatus(win, c.T("settings.export_failed"), ui.IntentNegative)
+		postWindowStatus(win, c.T("settings.export_failed"), ui.IntentNegative)
 		return
 	}
 	if !chosen {
@@ -283,8 +363,10 @@ func exportAuditLogNow(win ui.Window, c *i18n.Catalogue) {
 	}
 
 	stamp := time.Now().Format("20060102-150405")
-	entriesPath := filepath.Join(target, "liro-audit-"+stamp+".jsonl")
-	reportPath := filepath.Join(target, "liro-audit-"+stamp+"-report.json")
+	entriesName := "liro-audit-" + stamp + ".jsonl"
+	reportName := "liro-audit-" + stamp + "-report.json"
+	entriesPath := filepath.Join(target, entriesName)
+	reportPath := filepath.Join(target, reportName)
 	report, err := store.Export(entriesPath, reportPath)
 	if err != nil {
 		// Export writes both files even when the chain does not verify,
@@ -292,15 +374,49 @@ func exportAuditLogNow(win ui.Window, c *i18n.Catalogue) {
 		// the log, not a failure to export it. Say which happened.
 		if report.EntryCount > 0 && !report.Result.OK {
 			slog.Warn("settings: exported audit log failed chain verification", "brokenAt", report.Result.BrokenAt)
-			postSettingsStatus(win, fmt.Sprintf(c.T("settings.export_chain_broken"), target), ui.IntentNegative)
+			postWindowStatusFiles(win,
+				fmt.Sprintf(c.T("settings.export_done"), target),
+				exportedFileLines(c, entriesName, reportName, report),
+				ui.IntentNegative)
 			return
 		}
 		slog.Warn("settings: exporting audit log failed", "error", err)
-		postSettingsStatus(win, c.T("settings.export_failed"), ui.IntentNegative)
+		postWindowStatus(win, c.T("settings.export_failed"), ui.IntentNegative)
 		return
 	}
 	slog.Info("settings: audit log exported", "entries", entriesPath, "report", reportPath)
-	postSettingsStatus(win, fmt.Sprintf(c.T("settings.export_done"), target), ui.IntentPositive)
+	postWindowStatusFiles(win,
+		fmt.Sprintf(c.T("settings.export_done"), target),
+		exportedFileLines(c, entriesName, reportName, report),
+		ui.IntentPositive)
+}
+
+// exportedFileLines names the two files an export writes and says, in
+// one line each, what they are.
+//
+// The report was opened by the owner and asked about, because on screen
+// nothing distinguished it from the log beside it. It is the hash-chain
+// check (SPEC §6.7) and its whole value is the case where it fails, so
+// that case says plainly that the log was altered and where — never
+// "OK: false, BrokenAt: 42", which is what the file itself says and
+// what nobody should have to read.
+//
+// BrokenAt is an index into the exported entries, which the log file
+// holds one per line; it is reported as the line number a person would
+// count to, so the sentence points at something they can actually find.
+func exportedFileLines(c *i18n.Catalogue, entriesName, reportName string, report audit.ExportReport) []exportedFile {
+	entries := fmt.Sprintf(c.T("settings.export_entries"), report.EntryCount)
+	if report.EntryCount == 1 {
+		entries = c.T("settings.export_entries_one")
+	}
+	check := c.T("settings.export_check_ok")
+	if !report.Result.OK {
+		check = fmt.Sprintf(c.T("settings.export_check_broken"), report.Result.BrokenAt+1)
+	}
+	return []exportedFile{
+		{Name: entriesName, Detail: entries},
+		{Name: reportName, Detail: check},
+	}
 }
 
 func buildSettingsInit(c *i18n.Catalogue, cfg config.Config) map[string]any {

@@ -41,50 +41,6 @@ type jsConsentModel struct {
 	Files             []string       `json:"files"`
 	FilesOverflowText string         `json:"filesOverflowText"`
 	Certificates      []jsCertOption `json:"certificates"`
-
-	// Task 1 (F5 fourth-real-run review): the visible-stamp choice, as
-	// the configuration currently holds it. StampPositions carries the
-	// four corners and their localised labels, so the page never holds
-	// a list of positions of its own that could drift from Go's.
-	StampVisible   bool              `json:"stampVisible"`
-	StampPosition  string            `json:"stampPosition"`
-	StampPositions []jsStampPosition `json:"stampPositions"`
-}
-
-// jsStampPosition is one corner of the stamp position selector: the
-// value stored in configuration and passed to appearance.Corner, plus
-// the text the user reads.
-type jsStampPosition struct {
-	Value string `json:"value"`
-	Text  string `json:"text"`
-}
-
-// stampPositionText is the localised name of one corner. The four keys
-// mirror consent.StampPositions' four values exactly; an unrecognised
-// value cannot reach here, because consent.StampChoice.Normalised has
-// already replaced it with the default.
-func stampPositionText(c *i18n.Catalogue, position string) string {
-	switch position {
-	case consent.StampPositionBottomRight:
-		return c.T("consent.stamp_position_bottom_right")
-	case consent.StampPositionBottomLeft:
-		return c.T("consent.stamp_position_bottom_left")
-	case consent.StampPositionTopRight:
-		return c.T("consent.stamp_position_top_right")
-	case consent.StampPositionTopLeft:
-		return c.T("consent.stamp_position_top_left")
-	default:
-		return position
-	}
-}
-
-func stampPositionOptions(c *i18n.Catalogue) []jsStampPosition {
-	positions := consent.StampPositions()
-	out := make([]jsStampPosition, 0, len(positions))
-	for _, p := range positions {
-		out = append(out, jsStampPosition{Value: p, Text: stampPositionText(c, p)})
-	}
-	return out
 }
 
 func roleText(c *i18n.Catalogue, r consent.Role) string {
@@ -164,8 +120,6 @@ func buildConsentInit(c *i18n.Catalogue, vm consent.ViewModel) map[string]any {
 			"consent.tsa_configure":              c.T("consent.tsa_configure"),
 			"consent.copy_technical_details":     c.T("consent.copy_technical_details"),
 			"consent.copy_fingerprint":           c.T("consent.copy_fingerprint"),
-			"consent.stamp_visible":              c.T("consent.stamp_visible"),
-			"consent.stamp_position_label":       c.T("consent.stamp_position_label"),
 			"consent.output_exists_title":        c.T("consent.output_exists_title"),
 			"consent.output_exists_explain":      c.T("consent.output_exists_explain"),
 			"consent.output_exists_path_label":   c.T("consent.output_exists_path_label"),
@@ -180,9 +134,6 @@ func buildConsentInit(c *i18n.Catalogue, vm consent.ViewModel) map[string]any {
 			Files:             vm.Files,
 			FilesOverflowText: filesOverflow,
 			Certificates:      certs,
-			StampVisible:      vm.Stamp.Visible,
-			StampPosition:     vm.Stamp.Normalised().Position,
-			StampPositions:    stampPositionOptions(c),
 		},
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+	"unsafe"
 )
 
 // iterations reads an override from the environment so a run can be
@@ -215,4 +216,120 @@ func TestHandlerObjectsAreUnpinnedWhenReleased(t *testing.T) {
 	if got := handlerPinCount(); got != before {
 		t.Fatalf("after the last reference went: pinned %d, want %d", got, before)
 	}
+}
+
+// TestBlockingCallbackDoesNotFreezeTheWindow is the regression test for
+// the third defect of this shape, and the one the owner met: a caller's
+// OnMessage that blocks used to run inside wndProc, on the window's own
+// message-loop thread, so a handler waiting on a full channel stopped
+// the window dead.
+//
+// What that cost was not subtle. Every window in this project delivers
+// page messages by sending on a channel of eight, drained by a loop
+// that is itself sometimes busy — waiting for another window, for a
+// folder chooser, for a card. When it was, the ninth click parked the
+// window's own goroutine in "chan send, locked to thread" and the
+// window stopped painting, stopped answering the title bar, and could
+// not be closed: Close's posted WM_CLOSE had nothing left to dispatch
+// it. Measured directly on a settings window before the fix, and it
+// took nine clicks.
+//
+// So the property under test is not "the callback is called" but "the
+// window survives a callback that never returns": it still answers
+// WM_NULL, Eval still completes, and Close still returns rather than
+// timing out. Order is asserted too, because moving callbacks off the
+// window thread would be a poor trade if it let them arrive shuffled.
+func TestBlockingCallbackDoesNotFreezeTheWindow(t *testing.T) {
+	const messages = 20
+
+	release := make(chan struct{})
+	var delivered []string
+	var mu sync.Mutex
+	first := true
+
+	w, err := NewWindow(Options{
+		Title:       "liro-bridge blocking callback test",
+		Width:       300,
+		Height:      200,
+		Assets:      lifecycleAssets,
+		VirtualHost: "liro-lifecycle.test",
+		StartPage:   "/test.html",
+		OnMessage: func(m Message) {
+			// The first callback blocks until the test lets go — the
+			// stand-in for a caller busy with another window. Every
+			// later one is queued behind it.
+			mu.Lock()
+			isFirst := first
+			first = false
+			mu.Unlock()
+			if isFirst {
+				<-release
+			}
+			mu.Lock()
+			delivered = append(delivered, string(m.Type)+":"+m.Thumbprint)
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewWindow: %v", err)
+	}
+
+	for i := range messages {
+		script := "window.chrome.webview.postMessage({type:'selectCertificate',thumbprint:'" + strconv.Itoa(i) + "'})"
+		if _, err := w.Eval(script); err != nil {
+			t.Fatalf("message %d: Eval failed, so the window had already stopped answering: %v", i, err)
+		}
+	}
+
+	// The window is still its own master: a synchronous call into it
+	// returns, which is exactly what a frozen message loop cannot do.
+	if !windowIsResponding(w.Handle()) {
+		t.Fatal("the window stopped responding while a callback was blocked")
+	}
+	if _, err := w.Eval("1+1"); err != nil {
+		t.Fatalf("Eval failed while a callback was blocked: %v", err)
+	}
+
+	began := time.Now()
+	_ = w.Close()
+	if took := time.Since(began); took >= closeTeardownTimeout {
+		t.Fatalf("Close took %v, hitting its %v timeout: the window thread never confirmed", took, closeTeardownTimeout)
+	}
+
+	close(release)
+	// Everything the page sent still arrives, in the order it was sent.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		mu.Lock()
+		n := len(delivered)
+		mu.Unlock()
+		if n >= messages || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(delivered) != messages {
+		t.Fatalf("delivered %d of %d messages", len(delivered), messages)
+	}
+	for i, got := range delivered {
+		if want := "selectCertificate:" + strconv.Itoa(i); got != want {
+			t.Fatalf("message %d was delivered as %q, want %q — callbacks must arrive in order", i, got, want)
+		}
+	}
+}
+
+var procSendMessageTimeoutW = user32DLL.NewProc("SendMessageTimeoutW")
+
+// windowIsResponding asks the window a question its own message loop
+// must answer. SendMessageTimeoutW with SMTO_ABORTIFHUNG returns zero
+// for a window whose thread is not pumping, which is precisely the
+// state this file's tests exist to rule out.
+func windowIsResponding(hwnd uintptr) bool {
+	var result uintptr
+	const smtoAbortIfHung, smtoBlock = 0x0002, 0x0001
+	r, _, _ := procSendMessageTimeoutW.Call(hwnd, 0 /* WM_NULL */, 0, 0,
+		smtoAbortIfHung|smtoBlock, 1000, uintptr(unsafe.Pointer(&result)))
+	return r != 0
 }

@@ -18,6 +18,21 @@ package ui
 // never touch a COM pointer directly — they hand a closure to the
 // owning thread via wmRunFunc instead (see invoke below).
 //
+// Nothing a *caller* supplies ever runs on that thread. OnMessage,
+// OnFilesDropped and OnClosed are queued by the thread that produces
+// them and delivered, in order, by one goroutine per window
+// (dispatchEvents below). This is not tidiness. Before it, every
+// callback ran inside wndProc, so a handler that blocked — and every
+// handler in this project is a send on a bounded channel, which blocks
+// as soon as the code draining it is busy with something else — stopped
+// the window's message loop dead. The window then had no way back:
+// it did not repaint, did not answer the title bar, and Close's posted
+// WM_CLOSE was never dispatched, so the window stayed on screen with
+// Windows calling it "not responding". Measured directly: a settings
+// window whose caller was waiting on another window froze on the ninth
+// click, with its own goroutine parked in "chan send, locked to thread"
+// inside webMessageReceivedInvoke.
+//
 // Teardown obeys the same rule, and D-101 records what happened when it
 // only nearly did. One thread owns the WebView2 controller — the thread
 // that created it — and it is the only thread that may release it.
@@ -84,9 +99,38 @@ type window struct {
 	closedCh  chan struct{}
 	closeOnce sync.Once
 
+	// owner is the window this one was opened from, disabled for as
+	// long as this window is up and re-enabled before it is destroyed
+	// (Options.Owner). Zero when this window stands on its own.
+	owner uintptr
+
+	onMessage      func(Message)
 	onClosed       func()
 	onFilesDropped func([]string)
 	closingFromGo  atomic.Bool
+
+	// events is the queue between the window's own thread, which
+	// produces callbacks, and dispatchEvents, which delivers them. It
+	// is a slice under a mutex rather than a channel because it must
+	// never make the producer wait: a channel of any fixed size
+	// eventually blocks, and blocking the producer here is the defect
+	// this whole arrangement exists to remove.
+	eventMu     sync.Mutex
+	eventQueue  []windowEvent
+	eventSignal chan struct{}
+
+	// dropTargets are this window's registered IDropTargets — one per
+	// window in the hosted tree, because a drop lands on exactly one of
+	// them (droptarget_windows.go). Empty when the window asked for no
+	// drops, or when registration failed.
+	dropTargets []*dropTarget
+
+	// apartmentIsOLE says which call put this thread into its
+	// apartment (com_windows.go's initApartment), so the teardown
+	// undoes the matching one. OleInitialize and CoInitializeEx keep
+	// separate counts; calling CoUninitialize against an OleInitialize
+	// leaves OLE half-shut-down on a thread that is about to end.
+	apartmentIsOLE bool
 
 	// tearingDown is set by the owning thread, on entry to the teardown
 	// and before it releases anything, so that a second WM_CLOSE — from
@@ -119,15 +163,83 @@ func NewWindow(opts Options) (Window, error) {
 		widthPts: opts.Width, heightPts: opts.Height,
 		workCh:         make(chan func(), 8),
 		closedCh:       make(chan struct{}),
+		eventSignal:    make(chan struct{}, 1),
+		owner:          opts.Owner,
+		onMessage:      opts.OnMessage,
 		onClosed:       opts.OnClosed,
 		onFilesDropped: opts.OnFilesDropped,
 	}
+	go w.dispatchEvents()
 	ready := make(chan error, 1)
 	go w.run(opts, ready)
 	if err := <-ready; err != nil {
 		return nil, err
 	}
 	return w, nil
+}
+
+// windowEvent is one queued caller callback. Exactly one field is set.
+type windowEvent struct {
+	message *Message
+	dropped []string
+	closed  bool
+}
+
+// queueEvent hands an event to dispatchEvents and returns immediately.
+// Called from the window's own message-loop thread, which is why it may
+// not wait for anything.
+func (w *window) queueEvent(ev windowEvent) {
+	w.eventMu.Lock()
+	w.eventQueue = append(w.eventQueue, ev)
+	w.eventMu.Unlock()
+	select {
+	case w.eventSignal <- struct{}{}:
+	default:
+	}
+}
+
+// dispatchEvents delivers queued callbacks, in order, on its own
+// goroutine. It drains once more after the window has closed so that a
+// message the page sent, or the OnClosed a user-driven close queued,
+// is never lost to the teardown that followed it.
+func (w *window) dispatchEvents() {
+	for {
+		select {
+		case <-w.eventSignal:
+			w.drainEvents()
+		case <-w.closedCh:
+			w.drainEvents()
+			return
+		}
+	}
+}
+
+func (w *window) drainEvents() {
+	for {
+		w.eventMu.Lock()
+		if len(w.eventQueue) == 0 {
+			w.eventMu.Unlock()
+			return
+		}
+		ev := w.eventQueue[0]
+		w.eventQueue = w.eventQueue[1:]
+		w.eventMu.Unlock()
+
+		switch {
+		case ev.message != nil:
+			if w.onMessage != nil {
+				w.onMessage(*ev.message)
+			}
+		case ev.dropped != nil:
+			if w.onFilesDropped != nil {
+				w.onFilesDropped(ev.dropped)
+			}
+		case ev.closed:
+			if w.onClosed != nil {
+				w.onClosed()
+			}
+		}
+	}
 }
 
 func (w *window) run(opts Options, ready chan<- error) {
@@ -140,16 +252,18 @@ func (w *window) run(opts Options, ready chan<- error) {
 	// apartment once the window that owns it is gone.
 
 	ensureDPIAware()
-	if err := coInitialize(); err != nil {
+	ole, err := initApartment()
+	if err != nil {
 		ready <- err
 		return
 	}
+	w.apartmentIsOLE = ole
 	registerWindowClass()
 
 	dpi := uint32(96)
 	hwnd, err := w.createNativeWindow(opts, dpi)
 	if err != nil {
-		coUninitialize()
+		shutdownApartment(w.apartmentIsOLE)
 		ready <- err
 		return
 	}
@@ -171,9 +285,12 @@ func (w *window) run(opts Options, ready chan<- error) {
 	}
 
 	if err := w.setUpWebView2(opts); err != nil {
+		if w.owner != 0 {
+			enableWindow(w.owner, true)
+		}
 		w.closeWebView()
 		// DestroyWindow dispatches WM_DESTROY synchronously on this same
-		// thread, which is what actually calls coUninitialize (wndProc's
+		// thread, which is what actually calls shutdownApartment (wndProc's
 		// wmDestroy case, below) — no separate call needed here.
 		_, _, _ = procDestroyWindow.Call(hwnd)
 		ready <- err
@@ -223,11 +340,14 @@ func (w *window) setUpWebView2(opts Options) error {
 		}
 	}
 
-	// F6 §1: a window that wants dropped files must take them from the
-	// shell itself, so WebView2's own handling is switched off first and
-	// the native frame is registered as the drop target second. Doing
-	// only one of the two silently produces a window that looks like it
-	// accepts drops and does nothing with them.
+	// F6 §1, first half: switch WebView2's own external-drop handling
+	// off, before the page is ever navigated, so Chromium never
+	// registers a drop target of its own to displace. The page could
+	// only ever see a File object anyway, never a path (D-114).
+	//
+	// The second half — registering this side's drop targets — waits
+	// until the bottom of this function, once the page has loaded and
+	// the browser's window tree has stopped changing shape.
 	if opts.OnFilesDropped != nil {
 		controller4, err := queryInterface(controller, iidCoreWebView2Controller4)
 		if err != nil {
@@ -237,11 +357,14 @@ func (w *window) setUpWebView2(opts Options) error {
 		if err := controllerSetAllowExternalDrop(controller4, false); err != nil {
 			return fmt.Errorf("ui: put_AllowExternalDrop(FALSE): %w", err)
 		}
-		setDragAcceptFiles(w.hwnd, true)
 	}
 
 	if opts.OnMessage != nil {
-		h, err := coreWebView2AddWebMessageReceived(cw2, opts.OnMessage)
+		// The handler WebView2 calls queues; it never calls the caller's
+		// OnMessage itself. See this file's package doc comment.
+		h, err := coreWebView2AddWebMessageReceived(cw2, func(m Message) {
+			w.queueEvent(windowEvent{message: &m})
+		})
 		if err != nil {
 			return fmt.Errorf("ui: add_WebMessageReceived: %w", err)
 		}
@@ -278,6 +401,29 @@ func (w *window) setUpWebView2(opts Options) error {
 		}
 		pumpUntil(func() bool { return navDone.done })
 	}
+
+	// F6 §1, second half. Registered here, after the page has finished
+	// loading, because the browser's window tree is what receives a
+	// drop and it is not complete until then — the compositor's own
+	// window appears somewhere between controller creation and the
+	// first frame. Each page in this project navigates exactly once, so
+	// the tree measured here is the tree that lives for the window's
+	// whole life.
+	if opts.OnFilesDropped != nil {
+		w.dropTargets = registerDropTargets(w.hwnd, func(paths []string) {
+			w.queueEvent(windowEvent{dropped: paths})
+		})
+		if len(w.dropTargets) == 0 {
+			// Not fatal: a window that cannot take drops is still a
+			// usable window, with Browse and the Explorer menu. Loud,
+			// though — silence here is exactly what produced a window
+			// that looked like a drop target and refused every drop.
+			slog.Error("ui: this window will not accept dropped files")
+		}
+		// The WM_DROPFILES fallback, for a drop that lands on the frame
+		// itself rather than on the browser's windows. One call.
+		setDragAcceptFiles(w.hwnd, true)
+	}
 	return nil
 }
 
@@ -293,24 +439,46 @@ func (w *window) createNativeWindow(opts Options, dpi uint32) (uintptr, error) {
 	_, _, _ = procAdjustWindowRectEx.Call(uintptr(unsafe.Pointer(&r)), style, 0, exStyle)
 	winW, winH := r.Right-r.Left, r.Bottom-r.Top
 
-	mon := cursorMonitorRect()
-	x := mon.Left + ((mon.Right - mon.Left - winW) / 2)
-	y := mon.Top + ((mon.Bottom - mon.Top - winH) / 2)
+	// An owned window is centred on its owner, not on the monitor under
+	// the cursor: the cursor can be anywhere by the time a second window
+	// opens, and a window that appears somewhere else does not read as
+	// belonging to the one that opened it.
+	box := cursorMonitorRect()
+	if opts.Owner != 0 {
+		if ob, ok := windowRect(opts.Owner); ok {
+			box = ob
+		}
+	}
+	x := box.Left + ((box.Right - box.Left - winW) / 2)
+	y := box.Top + ((box.Bottom - box.Top - winH) / 2)
 
 	titlePtr, err := windows.UTF16PtrFromString(opts.Title)
 	if err != nil {
 		return 0, err
 	}
+	// opts.Owner goes in CreateWindowExW's hWndParent slot. For a
+	// WS_POPUP window that makes it the *owner*, not the parent:
+	// Windows then keeps this window above that one in z-order
+	// unconditionally — which is the half that was missing, since the
+	// window this project opened from an always-on-top Settings window
+	// was created underneath it and could not be seen at all.
 	hwnd, _, callErr := procCreateWindowExW.Call(
 		exStyle,
 		uintptr(unsafe.Pointer(windowClassName)),
 		uintptr(unsafe.Pointer(titlePtr)),
 		style,
 		uintptr(x), uintptr(y), uintptr(winW), uintptr(winH),
-		0, 0, moduleHandle(), 0,
+		opts.Owner, 0, moduleHandle(), 0,
 	)
 	if hwnd == 0 {
 		return 0, fmt.Errorf("ui: CreateWindowExW: %v", callErr)
+	}
+	// The owner is disabled for as long as this window is up. The
+	// caller that opened it is blocked waiting for its answer, so the
+	// owner is not listening to clicks anyway; disabling it is what
+	// makes that visible instead of making the program look broken.
+	if opts.Owner != 0 {
+		enableWindow(opts.Owner, false)
 	}
 	return hwnd, nil
 }
@@ -369,9 +537,17 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		// and releases it; the callback runs on this window's own
 		// thread, so a slow handler would block the message loop —
 		// callers hand the paths straight to a channel for that reason.
+		//
+		// This arriving at all is worth a log line: it is the fallback
+		// path, taken only when the drop landed on the frame rather
+		// than on the browser's own child windows, and knowing which of
+		// the two delivered a drop is the difference between reading a
+		// bug report and guessing at one.
 		if w.onFilesDropped != nil {
-			if paths := droppedFiles(wparam); len(paths) > 0 {
-				w.onFilesDropped(paths)
+			paths := droppedFiles(wparam)
+			slog.Info("ui: WM_DROPFILES received on the native frame", "paths", len(paths))
+			if len(paths) > 0 {
+				w.queueEvent(windowEvent{dropped: paths})
 			}
 		} else {
 			// Nothing asked for these; release the HDROP anyway rather
@@ -411,7 +587,7 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		// close (title bar, Alt+F4) — see window.go's doc comment on
 		// Options.OnClosed.
 		if !w.closingFromGo.Load() && w.onClosed != nil {
-			w.onClosed()
+			w.queueEvent(windowEvent{closed: true})
 		}
 		// ICoreWebView2Controller::Close must run before DestroyWindow,
 		// not after (in a WM_DESTROY handler): DestroyWindow tears down
@@ -420,12 +596,26 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		// dispatched, so calling Close() afterward operates on an
 		// already-torn-down control and crashes. Closing explicitly
 		// here, first, is the order Microsoft's own samples use.
+		// The owner is re-enabled before this window is destroyed, not
+		// after: destroying a window whose owner is still disabled hands
+		// activation to whatever else is on the desktop, and the person
+		// is left looking at somebody else's window.
+		if w.owner != 0 {
+			enableWindow(w.owner, true)
+		}
 		w.closeWebView()
+		// Give the drop registrations back before the apartment holding
+		// them goes away. Harmless when nothing was registered.
+		if w.onFilesDropped != nil {
+			revokeDropTargets(w.dropTargets)
+			w.dropTargets = nil
+			setDragAcceptFiles(hwnd, false)
+		}
 		_, _, _ = procDestroyWindow.Call(hwnd)
 		return 0
 
 	case wmDestroy:
-		coUninitialize()
+		shutdownApartment(w.apartmentIsOLE)
 		// Once: DestroyWindow is reached from the WM_CLOSE path and from
 		// setUpWebView2's failure path, and a closed channel closed twice
 		// panics — which would turn a teardown ordering bug into a dead

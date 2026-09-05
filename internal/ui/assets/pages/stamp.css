@@ -18,10 +18,13 @@ main {
   padding: var(--liro-space-1);
 }
 
-#stamp-details {
+/* The standing preferences, one under another, shown only when this
+   window was opened from Settings. */
+.stamp-more-body {
   display: flex;
   flex-direction: column;
   gap: var(--liro-space-3);
+  text-align: left;
 }
 
 .actions {

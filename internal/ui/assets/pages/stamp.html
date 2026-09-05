@@ -8,56 +8,65 @@
 </head>
 <body class="liro-page">
 
-<!-- F6 §6: the stamp controls get their own window. They were squeezed
-     onto the consent screen, which is the screen a person reads in two
-     seconds to decide whether to sign — not the place to configure a
-     reference line. -->
+<!-- Step 3 of three: how to sign. One question — visible or not, and
+     if visible, which corner — and then the signature happens.
+     Everything else the stamp can carry (which page, a reference line,
+     the identity document number) is a standing preference rather than
+     a decision about this batch: it is not on this screen at all when
+     the window is step 3, and is the whole of it when Settings opened
+     it. -->
 <main>
   <div class="liro-fixed-region">
     <p class="liro-display" data-i18n="stampwindow.title"></p>
+    <p class="liro-text-secondary liro-text-small" id="stamp-subtitle"></p>
   </div>
 
   <section class="liro-scroll-region stamp-form">
-    <label class="liro-check">
-      <input type="checkbox" id="stamp-visible" />
-      <span data-i18n="stampwindow.visible"></span>
-    </label>
+    <div class="liro-field">
+      <label class="liro-field-label liro-text-small" for="stamp-mode" data-i18n="stampwindow.mode_label"></label>
+      <select id="stamp-mode"></select>
+    </div>
 
-    <div id="stamp-details">
-      <div class="liro-field">
-        <label class="liro-field-label liro-text-small" for="stamp-position" data-i18n="stampwindow.position_label"></label>
-        <select id="stamp-position"></select>
+    <div class="liro-field" id="stamp-position-field">
+      <label class="liro-field-label liro-text-small" for="stamp-position" data-i18n="stampwindow.position_label"></label>
+      <select id="stamp-position"></select>
+    </div>
+
+    <!-- Standing preferences, not decisions about this batch: shown
+         when the window was opened from Settings, absent when it is
+         step 3 of signing. -->
+    <div id="stamp-more" hidden>
+      <div class="stamp-more-body">
+        <div class="liro-field">
+          <label class="liro-field-label liro-text-small" for="stamp-page" data-i18n="stampwindow.page_label"></label>
+          <select id="stamp-page"></select>
+        </div>
+
+        <div class="liro-field" id="stamp-page-number-field">
+          <label class="liro-field-label liro-text-small" for="stamp-page-number" data-i18n="stampwindow.page_number_label"></label>
+          <input type="number" id="stamp-page-number" min="1" step="1" />
+        </div>
+
+        <div class="liro-field">
+          <label class="liro-field-label liro-text-small" for="stamp-reference" data-i18n="stampwindow.reference_label"></label>
+          <input type="text" id="stamp-reference" />
+          <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.reference_hint"></p>
+        </div>
+
+        <label class="liro-check">
+          <input type="checkbox" id="stamp-document-id" />
+          <span data-i18n="stampwindow.show_document_id"></span>
+        </label>
+        <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.show_document_id_hint"></p>
+
+        <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.margin_note"></p>
       </div>
-
-      <div class="liro-field">
-        <label class="liro-field-label liro-text-small" for="stamp-page" data-i18n="stampwindow.page_label"></label>
-        <select id="stamp-page"></select>
-      </div>
-
-      <div class="liro-field" id="stamp-page-number-field">
-        <label class="liro-field-label liro-text-small" for="stamp-page-number" data-i18n="stampwindow.page_number_label"></label>
-        <input type="number" id="stamp-page-number" min="1" step="1" />
-      </div>
-
-      <div class="liro-field">
-        <label class="liro-field-label liro-text-small" for="stamp-reference" data-i18n="stampwindow.reference_label"></label>
-        <input type="text" id="stamp-reference" />
-        <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.reference_hint"></p>
-      </div>
-
-      <label class="liro-check">
-        <input type="checkbox" id="stamp-document-id" />
-        <span data-i18n="stampwindow.show_document_id"></span>
-      </label>
-      <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.show_document_id_hint"></p>
-
-      <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.margin_note"></p>
     </div>
   </section>
 
   <div class="liro-fixed-region actions">
-    <button id="cancel-btn" class="liro-btn liro-btn-secondary" data-i18n="stampwindow.cancel"></button>
-    <button id="save-btn" class="liro-btn liro-btn-primary" data-i18n="stampwindow.save"></button>
+    <button id="cancel-btn" class="liro-btn liro-btn-secondary"></button>
+    <button id="save-btn" class="liro-btn liro-btn-primary"></button>
   </div>
 </main>
 

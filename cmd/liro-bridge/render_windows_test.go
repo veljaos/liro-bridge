@@ -189,23 +189,32 @@ func TestSettingsStatusLineRendersWhatAnActionDid(t *testing.T) {
 		t.Errorf("the status line is visible before any action ran")
 	}
 
-	postSettingsStatus(win, c.T("settings.updates_not_available"), ui.IntentWarning)
-	if got := evalString(t, win, "document.getElementById('action-status').textContent"); got != c.T("settings.updates_not_available") {
+	// The status line is a heading plus the list of files an action
+	// wrote, so its own textContent carries the whitespace between them:
+	// the sentence is read off the heading. Its class keeps
+	// liro-fixed-region — posting a status used to replace the class
+	// list outright, which took away the one thing stopping a growing
+	// form from squeezing the status line off the window.
+	postWindowStatus(win, c.T("settings.updates_not_available"), ui.IntentWarning)
+	if got := evalString(t, win, "document.getElementById('action-status-text').textContent"); got != c.T("settings.updates_not_available") {
 		t.Errorf("status line reads %q, want %q", got, c.T("settings.updates_not_available"))
 	}
 	if got := evalString(t, win, "String(document.getElementById('action-status').hidden)"); got != "false" {
 		t.Errorf("the status line is still hidden after a status was posted")
 	}
-	if got := evalString(t, win, "document.getElementById('action-status').className"); got != "liro-outcome-warning" {
-		t.Errorf("status line class = %q, want liro-outcome-warning", got)
+	if got := evalString(t, win, "document.getElementById('action-status').className"); !strings.Contains(got, "liro-outcome-warning") {
+		t.Errorf("status line class = %q, want it to carry liro-outcome-warning", got)
+	}
+	if got := evalString(t, win, "document.getElementById('action-status').className"); !strings.Contains(got, "liro-fixed-region") {
+		t.Errorf("status line class = %q, want it to keep liro-fixed-region", got)
 	}
 	if got := evalNumber(t, win, "document.getElementById('action-status').getBoundingClientRect().height"); got <= 0 {
 		t.Errorf("the status line has zero height — it is not actually on screen")
 	}
 
-	postSettingsStatus(win, "C:\\Users\\Test\\Desktop", ui.IntentPositive)
-	if got := evalString(t, win, "document.getElementById('action-status').className"); got != "liro-outcome-positive" {
-		t.Errorf("status line class = %q, want liro-outcome-positive", got)
+	postWindowStatus(win, "C:\\Users\\Test\\Desktop", ui.IntentPositive)
+	if got := evalString(t, win, "document.getElementById('action-status').className"); !strings.Contains(got, "liro-outcome-positive") {
+		t.Errorf("status line class = %q, want it to carry liro-outcome-positive", got)
 	}
 }
 

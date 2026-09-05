@@ -60,10 +60,18 @@ func runAuditLogWindow(locale string) error {
 
 	for {
 		msg := <-messages
-		if msg.Type == ui.MessageTypeCancel {
+		switch msg.Type {
+		case ui.MessageTypeCancel:
 			return nil
+		case ui.MessageTypeApprove:
+			// This window has exactly one action, so approve means
+			// Export and nothing else has to be read back to find out
+			// which button it was. The page->Go surface stays at the
+			// three types F5 §2.4 fixes (D-083).
+			exportAuditLogNow(win, c)
+		default:
+			slog.Warn("audit log window: unexpected message", "type", msg.Type)
 		}
-		slog.Warn("audit log window: unexpected message", "type", msg.Type)
 	}
 }
 
@@ -186,6 +194,7 @@ func buildAuditLogInit(c *i18n.Catalogue, entries []audit.Entry) map[string]any 
 		"strings": map[string]string{
 			"auditwindow.title":    c.T("auditwindow.title"),
 			"auditwindow.empty":    c.T("auditwindow.empty"),
+			"auditwindow.export":   c.T("auditwindow.export"),
 			"auditwindow.level_bb": c.T("auditwindow.level_bb"),
 			"settings.close":       c.T("settings.close"),
 		},

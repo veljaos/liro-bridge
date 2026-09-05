@@ -2,18 +2,29 @@
 
 package main
 
-// The stamp window (F6 §6). The owner's request after using F5: the
-// stamp controls do not belong squeezed onto the consent screen, which
-// is the screen a person reads in two seconds to decide whether to
-// sign. Everything about how the stamp looks lives here instead, and
-// the consent and main windows show the current answer in one line with
-// a link to change it.
+// Step 3 of the three-step flow: how to sign.
+//
+// The owner's model, and the reason this window exists at all: choose
+// documents, choose the certificate, choose how to sign — three steps,
+// each asking one thing, and then it signs. Before this pass the stamp
+// was asked for twice, once on the main window's footer and again on
+// the consent screen, which is the screen a person reads in two
+// seconds to decide whether to sign at all.
+//
+// So the one question here is visible or invisible, and when visible,
+// which corner. Everything else the stamp can carry — which page, a
+// reference line, the identity document number — is a standing
+// preference, not a decision about this batch, and waits behind a
+// disclosure that opens closed.
+//
+// The same window is also Settings' way in, where the answer is a
+// preference rather than the last step before signing. The only
+// difference is the two action labels, which Go supplies.
 
 import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
@@ -22,17 +33,49 @@ import (
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
-// Measured, not guessed. 560 points was the first attempt and was too
-// short: with every control shown — the stamp on, a specific page
-// chosen, so the page-number box present too — the form's own region
-// scrolled and the margin note sat below the fold. It is the one line
-// on this window a person needs to read once and never again, so having
-// it be the line that gets cut is the wrong way round. 680 shows the
-// whole form with the actions pinned below it (D-106), and still fits
-// this machine's 1032-point work area with room to spare.
+// The window's two sizes, one per role, both measured in a real window
+// rather than guessed.
+//
+// Step 3 asks one thing and is sized for it: the mode selector, the
+// corner selector and the two actions. Settings holds the standing
+// preferences as well — which page, the reference line, the
+// identity-document toggle and the margin note — and needs the height
+// they take. It was 680 when one window showed all of that at once,
+// step or not.
+//
+// One window at one size was tried and looked wrong both ways round:
+// at the step's size the preferences scrolled inside a hundred points,
+// and at the preferences' size step 3 was a mostly-empty window asking
+// one question.
 const (
-	stampWindowWidth  = 460
-	stampWindowHeight = 680
+	stampWindowWidth = 440
+
+	// 280 rather than 310 since step 3 lost its subtitle: measured in a
+	// real window in sr-Cyrl, the longest of the three catalogues, the
+	// form needs 143 points and starts to scroll below 270. The ten
+	// points above that are there so a one-word label change does not
+	// immediately put it back, and the layout test is what says so.
+	stampStepHeight     = 280
+	stampSettingsHeight = 700
+)
+
+// stampWindowHeight is the height for one role.
+func stampWindowHeight(role stampWindowRole) int {
+	if role == stampRoleSettings {
+		return stampSettingsHeight
+	}
+	return stampStepHeight
+}
+
+// stampWindowRole says which of the window's two callers opened it,
+// which decides nothing except the two action labels.
+type stampWindowRole int
+
+const (
+	// stampRoleStep is step 3 of signing: the primary action signs.
+	stampRoleStep stampWindowRole = iota
+	// stampRoleSettings is Settings' way in: the primary action saves.
+	stampRoleSettings
 )
 
 // stampSettings is the window's whole form, read back in one call.
@@ -50,16 +93,33 @@ type jsOption struct {
 	Label string `json:"label"`
 }
 
-// runStampWindow opens the stamp window and blocks until it is closed,
-// saving the configuration if Save was pressed.
-func runStampWindow(cfg config.Config, locale string) error {
+// runStampWindow opens the window and blocks until it is answered. It
+// returns the configuration as it stands afterwards and whether the
+// person went ahead: false means they cancelled or closed the window,
+// which for step 3 means nothing is signed.
+//
+// The answer is saved to disk on the way out, so the next batch starts
+// from it — a returning user accepts what is already there and moves
+// on, which is the whole point of persisting it (D-103's reasoning,
+// unchanged: this is a preference about how one's own documents look,
+// not a per-batch security decision, and SPEC §18.15's rule against a
+// remembered certificate does not reach it).
+//
+// owner is the window this one is opened from — the consent window for
+// step 3, the settings window for the preferences role. It is never
+// zero in production: a window opened from another window that is not
+// owned by it can be created underneath it, which is exactly what made
+// the whole program stop responding.
+func runStampWindow(cfg config.Config, locale string, role stampWindowRole, owner uintptr) (config.Config, bool) {
 	c := i18n.Load(locale)
 	messages := make(chan ui.Message, 8)
 
 	win, err := ui.NewWindow(ui.Options{
 		Title:       c.T("stampwindow.title"),
 		Width:       stampWindowWidth,
-		Height:      stampWindowHeight,
+		Height:      stampWindowHeight(role),
+		Owner:       owner,
+		AlwaysOnTop: role == stampRoleStep,
 		Assets:      assetsFS,
 		VirtualHost: liroVirtualHost,
 		StartPage:   "/pages/stamp.html",
@@ -67,48 +127,84 @@ func runStampWindow(cfg config.Config, locale string) error {
 		OnClosed:    func() { messages <- ui.Message{Type: ui.MessageTypeCancel} },
 	})
 	if err != nil {
-		return err
+		slog.Warn("stamp window: could not open", "error", err)
+		return cfg, false
 	}
 	defer func() { _ = win.Close() }()
 
-	if err := win.PostJSON(buildStampInit(c, cfg)); err != nil {
-		return err
+	if err := win.PostJSON(buildStampInit(c, cfg, role)); err != nil {
+		slog.Warn("stamp window: could not post the form", "error", err)
+		return cfg, false
 	}
 
 	msg := <-messages
 	if msg.Type != ui.MessageTypeApprove {
-		return nil
+		return cfg, false
 	}
 
 	form, err := readStampSettings(win)
 	if err != nil {
-		return err
+		slog.Warn("stamp window: reading the form failed", "error", err)
+		return cfg, false
 	}
 	if !form.Saved {
-		return nil
+		return cfg, false
 	}
-	return config.Save(config.DefaultPath(), applyStampSettings(cfg, form))
+	cfg = applyStampSettings(cfg, form)
+	if err := config.Save(config.DefaultPath(), cfg); err != nil {
+		// Worth saying, not worth refusing to sign over: the answer is
+		// in hand and correct for this batch either way.
+		slog.Warn("stamp window: saving the choice failed", "error", err)
+	}
+	return cfg, true
 }
 
 // buildStampInit is the payload the page renders itself from. Both
 // dropdowns' labels are resolved here, in Go, so the page never holds a
 // catalogue (F5 §10).
-func buildStampInit(c *i18n.Catalogue, cfg config.Config) map[string]any {
+func buildStampInit(c *i18n.Catalogue, cfg config.Config, role stampWindowRole) map[string]any {
 	keys := []string{
-		"stampwindow.title", "stampwindow.visible", "stampwindow.position_label",
+		"stampwindow.title", "stampwindow.mode_label",
+		"stampwindow.position_label",
 		"stampwindow.page_label", "stampwindow.page_number_label",
 		"stampwindow.reference_label", "stampwindow.reference_hint",
 		"stampwindow.show_document_id", "stampwindow.show_document_id_hint",
-		"stampwindow.margin_note", "stampwindow.save", "stampwindow.cancel",
+		"stampwindow.margin_note",
 	}
 	strings := make(map[string]string, len(keys))
 	for _, k := range keys {
 		strings[k] = c.T(k)
 	}
 
+	primary, secondary := c.T("stampwindow.save"), c.T("stampwindow.cancel")
+	// Step 3 carries no subtitle. It had one — "the last step,
+	// everything else is already decided" — which said what the person
+	// could already see, on a window whose whole value is being small.
+	// Settings keeps its own, because there the window is a preference
+	// rather than a step and the line says which preference.
+	subtitle := c.T("stampwindow.subtitle_settings")
+	if role == stampRoleStep {
+		primary, secondary = c.T("stampwindow.sign"), c.T("stampwindow.back")
+		subtitle = ""
+	}
+
 	return map[string]any{
-		"type":    "init",
-		"strings": strings,
+		"type":           "init",
+		"strings":        strings,
+		"primaryLabel":   primary,
+		"secondaryLabel": secondary,
+		"subtitle":       subtitle,
+		// The standing preferences are Settings' business; step 3 does
+		// not show them at all.
+		"showMore": role == stampRoleSettings,
+		"modes": []jsOption{
+			// Visible first: it is what most people signing a contract
+			// or an invoice want, and D-103 established the default on
+			// the evidence that an invisible signature reads, to the
+			// person who just signed, as no signature at all.
+			{Value: "visible", Label: c.T("stampwindow.mode_visible")},
+			{Value: "invisible", Label: c.T("stampwindow.mode_invisible")},
+		},
 		"positions": []jsOption{
 			// bottom-right first: SPEC §13.1's own default.
 			{Value: consent.StampPositionBottomRight, Label: c.T("stampwindow.position_bottom_right")},
@@ -171,34 +267,15 @@ func readStampSettings(win ui.Window) (stampSettings, error) {
 	return form, nil
 }
 
-// currentStampConfig re-reads the configuration from disk, for a caller
-// that has just let the user change it in this window.
-func currentStampConfig(fallback config.Config) config.Config {
+// currentConfig re-reads the configuration from disk, for a caller
+// about to open a window that may have been changed since it last
+// looked — the tray holds one Config for its whole life, and every
+// window that saves one writes it here.
+func currentConfig(fallback config.Config) config.Config {
 	cfg, err := config.Load(platform.DefaultConfigFile())
 	if err != nil {
-		slog.Warn("stamp window: re-reading the configuration failed", "error", err)
+		slog.Warn("settings: re-reading the configuration failed", "error", err)
 		return fallback
 	}
 	return cfg
-}
-
-// stampPageLabel renders a page selection for a one-line summary.
-//
-// Each answer carries its own noun ("First page", "Page 3") rather than
-// a bare value the caller has to introduce. The first version of the
-// summary read "Vidljivi pečat: uključen, Dole desno, strana Prva
-// strana" — "page First page" — because both the format and the label
-// supplied the word.
-func stampPageLabel(c *i18n.Catalogue, page string) string {
-	switch page {
-	case config.StampPageFirst:
-		return c.T("stampwindow.page_first")
-	case config.StampPageLast:
-		return c.T("stampwindow.page_last")
-	default:
-		if n, err := strconv.Atoi(page); err == nil {
-			return fmt.Sprintf(c.T("main.stamp_page_number"), strconv.Itoa(n))
-		}
-		return page
-	}
 }

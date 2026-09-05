@@ -334,6 +334,43 @@ select {
   flex: 0 0 auto;
 }
 
+/* The heading of a status line: what happened, and where. A paragraph,
+   so it carries the browser's own margins unless told otherwise. */
+.liro-status-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The files an action wrote, one row each: the name in the monospace
+   family every technical value in this project uses, and beside it, in
+   words, what the file is. Shared by the two windows with an Export
+   button, which render the same payload in the same place.
+
+   Neither column sets a colour: the whole status line is already
+   coloured by its intent family (D-093), and the line that says the
+   hash chain is broken is exactly the one that must not be quieter than
+   the rest. min-width: 0 with overflow-wrap is D-096's rule — a long
+   file name wraps, it never widens the window. */
+.liro-status-files {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--liro-space-3);
+  row-gap: var(--liro-space-1);
+  margin-top: var(--liro-space-2);
+  font-size: var(--liro-font-size-small);
+}
+
+.liro-status-file-name {
+  font-family: var(--liro-font-family-mono);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.liro-status-file-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .liro-cert-row {
   display: flex;
   flex-direction: column;

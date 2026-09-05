@@ -42,6 +42,10 @@ var (
 	procLoadCursorW           = user32DLL.NewProc("LoadCursorW")
 	procSetForegroundWindow   = user32DLL.NewProc("SetForegroundWindow")
 	procSetFocus              = user32DLL.NewProc("SetFocus")
+	procEnumChildWindows      = user32DLL.NewProc("EnumChildWindows")
+	procGetClassNameW         = user32DLL.NewProc("GetClassNameW")
+	procEnableWindow          = user32DLL.NewProc("EnableWindow")
+	procGetWindowRect         = user32DLL.NewProc("GetWindowRect")
 
 	procGetModuleHandleW   = kernel32DLL.NewProc("GetModuleHandleW")
 	procGetCurrentThreadID = kernel32DLL.NewProc("GetCurrentThreadId")
@@ -353,7 +357,18 @@ func setDragAcceptFiles(hwnd uintptr, accept bool) {
 // of the process.
 func droppedFiles(hdrop uintptr) []string {
 	defer func() { _, _, _ = procDragFinish.Call(hdrop) }()
+	return readDropPaths(hdrop)
+}
 
+// readDropPaths reads every path out of an HDROP without releasing it.
+//
+// Split out of droppedFiles because the two callers own the handle
+// differently: WM_DROPFILES hands the HDROP over outright, so that path
+// must call DragFinish, while IDropTarget::Drop reads it out of a
+// STGMEDIUM the data object still owns, where ReleaseStgMedium is what
+// releases it and DragFinish would be a double free
+// (droptarget_windows.go).
+func readDropPaths(hdrop uintptr) []string {
 	countR, _, _ := procDragQueryFileW.Call(hdrop, 0xFFFFFFFF, 0, 0)
 	count := int(countR)
 	if count <= 0 {
@@ -375,4 +390,52 @@ func droppedFiles(hdrop uintptr) []string {
 		out = append(out, windows.UTF16ToString(buf))
 	}
 	return out
+}
+
+// descendantWindows lists every window beneath hwnd, in no particular
+// order. EnumChildWindows is already recursive, so one call reaches the
+// whole subtree.
+func descendantWindows(hwnd uintptr) []uintptr {
+	var out []uintptr
+	cb := syscall.NewCallback(func(child uintptr, _ uintptr) uintptr {
+		out = append(out, child)
+		return 1
+	})
+	_, _, _ = procEnumChildWindows.Call(hwnd, cb, 0)
+	return out
+}
+
+// windowClass is the window's registered class name, for log lines that
+// have to be readable months later — "Chrome_WidgetWin_1" says
+// something an HWND alone does not.
+func windowClass(hwnd uintptr) string {
+	buf := make([]uint16, 128)
+	n, _, _ := procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(buf[:n])
+}
+
+// enableWindow enables or disables a window's mouse and keyboard input.
+// Used to make an owner window inert for as long as the window it
+// opened is up (window_windows.go's Options.Owner).
+func enableWindow(hwnd uintptr, enable bool) {
+	v := uintptr(0)
+	if enable {
+		v = 1
+	}
+	_, _, _ = procEnableWindow.Call(hwnd, v)
+}
+
+// windowRect is a window's bounding rectangle in screen coordinates.
+// ok is false when the window is gone, in which case the caller falls
+// back to whatever it would have used without one.
+func windowRect(hwnd uintptr) (rect, bool) {
+	var r rect
+	ret, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&r)))
+	if ret == 0 {
+		return rect{}, false
+	}
+	return r, true
 }

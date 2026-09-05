@@ -151,7 +151,12 @@
     </div>
   </div>
 
-  <p id="action-status" class="liro-fixed-region" hidden></p>
+  <!-- The heading says where an action's output went; the grid under it
+       names each file and says in one line what it is. -->
+  <div id="action-status" class="liro-fixed-region" hidden>
+    <p id="action-status-text" class="liro-status-text"></p>
+    <div id="action-status-files" class="liro-status-files" hidden></div>
+  </div>
 
   <div class="actions liro-fixed-region">
     <button id="close-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.close"></button>

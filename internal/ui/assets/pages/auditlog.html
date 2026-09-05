@@ -14,7 +14,15 @@
 
   <section id="entry-list" class="liro-scroll-region" role="list" aria-label="Audit log entries"></section>
 
+  <!-- Export sits beside Close because this is where a person is when
+       they decide they want the log. It writes the same two files
+       Settings' own Export writes, through the same code. -->
+  <div id="action-status" class="liro-text-small liro-fixed-region" hidden>
+    <p id="action-status-text" class="liro-status-text"></p>
+    <div id="action-status-files" class="liro-status-files" hidden></div>
+  </div>
   <div class="actions liro-fixed-region">
+    <button id="export-btn" class="liro-btn liro-btn-secondary" data-i18n="auditwindow.export"></button>
     <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="settings.close"></button>
   </div>
 </main>

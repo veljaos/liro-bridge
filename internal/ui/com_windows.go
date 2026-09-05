@@ -51,6 +51,11 @@ var (
 	procCoInitializeEx = ole32DLL.NewProc("CoInitializeEx")
 	procCoUninitialize = ole32DLL.NewProc("CoUninitialize")
 	procCoTaskMemFree  = ole32DLL.NewProc("CoTaskMemFree")
+
+	// OleInitialize, not CoInitializeEx, is what a window that accepts
+	// dropped files needs on its own thread — see initApartment below.
+	procOleInitializeCOM   = ole32DLL.NewProc("OleInitialize")
+	procOleUninitializeCOM = ole32DLL.NewProc("OleUninitialize")
 )
 
 const (
@@ -97,17 +102,56 @@ var (
 	iidCoreWebView2Controller4 = mustGUID("97d418d5-a426-4e49-a151-e1a10f327d9e")
 )
 
-func coInitialize() error {
-	r0, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded)
-	// S_FALSE (1) means COM was already initialised on this thread with
-	// a compatible apartment; that is not an error for our purposes.
-	if int32(r0) < 0 {
-		return fmt.Errorf("CoInitializeEx: HRESULT 0x%08X", uint32(r0))
+// initApartment puts the calling thread into a single-threaded
+// apartment with the OLE subsystem running, and reports which call
+// achieved it so shutdownApartment can undo the matching one.
+//
+// OleInitialize is used in preference to CoInitializeEx because
+// RegisterDragDrop — which droptarget_windows.go calls for a window
+// that accepts dropped files — is OLE, not plain COM: it fails with
+// E_OUTOFMEMORY on a thread where only CoInitializeEx has run.
+//
+// Measured on this machine rather than assumed: the WebView2 runtime
+// already calls OleInitialize on this thread as part of its own setup,
+// so registration happens to succeed either way today (with
+// CoInitializeEx only, Chromium's own drop target still appeared on
+// Chrome_WidgetWin_1). Depending on that is depending on the order and
+// the internals of somebody else's initialisation for a guarantee this
+// package needs for its own call, so the call is made explicitly here.
+//
+// OleInitialize itself calls CoInitializeEx(NULL,
+// COINIT_APARTMENTTHREADED), so every WebView2 COM call this package
+// makes is in exactly the apartment it was before.
+func initApartment() (ole bool, err error) {
+	r0, _, _ := procOleInitializeCOM.Call(0)
+	// S_FALSE (1) means OLE was already initialised on this thread;
+	// that is not an error, and it still needs its own OleUninitialize.
+	if int32(r0) >= 0 {
+		return true, nil
 	}
-	return nil
+	oleHR := uint32(r0)
+
+	// RPC_E_CHANGED_MODE is the one refusal worth falling back from: the
+	// thread is already in an apartment of a different kind, which is
+	// not a state this package's own threads can reach but is not worth
+	// refusing to open a window over. Drops will not work on such a
+	// thread; registerDropTarget says so in the log rather than
+	// silently producing a window that looks like a drop target.
+	r1, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded)
+	if int32(r1) < 0 {
+		return false, fmt.Errorf("OleInitialize: HRESULT 0x%08X; CoInitializeEx: HRESULT 0x%08X", oleHR, uint32(r1))
+	}
+	return false, nil
 }
 
-func coUninitialize() { _, _, _ = procCoUninitialize.Call() }
+// shutdownApartment undoes initApartment on the same thread.
+func shutdownApartment(ole bool) {
+	if ole {
+		_, _, _ = procOleUninitializeCOM.Call()
+		return
+	}
+	_, _, _ = procCoUninitialize.Call()
+}
 
 func coTaskMemFree(p uintptr) {
 	if p != 0 {

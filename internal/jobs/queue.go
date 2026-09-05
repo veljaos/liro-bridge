@@ -50,6 +50,17 @@ type Item struct {
 	// on screen, never safe to open.
 	DisplayName string
 
+	// Folder is the folder the document is in, in full — what tells
+	// two documents apart when DisplayName cannot, which is every time
+	// a person gathers "ugovor.pdf" from two clients' folders. The
+	// whole path rather than its last segment, because two folders can
+	// share a last segment as easily as two documents share a name.
+	//
+	// Sanitised and truncated through the same pipeline as
+	// DisplayName — a path is no more trustworthy than a file name —
+	// and shown only where it is needed (see NeedsFolder).
+	Folder string
+
 	// Size is the file's size in bytes at the time it was added, and
 	// SizeKnown says whether it could be read at all. A file that has
 	// disappeared or cannot be stat'd is still listed, with SizeKnown
@@ -205,6 +216,7 @@ func (q *Queue) appendItem(path string) bool {
 	item := Item{
 		Path:        path,
 		DisplayName: displayNameOf(path),
+		Folder:      folderNameOf(path),
 		State:       StateWaiting,
 	}
 	if info, err := os.Stat(path); err == nil {
@@ -333,6 +345,42 @@ func duplicateKey(path string) string {
 // is in this window any more than it can in the consent window.
 func displayNameOf(path string) string {
 	return consent.SanitizeFileName(filepath.Base(path))
+}
+
+// folderNameOf is the folder a document sits in, through the same
+// sanitiser its name goes through: a path is user-supplied text drawn
+// on a screen exactly as a file name is, and the same 120-character cap
+// with the middle elided applies (SPEC §6.6).
+func folderNameOf(path string) string {
+	return consent.SanitizeFileName(filepath.Dir(path))
+}
+
+// NeedsFolder says, for each item in order, whether its name alone
+// identifies it in this list.
+//
+// Two documents called "ugovor.pdf" from two different folders are two
+// different documents and both belong in the list — that is what
+// comparing by full path buys, and it is right. What it costs is that
+// the list then shows one name twice, and a person looking at two rows
+// that read identically has no way to know whether the program kept
+// both or lost count. That was reported as the duplicate check being
+// broken, which it is not: the check refuses a repeat of the same path
+// and says so, and this is the other case wearing the same clothes.
+//
+// The folder is therefore shown exactly where the name is not enough,
+// and nowhere else. A batch gathered from one folder — the ordinary
+// case — is not made to carry the same path on every row to make the
+// rare case legible.
+func NeedsFolder(items []Item) []bool {
+	counts := make(map[string]int, len(items))
+	for _, it := range items {
+		counts[strings.ToLower(it.DisplayName)]++
+	}
+	out := make([]bool, len(items))
+	for i, it := range items {
+		out[i] = counts[strings.ToLower(it.DisplayName)] > 1
+	}
+	return out
 }
 
 // FormatSize renders a byte count for display: whole units, one

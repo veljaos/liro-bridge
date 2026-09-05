@@ -24,27 +24,6 @@
     return JSON.stringify({ choice: outputChoice });
   };
 
-  // __liroStampChoice reports the visible-stamp decision (Task 1) —
-  // again through Eval's return value rather than a fourth page->Go
-  // message type (D-083). Go reads it at the moment Approve is pressed,
-  // and saves it to the configuration so the next signature starts
-  // from the same answer.
-  window.__liroStampChoice = function () {
-    return JSON.stringify({
-      visible: document.getElementById("stamp-visible").checked,
-      position: document.getElementById("stamp-position").value,
-    });
-  };
-
-  // syncStampPosition hides the corner selector while no stamp is
-  // being drawn: a position for a stamp that does not exist is noise,
-  // and leaving it visible-but-inert is the kind of dead control this
-  // review keeps finding.
-  function syncStampPosition() {
-    document.getElementById("stamp-position-field").hidden =
-      !document.getElementById("stamp-visible").checked;
-  }
-
   function showState(name) {
     states.forEach(function (s) {
       document.getElementById("state-" + s).hidden = s !== name;
@@ -123,20 +102,6 @@
     window.liroSend("selectCertificate", { thumbprint: cert.thumbprint });
   }
 
-  function renderStampOptions() {
-    var select = document.getElementById("stamp-position");
-    select.innerHTML = "";
-    (model.stampPositions || []).forEach(function (p) {
-      var option = document.createElement("option");
-      option.value = p.value;
-      window.liroSetText(option, p.text);
-      select.appendChild(option);
-    });
-    select.value = model.stampPosition;
-    document.getElementById("stamp-visible").checked = !!model.stampVisible;
-    syncStampPosition();
-  }
-
   function renderWaiting() {
     // A new batch is a new decision. SPEC §18.15 forbids a remembered
     // certificate across sessions, and a page that keeps the previous
@@ -172,7 +137,6 @@
     window.liroSetText(document.getElementById("file-overflow"), model.filesOverflowText);
 
     renderCertList();
-    renderStampOptions();
     showState("waiting");
 
     // F5 §5.6: Approve is never the initially focused control — Cancel
@@ -259,7 +223,6 @@
   document.getElementById("tsa-cancel-btn").addEventListener("click", function () {
     window.liroSend("cancel");
   });
-  document.getElementById("stamp-visible").addEventListener("change", syncStampPosition);
   document.getElementById("output-rename-btn").addEventListener("click", function () {
     outputChoice = "rename";
     window.liroSend("approve");

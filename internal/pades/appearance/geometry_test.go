@@ -3,8 +3,10 @@ package appearance
 import "testing"
 
 func TestHeightForLinesTable(t *testing.T) {
-	// F4 §2/§8: "All five height values are exercised, one per line
-	// count."
+	// F4 §2/§8: every height value is exercised, one per line count.
+	// Four and up are the sizes the four-line stamp needed (see
+	// heightsByLineCount); one to three are SPEC §13.1's own, kept
+	// exactly, even though buildLines can no longer produce so few.
 	tests := []struct {
 		lines int
 		want  float64
@@ -12,8 +14,9 @@ func TestHeightForLinesTable(t *testing.T) {
 		{1, 44},
 		{2, 44},
 		{3, 46},
-		{4, 56},
-		{5, 72},
+		{4, 48},
+		{5, 58},
+		{6, 68},
 	}
 	for _, tt := range tests {
 		got, err := HeightForLines(tt.lines)
@@ -27,7 +30,7 @@ func TestHeightForLinesTable(t *testing.T) {
 }
 
 func TestHeightForLinesRejectsOutOfRange(t *testing.T) {
-	for _, n := range []int{0, -1, 6, 100} {
+	for _, n := range []int{0, -1, 7, 100} {
 		if _, err := HeightForLines(n); err == nil {
 			t.Errorf("HeightForLines(%d): want error, got none", n)
 		}

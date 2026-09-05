@@ -11,10 +11,17 @@ type TrayOptions struct {
 	// Version is shown in the tooltip (F5 §3).
 	Version string
 
-	// Labels are pre-localised by the caller (SPEC §9: every
-	// user-visible string is in all three catalogues; internal/ui has
-	// no i18n dependency of its own, matching SPEC §4.2 rule 4).
-	Labels TrayLabels
+	// Labels supplies the menu's text, pre-localised by the caller
+	// (SPEC §9: every user-visible string is in all three catalogues;
+	// internal/ui has no i18n dependency of its own, matching SPEC
+	// §4.2 rule 4).
+	//
+	// A function rather than a value because the interface language is
+	// a setting, and the menu that opened Settings has to be in the
+	// language chosen there the next time it is opened, not the one the
+	// process started in. It is called each time the menu is built, on
+	// the tray's own thread.
+	Labels func() TrayLabels
 
 	OnOpen         func()
 	OnSettings     func()

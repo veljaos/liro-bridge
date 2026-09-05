@@ -27,16 +27,17 @@
   </section>
 
   <div class="files-footer liro-fixed-region">
+    <!-- Step 1 asks one thing: which documents. How to sign is step 3's
+         question, in its own window, so it is not also asked here. -->
     <div class="liro-row setting-row">
       <span class="liro-text-small" data-i18n="main.output_label"></span>
       <span class="setting-value">
         <span class="liro-text-small" id="output-folder"></span>
+        <!-- Only shown once a folder has been chosen: without a way
+             back, choosing one was a one-way door. -->
+        <button id="output-beside-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.output_beside" hidden></button>
         <button id="output-change-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.output_change"></button>
       </span>
-    </div>
-    <div class="liro-row setting-row">
-      <span class="liro-text-small" id="stamp-summary"></span>
-      <button id="stamp-change-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.stamp_change"></button>
     </div>
 
     <div class="actions">

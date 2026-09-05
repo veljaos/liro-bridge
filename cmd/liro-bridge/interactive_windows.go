@@ -96,29 +96,15 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 		fileNames[i] = filepath.Base(in.path)
 	}
 	vm := consent.BuildViewModel(consent.ApplicationLocal, digests, fileNames, certInfos)
-	// Task 1 (F5 fourth-real-run review): the window opens showing the
-	// stamp choice the last run left behind, not this package's own
-	// idea of a default.
-	vm.Stamp = consent.StampChoice{Visible: cfg.VisibleStamp, Position: cfg.StampPosition}.Normalised()
 
 	messages := make(chan ui.Message, 8)
 	win, err := ui.NewWindow(ui.Options{
 		Title: c.T("consent.window_title"),
-		// Task 4 (F5 first-real-run review): tall enough for the
-		// certificate list to show at least six entries without
-		// scrolling, plus the header, application row, disclosure and
-		// actions, with real gaps between every one of them — the
-		// previous 480x420 had no room for that and elements crowded
-		// together badly enough to read as "overlapping".
-		//
-		// Task 1/5 (F5 fourth-real-run review): 720 no longer showed six
-		// rows once the stamp checkbox and its corner selector joined
-		// the fixed content below the list — measured, six rows plus
-		// their gaps is 544 points and 720 left 408 of it. 860 restores
-		// the six, and still fits inside this machine's 1032-point work
-		// area with the title bar.
-		Width:       520,
-		Height:      860,
+		// The same measured size the main window's consent phase uses
+		// (consentphase_windows.go) — one window, one size, whichever
+		// front door opened it.
+		Width:       consentWindowWidth,
+		Height:      consentWindowHeight,
 		AlwaysOnTop: true,
 		Assets:      assetsFS,
 		VirtualHost: liroVirtualHost,
@@ -169,12 +155,18 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 		return 0
 	}
 
-	// The stamp choice is read at the moment Approve is pressed — the
-	// page owns it until then — and saved, so the next run starts from
-	// the same answer (Task 1). Read only on approval: a cancelled
-	// window has nothing to save, and may already be gone.
-	stamp := readStampChoice(win, vm.Stamp)
-	cfg = persistStampChoice(cfg, stamp)
+	// Step 3 of the three-step flow: how to sign, in its own window,
+	// after the certificate has been chosen and approved. The command
+	// line reaches the same window the main window does, so the two
+	// front doors ask the same question in the same place.
+	var stampProceed bool
+	cfg, stampProceed = askHowToSign(cfg, locale, nil, win.Handle())
+	if !stampProceed {
+		if auditErr == nil {
+			recordInteractiveAudit(auditStore, auditErr, selected, len(inputs), audit.OutcomeDenied, nil, false, "")
+		}
+		return 0
+	}
 
 	// Task 1 (F5 second-real-run review): the timestamp question is
 	// settled before the card is touched, not after. With no TSA
@@ -255,7 +247,7 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 			outPath:    outPath,
 			overwrite:  outputs[i].overwrite,
 			allowBB:    allowBB,
-			stamp:      interactiveStampOptions(c, stamp),
+			stamp:      stampOptionsFor(c, cfg),
 		}
 
 		var result *pades.Result
@@ -429,7 +421,7 @@ func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue
 			// B-B.
 			return cfg, nil, true, true
 		case "configure":
-			if err := runSettingsWindow(cfg, locale); err != nil {
+			if err := runSettingsWindow(cfg, win.Handle()); err != nil {
 				slog.Warn("consent: settings window failed", "error", err)
 			}
 			newCfg, cfgErr := config.Load(platform.DefaultConfigFile())
@@ -805,49 +797,6 @@ func stampCorner(position string) appearance.Corner {
 	default:
 		return appearance.BottomRight
 	}
-}
-
-// readStampChoice reads the visible-stamp decision back from the page
-// through Window.Eval's own return value — the same channel the
-// settings form and the timestamp choice use (D-083), so the page->Go
-// message surface stays at exactly three types. A page that cannot be
-// read leaves the choice as it was posted.
-func readStampChoice(win ui.Window, current consent.StampChoice) consent.StampChoice {
-	raw, err := win.Eval("window.__liroStampChoice()")
-	if err != nil {
-		slog.Warn("consent: reading the stamp choice failed", "error", err)
-		return current
-	}
-	var jsonStr string
-	if err := json.Unmarshal([]byte(raw), &jsonStr); err != nil {
-		slog.Warn("consent: decoding the stamp choice envelope failed", "error", err)
-		return current
-	}
-	var choice struct {
-		Visible  bool   `json:"visible"`
-		Position string `json:"position"`
-	}
-	if err := json.Unmarshal([]byte(jsonStr), &choice); err != nil {
-		slog.Warn("consent: decoding the stamp choice failed", "error", err)
-		return current
-	}
-	return consent.StampChoice{Visible: choice.Visible, Position: choice.Position}.Normalised()
-}
-
-// persistStampChoice saves the stamp choice so the next run starts
-// from it (Task 1's "persist both choices in configuration"). A save
-// failure is logged and otherwise ignored: the signature the user just
-// approved is not abandoned because a preference could not be written.
-func persistStampChoice(cfg config.Config, choice consent.StampChoice) config.Config {
-	if cfg.VisibleStamp == choice.Visible && cfg.StampPosition == choice.Position {
-		return cfg
-	}
-	cfg.VisibleStamp = choice.Visible
-	cfg.StampPosition = choice.Position
-	if err := config.Save(config.DefaultPath(), cfg); err != nil {
-		slog.Warn("consent: saving the stamp choice failed", "error", err)
-	}
-	return cfg
 }
 
 // outputConflictAnswer remembers what the user chose the first time an

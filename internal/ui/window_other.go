@@ -16,7 +16,7 @@ func detectRuntime() (bool, string, error) {
 
 func showRuntimeMissingMessage(string, string) {}
 
-func pickFolder(uintptr, string) (string, bool, error) {
+func pickFolder(uintptr, string, string) (string, bool, error) {
 	return "", false, ErrUnsupportedPlatform
 }
 

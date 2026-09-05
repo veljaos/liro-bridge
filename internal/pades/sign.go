@@ -369,12 +369,21 @@ func buildAppearanceOptions(signerCert *x509.Certificate, signingDate time.Time,
 		documentID = documentIDFromCertificate(signerCert)
 	}
 	return appearance.Options{
-		Label:       stamp.Label,
-		SignerName:  signerDisplayName(signerCert),
-		Reference:   stamp.Reference,
-		DocumentID:  documentID,
-		SerialHex:   strings.ToUpper(signerCert.SerialNumber.Text(16)),
-		SigningTime: signingDate.Format("2006-01-02 15:04 MST"),
+		Label:      stamp.Label,
+		SignerName: signerDisplayName(signerCert),
+		Reference:  stamp.Reference,
+		DocumentID: documentID,
+		SerialHex:  strings.ToUpper(signerCert.SerialNumber.Text(16)),
+		// DD.MM.YYYY. HH:MM:SS — the Serbian written form, with the
+		// seconds a signature timestamp is read to the. Not localised:
+		// the same digits in the same order whatever language the
+		// window is in, so a document signed in an English interface
+		// and read in a Serbian one says the same thing. It is the /M
+		// value the signature dictionary carries, not the timestamp
+		// token's genTime, for the reason applyStamp's own comment
+		// gives — the stamp's bytes are fixed before a TSA is contacted
+		// (D-056).
+		SigningTime: signingDate.Format("02.01.2006. 15:04:05"),
 		Corner:      stamp.Corner,
 		UseXY:       stamp.UseXY,
 		X:           stamp.X,

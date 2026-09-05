@@ -55,11 +55,8 @@ type consentDecision struct {
 
 	// cfg is the configuration as it stands after the consent window,
 	// which may have changed it (the timestamp question can open
-	// Settings; the stamp choice is persisted).
+	// Settings; step 3 persists how to sign).
 	cfg config.Config
-
-	// stamp is the visible-stamp choice the window was showing.
-	stamp consent.StampChoice
 }
 
 // consentRequest is what the consent window is being asked about.
@@ -75,6 +72,17 @@ type consentRequest struct {
 	outputDir string
 	// outputSuffix names the signed file.
 	outputSuffix string
+
+	// stamp, when non-nil, is step 3's answer already given, so step 3
+	// is not asked. Nothing sets it yet: the window and the command
+	// line both leave it nil and let the person answer.
+	//
+	// It exists now, rather than later, because it is what keeps this
+	// flow from needing unpicking when a program asks the agent to
+	// sign. Such a request carries its own answer — visible or not, and
+	// where — so the person sees the approval and nothing else: one
+	// window, one click.
+	stamp *consent.StampChoice
 }
 
 // askForConsent opens the consent window, runs it to a decision, and —
@@ -109,7 +117,6 @@ func askForConsent(ctx context.Context, req consentRequest) consentDecision {
 		fileNames[i] = filepath.Base(in.path)
 	}
 	vm := consent.BuildViewModel(consent.ApplicationLocal, digests, fileNames, certInfos)
-	vm.Stamp = consent.StampChoice{Visible: cfg.VisibleStamp, Position: cfg.StampPosition}.Normalised()
 
 	messages := make(chan ui.Message, 8)
 	win, err := ui.NewWindow(ui.Options{
@@ -159,12 +166,16 @@ func askForConsent(ctx context.Context, req consentRequest) consentDecision {
 		}
 	}
 
-	// Read at the moment Approve is pressed — the page owns it until
-	// then — and saved, so the next run starts from the same answer
-	// (D-103). Only on approval: a cancelled window has nothing to
-	// save and may already be gone.
-	stamp := readStampChoice(win, vm.Stamp)
-	cfg = persistStampChoice(cfg, stamp)
+	// Step 3: how to sign. Its own window, asked once, after the
+	// certificate and before anything else — and skipped entirely when
+	// the request already carried the answer, which is what makes the
+	// approval the only thing a caller-driven signature shows.
+	var proceed bool
+	cfg, proceed = askHowToSign(cfg, req.locale, req.stamp, win.Handle())
+	if !proceed {
+		recordInteractiveAudit(auditStore, auditErr, selected, len(req.inputs), audit.OutcomeDenied, nil, false, "")
+		return consentDecision{}
+	}
 
 	// The timestamp question, before the card is touched (D-095): a
 	// user who cancels here has not spent a PIN entry on a batch that
@@ -218,8 +229,48 @@ func askForConsent(ctx context.Context, req consentRequest) consentDecision {
 		allowBB:    allowBB,
 		outputs:    outputs,
 		cfg:        cfg,
-		stamp:      stamp,
 	}
+}
+
+// askHowToSign is step 3 of the three-step flow, and the one step that
+// can be skipped: when supplied is non-nil the answer is already given
+// and no window opens at all.
+//
+// Everything else about the stamp — which page, a reference line, the
+// identity document number — stays exactly as configured; supplied
+// answers only the two things step 3 asks.
+//
+// owner is the consent window, so step 3 opens in front of it rather
+// than behind it and cannot be clicked past (D-129).
+func askHowToSign(cfg config.Config, locale string, supplied *consent.StampChoice, owner uintptr) (config.Config, bool) {
+	if supplied != nil {
+		choice := supplied.Normalised()
+		cfg.VisibleStamp = choice.Visible
+		cfg.StampPosition = choice.Position
+		return cfg, true
+	}
+	return runStampWindow(cfg, locale, stampRoleStep, owner)
+}
+
+// stampOptionsFor turns the configuration into the stamp the signing
+// engine draws, or nil for an invisible signature — which is the whole
+// of SPEC §13.4's default path, untouched, because every line that
+// reads a stamp is skipped when this is nil.
+//
+// One function for both entry points: the window and the command line
+// must not be able to disagree about what the answer to step 3 means.
+func stampOptionsFor(c *i18n.Catalogue, cfg config.Config) *pades.StampOptions {
+	opts := interactiveStampOptions(c, consent.StampChoice{
+		Visible:  cfg.VisibleStamp,
+		Position: cfg.StampPosition,
+	}.Normalised())
+	if opts == nil {
+		return nil
+	}
+	opts.Page = stampPageNumber(cfg.StampPage)
+	opts.Reference = cfg.StampReference
+	opts.ShowDocumentID = cfg.StampShowDocumentID
+	return opts
 }
 
 // approve is the main window's own call into the consent phase.
@@ -271,9 +322,21 @@ func resolveOutputsIn(win ui.Window, messages chan ui.Message, c *i18n.Catalogue
 	return out, true
 }
 
-// consentWindowWidth/Height are the consent window's measured size
-// (D-106), named here because two files now create that window.
+// consentWindowWidth/Height are the consent window's measured size,
+// named here because two files create that window.
+//
+// It was 860 because the stamp controls had been squeezed onto it. With
+// step 3 asking that question in its own window, the screen is back to
+// its one job — who is signing, how many documents, the certificate,
+// the fingerprint and file list behind Details, and the approval — and
+// is measured for exactly that: the header and footer take 216 points
+// of the window between them, and six certificate rows plus their gaps
+// are 544 (measured, not assumed: six rows of content are 504.3 and
+// five 8-point gaps make up the rest). Six is the bookkeeper's machine
+// holding several clients' cards, which SPEC §14.1 calls normal rather
+// than an edge case; more than that scrolls, which is what the list is
+// a scrolling region for.
 const (
 	consentWindowWidth  = 520
-	consentWindowHeight = 860
+	consentWindowHeight = 760
 )

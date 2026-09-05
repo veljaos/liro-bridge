@@ -29,6 +29,19 @@
 //
 //	go run ./scripts/gensubsetfont --font <path to NotoSans-Regular.ttf>
 //
+// The source font, recorded because it was not before and a
+// regeneration had to go looking for it:
+//
+//	https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSans/unhinted/ttf/NotoSans-Regular.ttf
+//	SHA-256 f3961a9cde016d41a4879aecda1474d3a36d6bf54fa0e4643de029cc2248b0e8
+//
+// Unhinted rather than hinted: this writer strips hinting bytecode
+// anyway, and both variants of that release produce a byte-identical
+// glyf table. A different Noto Sans release will produce different
+// outlines — the letters and their widths stay the same, the control
+// points do not — so a regeneration that changes glyf is a font update,
+// not a bug. See docs/decisions.md.
+//
 // Output (committed):
 //
 //	internal/pades/appearance/notosans-subset.ttf
