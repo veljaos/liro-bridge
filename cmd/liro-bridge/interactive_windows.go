@@ -23,6 +23,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/consent"
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/pades"
@@ -62,13 +63,12 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 
 	inputs := make([]interactiveInput, 0, len(files))
 	for _, f := range files {
-		b, err := os.ReadFile(f)
+		in, err := newInteractiveInput(f)
 		if err != nil {
 			fprintln(out, "liro-bridge: sign:", f, err)
 			return 1
 		}
-		sum := sha256.Sum256(b)
-		inputs = append(inputs, interactiveInput{path: f, bytes: b, digest: sum[:]})
+		inputs = append(inputs, in)
 	}
 
 	report, err := gatherInteractiveCertificates(ctx)
@@ -261,7 +261,7 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 		var result *pades.Result
 		var signErr error
 		for {
-			result, signErr = signInteractiveOne(ctx, in.bytes, wrapped, opts)
+			result, signErr = signInteractiveOne(ctx, in.path, wrapped, opts)
 			if signErr == nil || !isTSAFailure(signErr) {
 				break
 			}
@@ -481,10 +481,36 @@ func readTSAChoice(win ui.Window) string {
 	return choice.Choice
 }
 
+// interactiveInput is one document waiting to be signed: where it is,
+// and the digest the consent screen's batch fingerprint is built from
+// (SPEC §6.6).
+//
+// It deliberately does not hold the document's bytes. It used to, read
+// in full for every input before the consent window even opened, which
+// is fine for the one or two files a command line is given and is not
+// fine for F6's own stated case of two hundred dropped at once — a
+// two-hundred-document batch of ordinary contracts is hundreds of
+// megabytes held for the whole run, most of it long before and long
+// after the moment each document is actually needed. Each document is
+// now read at the moment it is signed and released when it is written.
 type interactiveInput struct {
 	path   string
-	bytes  []byte
 	digest []byte
+}
+
+// newInteractiveInput computes one document's digest by streaming it,
+// so the largest allocation is the copy buffer rather than the file.
+func newInteractiveInput(path string) (interactiveInput, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return interactiveInput{}, err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return interactiveInput{}, err
+	}
+	return interactiveInput{path: path, digest: h.Sum(nil)}, nil
 }
 
 func parseInteractiveArgs(args []string) (in string, force bool, err error) {
@@ -519,9 +545,17 @@ func expandInteractiveInput(pattern string) ([]string, error) {
 }
 
 func defaultInteractiveOutputPath(in, suffix string) string {
-	ext := filepath.Ext(in)
-	base := strings.TrimSuffix(in, ext)
-	return base + suffix + ext
+	return outputPathIn(in, "", suffix)
+}
+
+// outputPathIn is where one document's signature goes: beside the
+// input when dir is empty (F5's behaviour, and F6 §4's default), or in
+// dir when the user has chosen one. jobs.OutputPathFor is the single
+// implementation — the main window shows the same path this signs to,
+// and two functions computing it would eventually show one and write
+// the other.
+func outputPathIn(in, dir, suffix string) string {
+	return jobs.OutputPathFor(in, dir, suffix)
 }
 
 func medianDuration(d []time.Duration) time.Duration {
@@ -676,8 +710,19 @@ type interactiveSignOptions struct {
 	stamp *pades.StampOptions
 }
 
-// signInteractiveOne signs one document and writes it to opts.outPath.
-func signInteractiveOne(ctx context.Context, pdfBytes []byte, session keysource.Session, opts interactiveSignOptions) (*pades.Result, error) {
+// signInteractiveOne reads one document, signs it, and writes the
+// result to opts.outPath. The document is read here rather than handed
+// in already-loaded so that a batch holds one document in memory at a
+// time, not all of them (see interactiveInput).
+func signInteractiveOne(ctx context.Context, inPath string, session keysource.Session, opts interactiveSignOptions) (*pades.Result, error) {
+	pdfBytes, err := os.ReadFile(inPath)
+	if err != nil {
+		// A document that cannot be read is not a signing failure and
+		// must not be reported as one: it is open in another program,
+		// or it has moved. F6 §7 asks for each to be named.
+		return nil, errs.WithDetails(errs.CodeInputUnreadable, err,
+			map[string]any{"path": inPath})
+	}
 	if !opts.overwrite {
 		// Reached only if the file appeared between the choice above
 		// and this moment; the code says which condition it is, so it

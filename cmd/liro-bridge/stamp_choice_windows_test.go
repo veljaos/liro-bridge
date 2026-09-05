@@ -349,7 +349,17 @@ func TestOutputExistsIsItsOwnErrorCode(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := signInteractiveOne(t.Context(), nil, nil, interactiveSignOptions{outPath: out})
+	// A real input, because signInteractiveOne now reads the document
+	// itself (one at a time, rather than the whole batch up front) and
+	// would otherwise report the missing input rather than the existing
+	// output — which is a different, also-correct answer to a different
+	// question than this test asks.
+	in := filepath.Join(dir, "input.pdf")
+	if err := os.WriteFile(in, []byte("%PDF-1.4"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := signInteractiveOne(t.Context(), in, nil, interactiveSignOptions{outPath: out})
 	if err == nil {
 		t.Fatal("signing over an existing file succeeded; it must refuse")
 	}

@@ -109,6 +109,17 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		// carry it. Both values are deliberately not the defaults.
 		VisibleStamp:  false,
 		StampPosition: "top-left",
+
+		// F6's own additions, likewise deliberately not the defaults —
+		// except StampPage, which has no valid "off" value: validate
+		// replaces an empty one, so a round trip must carry a real page
+		// selection or it is testing validate rather than the round
+		// trip.
+		StampPage:           "3",
+		StampReference:      "Ugovor 2026/114",
+		StampShowDocumentID: true,
+		OutputFolder:        `D:\potpisano`,
+		ExplorerMenuEnabled: false,
 	}
 
 	if err := Save(path, want); err != nil {
@@ -246,5 +257,56 @@ func TestInvalidStampPositionFallsBackToTheDefaultCorner(t *testing.T) {
 		if cfg.StampPosition != position {
 			t.Errorf("validate replaced valid position %q with %q", position, cfg.StampPosition)
 		}
+	}
+}
+
+// TestValidStampPage covers F6 §6's page selection: two words and any
+// positive page number, and nothing else. A zero or a negative is not a
+// page, and guessing at what someone meant by "0" is how a stamp lands
+// somewhere nobody asked for.
+func TestValidStampPage(t *testing.T) {
+	valid := []string{"first", "last", "1", "2", "17", "9999"}
+	for _, s := range valid {
+		if !ValidStampPage(s) {
+			t.Errorf("ValidStampPage(%q) = false, want true", s)
+		}
+	}
+	invalid := []string{"", "0", "-1", "First", "LAST", "1.5", "one", "1a", " 1"}
+	for _, s := range invalid {
+		if ValidStampPage(s) {
+			t.Errorf("ValidStampPage(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestInvalidStampPageFallsBackToFirst(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"stampPage":"middle"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.StampPage != "first" {
+		t.Fatalf("StampPage = %q, want the default", got.StampPage)
+	}
+}
+
+// TestNewSettingsDefaults pins the two defaults F6 states outright: the
+// Explorer entry is on, and output goes beside the input.
+func TestNewSettingsDefaults(t *testing.T) {
+	d := Default()
+	if !d.ExplorerMenuEnabled {
+		t.Error("ExplorerMenuEnabled defaults off; F6 §2 says on by default")
+	}
+	if d.OutputFolder != "" {
+		t.Errorf("OutputFolder = %q, want empty — F6 §4 defaults to the input's own folder", d.OutputFolder)
+	}
+	if d.StampPage != "first" {
+		t.Errorf("StampPage = %q, want first", d.StampPage)
+	}
+	if d.StampShowDocumentID {
+		t.Error("StampShowDocumentID defaults on; SPEC §13.5 says never the default")
 	}
 }

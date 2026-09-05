@@ -3,11 +3,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/audit"
@@ -40,19 +42,31 @@ func runTray(cfg config.Config, version, locale string) int {
 	quit := make(chan struct{})
 	openedAWindow := false
 
+	// F6 §2: the entry is on by default, so it is registered when the
+	// agent starts rather than only when Settings is opened and saved.
+	// Registering is idempotent and also refreshes the label after a
+	// language change.
+	if err := applyExplorerMenu(cfg, c); err != nil {
+		slog.Warn("tray: could not apply the Explorer context menu setting", "error", err)
+	}
+
 	t, err := ui.NewTray(ui.TrayOptions{
 		Version: version,
 		Labels: ui.TrayLabels{
-			Open:         c.T("tray.open"),
+			Open:         c.T("tray.open_window"),
 			Settings:     c.T("tray.settings"),
 			Certificates: c.T("tray.certificates"),
 			AuditLog:     c.T("tray.audit_log"),
 			Quit:         c.T("tray.quit"),
 		},
 		OnOpen: func() {
-			// F5 §3: "Left click opens the main window (in this phase, a
-			// placeholder; F6 fills it)." There is nothing to show yet.
-			slog.Info("tray: open requested (placeholder — F6 supplies the main window)")
+			// F5 §3's "left click opens the main window", finally
+			// pointing at one (F6 §1). Opened empty: the drop zone and
+			// Browse are how documents get in from here.
+			openedAWindow = true
+			if code := runMainWindow(context.Background(), currentStampConfig(cfg), locale, nil); code != 0 {
+				slog.Warn("tray: the main window returned an error", "code", code)
+			}
 		},
 		OnSettings: func() {
 			openedAWindow = true
@@ -100,6 +114,8 @@ type settingsFormState struct {
 	TSAClientCertPath     string `json:"tsaClientCertPath"`
 	TSAClientCertPassword string `json:"tsaClientCertPassword"`
 	OutputSuffix          string `json:"outputSuffix"`
+	OutputFolder          string `json:"outputFolder"`
+	ExplorerMenu          bool   `json:"explorerMenu"`
 	SignatureLevel        string `json:"signatureLevel"`
 	CheckUpdatesDaily     bool   `json:"checkUpdatesDaily"`
 }
@@ -184,6 +200,8 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, s
 		newCfg.TSAClientCertPath = state.TSAClientCertPath
 		newCfg.TSAClientCertPassword = state.TSAClientCertPassword
 		newCfg.OutputSuffix = state.OutputSuffix
+		newCfg.OutputFolder = strings.TrimSpace(state.OutputFolder)
+		newCfg.ExplorerMenuEnabled = state.ExplorerMenu
 		newCfg.SignatureLevel = state.SignatureLevel
 		newCfg.UpdateCheckEnabled = state.CheckUpdatesDaily
 		if err := config.Save(config.DefaultPath(), newCfg); err != nil {
@@ -193,9 +211,24 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, s
 		if err := platform.NewAutostart().SetEnabled(state.StartWithWindows, exePath()); err != nil {
 			slog.Warn("settings: updating autostart registration failed", "error", err)
 		}
+		// F6 §2: the Explorer entry follows the setting immediately,
+		// not on the next launch — a person who unticks it and then
+		// right-clicks a PDF must not still see it there.
+		if err := applyExplorerMenu(newCfg, c); err != nil {
+			slog.Warn("settings: updating the Explorer context menu failed", "error", err)
+			postSettingsStatus(win, c.T("settings.explorer_menu_failed"), ui.IntentNegative)
+			return false
+		}
 		return true
 	case "exportAuditLog":
 		exportAuditLogNow(win, c)
+		return false
+	case "stampSettings":
+		// F6 §6: the stamp window, reachable from Settings as well as
+		// from the main window. Settings stays open behind it.
+		if err := runStampWindow(currentStampConfig(cfg), localeOf(cfg)); err != nil {
+			slog.Warn("settings: the stamp window failed", "error", err)
+		}
 		return false
 	case "checkUpdatesNow":
 		// SPEC §15.2's update channel — the embedded public key, the
@@ -291,6 +324,10 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config) map[string]any {
 			"settings.tsa_client_cert_placeholder":    c.T("settings.tsa_client_cert_placeholder"),
 			"settings.tsa_client_cert_password_label": c.T("settings.tsa_client_cert_password_label"),
 			"settings.output_suffix_label":            c.T("settings.output_suffix_label"),
+			"settings.output_folder_label":            c.T("settings.output_folder_label"),
+			"settings.output_folder_default":          c.T("settings.output_folder_default"),
+			"settings.explorer_menu":                  c.T("settings.explorer_menu"),
+			"settings.stamp_settings":                 c.T("settings.stamp_settings"),
 			"settings.signature_level_label":          c.T("settings.signature_level_label"),
 			"settings.level_bb":                       c.T("settings.level_bb"),
 			"settings.level_bt":                       c.T("settings.level_bt"),
@@ -313,6 +350,8 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config) map[string]any {
 			"tsaClientCertPath":     cfg.TSAClientCertPath,
 			"tsaClientCertPassword": cfg.TSAClientCertPassword,
 			"outputSuffix":          cfg.OutputSuffix,
+			"outputFolder":          cfg.OutputFolder,
+			"explorerMenu":          cfg.ExplorerMenuEnabled,
 			"signatureLevel":        cfg.SignatureLevel,
 			"checkUpdatesDaily":     cfg.UpdateCheckEnabled,
 			"version":               version,
@@ -361,4 +400,21 @@ func tsaPresets() []map[string]string {
 		{"id": "freetsa", "url": tsaPresetFreeTSA},
 		{"id": "rsgov", "url": tsaPresetRSGOV},
 	}
+}
+
+// localeOf is the configured interface language, for a caller that has
+// a Config and needs the locale it implies.
+func localeOf(cfg config.Config) string { return cfg.Locale }
+
+// applyExplorerMenu makes the Explorer context-menu entry match the
+// configuration (F6 §2). Registering is idempotent, so this is also
+// what keeps the menu label in the user's current language after they
+// change it.
+func applyExplorerMenu(cfg config.Config, c *i18n.Catalogue) error {
+	menu := platform.NewShellMenu()
+	if !cfg.ExplorerMenuEnabled {
+		return menu.Unregister()
+	}
+	exe := exePath()
+	return menu.Register(c.T("settings.explorer_menu_verb"), exe, exe)
 }

@@ -59,6 +59,24 @@ type Options struct {
 	// ever called (F5 §2.4/§10) — see ParseMessage.
 	OnMessage func(Message)
 
+	// OnFilesDropped is called with the absolute paths of files dropped
+	// onto the window from Explorer (F6 §1). A window that sets it
+	// becomes a drop target; one that leaves it nil is not, and behaves
+	// exactly as it did before this option existed.
+	//
+	// Setting it also turns WebView2's own external-drop handling off,
+	// because the two are mutually exclusive: with the control handling
+	// drops, the page receives them and the host never sees the paths
+	// (the web platform deliberately does not expose a File's path).
+	// With it off, the drop falls through to the native frame, which is
+	// where a desktop application can read real paths from the shell.
+	//
+	// Paths arrive exactly as the shell supplies them, including
+	// directories — deciding what is a PDF, what is a folder to look
+	// inside, and what to refuse is the caller's business, not this
+	// package's.
+	OnFilesDropped func(paths []string)
+
 	// OnClosed is called once when the window is closed by the user (the
 	// title bar close button, Alt+F4, or Escape — F5 §5.6) rather than
 	// by a call to Window.Close from Go. F5 §2.3: closing the window is
@@ -131,4 +149,18 @@ func ShowRuntimeMissingMessage(title, body string) {
 // title arrives already localised, like ShowRuntimeMissingMessage's.
 func ChooseFolder(owner uintptr, title string) (path string, ok bool, err error) {
 	return pickFolder(owner, title)
+}
+
+// ChooseFiles shows the OS file chooser parented to owner, allowing
+// more than one file to be selected at once (F6 §1's Browse button —
+// "not everyone drags"). A cancelled dialog is ok == false with a nil
+// error.
+//
+// title, filterLabel and allFilesLabel arrive already localised, like
+// every other string this package is handed. Both a PDF filter and an
+// "all files" entry are offered: F6 §1 is explicit that a file a person
+// chooses deliberately is not something to filter away, and the signing
+// step is what reports a non-PDF by name.
+func ChooseFiles(owner uintptr, title, filterLabel, allFilesLabel string) (paths []string, ok bool, err error) {
+	return pickFiles(owner, title, filterLabel, allFilesLabel)
 }

@@ -74,6 +74,17 @@ func run(args []string, out io.Writer) int {
 		}
 		return runSign(context.Background(), args[1:], out, os.Stderr, cfg.Locale)
 	}
+	// F6 §1: the main window, opened directly. Also how the tray's Open
+	// item and the Explorer context menu reach it.
+	if len(args) > 0 && args[0] == "open" {
+		return runOpen(context.Background(), args[1:], out, cfg)
+	}
+	// F6 §2: one invocation per selected file, from Explorer. Every
+	// invocation hands its file over; exactly one of them opens a
+	// window for the whole selection.
+	if len(args) > 0 && args[0] == platform.ShellMenuVerbFlag {
+		return runShellVerb(context.Background(), args[1:], cfg)
+	}
 	if len(args) > 0 && args[0] == "tray" {
 		// F5 §3: the agent starts minimised to tray with no window. Not
 		// the bare-invocation behaviour (which stays usage-and-exit,
@@ -222,6 +233,7 @@ var topLevelCommands = []struct{ name, desc string }{
 	{"certs", "List available signing certificates"},
 	{"sign", "Sign a PDF file"},
 	{"sign-digest", "Sign a pre-computed digest (advanced/integration use)"},
+	{"open", "Open the main window to sign documents"},
 	{"tray", "Run the agent in the system tray"},
 }
 

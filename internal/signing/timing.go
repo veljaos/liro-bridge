@@ -140,3 +140,23 @@ func EstimatedTotal(first time.Duration, totalItems int, median time.Duration) (
 	}
 	return first + time.Duration(totalItems-1)*median, true
 }
+
+// DetectPINPolicy is detectPINPolicy for callers outside this package.
+// F6 §3's job queue needs the same reading of the same measurements —
+// "if the PIN policy is detected as per-signature, say so in the
+// progress message" — and reimplementing F2 §5.5's procedure, or
+// D-028's measured 2000ms threshold, somewhere else is how the two come
+// to disagree about the same batch.
+//
+// durations holds one entry per signature attempt actually made, in
+// order, successful or not.
+func DetectPINPolicy(durations []time.Duration) PINPolicy { return detectPINPolicy(durations) }
+
+// BuildTimingReport is buildTimingReport for callers outside this
+// package: F6 §3's job queue measures its own per-document durations
+// and needs the same summary — first signature, median of the rest,
+// PIN policy — that F2 already defines.
+func BuildTimingReport(durations []time.Duration) TimingReport { return buildTimingReport(durations) }
+
+// MedianOf is medianOf for callers outside this package.
+func MedianOf(durations []time.Duration) time.Duration { return medianOf(durations) }

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://liro.local/tokens.css" />
+<link rel="stylesheet" href="https://liro.local/intents.css" />
+<link rel="stylesheet" href="https://liro.local/pages/main.css" />
+</head>
+<body class="liro-page">
+
+<!-- F6 §1: the working surface. Files are gathered here, the consent
+     window is what approves them, and the queue and report below are
+     where the batch is watched and read. -->
+<main id="state-files">
+  <div class="files-header liro-fixed-region">
+    <p class="liro-display" id="files-count"></p>
+    <div id="notices"></div>
+  </div>
+
+  <section id="file-list" class="liro-scroll-region" aria-label="Documents"></section>
+
+  <!-- The empty state lives inside the scrolling region's place so the
+       window does not change shape when the first file arrives. -->
+  <section id="empty-state" class="liro-scroll-region empty-state">
+    <p class="liro-heading" data-i18n="main.empty_title"></p>
+    <p class="liro-text-secondary" data-i18n="main.empty_hint"></p>
+  </section>
+
+  <div class="files-footer liro-fixed-region">
+    <div class="liro-row setting-row">
+      <span class="liro-text-small" data-i18n="main.output_label"></span>
+      <span class="setting-value">
+        <span class="liro-text-small" id="output-folder"></span>
+        <button id="output-change-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.output_change"></button>
+      </span>
+    </div>
+    <div class="liro-row setting-row">
+      <span class="liro-text-small" id="stamp-summary"></span>
+      <button id="stamp-change-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.stamp_change"></button>
+    </div>
+
+    <div class="actions">
+      <button id="clear-btn" class="liro-btn liro-btn-quiet" data-i18n="main.clear"></button>
+      <button id="browse-btn" class="liro-btn liro-btn-secondary" data-i18n="main.browse"></button>
+      <button id="sign-btn" class="liro-btn liro-btn-primary" data-i18n="main.sign" disabled></button>
+    </div>
+  </div>
+</main>
+
+<!-- F6 §3: one list, signed in order, with each document's own state
+     visible and a Stop that finishes the document in flight. -->
+<main id="state-queue" hidden>
+  <div class="queue-header liro-fixed-region">
+    <p class="liro-heading" id="queue-label"></p>
+    <div class="liro-progress" id="queue-progress"><span id="queue-bar" style="width:0%"></span></div>
+    <div class="liro-progress liro-progress-indeterminate" id="queue-progress-indeterminate" hidden><span></span></div>
+    <p id="queue-eta" class="liro-text-small"></p>
+    <p id="queue-per-signature" class="liro-text-small" hidden data-i18n="consent.per_signature_pin_warning"></p>
+  </div>
+
+  <section id="queue-list" class="liro-scroll-region" aria-label="Progress"></section>
+
+  <div class="queue-footer liro-fixed-region">
+    <div class="actions">
+      <button id="stop-btn" class="liro-btn liro-btn-secondary" data-i18n="main.stop"></button>
+    </div>
+  </div>
+</main>
+
+<!-- F6 §5: what happened, in words, with the files findable. -->
+<main id="state-report" hidden>
+  <div class="report-header liro-fixed-region">
+    <p class="liro-display" id="report-title"></p>
+    <p id="report-counts"></p>
+    <p id="report-abort" class="liro-error-box" hidden></p>
+  </div>
+
+  <section id="report-body" class="liro-scroll-region">
+    <div id="report-failures" hidden>
+      <p class="liro-text-small" data-i18n="main.report_failures_title"></p>
+      <ul id="report-failure-list"></ul>
+    </div>
+  </section>
+
+  <div class="report-footer liro-fixed-region">
+    <div class="liro-row setting-row">
+      <span class="liro-text-small" data-i18n="main.report_output_label"></span>
+      <span class="liro-text-small" id="report-output"></span>
+    </div>
+    <div class="liro-row setting-row">
+      <span class="liro-text-small" data-i18n="main.report_level_label"></span>
+      <span class="liro-text-small" id="report-level"></span>
+    </div>
+    <p id="report-status" class="liro-text-small" hidden></p>
+    <div class="actions">
+      <button id="report-export-btn" class="liro-btn liro-btn-quiet" data-i18n="main.export_report"></button>
+      <button id="report-open-btn" class="liro-btn liro-btn-secondary" data-i18n="main.open_output"></button>
+      <button id="report-again-btn" class="liro-btn liro-btn-primary" data-i18n="main.new_batch"></button>
+    </div>
+  </div>
+</main>
+
+<script src="https://liro.local/bridge.js"></script>
+<script src="https://liro.local/pages/main.js"></script>
+</body>
+</html>

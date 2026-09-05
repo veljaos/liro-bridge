@@ -7082,3 +7082,474 @@ requested one.
   that is testing the PDF and CMS layers, not the timestamp client —
   which `internal/pades/tsa`'s own integration test already covers
   against Pošta's real test TSA ([[D-045]]).
+
+---
+
+## D-114 — Dropped files reach the native frame because WebView2's own external-drop handling is switched off
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 1
+
+**Decision.** A window that sets `ui.Options.OnFilesDropped` does two
+things at once: it queries `ICoreWebView2Controller4` and calls
+`put_AllowExternalDrop(FALSE)`, and it calls `DragAcceptFiles` on its
+own `HWND`. `WM_DROPFILES` then arrives at `wndProc`, `DragQueryFileW`
+reads the paths and `DragFinish` releases the drop. Paths are handed to
+the callback exactly as the shell supplies them, directories included —
+deciding what is a PDF and what to look inside is `internal/jobs`'s
+business, not `internal/ui`'s.
+
+**Why both halves are needed.** Either alone produces a window that
+looks like a drop target and does nothing with a drop. WebView2's
+control creates its own child windows, which Chromium registers as drop
+targets; a drop lands there and the parent frame never sees it. And what
+the page receives is a `File` object, which by design does not carry a
+path — the web platform does not expose one, and no amount of page code
+recovers it. `AllowExternalDrop` exists precisely for this: its own IDL
+comment says the property is "used to configure the capability that
+dragging objects from outside the bounds of webview2 and dropping into
+webview2 is allowed or disallowed", and turning it off is what lets a
+host application handle the drop itself.
+
+**The IID and the vtable slot were read from the real IDL**, not from
+documentation or memory, which is the discipline [[D-080]] set for every
+identifier in this package. `Microsoft.Web.WebView2` 1.0.4191.47 was
+fetched again and `WebView2.idl` extracted from it:
+`ICoreWebView2Controller4` is `97d418d5-a426-4e49-a151-e1a10f327d9e`,
+and `put_AllowExternalDrop` is vtable slot **37** — IUnknown's three,
+then `ICoreWebView2Controller`'s 23 (3–25), `Controller2`'s two (26–27),
+`Controller3`'s eight (28–35), and Controller4's `get` at 36. That
+count was cross-checked against the four controller slots this package
+already uses and knows work: `put_IsVisible` 4, `put_Bounds` 6, `Close`
+24, `get_CoreWebView2` 25 — all four fall exactly where the same
+enumeration puts them.
+
+**Verified in the running binary**, which is the only place this can be
+verified at all: `liro-bridge open` with a folder and a file, and the
+window listing what the shell handed it.
+
+**Rejected.**
+- **Reading `dataTransfer.files` in the page and sending the names to
+  Go.** Names are not paths, and F5 §5.3 forbids treating a name as one
+  for exactly the reasons that would then apply. There is no path to
+  recover; this is not a limitation to work around but the web
+  platform's deliberate design.
+- **Leaving `AllowExternalDrop` on and registering an `IDropTarget` on
+  the parent.** Same problem: the child window is the registered target
+  and consumes the drop first.
+- **Making the WebView2 control smaller than the client area so a strip
+  of the frame can receive drops.** A drop target the user has to aim
+  at is not a drop target.
+
+---
+
+## D-115 — The queue, the runner and the shell handover are a package with no window in it
+
+**Date:** 2026-09-05
+**Phase:** F6 — Parts 1, 3, 4, 5
+
+**Decision.** `internal/jobs` holds the document list (`Queue`), the run
+(`Runner`, `SignFunc`, `Progress`, `Report`) and the cross-process
+handover the Explorer menu needs (`Inbox`, `CollectBatch`). None of it
+imports `internal/ui`, and none of it knows a window exists. The main
+window turns a `Queue` into a payload and a click into a call; it makes
+none of the decisions.
+
+**Why.** F5 §10 required this of the consent screen and D-085 recorded
+it; F6 adds the surface that actually has decisions in it — what a
+dropped folder contributes, when a duplicate is one document, what
+happens at document fifty when the card is gone, what Stop means, which
+level a mixed batch reports. Every one of those is a question with a
+right answer that does not depend on pixels, and every one of F6 §7's
+cases is a `SignFunc` that fails in a particular way at a particular
+document. They are ordinary tests, on any platform, with no card and no
+browser engine.
+
+The split earns itself immediately: `internal/jobs`'s tests cover a
+hundred-document batch with one corrupt file, a card removed at fifty,
+a disk filling at seventy, Stop landing mid-document, a window closing
+mid-batch, two hundred files at once, and the same file listed twice —
+none of which would be practical to drive through a window, and all of
+which run in seconds.
+
+**Three rules it implements that are not the window's to interpret.**
+Skip and continue (SPEC §12.10) with two exceptions only —
+`CARD_NOT_PRESENT` and `PIN_LOCKED` end a run, and those come from
+`signing.AbortsBatch` rather than a second list here, so F2's own rule
+has one implementation. Stop never interrupts a signature in flight,
+because that is how a half-written file gets left (F6 §3, SPEC §18.10).
+And a batch's reported level is the **weakest** any document reached,
+never the best (SPEC §18.11).
+
+**`internal/signing` gained four thin exported wrappers** —
+`AbortsBatch`, `CodeOf`, `DetectPINPolicy`, `BuildTimingReport`,
+`MedianOf` — each delegating to the unexported function F2 already had.
+Reimplementing D-028's measured 2000ms threshold, or F2 §5.3's abort
+list, in a second place is how two parts of one program come to disagree
+about the same batch.
+
+**Rejected.**
+- **Putting the runner in `cmd/liro-bridge` beside the window.** It is
+  where the F5 signing loop already lived, and it is why F6 §7's cases
+  would each have needed a real window, a real card session and a real
+  PDF to exercise a rule about ordering.
+- **Naming it `internal/batch`.** "Batch" is SPEC §3 glossary for one
+  user approval covering N documents, and `internal/signing` already has
+  a `Batch` type for exactly that. Two `Batch`es in one program is a
+  worse problem than a slightly duller package name.
+
+---
+
+## D-116 — The main window is a new window; the consent screen is the existing one, opened from it
+
+**Date:** 2026-09-05
+**Phase:** F6 — Parts 1, 3, 5
+
+**Decision.** `/pages/main.html` is a new window with three screens —
+the document list, the queue, the report. When Sign is pressed it calls
+`askForConsent`, which opens **the consent window that already exists**,
+unchanged: the same page, the same certificate list, the same timestamp
+question, the same output-file question, the same audit entry, the same
+code `sign --interactive` has been using since F5. That window closes as
+soon as the card session is open, and the batch is then watched in the
+main window.
+
+`askForConsent` is the first half of `runSignInteractive`, factored out
+so both entry points run the same one.
+
+**Why not draw the consent screen into the main window.** SPEC §6.5
+calls the consent screen "the only real gate" and the most important
+paragraph in the specification. A second implementation of it — however
+carefully written — is a second thing that has to stay right about
+certificate choice, about never preselecting one, about asking the
+timestamp and output questions before the card is touched, and about
+what the audit log records. The two would drift, and the direction they
+drift in is the one that matters.
+
+The cost is that two windows appear in sequence rather than one changing
+screens. That is a smaller price than two consent screens.
+
+**Why the queue and report are new rather than reusing the consent
+window's own progress and done screens.** Those show one line of
+progress and a two-number summary, which is what F5 needed. F6 §3 and
+§5 ask for per-document state, a Stop button, and a report listing
+failures by name — a different screen, in the window that owns the
+list.
+
+**Rejected.**
+- **One window with a consent screen inside it.** Above.
+- **Keeping the consent window open behind the queue.** Two windows both
+  claiming to be in charge of one batch; the consent window's own
+  progress screen would sit there, stale, behind the real one.
+- **Reusing `runSignInteractive` wholesale from the main window.** It
+  owns its own window, its own progress rendering and its own exit
+  code. Extracting the consent phase was the smaller change and left
+  the command line's behaviour byte-identical.
+
+---
+
+## D-117 — Documents are read one at a time, at the moment each is signed
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 3
+
+**Decision.** `interactiveInput` no longer carries a document's bytes.
+It carries the path and the SHA-256 the consent screen's batch
+fingerprint is built from, computed by streaming the file
+(`io.Copy` into the hash) rather than reading it. `signInteractiveOne`
+opens and reads the document itself, at the moment it signs it, and the
+bytes are released when it is written.
+
+**Why.** The F5 shape read every input in full before the consent window
+even opened, and held all of them for the whole run. For the one or two
+files a command line is given that is fine. F6 §7 asks for two hundred
+at once, and a two-hundred-document batch of ordinary Serbian contracts
+is hundreds of megabytes held from before the person has decided to sign
+until after the last one is written — most of it long before and long
+after the moment it is needed.
+
+A file that cannot be read at that moment is now a named condition
+rather than a fatal error before the window opens: `INPUT_UNREADABLE`, a
+new code (below), skipped and reported like any other bad document.
+
+**Rejected.**
+- **Reading lazily but caching.** The same memory, spent less
+  predictably.
+- **Keeping the up-front read and capping the batch size.** A cap is a
+  refusal wearing a number, and F6 §7 names two hundred as a case to
+  handle rather than to refuse.
+
+---
+
+## D-118 — `INPUT_UNREADABLE` is its own code: a document that cannot be read is not a card problem
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 7
+
+**Decision.** `errs.CodeInputUnreadable` (`INPUT_UNREADABLE`) is a new
+code, returned when the document to sign cannot be opened. All three
+catalogues carry a message for it.
+
+**Why.** F6 §7 lists four situations that reach this: a file open
+exclusively in another program (Acrobat holds a document that way while
+it is open for editing), a file deleted or moved after it was added to
+the list, a network drive that has gone away mid-batch, and a folder
+where a file was expected. None of them is a problem with the card,
+which is where `SIGN_FAILED`'s own message sends the user, and none is
+unclassified, which is what `INTERNAL` means. This is the same argument
+[[D-066]] made for `STAMP_GLYPH_MISSING` and [[D-104]] for
+`OUTPUT_EXISTS`, applied to the one remaining condition in F6 §7's list
+that had no code of its own.
+
+**Verified.** Each of the four situations has a test that asserts the
+code, asserts it is not `INTERNAL`, and asserts every locale renders it
+as a sentence rather than a key — including one that takes a real
+exclusive `CreateFile` handle on the document, which is the only way to
+reproduce what an open editor does.
+
+**Rejected.**
+- **Reusing `PDF_INVALID`.** A document that cannot be opened has not
+  been found to be invalid; saying so would send someone to check a file
+  that is fine.
+- **One code for input and output problems.** `OUTPUT_WRITE_FAILED`
+  already exists ([[D-104]]) and asks for a different correction: one is
+  "close it in the other program", the other is "the disk would not take
+  it".
+
+---
+
+## D-119 — The Explorer entry hands its file to a shared inbox; one invocation opens a window and keeps collecting
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 2
+
+**Decision.** The context-menu command is
+`"<exe>" --shell-verb "%1"`, registered under
+`HKCU\Software\Classes\SystemFileAssociations\.pdf\shell\LiroBridgeSign`
+with `MultiSelectModel=Player` and the executable as the icon source.
+Every invocation appends its path to a per-user inbox file and then
+tries to claim a named mutex. The one that claims it waits for the
+inbox to go quiet, opens a window for what is there, **and keeps
+draining the inbox for as long as that window is open**, so a late
+arrival joins the list already on screen. The others exit immediately.
+
+**Why a file and a mutex rather than a socket or a pipe.** This is a
+per-user, local, short-lived handover between processes that are all
+this same program, and F6 is explicit that no server of any kind is
+built this phase. The mutex is in the `Local\` namespace, so two users
+signed in over RDP each have their own (SPEC §14.1).
+`ERROR_ALREADY_EXISTS` from `CreateMutexW` is the whole signal — waiting
+on the mutex would make the other nineteen processes queue up and each
+open a window in turn, which is the opposite of what is wanted.
+
+**Why the window keeps collecting — and how that was found.** The first
+design was a quiet period alone, at 750ms, justified in a comment that
+described a measurement nobody had taken. Running the real binary with
+twenty real invocations produced the actual numbers: the arrivals spread
+over **2390 ms**, with a typical gap between consecutive ones of about
+**50 ms** — and **one gap of 1070 ms**, a stall somewhere in process
+creation. That stall ended the quiet period early. Ten documents opened
+a window; **the other ten were left in the inbox with nobody to open
+them.** A silent half-batch, which is the worst outcome this product
+has, and every unit test passed while it happened, because a fake clock
+has no stalls in it.
+
+Sizing the window to swallow a 2390 ms spread was rejected: it makes a
+single right-clicked document wait two and a half seconds for a window,
+the common case paying for the rare one. The window is 600 ms — more
+than ten times the ordinary gap — and what makes the arrangement correct
+is that it no longer has to be right. The open window drains the inbox
+every 250 ms, so a straggler appears in the list; the collector drains
+once more before it exits, so nothing is left behind if one arrives as
+the window closes; and an inbox untouched for five minutes is discarded
+rather than merged into an unrelated batch, which is the only remaining
+way a path could be stranded (a collector that died).
+
+**Verified against the real binary, twice.** Before: twenty
+invocations, a window with eleven documents, nine left in the inbox.
+After: twenty invocations, one process, one window, "20 dokumenata", the
+inbox drained — with the log showing the window opening with ten and the
+other ten joining 2.6 seconds later, which is the design working rather
+than the defect recurring.
+
+**One real bug the tests caught on the way.** `ShellMenuCommand` used
+`strconv.Quote`, which produces *Go source* syntax and escapes every
+backslash: an ordinary path came out as
+`"C:\\Users\\Petar Petrović\\..."` and would have reached Windows with
+every separator doubled. It is a pair of literal quotes now. A Windows
+path cannot contain a double quote, so nothing needs escaping.
+
+**Rejected.**
+- **A longer quiet window instead of the watcher.** It trades a rare
+  wrong answer for a constant slow one, and it is still only a guess
+  about the slowest machine anyone will run this on.
+- **`HKCR` or `HKLM`.** Both need administrator rights the target user
+  (a bookkeeper on a machine they do not administer) does not have, and
+  a per-user program writing there is one its own uninstaller cannot
+  clean up.
+- **The `.pdf` progid rather than `SystemFileAssociations`.** A progid
+  belongs to whichever application currently owns PDFs; the entry would
+  vanish the day someone installs a different reader.
+- **Omitting `MultiSelectModel`.** Without it Explorer hides the entry
+  as soon as more than one file is selected — which is the case Part 2
+  exists for.
+
+---
+
+## D-120 — The stamp gets its own window; explicit coordinates are clamped into the page, never refused
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 6
+
+**Decision.** `/pages/stamp.html` is a new window carrying every stamp
+decision: on or off, which of SPEC §13.1's four corners, which page
+(first, last, or a number), the reference line, and whether to show the
+identity document number. It is reached from the main window's summary
+line and from Settings. The answers persist in `config.Config`
+(`StampPage`, `StampReference`, `StampShowDocumentID` join the existing
+`VisibleStamp` and `StampPosition`), and the main window shows the
+current answer in one line.
+
+Separately, `appearance.ClampToPageBox` moves a stamp requested at
+explicit coordinates so that it sits inside the page box with the same
+24 pt margin every corner placement keeps, and `Render` uses it.
+
+**Why a window.** The owner's request after using F5: the stamp
+controls were squeezed onto the consent screen, which is the screen a
+person reads in two seconds to decide whether to sign. A reference line
+is not a thing to configure there. [[D-103]] put them there because
+there was nowhere else; now there is.
+
+**Why clamping rather than refusing.** F6 §6 states it and gives the
+reason: "a stamp nudged inside is better than a refusal, and a stamp
+hanging off the page is not acceptable output". Refusing turns a
+slightly-wrong coordinate into a failed batch; drawing it where it was
+asked produces a document with a signature appearance half over the
+edge, which the original Bridge would not allow either. A page too small
+to hold the stamp and both margins is the one case where the margin
+cannot be honoured on both sides; the stamp is pinned to the
+bottom-left inset rather than shrunk, because its size is fixed by SPEC
+§13.1 and a predictable corner is easier to reason about than a stamp
+that silently changed size.
+
+**The identity document number stays off by default**, and nothing here
+changes that: SPEC §13.5 calls it personal data on a document that will
+be sent to third parties. The window offers it with a sentence saying
+so. The *national* identity number remains unreachable from the stamp
+entirely, which is a different and stronger guarantee
+([[D-054]], [[D-064]]).
+
+**The reference line is sanitised** through F5 §5.3's own pipeline
+before it is stored. It is free text a person types and this project
+draws into a PDF other people read; a direction-override character has
+no business there for the same reason it has none in a file name.
+
+**Two things the window itself taught.** It was built at 460×560 and
+that was too short: with every control shown, the form scrolled and the
+margin note — the one line here a person reads once and needs to have
+seen — was what fell below the fold. It is 680 now, with a test that
+fails if the form scrolls again. And the page's `saved` flag survived a
+fresh `init`, so a second posting into the same window reported a Save
+nobody pressed; the page now resets it, because a page holds no state of
+its own beyond what Go has told it.
+
+**Rejected.**
+- **Leaving the controls on the consent screen and adding the rest of
+  them there.** More of exactly what was reported as wrong.
+- **A visual placement picker.** SPEC §13.1 defers it to a later phase
+  in as many words.
+- **Refusing out-of-page coordinates.** F6 §6 rules it out directly.
+
+---
+
+## D-121 — A new batch clears the consent window's certificate choice
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 7
+
+**Decision.** `consent.js`'s `renderWaiting` resets
+`selectedThumbprint` to null and disables Approve, every time an `init`
+payload arrives.
+
+**Why.** SPEC §18.15 forbids remembering a certificate across sessions,
+and F6 §7 asks for a test that the selection does not persist. Writing
+that test found the rule failing in the one place it is implemented:
+`renderWaiting` rebuilt the certificate rows — clearing every row's
+`aria-selected` — but left the page's own `selectedThumbprint` and left
+Approve enabled. A second batch posted into the same window arrived with
+Approve already pressable, for a certificate chosen for different
+documents.
+
+No user could reach it: every consent window in production is created
+fresh, and the F5 window flows post other *states* into a live window,
+never a second `waiting`. It became visible the moment a test posted two
+batches into one window — which is also the shape any future re-render
+would take, and is why the fix belongs in the page rather than in the
+test.
+
+This is the same class as the stamp window's `saved` flag ([[D-120]]),
+found the same way in the same session: page state that is not a
+function of what Go last told it.
+
+**Rejected.**
+- **Giving the test its own window instead.** It would have made the
+  test pass and left the defect. The property being tested is that a
+  new batch is a new decision, and the window is the same window either
+  way.
+
+---
+
+## D-122 — What F6 changed about how the work was checked
+
+**Date:** 2026-09-05
+**Phase:** F6
+
+**Decision, recorded because the phase turned on it.** Three defects in
+this phase were invisible to a green test suite and visible within
+seconds of running the real binary and looking at the result:
+
+1. **Nine of twenty documents silently dropped** by the Explorer
+   coalescing ([[D-119]]). Every unit test passed. A fake clock has no
+   process-creation stalls in it, so every arrival landed inside the
+   quiet period by construction.
+2. **The failed row squeezed its file name to two words** and put the
+   reason beside it, because a `flex-basis: 100%` only moves an element
+   to its own line if the row is allowed to wrap. The payload was
+   correct; the rendering was not.
+3. **The stamp summary read "strana Prva strana"** — "page First page" —
+   because both the format string and the page label supplied the noun.
+
+None of these is a subtle bug. All three were obvious on sight and
+invisible to assertions about the data behind them. That is [[D-087]]'s
+finding again, and this phase's contribution is only that it happened
+three more times, in three different layers, in one phase.
+
+What was done about it, beyond fixing them: the window-driving tests
+now cover what is *rendered* rather than what was posted — computed
+styles rather than the `hidden` property ([[D-106]]'s trap), the
+geometry of a wrapped row, whether a scrolling region actually scrolls
+— and the real binary was run and photographed for every screen this
+phase added, including the two that a person can only reach by clicking
+through a batch.
+
+**The screenshots are taken with `PrintWindow`, not by capturing the
+screen.** The first attempt used `CopyFromScreen` over the window's
+rectangle and produced a photograph of an unrelated video playing on the
+owner's desktop, because the window was not in front and
+`SetForegroundWindow` does not simply grant that. `PrintWindow` with
+`PW_RENDERFULLCONTENT` asks the window to render itself, so the capture
+is that window's own pixels wherever it sits and whatever is on top —
+and, more to the point, taking it does not require taking the
+foreground away from whoever is using the machine. That is the same
+judgement [[D-094]] made about input, applied to output.
+
+**Processes started for verification were stopped by exact PID**, never
+by image name, per F6's own rule — including the twenty-invocation runs,
+where the surviving process was identified from its own log line before
+being stopped.
+
+**Rejected.**
+- **Treating the three defects as ordinary bugs not worth an entry.**
+  The pattern is the point: this is the third phase in a row where the
+  test suite was green and the product was visibly wrong, and each time
+  the gap was the same one.

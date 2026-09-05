@@ -3,6 +3,7 @@ package appearance
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 
 	"github.com/veljaos/liro-bridge/internal/pades/pdf"
 )
@@ -85,7 +86,17 @@ func Render(doc *pdf.Document, pageDict pdf.Dict, u *pdf.Update, opts Options) (
 	var rect [4]float64
 	var matrix [6]float64
 	if opts.UseXY {
-		rect = [4]float64{opts.X, opts.Y, opts.X + StampWidth, opts.Y + height}
+		// F6 §6: explicit coordinates are clamped into the page box
+		// less the margin, never rejected and never drawn hanging off
+		// the edge. The margin is the same 24 pt every corner
+		// placement keeps.
+		box := pdf.ResolveMediaBox(doc, pageDict)
+		x, y, moved := ClampToPageBox(box, opts.X, opts.Y, StampWidth, height, Margin)
+		if moved {
+			slog.Info("appearance: stamp coordinates moved inside the page margin",
+				"requestedX", opts.X, "requestedY", opts.Y, "x", x, "y", y)
+		}
+		rect = [4]float64{x, y, x + StampWidth, y + height}
 		matrix = [6]float64{1, 0, 0, 1, 0, 0}
 	} else {
 		box := pdf.ResolveMediaBox(doc, pageDict)

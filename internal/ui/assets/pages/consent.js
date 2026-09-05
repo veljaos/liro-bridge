@@ -138,6 +138,19 @@
   }
 
   function renderWaiting() {
+    // A new batch is a new decision. SPEC §18.15 forbids a remembered
+    // certificate across sessions, and a page that keeps the previous
+    // batch's selection through a fresh init is that rule failing in the
+    // one place it is implemented — Approve would already be pressable,
+    // for a certificate nobody chose for these documents.
+    //
+    // Every consent window in production is created fresh, so this has
+    // never been reachable by a user; it became visible the moment a
+    // test posted two batches into one window, which is the shape a
+    // future re-render would take too (F6 §7).
+    selectedThumbprint = null;
+    document.getElementById("approve-btn").disabled = true;
+
     window.liroSetText(document.getElementById("document-count"), model.documentCountText);
     window.liroSetText(document.getElementById("application-name"), model.applicationName);
     // Task 2 (F5 second-real-run review): the elided form is what is

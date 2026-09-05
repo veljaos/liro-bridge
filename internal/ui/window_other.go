@@ -19,3 +19,10 @@ func showRuntimeMissingMessage(string, string) {}
 func pickFolder(uintptr, string) (string, bool, error) {
 	return "", false, ErrUnsupportedPlatform
 }
+
+// pickFiles has no other-platform implementation this phase either. It
+// reports ErrUnsupportedPlatform rather than pretending the user
+// cancelled, which would leave a caller silently doing nothing.
+func pickFiles(uintptr, string, string, string) ([]string, bool, error) {
+	return nil, false, ErrUnsupportedPlatform
+}

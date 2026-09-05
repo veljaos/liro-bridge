@@ -84,8 +84,9 @@ type window struct {
 	closedCh  chan struct{}
 	closeOnce sync.Once
 
-	onClosed      func()
-	closingFromGo atomic.Bool
+	onClosed       func()
+	onFilesDropped func([]string)
+	closingFromGo  atomic.Bool
 
 	// tearingDown is set by the owning thread, on entry to the teardown
 	// and before it releases anything, so that a second WM_CLOSE — from
@@ -116,9 +117,10 @@ func NewWindow(opts Options) (Window, error) {
 
 	w := &window{
 		widthPts: opts.Width, heightPts: opts.Height,
-		workCh:   make(chan func(), 8),
-		closedCh: make(chan struct{}),
-		onClosed: opts.OnClosed,
+		workCh:         make(chan func(), 8),
+		closedCh:       make(chan struct{}),
+		onClosed:       opts.OnClosed,
+		onFilesDropped: opts.OnFilesDropped,
 	}
 	ready := make(chan error, 1)
 	go w.run(opts, ready)
@@ -219,6 +221,23 @@ func (w *window) setUpWebView2(opts Options) error {
 		if err := coreWebView2SetVirtualHost(cw2v3, opts.VirtualHost, assetsDir, coreWebView2HostResourceAccessKindDeny); err != nil {
 			return fmt.Errorf("ui: SetVirtualHostNameToFolderMapping: %w", err)
 		}
+	}
+
+	// F6 §1: a window that wants dropped files must take them from the
+	// shell itself, so WebView2's own handling is switched off first and
+	// the native frame is registered as the drop target second. Doing
+	// only one of the two silently produces a window that looks like it
+	// accepts drops and does nothing with them.
+	if opts.OnFilesDropped != nil {
+		controller4, err := queryInterface(controller, iidCoreWebView2Controller4)
+		if err != nil {
+			return fmt.Errorf("ui: querying ICoreWebView2Controller4 for AllowExternalDrop: %w", err)
+		}
+		defer comRelease(controller4)
+		if err := controllerSetAllowExternalDrop(controller4, false); err != nil {
+			return fmt.Errorf("ui: put_AllowExternalDrop(FALSE): %w", err)
+		}
+		setDragAcceptFiles(w.hwnd, true)
 	}
 
 	if opts.OnMessage != nil {
@@ -342,6 +361,22 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 				fn()
 			}
 		default:
+		}
+		return 0
+
+	case wmDropFiles:
+		// wparam is the HDROP. droppedFiles reads every path out of it
+		// and releases it; the callback runs on this window's own
+		// thread, so a slow handler would block the message loop —
+		// callers hand the paths straight to a channel for that reason.
+		if w.onFilesDropped != nil {
+			if paths := droppedFiles(wparam); len(paths) > 0 {
+				w.onFilesDropped(paths)
+			}
+		} else {
+			// Nothing asked for these; release the HDROP anyway rather
+			// than leak the shell's memory for the drop.
+			droppedFiles(wparam)
 		}
 		return 0
 

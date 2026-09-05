@@ -87,6 +87,14 @@ func mustGUID(s string) windows.GUID {
 var (
 	iidIUnknown       = windows.GUID{Data1: 0x00000000, Data2: 0x0000, Data3: 0x0000, Data4: [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
 	iidCoreWebView2_3 = mustGUID("a0d6df20-3b92-416d-aa0c-437a9c727857")
+
+	// iidCoreWebView2Controller4 is the interface carrying
+	// AllowExternalDrop, which the main window turns off so that files
+	// dropped from Explorer reach the native HWND as WM_DROPFILES
+	// instead of being swallowed by the page (F6 §1, D-114). Read from
+	// WebView2.idl, like every other identifier in this package
+	// (D-080), not from documentation or memory.
+	iidCoreWebView2Controller4 = mustGUID("97d418d5-a426-4e49-a151-e1a10f327d9e")
 )
 
 func coInitialize() error {

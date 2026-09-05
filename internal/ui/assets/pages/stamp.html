@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://liro.local/tokens.css" />
+<link rel="stylesheet" href="https://liro.local/intents.css" />
+<link rel="stylesheet" href="https://liro.local/pages/stamp.css" />
+</head>
+<body class="liro-page">
+
+<!-- F6 §6: the stamp controls get their own window. They were squeezed
+     onto the consent screen, which is the screen a person reads in two
+     seconds to decide whether to sign — not the place to configure a
+     reference line. -->
+<main>
+  <div class="liro-fixed-region">
+    <p class="liro-display" data-i18n="stampwindow.title"></p>
+  </div>
+
+  <section class="liro-scroll-region stamp-form">
+    <label class="liro-check">
+      <input type="checkbox" id="stamp-visible" />
+      <span data-i18n="stampwindow.visible"></span>
+    </label>
+
+    <div id="stamp-details">
+      <div class="liro-field">
+        <label class="liro-field-label liro-text-small" for="stamp-position" data-i18n="stampwindow.position_label"></label>
+        <select id="stamp-position"></select>
+      </div>
+
+      <div class="liro-field">
+        <label class="liro-field-label liro-text-small" for="stamp-page" data-i18n="stampwindow.page_label"></label>
+        <select id="stamp-page"></select>
+      </div>
+
+      <div class="liro-field" id="stamp-page-number-field">
+        <label class="liro-field-label liro-text-small" for="stamp-page-number" data-i18n="stampwindow.page_number_label"></label>
+        <input type="number" id="stamp-page-number" min="1" step="1" />
+      </div>
+
+      <div class="liro-field">
+        <label class="liro-field-label liro-text-small" for="stamp-reference" data-i18n="stampwindow.reference_label"></label>
+        <input type="text" id="stamp-reference" />
+        <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.reference_hint"></p>
+      </div>
+
+      <label class="liro-check">
+        <input type="checkbox" id="stamp-document-id" />
+        <span data-i18n="stampwindow.show_document_id"></span>
+      </label>
+      <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.show_document_id_hint"></p>
+
+      <p class="liro-text-small liro-text-secondary" data-i18n="stampwindow.margin_note"></p>
+    </div>
+  </section>
+
+  <div class="liro-fixed-region actions">
+    <button id="cancel-btn" class="liro-btn liro-btn-secondary" data-i18n="stampwindow.cancel"></button>
+    <button id="save-btn" class="liro-btn liro-btn-primary" data-i18n="stampwindow.save"></button>
+  </div>
+</main>
+
+<script src="https://liro.local/bridge.js"></script>
+<script src="https://liro.local/pages/stamp.js"></script>
+</body>
+</html>

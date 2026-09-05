@@ -45,6 +45,15 @@ var (
 
 	procGetModuleHandleW   = kernel32DLL.NewProc("GetModuleHandleW")
 	procGetCurrentThreadID = kernel32DLL.NewProc("GetCurrentThreadId")
+
+	// shell32's drag-and-drop trio (F6 §1). DragAcceptFiles marks a
+	// window as a drop target for Explorer; WM_DROPFILES then arrives
+	// with an HDROP that DragQueryFileW reads and DragFinish releases.
+	// shell32DLL itself is declared in tray_windows.go, which got there
+	// first for Shell_NotifyIconW.
+	procDragAcceptFile = shell32DLL.NewProc("DragAcceptFiles")
+	procDragQueryFileW = shell32DLL.NewProc("DragQueryFileW")
+	procDragFinish     = shell32DLL.NewProc("DragFinish")
 )
 
 type rect struct{ Left, Top, Right, Bottom int32 }
@@ -93,6 +102,7 @@ const (
 
 	wmDestroy    = 0x0002
 	wmClose      = 0x0010
+	wmDropFiles  = 0x0233
 	wmDPIChanged = 0x02E0
 	wmApp        = 0x8000
 
@@ -311,4 +321,58 @@ func messageBoxWarning(title, text string) {
 	t, _ := windows.UTF16PtrFromString(title)
 	b, _ := windows.UTF16PtrFromString(text)
 	_, _, _ = procMessageBoxW.Call(0, uintptr(unsafe.Pointer(b)), uintptr(unsafe.Pointer(t)), mbOK|mbIconWarning|mbTopMost)
+}
+
+// setDragAcceptFiles marks hwnd as willing to receive files dropped
+// from Explorer, which is what makes WM_DROPFILES arrive at all.
+//
+// On its own this is not enough for a WebView2 host: the control's own
+// child windows are registered drop targets by Chromium and consume the
+// drop before the parent frame ever sees it. The parent only receives
+// WM_DROPFILES once ICoreWebView2Controller4::put_AllowExternalDrop has
+// been set FALSE (webview2_windows.go). Both halves are required; see
+// D-114.
+func setDragAcceptFiles(hwnd uintptr, accept bool) {
+	v := uintptr(0)
+	if accept {
+		v = 1
+	}
+	_, _, _ = procDragAcceptFile.Call(hwnd, v)
+}
+
+// droppedFiles reads every path out of an HDROP and releases it.
+//
+// DragQueryFileW with an index of 0xFFFFFFFF returns the count rather
+// than a path; with a real index and a nil buffer it returns the length
+// in characters, not counting the terminating NUL — which is why each
+// buffer is allocated one larger than the reported length.
+//
+// DragFinish runs from a defer so the HDROP is released even if a path
+// is malformed enough to make the loop give up early: leaking it would
+// leak the shell's own memory for the drop, once per drop, for the life
+// of the process.
+func droppedFiles(hdrop uintptr) []string {
+	defer func() { _, _, _ = procDragFinish.Call(hdrop) }()
+
+	countR, _, _ := procDragQueryFileW.Call(hdrop, 0xFFFFFFFF, 0, 0)
+	count := int(countR)
+	if count <= 0 {
+		return nil
+	}
+	out := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		lenR, _, _ := procDragQueryFileW.Call(hdrop, uintptr(i), 0, 0)
+		n := int(lenR)
+		if n <= 0 {
+			continue
+		}
+		buf := make([]uint16, n+1)
+		gotR, _, _ := procDragQueryFileW.Call(hdrop, uintptr(i),
+			uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+		if int(gotR) == 0 {
+			continue
+		}
+		out = append(out, windows.UTF16ToString(buf))
+	}
+	return out
 }

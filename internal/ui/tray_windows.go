@@ -55,15 +55,14 @@ const (
 	mfString    = 0x00000000
 	mfSeparator = 0x00000800
 
-	// mfGrayed and mfDisabled together render a menu item greyed out and
-	// unselectable (Task 4, F5 review): "Open" stays a genuine
-	// placeholder this phase (F6 supplies the real main window), but an
-	// item that looks enabled and does nothing when clicked reads as a
-	// broken program, not an unfinished feature — MF_GRAYED alone dims
-	// the text but on some Windows versions still delivers WM_COMMAND on
-	// click; MF_DISABLED is what actually stops that.
-	mfGrayed   = 0x00000001
-	mfDisabled = 0x00000002
+	// D-089's rule — a menu item that looks enabled and does nothing
+	// reads as a broken program, so a placeholder is greyed out rather
+	// than silently inert — needed MF_GRAYED|MF_DISABLED while Open was
+	// one. F6 §1 gives Open a window, nothing else in this menu is a
+	// placeholder, and the constants and their helper are deleted
+	// rather than kept for a hypothetical next one: unused code that
+	// documents a rule is worse at it than the rule written down, which
+	// it is, here and in D-089.
 
 	tpmRightButton = 0x0002
 	tpmReturnCmd   = 0x0100
@@ -316,9 +315,12 @@ const (
 )
 
 // showMenu implements F5 §3's right-click menu: Open, Settings,
-// Certificates, View audit log, Quit. Open is shown disabled (Task 4):
-// it stays a genuine F6 placeholder, but must not appear clickable and
-// silently do nothing.
+// Certificates, View audit log, Quit.
+//
+// Open was shown disabled through F5, because it was a placeholder and
+// an item that looks enabled and does nothing reads as a broken program
+// (D-089). F6 §1 gives it a window to open, so it is an ordinary item
+// again.
 func (t *tray) showMenu() {
 	hMenu, _, _ := procCreatePopupMenu.Call()
 	if hMenu == 0 {
@@ -326,7 +328,7 @@ func (t *tray) showMenu() {
 	}
 	defer func() { _, _, _ = procDestroyMenu.Call(hMenu) }()
 
-	appendMenuItemDisabled(hMenu, trayCmdOpen, t.opts.Labels.Open)
+	appendMenuItem(hMenu, trayCmdOpen, t.opts.Labels.Open)
 	appendMenuItem(hMenu, trayCmdSettings, t.opts.Labels.Settings)
 	appendMenuItem(hMenu, trayCmdCertificates, t.opts.Labels.Certificates)
 	appendMenuItem(hMenu, trayCmdAuditLog, t.opts.Labels.AuditLog)
@@ -348,14 +350,6 @@ func (t *tray) showMenu() {
 func appendMenuItem(hMenu uintptr, id int, label string) {
 	l, _ := windows.UTF16PtrFromString(label)
 	_, _, _ = procAppendMenuW.Call(hMenu, mfString, uintptr(id), uintptr(unsafe.Pointer(l)))
-}
-
-// appendMenuItemDisabled adds a menu item that is visible but neither
-// clickable nor selectable (Task 4's "disable... with a 'coming soon'
-// state" option, applied to Open — see showMenu).
-func appendMenuItemDisabled(hMenu uintptr, id int, label string) {
-	l, _ := windows.UTF16PtrFromString(label)
-	_, _, _ = procAppendMenuW.Call(hMenu, mfString|mfGrayed|mfDisabled, uintptr(id), uintptr(unsafe.Pointer(l)))
 }
 
 func (t *tray) Close() error {

@@ -88,8 +88,8 @@ var rectPattern = regexp.MustCompile(`/Rect \[([-0-9. ]+)\]`)
 func signThroughInteractivePath(t *testing.T, stamp consent.StampChoice) []byte {
 	t.Helper()
 	c := i18n.Load("sr-Latn")
-	in, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdfs", "blank.pdf"))
-	if err != nil {
+	in := filepath.Join("..", "..", "testdata", "pdfs", "blank.pdf")
+	if _, err := os.Stat(in); err != nil {
 		t.Fatalf("reading the fixture: %v", err)
 	}
 	out := filepath.Join(t.TempDir(), "blank-potpisan.pdf")
@@ -184,8 +184,8 @@ func TestInteractiveStampCornerReachesTheOutput(t *testing.T) {
 func TestConfiguredBBSignsWithoutATimestampAndReportsBB(t *testing.T) {
 	c := i18n.Load("sr-Latn")
 	cfg := populatedSettings() // SignatureLevel "b-b"
-	in, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdfs", "blank.pdf"))
-	if err != nil {
+	in := filepath.Join("..", "..", "testdata", "pdfs", "blank.pdf")
+	if _, err := os.Stat(in); err != nil {
 		t.Fatalf("reading the fixture: %v", err)
 	}
 

@@ -1,0 +1,191 @@
+body {
+  padding: var(--liro-space-4);
+}
+
+/* D-106: every window is a fixed-height page with exactly one scrolling
+   region and its actions pinned outside it. Here that region is the
+   document list — the only thing that grows with what the user does —
+   so Sign, Browse and Stop are on screen whether the batch is one file
+   or two hundred. */
+main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+}
+
+.files-header,
+.queue-header,
+.report-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+}
+
+.files-footer,
+.queue-footer,
+.report-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+}
+
+#file-list,
+#queue-list,
+#report-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+  /* Room for a row's focus ring, which the overflow container would
+     otherwise clip. */
+  padding: var(--liro-space-1);
+}
+
+/* The empty state occupies the same place the list would, so the window
+   does not change shape the moment the first document arrives. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--liro-space-2);
+  text-align: center;
+  border: 2px dashed var(--liro-color-border);
+  border-radius: var(--liro-radius-md);
+  padding: var(--liro-space-5);
+}
+
+/* While a drag is over the window the whole page says so, not just the
+   empty state: a person dragging onto a list of forty documents needs
+   the same confirmation as one dropping the first. */
+body.drag-over .empty-state,
+body.drag-over #file-list {
+  border: 2px dashed var(--liro-color-brand);
+  border-radius: var(--liro-radius-md);
+}
+
+.file-row {
+  display: flex;
+  /* A failed row carries a third element — the reason — that belongs on
+     its own line. flex-basis: 100% on it only moves it there if the row
+     is allowed to wrap; without this the row squeezed the file name to
+     two words and put the reason beside it instead. */
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--liro-space-2);
+  padding: var(--liro-space-2);
+  background: var(--liro-color-surface-raised);
+  border: 1px solid var(--liro-color-border);
+  border-radius: var(--liro-radius-sm);
+}
+
+.file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* D-096: a value with no length bound wraps rather than widening its
+     container. A 260-character file name must not push Sign off the
+     window. */
+  overflow-wrap: anywhere;
+}
+
+.file-size {
+  flex: 0 0 auto;
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-remove {
+  flex: 0 0 auto;
+}
+
+.file-state {
+  flex: 0 0 auto;
+  font-size: var(--liro-font-size-small);
+  text-align: right;
+}
+
+/* A row that is being signed is the only one that moves; the rest stay
+   still so the list does not shimmer through a hundred documents. */
+.file-row-signing {
+  border-color: var(--liro-color-brand);
+}
+
+.file-row-done .file-state {
+  color: var(--liro-color-positive);
+}
+
+.file-row-failed .file-state {
+  color: var(--liro-color-negative);
+}
+
+.file-row-skipped .file-state {
+  color: var(--liro-color-text-tertiary);
+}
+
+.file-row-failed .file-reason {
+  flex: 1 1 100%;
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-danger);
+  overflow-wrap: anywhere;
+}
+
+#notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-1);
+}
+
+.notice {
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.notice-problem {
+  color: var(--liro-color-warning);
+}
+
+.setting-row {
+  align-items: baseline;
+  gap: var(--liro-space-2);
+}
+
+.setting-row > * {
+  min-width: 0;
+}
+
+.setting-value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--liro-space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--liro-space-2);
+  margin-top: var(--liro-space-2);
+}
+
+#report-failure-list {
+  margin: var(--liro-space-1) 0 0 0;
+  padding-left: var(--liro-space-4);
+}
+
+#report-failure-list li {
+  font-size: var(--liro-font-size-small);
+  overflow-wrap: anywhere;
+}
+
+#report-output,
+#report-level {
+  overflow-wrap: anywhere;
+}
+
+#report-counts {
+  color: var(--liro-color-text-secondary);
+}

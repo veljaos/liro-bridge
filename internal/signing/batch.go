@@ -152,3 +152,13 @@ func Sign(ctx context.Context, batch *Batch, sess *Session) (*BatchResult, error
 	result.Timing.Total = sess.now().Sub(start)
 	return result, nil
 }
+
+// AbortsBatch is abortsBatch for callers outside this package: the two
+// conditions where continuing is pointless because the card is gone or
+// blocked (F2 §5.3, and F6 §3's "abort only on CARD_NOT_PRESENT and
+// PIN_LOCKED"). Everything else is skipped and reported, per SPEC
+// §12.10.
+func AbortsBatch(code errs.Code) bool { return abortsBatch(code) }
+
+// CodeOf is codeOf for callers outside this package.
+func CodeOf(err error) errs.Code { return codeOf(err) }

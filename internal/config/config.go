@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
@@ -86,6 +87,39 @@ type Config struct {
 	// UpdateCheckEnabled toggles the daily GitHub Releases check (SPEC
 	// §6.8/§15.2). On by default; disableable, never silently ignored.
 	UpdateCheckEnabled bool `json:"updateCheckEnabled"`
+
+	// StampPage is which page the visible stamp is drawn on (F6 §6):
+	// "first", "last", or a positive page number written as a decimal
+	// string. A number past the end of a document is clamped to its
+	// last page rather than refused — the same reasoning F6 §6 gives
+	// for coordinates, that a stamp nudged inside is better than a
+	// refusal.
+	StampPage string `json:"stampPage"`
+
+	// StampReference is the optional free-text line the stamp carries
+	// (SPEC §13.5's "optional identifier line"), previously reachable
+	// only as the CLI's --stamp-reference. Empty means no such line.
+	StampReference string `json:"stampReference"`
+
+	// StampShowDocumentID adds the signer's identity document number to
+	// the stamp. Off by default and deliberately kept that way: SPEC
+	// §13.5 calls it personal data appearing on a document that will be
+	// sent to third parties, "available as an option, never the
+	// default". The national identity number is a different thing again
+	// and is unreachable from the stamp entirely (D-054/D-064).
+	StampShowDocumentID bool `json:"stampShowDocumentID"`
+
+	// OutputFolder is where signed documents are written. Empty — the
+	// default — means beside each input, which is F6 §4's own default
+	// and the only one that behaves sensibly for a batch gathered from
+	// several folders.
+	OutputFolder string `json:"outputFolder"`
+
+	// ExplorerMenuEnabled controls the "Potpiši koristeći Liro Bridge"
+	// entry on .pdf files (F6 §2). On by default, registered under
+	// HKCU so it needs no administrator rights, and removed cleanly
+	// when switched off.
+	ExplorerMenuEnabled bool `json:"explorerMenuEnabled"`
 }
 
 const (
@@ -103,6 +137,19 @@ const (
 	defaultUpdateCheckEnabled = true
 	defaultVisibleStamp       = true
 	defaultStampPosition      = "bottom-right"
+	defaultStampPage          = "first"
+
+	// defaultExplorerMenuEnabled is on: F6 §2 asks for the context-menu
+	// entry to be registered by default, and a signing agent nobody can
+	// reach by right-clicking a document is one people forget they have.
+	defaultExplorerMenuEnabled = true
+)
+
+// StampPageFirst and StampPageLast are the two symbolic values
+// StampPage accepts alongside a decimal page number (F6 §6).
+const (
+	StampPageFirst = "first"
+	StampPageLast  = "last"
 )
 
 // validSignatureLevels are the three levels the settings window offers
@@ -138,7 +185,22 @@ func Default() Config {
 		UpdateCheckEnabled: defaultUpdateCheckEnabled,
 		VisibleStamp:       defaultVisibleStamp,
 		StampPosition:      defaultStampPosition,
+
+		StampPage:           defaultStampPage,
+		ExplorerMenuEnabled: defaultExplorerMenuEnabled,
 	}
+}
+
+// ValidStampPage reports whether s is a page selection this project
+// accepts: "first", "last", or a positive decimal page number. Anything
+// else — a zero, a negative, a word — is not a page and is replaced
+// with the default rather than guessed at.
+func ValidStampPage(s string) bool {
+	if s == StampPageFirst || s == StampPageLast {
+		return true
+	}
+	n, err := strconv.Atoi(s)
+	return err == nil && n >= 1
 }
 
 // validLocales are the only three locales the agent recognises (SPEC §9.1).
@@ -215,6 +277,10 @@ func validate(cfg *Config) {
 	}
 	if cfg.OutputSuffix == "" {
 		cfg.OutputSuffix = defaultOutputSuffix
+	}
+	if !ValidStampPage(cfg.StampPage) {
+		slog.Warn("config: invalid stampPage, using default", "value", cfg.StampPage, "default", defaultStampPage)
+		cfg.StampPage = defaultStampPage
 	}
 }
 

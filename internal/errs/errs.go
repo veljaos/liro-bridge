@@ -65,6 +65,16 @@ const (
 	// versus a corrected password (D-104).
 	CodeTSAClientCertUnreadable Code = "TSA_CLIENT_CERT_UNREADABLE"
 
+	// CodeInputUnreadable means the document to sign could not be read:
+	// it is open exclusively in another program (Acrobat holds a lock
+	// while a file is open for editing), it was deleted or moved after
+	// being added to the list, or it lives on a network drive that has
+	// gone away mid-batch. F6 §7 asks each of these to be recognised and
+	// named rather than surfacing as an unclassified failure — and none
+	// of them is a problem with the card, which is where SIGN_FAILED's
+	// own message would send the user.
+	CodeInputUnreadable Code = "INPUT_UNREADABLE"
+
 	// CodeTSAClientCertInvalid means the file was read but could not be
 	// opened as a PKCS#12 key pair — almost always a wrong password.
 	CodeTSAClientCertInvalid Code = "TSA_CLIENT_CERT_INVALID"
@@ -102,6 +112,7 @@ func AllCodes() []Code {
 		CodeVersionTooOld,
 		CodeOutputExists,
 		CodeOutputWriteFailed,
+		CodeInputUnreadable,
 		CodeTSAClientCertUnreadable,
 		CodeTSAClientCertInvalid,
 		CodeInternal,

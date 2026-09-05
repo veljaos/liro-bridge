@@ -265,6 +265,29 @@ func controllerSetVisible(controller uintptr, visible bool) error {
 	return err
 }
 
+// controllerSetAllowExternalDrop calls
+// ICoreWebView2Controller4::put_AllowExternalDrop (IDL slot 37).
+// Counted from the real WebView2.idl and cross-checked against the
+// slots this file already uses: ICoreWebView2Controller occupies 3..25
+// (put_IsVisible=4 and put_Bounds=6 above, Close=24 and
+// get_CoreWebView2=25 below, all confirmed working), Controller2 adds
+// 26..27, Controller3 adds 28..35, and Controller4's two methods are
+// 36 (propget) and 37 (propput).
+//
+// controller must already be the ICoreWebView2Controller4-queried
+// pointer, not the base controller — slot 37 does not exist on that
+// vtable. Its own doc comment on the property: "The default value is
+// TRUE"; setting it FALSE is what lets a host application handle
+// dropped files itself.
+func controllerSetAllowExternalDrop(controller4 uintptr, allow bool) error {
+	v := uintptr(0)
+	if allow {
+		v = 1
+	}
+	_, err := comCall(controller4, 37, v)
+	return err
+}
+
 // controllerClose calls ICoreWebView2Controller::Close (IDL slot 24:
 // counted from put_IsVisible=4 through the 21 methods listed in
 // WebView2.idl before Close).

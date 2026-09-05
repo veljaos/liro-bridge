@@ -43,6 +43,8 @@ var (
 	settingsShared     sharedWindow
 	certificatesShared sharedWindow
 	auditLogShared     sharedWindow
+	mainShared         sharedWindow
+	stampShared        sharedWindow
 )
 
 // drain empties any messages left over from an earlier test, so a
@@ -157,10 +159,66 @@ func sharedAuditLogWindow(t *testing.T) ui.Window {
 	return auditLogShared.win
 }
 
+// sharedMainWindow returns the package's one main window, at the size
+// runMainWindow itself uses (F6 §1).
+func sharedMainWindow(t *testing.T) (ui.Window, chan ui.Message) {
+	t.Helper()
+	mainShared.once.Do(func() {
+		mainShared.messages = make(chan ui.Message, 16)
+		mainShared.win, mainShared.err = ui.NewWindow(ui.Options{
+			Title:       i18n.Load("sr-Latn").T("main.title"),
+			Width:       mainWindowWidth,
+			Height:      mainWindowHeight,
+			Assets:      assetsFS,
+			VirtualHost: liroVirtualHost,
+			StartPage:   "/pages/main.html",
+			OnMessage:   func(m ui.Message) { mainShared.messages <- m },
+			OnClosed:    func() { mainShared.messages <- ui.Message{Type: ui.MessageTypeCancel} },
+			// Deliberately no OnFilesDropped: a window that registers as
+			// a drop target also turns WebView2's own drop handling off,
+			// and a test has nothing to drop on it. What that option
+			// does is covered by internal/ui's own tests and by the
+			// running binary.
+		})
+	})
+	if mainShared.err != nil {
+		t.Fatalf("NewWindow(main): %v", mainShared.err)
+	}
+	drain(mainShared.messages)
+	return mainShared.win, mainShared.messages
+}
+
+// sharedStampWindow returns the package's one stamp window (F6 §6),
+// with cfg's init payload freshly posted.
+func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config) (ui.Window, chan ui.Message) {
+	t.Helper()
+	stampShared.once.Do(func() {
+		stampShared.messages = make(chan ui.Message, 16)
+		stampShared.win, stampShared.err = ui.NewWindow(ui.Options{
+			Title:       i18n.Load("sr-Latn").T("stampwindow.title"),
+			Width:       stampWindowWidth,
+			Height:      stampWindowHeight,
+			Assets:      assetsFS,
+			VirtualHost: liroVirtualHost,
+			StartPage:   "/pages/stamp.html",
+			OnMessage:   func(m ui.Message) { stampShared.messages <- m },
+			OnClosed:    func() { stampShared.messages <- ui.Message{Type: ui.MessageTypeCancel} },
+		})
+	})
+	if stampShared.err != nil {
+		t.Fatalf("NewWindow(stamp): %v", stampShared.err)
+	}
+	drain(stampShared.messages)
+	if err := stampShared.win.PostJSON(buildStampInit(c, cfg)); err != nil {
+		t.Fatalf("PostJSON(stamp init): %v", err)
+	}
+	return stampShared.win, stampShared.messages
+}
+
 // closeSharedWindows is called once, from TestMain, after every test
 // has finished with them.
 func closeSharedWindows() {
-	for _, w := range []*sharedWindow{&consentShared, &settingsShared, &certificatesShared, &auditLogShared} {
+	for _, w := range []*sharedWindow{&consentShared, &settingsShared, &certificatesShared, &auditLogShared, &mainShared, &stampShared} {
 		if w.win != nil {
 			_ = w.win.Close()
 		}

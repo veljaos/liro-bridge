@@ -10,7 +10,11 @@
   // to be one of them).
   function syncPresetSelection() {
     var url = document.getElementById("tsa-url").value;
-    document.querySelectorAll("input[name=tsa-preset]").forEach(function (el) {
+    document.getElementById("stamp-settings-btn").addEventListener("click", function () {
+    act("stampSettings");
+  });
+
+  document.querySelectorAll("input[name=tsa-preset]").forEach(function (el) {
       el.checked = presetURLs[el.value] === url && url !== "";
     });
   }
@@ -43,6 +47,8 @@
     document.getElementById("tsa-client-cert-path").value = m.tsaClientCertPath || "";
     document.getElementById("tsa-client-cert-password").value = m.tsaClientCertPassword || "";
     document.getElementById("output-suffix").value = m.outputSuffix || "";
+    document.getElementById("output-folder").value = m.outputFolder || "";
+    document.getElementById("explorer-menu").checked = !!m.explorerMenu;
     document.getElementById("check-updates-daily").checked = !!m.checkUpdatesDaily;
     window.liroSetText(document.getElementById("version"), m.version);
     // Task 3 (F5 fourth-real-run review): three levels, B-B included.
@@ -71,6 +77,8 @@
       tsaClientCertPath: document.getElementById("tsa-client-cert-path").value,
       tsaClientCertPassword: document.getElementById("tsa-client-cert-password").value,
       outputSuffix: document.getElementById("output-suffix").value,
+      outputFolder: document.getElementById("output-folder").value,
+      explorerMenu: document.getElementById("explorer-menu").checked,
       signatureLevel: level,
       checkUpdatesDaily: document.getElementById("check-updates-daily").checked,
     });
@@ -80,6 +88,10 @@
     pendingAction = action;
     window.liroSend("approve");
   }
+
+  document.getElementById("stamp-settings-btn").addEventListener("click", function () {
+    act("stampSettings");
+  });
 
   document.querySelectorAll("input[name=tsa-preset]").forEach(function (el) {
     el.addEventListener("change", function () {

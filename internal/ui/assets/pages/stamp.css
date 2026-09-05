@@ -1,0 +1,31 @@
+body {
+  padding: var(--liro-space-4);
+}
+
+/* D-106: one scrolling region, actions pinned outside it. */
+main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+}
+
+.stamp-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+  padding: var(--liro-space-1);
+}
+
+#stamp-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--liro-space-2);
+}

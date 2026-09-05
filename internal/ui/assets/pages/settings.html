@@ -89,6 +89,28 @@
       <input type="text" id="output-suffix" />
     </label>
 
+    <!-- F6 §4: where signed documents go. Empty is the default and
+         means beside each input, which is the only sensible answer for
+         a batch gathered from several folders. -->
+    <label class="liro-field">
+      <span class="liro-field-label" data-i18n="settings.output_folder_label"></span>
+      <input type="text" id="output-folder" />
+      <span class="liro-text-small liro-text-secondary" data-i18n="settings.output_folder_default"></span>
+    </label>
+
+    <!-- F6 §2: the right-click entry, on by default, removed cleanly
+         when switched off. -->
+    <label class="liro-check">
+      <input type="checkbox" id="explorer-menu" />
+      <span data-i18n="settings.explorer_menu"></span>
+    </label>
+
+    <!-- F6 §6: the stamp has its own window; this is the way in from
+         Settings, the other being the main window's summary line. -->
+    <div class="actions-row">
+      <button id="stamp-settings-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.stamp_settings"></button>
+    </div>
+
     <!-- Task 3 (F5 fourth-real-run review): B-B comes first, so a user
          who has decided against a timestamp has something to choose
          and is never asked again mid-signature. Each level says what

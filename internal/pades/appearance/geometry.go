@@ -167,3 +167,48 @@ func NormaliseRotate(rotate int) int {
 	}
 	return r
 }
+
+// ClampToPageBox moves a stamp of stampW×stampH, requested at (x, y),
+// so that it sits entirely inside box with at least margin clear of
+// every edge — and returns whether it had to move.
+//
+// F6 §6 states the rule and the reason: "clamp them into the page box
+// less the margin rather than rejecting them — a stamp nudged inside is
+// better than a refusal, and a stamp hanging off the page is not
+// acceptable output." Refusing would turn a slightly-wrong coordinate
+// into a failed batch; drawing it where it was asked would produce a
+// document with a signature appearance half over the edge, which is
+// what the original Bridge would not allow either.
+//
+// A page too small to hold the stamp and both margins is the one case
+// where the margin cannot be honoured on both sides. The stamp is then
+// pinned to the bottom-left inset rather than centred or shrunk: the
+// stamp's own size is fixed (SPEC §13.1), so something has to give, and
+// a predictable corner is easier to reason about than a stamp that
+// silently changed size.
+func ClampToPageBox(box [4]float64, x, y, stampW, stampH, margin float64) (cx, cy float64, moved bool) {
+	minX, minY := box[0]+margin, box[1]+margin
+	maxX, maxY := box[2]-margin-stampW, box[3]-margin-stampH
+
+	if maxX < minX {
+		cx = minX
+	} else {
+		cx = clamp(x, minX, maxX)
+	}
+	if maxY < minY {
+		cy = minY
+	} else {
+		cy = clamp(y, minY, maxY)
+	}
+	return cx, cy, cx != x || cy != y
+}
+
+func clamp(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
