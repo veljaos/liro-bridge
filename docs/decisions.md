@@ -6798,3 +6798,89 @@ suppressed, since F6 forbids `//nolint` and the path was arbitrary.
   Backwards: v2 is the current schema, [[D-022]] already verified this
   config against a real v2 binary, and v1 is what would need replacing
   again next.
+
+---
+
+## D-111 — Windows-only files carry the `_windows` suffix; CI lints both the Linux and the Windows view
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 0 (found by 0d's own fix)
+
+**Decision.** `cmd/liro-bridge/ui_assets.go` and `ui_payloads.go` are
+renamed `ui_assets_windows.go` and `ui_payloads_windows.go` (and
+`ui_payloads_test.go` to `ui_payloads_windows_test.go`), which is the
+build-constraint mechanism SPEC §8.2 already specifies and every other
+file in that directory already uses. `fprintln`/`fprintf` — the only two
+things in either file that are genuinely cross-platform — move to a new,
+unconstrained `cmd/liro-bridge/print.go`. CI gains a second lint step
+that runs the same pinned `golangci-lint` with `GOOS=windows`.
+
+**Why — what fixing the lint action actually uncovered.** [[D-110]]
+pinned the action so it could read the v2 config. The very first run
+that got as far as analysing anything failed with ten `unused` findings,
+all in F5 code, none of it touched by this phase. Confirmed pre-existing
+rather than introduced, by linting the parent commit (`568567a`) in a
+detached worktree with `GOOS=linux`: **the identical ten issues**. The
+previous lint step had never reported them because it died loading the
+config, every run, since F0.
+
+The cause is a real property of the code, not a linter quirk.
+`golangci-lint` on `ubuntu-latest` analyses the `GOOS=linux` view.
+`ui_payloads.go` and `ui_assets.go` carried no build constraint, so they
+compiled on Linux — but every caller of what they define, in production
+(`interactive_windows.go`, `certificates_windows.go`,
+`auditlog_windows.go`, `tray_windows.go`) and in tests
+(`consent_render_windows_test.go` and its siblings), is behind a
+`windows` constraint and therefore absent there. On Linux those symbols
+genuinely are dead code. `unused` was right; the filenames were wrong.
+
+Naming them for what they are is the fix rather than silencing the
+linter: these files build the JSON payloads a WebView2 window consumes
+and map the virtual host its assets are served from. There is nothing in
+either that could run on another platform, and when F12/F13 bring macOS
+and Linux windows, those platforms will need their own payload code
+beside this one — exactly what the suffix convention is for.
+
+**The second lint step is the more important half.** Until now CI
+linted only the Linux view, which excludes almost everything this
+project currently is: `internal/ui`'s entire hand-written COM and
+WebView2 layer, the tray, the icon loading, every window in
+`cmd/liro-bridge`. None of it had ever been linted, by any run, ever.
+That is precisely the blind spot [[D-088]] found and closed for *tests*
+— "CI never built or ran a single `*_windows.go` file" — surviving one
+layer over in the lint step, and it is why a ten-symbol pile of dead
+code sat unreported through an entire phase. Both views are linted
+because each compiles code the other cannot: `GOOS=linux` is the only
+one that sees the `*_other.go` fallbacks, `GOOS=windows` the only one
+that sees the rest.
+
+**Verified.** `golangci-lint run ./...` at v2.13.2 reports `0 issues.`
+for `GOOS=windows`, `GOOS=linux` and `GOOS=darwin`; `go build` and
+`go vet -unsafeptr=false` succeed for all three; the full test suite
+passes with and without the `softtoken` tag.
+
+**Rejected.**
+- **Deleting the ten symbols as dead code.** They are not dead — they
+  are the consent window's progress, done, timestamp-choice,
+  output-exists and failure payloads, all reached on Windows, several
+  of them added only last phase ([[D-095]], [[D-104]]). Only the Linux
+  view thinks otherwise, and the Linux view is wrong about this file
+  because the file lied about which platform it was for.
+- **Excluding `unused` from `.golangci.yml`, or excluding
+  `cmd/liro-bridge` from it.** Turning off the check that correctly
+  identified a real filing error, so that the filing error can stay. It
+  would also disarm `unused` for every future genuine case.
+- **A `//nolint:unused` on each symbol.** Ten suppressions for one
+  misnamed pair of files, and forbidden outright by F6's own rules.
+- **Linting only with `GOOS=windows` and dropping the Linux pass.**
+  Would have fixed the failure without renaming anything, and left the
+  `*_other.go` fallbacks — the code that runs when someone builds this
+  for a platform it does not support yet — as the only unlinted files
+  in the repository. Both passes cost one step.
+- **Bumping `actions/checkout@v4` and `actions/setup-go@v5` to v6 while
+  in here.** The run's annotations warn that both target Node 20 and are
+  being forced onto Node 24. Real, and worth doing — but it is not one
+  of F6 §0's four repairs, it cannot be verified from this machine, and
+  a workflow change made speculatively is how a green build becomes a
+  red one for a reason unrelated to anything being worked on. Recorded
+  here so the next person does not have to rediscover it.

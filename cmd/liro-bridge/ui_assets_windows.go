@@ -1,18 +1,17 @@
+// Everything in this file exists to feed a WebView2 window, which is
+// Windows-only this phase (SPEC §11.11) — the filename says so now.
+// Without the suffix these symbols still compiled on Linux, where every
+// one of their callers is behind a `windows` constraint and therefore
+// absent, so `unused` was right to flag them. The two output helpers
+// that genuinely are cross-platform moved to print.go.
+
 package main
 
 import (
-	"fmt"
-	"io"
 	"io/fs"
 
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
-
-// fprintln mirrors internal/cli's own small helper (render.go) —
-// duplicated here rather than exported across the internal/cli
-// boundary for one two-line function.
-func fprintln(w io.Writer, a ...any)               { _, _ = fmt.Fprintln(w, a...) }
-func fprintf(w io.Writer, format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
 
 // liroVirtualHost is the hostname every window's assets are mapped to
 // (F5 §2.4). It resolves to nothing outside the WebView2 instance that

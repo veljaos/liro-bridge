@@ -1,3 +1,6 @@
+// Windows-only, like every caller of it (see ui_assets_windows.go's own
+// note on why the filename matters here).
+
 package main
 
 // Builds the JSON payloads pushed to the consent window's page via

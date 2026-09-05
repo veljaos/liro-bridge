@@ -49,6 +49,27 @@ jobs:
         with:
           version: v2.13.2
 
+      # The step above analyses the GOOS=linux view of this repository,
+      # which excludes every *_windows.go file — that is most of what
+      # this project currently is: internal/ui's whole COM/WebView2
+      # layer, the tray, and cmd/liro-bridge's window code. Linting only
+      # the Linux view is the same blind spot D-088 had to fix for
+      # tests, and it is why the first genuinely-working lint run found
+      # ten dead symbols in a package nobody had ever linted from the
+      # side that uses them (D-111).
+      #
+      # Both views are linted because each sees code the other cannot:
+      # GOOS=linux is the only one that compiles the *_other.go
+      # fallbacks, GOOS=windows the only one that compiles everything
+      # else.
+      - name: golangci-lint (GOOS=windows)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
       - name: dependency rule check
         run: go run ./scripts/checkdeps
 
