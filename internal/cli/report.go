@@ -81,13 +81,16 @@ type Report struct {
 	TSL          tsl.Provenance
 }
 
-// Hidden reports whether row is hidden from the default (non --all) view:
-// SPEC/F1 §5.4 measured that the store contains Windows-internal
+// Hidden reports whether row is hidden from the default (non --all)
+// view: SPEC/F1 §5.4 measured that the store contains Windows-internal
 // certificates (self-signed, GUID subject, software KSP) that are
-// neither qualified nor of any recognised purpose. Those, and only
-// those, are hidden by default.
+// neither qualified nor anything a person could sign with.
+//
+// The rule itself lives in classify.Info, not here, so that this
+// command, the consent window and the Certificates window share one
+// implementation rather than three copies that can drift (F6 §0b).
 func (r CertRow) Hidden() bool {
-	return r.Info.Purpose == classify.PurposeUnknown && r.Info.Qualification == classify.QualificationNotQualified
+	return r.Info.IsWindowsInternal()
 }
 
 // Gather assembles a Report: readers, enumerated certificates

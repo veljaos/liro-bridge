@@ -6469,3 +6469,332 @@ and the element's height, and fails against the pre-fix stylesheet with
   for the reason [[D-096]] rejected it for the fingerprint: a label the
   user cannot read in full is not a label, and a settings form is
   exactly where the full words matter.
+
+---
+
+## D-107 — The embedded Trusted List is stored byte-for-byte as the Ministry publishes it; `text=auto` had normalised its CRLF line endings away
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 0 (repair 0a)
+
+**Decision.** `.gitattributes` marks `internal/trust/tsl/seed/TSL-RS.xml`
+— and every other byte-exact artefact in the repository — as `-text`, so
+git stores and checks it out verbatim on every platform. The seed itself
+is replaced with the Ministry's own bytes, BOM stripped and CRLF intact,
+which hash to `3f574484…` again. `scripts/genseed` is a new developer
+tool that is the only supported way to replace it: it fetches (or reads)
+a candidate, strips the BOM, **verifies the XML-DSig signature against
+`tsl.PinnedSigners` and refuses to write anything that does not verify**,
+refuses a sequence number older than the committed one, and prints the
+sequence, issue date, provider count, line-ending style and digest of
+both the old and the new list before touching anything.
+
+**What the discrepancy actually was.** Three numbers were reported as
+disagreeing. Measured directly, before changing anything:
+
+| Reading | Sequence | Digest |
+|---|---|---|
+| The Ministry's live publication, as served | 36 | `ea573c30…` (BOM + CRLF) |
+| The same, BOM stripped — what [[D-018]] committed | 36 | `3f574484…` |
+| The committed seed, as it stood | 36 | `d83bac89…` (BOM stripped, **LF**) |
+| The on-disk cache, freshly fetched | 36 | `ea573c30…` |
+| `liro-bridge certs` | 36 | — |
+| The `currentSequence=37` in the test log | — | — |
+
+**Every one of them says 36.** There is no sequence 37 and there never
+was one: `currentSequence=37` is a value `TestRefreshRejectsRollback`
+writes into a store by hand (`s.current.Sequence = 37`) so that the real,
+validly signed sequence-36 list reads as a rollback attempt. It is a
+fabricated number in the log line of a *passing* test — the anti-rollback
+warning firing exactly as designed — and it appears in the output of
+`go test ./...` beside the digest failure, which is what made the two
+look related. They are not.
+
+The digest failure has one cause, and it is not the Trusted List at all.
+`.gitattributes` read `* text=auto eol=lf`. The Ministry serves this
+document with CRLF line endings; git classified it as text and
+normalised all 4 772 of them to LF at commit time. The result is a
+byte-different copy of a semantically identical document: same sequence,
+same issue date, same ten providers, and — measured, not assumed — a
+signature that still verifies against the pinned signers, because XML
+parsing normalises `\r\n` to `\n` before canonicalisation ever sees it.
+So nothing was ever *wrong* with what the agent trusted; what broke was
+the one check that proves the embedded list is the published list, and
+that check was right to break. A seed whose digest cannot be compared
+against the Official Gazette is a seed nobody can audit.
+
+**Why this is worth a `.gitattributes` entry rather than a note.** The
+digest is the only mechanism connecting this file to the Ministry's
+publication. Restoring the bytes without disabling the normalisation
+would put them back exactly as they were within one commit, on any
+machine, silently. The same protection is extended to the other
+byte-exact artefacts — `testdata/golden/**` (SPEC §16.2's byte-for-byte
+comparison), `testdata/pdfs/*.pdf` ([[D-071]]'s reproducible fixture),
+the `.der` certificates, the font subset, the two `.flate` logo halves,
+the icon and `WebView2Loader.dll`. The `.der`/`.ttf`/`.flate`/`.ico`/
+`.dll` files were already safe by accident — git's binary heuristic
+found NUL bytes in them — but `blank.pdf` and `minimal-signed-bb.pdf`
+were classified as **text**, and are byte-exact artefacts one
+CR-containing regeneration away from the identical bug. Relying on a
+heuristic to protect a golden file is not protection.
+
+**Verified.** `go run ./scripts/genseed` fetched the live list and
+printed the candidate's digest as `3f574484…`, its signature as verified
+against a pinned Ministry signer, sequence 36, issued 2026-05-20, ten
+providers — before writing, and independently of the constant it was
+about to satisfy. `git cat-file blob` on the staged file confirms the
+*index* holds `3f574484…`, not just the working tree, which is the half
+that would otherwise regress on the next clone.
+
+Three tests, each confirmed to fail against the pre-fix artefact and pass
+against the fixed one:
+
+- `TestSeedDigestMatchesExpected` (pre-existing) — the failure that
+  started this.
+- `TestSeedIsTheMinistrysOwnBytes` (new) — fails with "the embedded
+  seed's CRLF line endings have been normalised to LF; check
+  .gitattributes marks it -text", so the next person to see it is told
+  the cause rather than a hex mismatch.
+- `TestSeedSequenceAgreesWithWhatTheCodeReports` (new, F6 §0a's required
+  check) — compares four independent readings of the sequence number:
+  the `seedSequence` constant, the `<TSLSequenceNumber>` element found by
+  regexp in the raw bytes (deliberately not through this package's own
+  parser), `Parse`'s result, and `Provenance.Sequence`, which is the
+  number `certs` actually prints. It cannot be satisfied by a value that
+  exists only inside a test's own fixture, which is precisely what 37
+  was.
+
+**Rejected.**
+- **Updating `seedSHA256` to `d83bac89…`.** The obvious way to make a
+  red test green, and the one that had to be refused: it would pin the
+  digest of a file git happened to rewrite, permanently severing the
+  connection to the digest published in the Official Gazette. SPEC §11.1
+  makes the Trusted List the primary authority for qualification; a seed
+  that can no longer be checked against its publisher is exactly the
+  "unverified seed is worse than a stale one" case F6 §0a names.
+- **Committing the file with its BOM, since that is literally what the
+  server sends.** Rejected: [[D-018]] stripped it deliberately and the
+  digest F1 §4.7 and the Gazette record is the stripped one. A BOM is
+  transfer encoding, not content, and everything downstream
+  (`encoding/xml`, the C14N implementation) would treat it as content.
+- **`* -text` for the whole repository.** Would fix this and create a
+  worse problem: Go source, JSON catalogues and CSS committed from a
+  Windows machine would start carrying CRLF into the repository, which
+  is what `text=auto` is there to prevent. The exception belongs on the
+  files whose bytes are the point, not on all of them.
+- **Re-seeding to a newer list while in here.** There is no newer list:
+  the Ministry's live publication is still sequence 36. If there had
+  been, `scripts/genseed` is what would have taken it, and it would have
+  verified the signature first — which is the shape F6 §0a asks for
+  whether or not it was needed this time.
+
+---
+
+## D-108 — Windows-internal certificates are recognised by what they are, not by their KeyUsage; one rule in `classify`, used by every listing
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 0 (repair 0b)
+
+**Decision.** `classify.Info.IsWindowsInternal()` is the single rule
+deciding what a listing hides by default. It returns true for a
+certificate the Trusted List does not know that is *either* of no
+recognised purpose ([[D-023]]'s original rule, kept intact) *or*
+self-signed with a GUID for both its subject and issuer common name. A
+soft-token certificate is excluded explicitly. `classify.Info` gains
+`SelfSigned`, set by `Classify` from
+`bytes.Equal(cert.RawSubject, cert.RawIssuer)`.
+`internal/cli.CertRow.Hidden()` now delegates to it and holds no logic of
+its own; the consent window and the Certificates window already went
+through `CertRow.Hidden()`, so all three surfaces share one
+implementation rather than three copies.
+
+**Why the rule had to change rather than be applied more widely.** F6
+§0b reads as "the filter exists in one place and not the other". It does
+not: `internal/cli/render.go`, `cmd/liro-bridge/interactive_windows.go`
+and `cmd/liro-bridge/certificates_windows.go` all called
+`CertRow.Hidden()` already. The rule itself was the problem. Measured on
+the owner's machine against the real Windows store, before any change:
+
+```
+2414ebcc-b68a-461c-9a69-bca3af581969  purpose unknown         hidden
+5a26d334-110e-4468-910f-34313774f081  purpose authentication  SHOWN
+```
+
+Both are self-signed, software-backed, GUID-named and unknown to the
+Trusted List — the same artefact. The second carries KeyUsage
+`digitalSignature + keyEncipherment`, so `purposeFromKeyUsage`
+(correctly, per SPEC §11.4) calls it "authentication", and [[D-023]]'s
+purpose-keyed test let it through. Purpose was never what made these
+certificates internal; on the machine F1 was measured on it just happened
+to be a reliable proxy, and the proxy stopped holding the moment Windows
+issued itself a certificate with different bits set.
+
+[[D-023]]'s first limb is kept rather than replaced because it is not
+wrong, only incomplete — it is what hides `selfsigned_unrelated.der` and
+the `2414ebcc…` certificate, and dropping it would be a regression
+against behaviour F1 §5.4 measured and F1 §6.1's transcript shows.
+
+[[D-023]]'s other property is preserved deliberately and tested for: a
+real *authentication* certificate — MUP's or Halcom's, qualified, on a
+card — is still shown, disabled, with its reason. F1 §6.1's own example
+transcript shows one in the default view, and F5 §5.2's "hiding them
+makes the user think the card is broken" is the same instruction from
+the other side.
+
+**Why `isGUID` is strict.** It accepts the bare canonical form and the
+braced form Windows also writes (which `selfsigned_unrelated.der`
+already reproduces), and nothing else — not `urn:uuid:…`, not a GUID
+with a word appended. A looser match is a way to hide a real certificate
+whose name merely contains one, and hiding a certificate a person needs
+is a worse failure than showing one they do not.
+
+**Verified against the real store, through the rebuilt binary**, not
+only through tests: `liro-bridge certs` now lists 2 certificates (the
+owner's two real MUP ones, correctly marked unusable with the card out);
+`liro-bridge certs --all` lists all 4, both GUID certificates included.
+`certs --json` continues to emit every row with its own `hidden` flag, as
+it always has — `--all` was only ever about the text view.
+
+Tests: `TestReportedWindowsInternalCertificateIsHidden` uses the exact
+GUID from the owner's output and fails against [[D-023]]'s rule;
+`TestWindowsInternalRuleAcrossCertificateShapes` covers both hidden
+shapes and four that must stay visible, including a self-signed
+certificate with an ordinary name (being self-signed is not on its own
+disqualifying — a company's internal certificate has a name a person
+recognises); `TestSoftTokenCertificateIsNeverHidden` guards SPEC §16.6;
+`TestIsGUID` covers the boundary cases.
+
+**Rejected.**
+- **Filtering in each of the three listing call sites.** That is what
+  F6 §0b's wording suggests and it is the wrong shape: three copies of
+  one rule is how the consent window and `certs` come to disagree in the
+  first place. The rule belongs where classification lives.
+- **Keying the rule on `OnHardware`.** Available at the `CertRow` layer
+  and tempting, since these certificates are all software-backed.
+  Rejected as adding nothing: a hardware-backed certificate never has a
+  self-signed GUID subject, so the condition is already implied, and
+  putting it in the rule would push the rule out of `classify.Info` for
+  no gain.
+- **Hiding anything not `PurposeSigning`.** Rejected for the reason
+  [[D-023]] rejected it, unchanged: F1 §6.1's transcript shows an
+  authentication certificate in the default view.
+- **A new committed `.der` fixture for the reported certificate.**
+  `scripts/gencerts` draws fresh keys and serials from `crypto/rand` and
+  rewrites every file it owns, so adding one would churn five unrelated
+  fixtures. The test builds its certificate in Go instead —
+  [[D-038]]'s own reasoning for synthetic PDF fixtures, and this one
+  carries no personal data and no real CA bytes worth freezing.
+
+---
+
+## D-109 — Autostart creates the Run key rather than assuming it; the CI failure was a missing registry key, not a missing executable
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 0 (repair 0c)
+
+**Decision.** `windowsAutostart.SetEnabled` uses `registry.CreateKey`
+when enabling — which opens an existing key unchanged and creates one
+otherwise — and treats a missing key as "already disabled" when
+disabling, rather than an error. `windowsAutostart` gains a `keyPath`
+field so a test can point it at a subkey that genuinely does not exist;
+`NewAutostart()`'s behaviour and the exported surface are unchanged.
+`TestWindowsAutostartRoundTrip` skips, with a message naming the key,
+when the real Run key cannot be opened or created at all.
+
+**What the failure actually was.** Reported as
+
+```
+TestWindowsAutostartRoundTrip
+  SetEnabled(true): The system cannot find the file specified.
+```
+
+and read, reasonably, as the executable path not existing on the runner.
+It is not: the registry stores that string verbatim and never resolves
+it. "The system cannot find the file specified" is
+`ERROR_FILE_NOT_FOUND` from `registry.OpenKey` — the *key* is absent. A
+fresh GitHub runner profile has no
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. `IsEnabled`
+already handled that case (`registry.ErrNotExist` → not enabled);
+`SetEnabled` returned it raw.
+
+So this was a product defect, not only a test one: on any machine
+without that key — a fresh profile, a locked-down or newly provisioned
+account — turning autostart on from Settings failed, with a message
+pointing at the wrong thing. Skipping the test would have hidden it.
+
+**Confirmed by reproduction, both directions.** With `SetEnabled`
+reverted to `OpenKey`, the new
+`TestWindowsAutostartCreatesTheKeyWhenItDoesNotExist` fails with
+`SetEnabled(true) with no key present: The system cannot find the file
+specified.` — the CI message, character for character, on a machine
+where the real Run key exists. With `CreateKey`, it passes. The test
+uses a scratch key under `HKCU\Software\LiroBridgeTestScratch`, asserts
+the key is absent before it starts, and deletes both it and its parent
+afterwards, so it does not depend on the environment and leaves nothing
+behind.
+
+`TestWindowsAutostartLeavesNeighbouringValuesAlone` is new for a
+different reason: the round-trip test's comment has always claimed this
+code touches only its own value name, and nothing checked it. It runs
+against the user's real Run key, where a neighbour is somebody else's
+startup entry.
+
+**Rejected.**
+- **Skipping the test on CI and leaving the code alone.** F6 §0c offers
+  this, and it would have been the wrong half of the choice: the test
+  was reporting a real defect in a real code path, in the one
+  environment that happened to exercise it. The skip is kept as a
+  fallback for an environment with no writable profile at all, but it is
+  no longer what makes CI green.
+- **Making the test write to a fake or redirected registry hive.**
+  Windows has no per-process registry redirection short of
+  `RegOverridePredefKey`, which is more machinery than a `keyPath` field
+  and would test something other than what ships.
+- **Validating `exePath` in `SetEnabled`.** Rejected as inventing a
+  requirement: nothing asks for it, the path is legitimately allowed to
+  be a not-yet-installed location, and the reported error would still
+  not have been about that.
+
+---
+
+## D-110 — `golangci-lint-action` is pinned to v9 at the exact version used locally
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 0 (repair 0d)
+
+**Decision.** CI's lint step uses `golangci/golangci-lint-action@v9`
+with `version: v2.13.2` — the exact version installed on the
+development machine — instead of `@v6` with `version: latest`.
+
+**Why.** `.golangci.yml` targets the v2 configuration schema
+([[D-009]], corrected by [[D-022]]). Action v6 installs golangci-lint
+v1, which cannot read it; the action's own v7 release notes state "The
+GitHub Action v7 supports golangci-lint v2 only", and v9 (current, and
+what this pins) requires golangci-lint ≥ v2.1.0. That mismatch is the
+whole of the 36-second Ubuntu failure — the job never got as far as
+linting anything.
+
+The version is pinned rather than left at `latest` for a reason beyond
+this fix: `latest` means CI's verdict can change overnight with no
+commit, so a new lint rule arrives as a red build on an unrelated
+change, at the worst possible moment for diagnosing it. Pinning to the
+version a developer actually runs means `golangci-lint run ./...`
+locally and the CI step are the same check.
+
+**Verified.** `golangci-lint run ./...` at v2.13.2 reports `0 issues.`
+across the repository, including everything Part 0 added. Whether the
+*hosted* job goes green cannot be observed from this machine — it needs
+a push — and is reported as such rather than claimed.
+
+One real finding came out of running it: `misspell` reads the backslash
+in a Windows path literal `C:\other\app.exe` as an escape and sees
+"ther" inside it. The value in the test was changed rather than
+suppressed, since F6 forbids `//nolint` and the path was arbitrary.
+
+**Rejected.**
+- **Pinning to `v9` with `version: latest`.** Fixes the schema mismatch
+  and leaves the "CI's verdict changes with no commit" half in place.
+- **Downgrading `.golangci.yml` to the v1 schema to suit action v6.**
+  Backwards: v2 is the current schema, [[D-022]] already verified this
+  config against a real v2 binary, and v1 is what would need replacing
+  again next.

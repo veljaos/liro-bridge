@@ -1,1 +1,25 @@
 * text=auto eol=lf
+
+# Byte-exact artefacts. These are never normalised, because their value
+# IS their bytes: a digest is compared against them, or a signature is
+# verified over them, and `text=auto` silently rewriting CRLF to LF
+# changes both.
+#
+# This is not hypothetical. The embedded Trusted List
+# (internal/trust/tsl/seed/TSL-RS.xml) is published by the Ministry with
+# CRLF line endings; `text=auto` normalised them at commit time, so the
+# committed seed hashed to d83bac89... instead of the 3f574484... printed
+# in the Official Gazette and pinned by seedSHA256 — a byte-different
+# copy of a semantically identical document, and a red CI for a phase.
+# See docs/decisions.md D-107.
+#
+# `-text` means: store and check out verbatim, on every platform.
+internal/trust/tsl/seed/TSL-RS.xml   -text
+testdata/golden/**                   -text
+testdata/pdfs/*.pdf                  -text
+testdata/certs/*.der                 -text
+internal/pades/appearance/*.flate    -text
+internal/pades/appearance/*.ttf      -text
+internal/ui/assets/icon.ico          -text
+internal/ui/assets/webview2/*.dll    -text
+assets/*.png                         -text

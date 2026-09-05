@@ -76,6 +76,13 @@ type Info struct {
 	Qualification Qualification
 	Purpose       Purpose
 
+	// SelfSigned is true when the certificate's Subject and Issuer DNs
+	// are byte-identical. It is a plain structural fact, not a claim
+	// that the signature was checked — nothing here verifies that the
+	// certificate signed itself. It exists because it is one half of
+	// what identifies a Windows-internal artefact (IsWindowsInternal).
+	SelfSigned bool
+
 	// OnQSCD is true when the certificate asserts QcSSCD, or when the
 	// matching TSL service carries a QCWithQSCD qualifier.
 	OnQSCD bool

@@ -34,10 +34,20 @@ jobs:
         # the check is per-expression, not per-package). See D-080.
         run: go vet -unsafeptr=false ./...
 
+      # golangci-lint-action v6 installs golangci-lint v1 and cannot read
+      # this repository's v2 config schema (.golangci.yml's `version: "2"`,
+      # D-009/D-022) — that mismatch is what failed the Ubuntu job after
+      # 36 seconds (F6 §0d). v7 was the first to support v2, v9 is
+      # current and requires golangci-lint >= v2.1.0.
+      #
+      # The version is pinned, not `latest`, so CI lints with exactly
+      # what a developer runs locally: `latest` means CI's verdict can
+      # change overnight with no commit, which is how a lint rule
+      # arrives as a mysterious red build on an unrelated change.
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.13.2
 
       - name: dependency rule check
         run: go run ./scripts/checkdeps

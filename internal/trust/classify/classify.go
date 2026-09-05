@@ -1,6 +1,7 @@
 package classify
 
 import (
+	"bytes"
 	"crypto/sha1" //nolint:gosec // certificate thumbprint identifier, not a signature — see the identical note in internal/keysource/windowscng/thumbprint.go
 	"crypto/x509"
 	"encoding/hex"
@@ -56,6 +57,7 @@ func Classify(cert *x509.Certificate, list *tsl.List, onHardware, hardwarePresen
 		Thumbprint:      thumbprint(cert.Raw),
 		Subject:         subject,
 		IssuerCN:        cert.Issuer.CommonName,
+		SelfSigned:      bytes.Equal(cert.RawSubject, cert.RawIssuer),
 		NotBefore:       cert.NotBefore,
 		NotAfter:        cert.NotAfter,
 		Qualification:   qualification,
