@@ -225,7 +225,14 @@ jobs:
           THUMBPRINT=$(dist/liro-bridge-softtoken certs --json | jq -r '.certificates[] | select(.isTestKey==true) | .thumbprint')
           test -n "$THUMBPRINT"
 
-          dist/liro-bridge-softtoken sign --in /tmp/input.pdf --out /tmp/signed.pdf --thumbprint "$THUMBPRINT" --force
+          # --on-tsa-failure b-b because this step deliberately configures
+          # no timestamp authority. Since D-067, "a level was requested and
+          # no TSA is configured" is a failure rather than a silent
+          # downgrade (SPEC §18.11), and --level defaults to b-lt — so
+          # without this flag the command correctly aborts. The flag is
+          # how a caller says "B-B is what I want here", which is exactly
+          # what this step means.
+          dist/liro-bridge-softtoken sign --in /tmp/input.pdf --out /tmp/signed.pdf --thumbprint "$THUMBPRINT" --force --on-tsa-failure b-b
 
           cat > dist/ci-helpers/extract/main.go << 'GOEOF'
           package main

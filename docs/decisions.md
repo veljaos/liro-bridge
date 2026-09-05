@@ -6987,3 +6987,98 @@ can fail for being on a slow machine.
   merits some day, but changing production code to satisfy a test's
   arbitrary stopwatch is backwards, and the test would still be
   measuring the machine.
+
+---
+
+## D-113 — On a platform with no CNG store, "not found" is the literal truth and the code the soft-token fallback needs; F2's and F3's CI exit conditions had never executed
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 0 (found by 0d's own fix, third round)
+
+**Decision.** Two changes, both in service of CI steps that had never
+once run.
+
+*(a)* `internal/keysource/windowscng`'s non-Windows stub
+(`conn_other.go`) returns `errs.New(errs.CodeCertNotFound, …)` from
+`findAndAcquire` instead of a bare
+`fmt.Errorf("windowscng: not supported on this platform")`.
+
+*(b)* CI's "sign a PDF and verify it with OpenSSL and the independent
+verifier" step passes `--on-tsa-failure b-b`.
+
+**Why (a).** `cmd/liro-bridge`'s `runSignDigest` and `runSign` fall back
+to the soft token **only** when CNG answers `CERT_NOT_FOUND`, and
+deliberately on nothing else — [[D-033]] established that narrowness so a
+real failure (card removed, PIN blocked) is never masked by a confusing
+second attempt against an unrelated backend. On Linux and macOS the stub
+returned an error carrying no `errs.Code` at all, so `errors.As` found
+nothing, the fallback could not fire, and both `sign-digest` and `sign`
+failed outright with `windowscng: not supported on this platform` — for
+a soft token that has nothing to do with CNG.
+
+`CERT_NOT_FOUND` is not a euphemism here. There is no CNG certificate
+store on these platforms, so no thumbprint is in it, and "not found" is
+the literally correct answer to the question `findAndAcquire` was asked.
+It is also the same code the Windows implementation gives for the same
+question ([[D-033]]).
+
+**Why (b).** [[D-067]] made "a level was requested and no TSA is
+configured" a failure rather than a silent downgrade (SPEC §18.11), and
+`--level` defaults to `b-lt`. The CI step deliberately configures no
+timestamp authority — its own comment says so — so since D-067 it has
+been asking for B-LT and correctly being refused. The flag is how a
+caller says "B-B is what I want here", which is what the step means. The
+workflow simply predates the decision.
+
+**Why neither was ever noticed.** This repository has had four CI runs.
+The first three failed at the lint step ([[D-110]]), which is sequential
+and skips everything after it, so **F2's exit condition (§6.1, the
+OpenSSL round trip) and F3's (the PDF signed and independently verified)
+have never executed in CI, not once, in the project's life.** Both were
+verified by hand at the time, on Windows, where CNG exists and the
+fallback is never needed. Neither defect could reach a developer's
+machine: both are specific to a platform this project does not yet
+support and only cross-compiles for.
+
+**Verified on real Linux, before pushing.** Running the two steps in CI
+and reading the result is a slow way to learn this, and it had already
+cost three rounds. Both steps were instead reproduced locally, on a real
+Ubuntu kernel, by cross-compiling `liro-bridge` (with the `softtoken`
+tag), `gentestkeys` and the workflow's own two helper programs
+(extracted verbatim from `ci.yml`) for `linux/amd64` and running them
+under WSL with the host's own OpenSSL. Nothing was installed to do it.
+
+Both directions were measured:
+
+| Step | Before | After |
+|---|---|---|
+| sign-digest + OpenSSL | `sign-digest: windowscng: not supported on this platform` | `Verified OK` |
+| sign a PDF + verifier + `openssl cms` | `sign: … Servis za vremenske žigove ne odgovara.` | `independent verifier: OK`, `CMS Verification successful` |
+
+The signed output reports `Nivo: B-B (no timestamp (saved at B-B):
+pades: level B-LT requested but no TSA is configured)` — the achieved
+level and its reason, exactly as [[D-047]] requires and never the
+requested one.
+
+**Rejected.**
+- **Widening the fallback to fire on any CNG error.** It would have
+  fixed the symptom in one line and destroyed the property [[D-033]]
+  built: a removed card or a blocked PIN would silently become a
+  soft-token signature attempt. The narrowness is the point; the stub
+  was what was wrong.
+- **Special-casing "not supported on this platform" by string, or
+  adding a `PLATFORM_UNSUPPORTED` code for the fallback to also
+  accept.** The first is string-matching an error message across a
+  boundary, which SPEC §7 exists to prevent. The second invents a code
+  for a situation that already has a correct one, and would still need
+  every fallback site to learn about it.
+- **Skipping the two CI steps on Linux, or moving them to the Windows
+  job.** They are F2's and F3's stated exit conditions and their whole
+  value is being run by something other than the author's own machine.
+  Moving them to Windows would reproduce, one job over, exactly the
+  blind spot [[D-088]] and [[D-111]] each had to close.
+- **Configuring a TSA for the CI step instead of asking for B-B.** It
+  would make the step depend on a live external service for something
+  that is testing the PDF and CMS layers, not the timestamp client —
+  which `internal/pades/tsa`'s own integration test already covers
+  against Pošta's real test TSA ([[D-045]]).
