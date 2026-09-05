@@ -155,11 +155,28 @@ func TestNewFileStoreUsesValidCacheOverEmbeddedSeed(t *testing.T) {
 	}
 }
 
+// waitForRefresh is how long a single refresh is allowed to take before
+// this test calls it a hang. It is deliberately enormous relative to the
+// work involved (one verify-and-parse of the embedded list, measured at
+// ~28 ms on the development machine): the test is checking that Run
+// refreshes immediately and then keeps ticking, which is a question
+// about ordering, not about speed. A tight budget here does not make the
+// test stricter, only flakier — see D-112.
+const waitForRefresh = 30 * time.Second
+
 func TestRunRefreshesImmediatelyThenOnInterval(t *testing.T) {
 	dir := t.TempDir()
-	var calls int
+
+	// Each fetch announces itself on a buffered channel rather than
+	// incrementing a counter the test reads after a fixed wall-clock
+	// budget. Run is on its own goroutine here, so a plain counter would
+	// also be a data race; the channel answers both problems at once.
+	fetched := make(chan struct{}, 8)
 	fetch := func(_ context.Context, _ string) ([]byte, error) {
-		calls++
+		select {
+		case fetched <- struct{}{}:
+		default: // never block Run once the test has seen enough
+		}
 		return seedXML, nil
 	}
 	s, err := NewFileStore(filepath.Join(dir, "tsl-cache.xml"), DefaultURL, fetch)
@@ -167,11 +184,32 @@ func TestRunRefreshesImmediatelyThenOnInterval(t *testing.T) {
 		t.Fatalf("NewFileStore: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s.Run(ctx, 40*time.Millisecond)
+	returned := make(chan struct{})
+	go func() {
+		defer close(returned)
+		s.Run(ctx, time.Millisecond)
+	}()
 
-	if calls < 2 {
-		t.Fatalf("Refresh called %d times in 250ms with a 40ms interval, want at least 2 (immediate + at least one tick)", calls)
+	// Two refreshes: the immediate one Run does before its first tick,
+	// then at least one the ticker drives. Waiting for the events proves
+	// the same thing the old fixed budget was trying to, without
+	// depending on how fast the machine happens to be.
+	for i := 1; i <= 2; i++ {
+		select {
+		case <-fetched:
+		case <-time.After(waitForRefresh):
+			t.Fatalf("refresh %d of 2 never happened within %v", i, waitForRefresh)
+		}
+	}
+
+	// Cancelling must actually stop Run. The old test never checked
+	// this — it let a context deadline expire and assumed the rest.
+	cancel()
+	select {
+	case <-returned:
+	case <-time.After(waitForRefresh):
+		t.Fatalf("Run did not return within %v of its context being cancelled", waitForRefresh)
 	}
 }

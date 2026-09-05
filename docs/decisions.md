@@ -6884,3 +6884,106 @@ passes with and without the `softtoken` tag.
   a workflow change made speculatively is how a green build becomes a
   red one for a reason unrelated to anything being worked on. Recorded
   here so the next person does not have to rediscover it.
+
+---
+
+## D-112 — `Run`'s refresh test waits for the refreshes instead of racing a 250 ms budget; the Ubuntu test step had never once executed
+
+**Date:** 2026-09-05
+**Phase:** F6 — Part 0 (found by 0d's own fix, second round)
+
+**Decision.** `TestRunRefreshesImmediatelyThenOnInterval`
+(`internal/trust/tsl/store_test.go`) no longer gives `Run` a fixed
+250 ms context and then counts how many refreshes fit inside it. The
+fetcher announces each call on a buffered channel; the test waits for
+two of them — the immediate refresh plus at least one the ticker drives
+— with a 30-second-per-refresh ceiling that exists only to turn a hang
+into a failure. It then cancels the context and requires `Run` to
+return, which the old test never checked at all: it let a deadline
+expire and assumed the rest.
+
+**Why — the failure, and why it had never been seen.** With
+[[D-110]]'s and [[D-111]]'s lint fixes in, the Ubuntu job reached its
+`test` step, and this one test failed:
+
+```
+--- FAIL: TestRunRefreshesImmediatelyThenOnInterval (0.65s)
+    store_test.go:175: Refresh called 1 times in 250ms with a 40ms
+    interval, want at least 2 (immediate + at least one tick)
+```
+
+Everything else in the run — every package, on Linux, under `-race`,
+including all of Part 0's new tests — passed.
+
+The test had never run in CI before. **This repository has three CI runs
+in total**, the first of them on F5's final commit, and every one of them
+failed at the lint step, which is sequential and skips everything after
+it. So `go test ./... -race` on Ubuntu had never completed once in the
+project's life, and this test's assumption had never been tested against
+anything but a fast developer machine with no race detector.
+
+The assumption is that `Run` fits at least two refreshes into 250 ms at a
+40 ms interval. Each refresh is a full XML-DSig verification of the
+577 KB Trusted List — exclusive C14N over the whole document, then
+RSA-SHA512 — plus a parse. Measured directly on the development machine
+(AMD Ryzen 5 4500, 12 threads, no race detector):
+**28.4 ms per verify-and-parse**. That leaves the old test roughly one
+order of magnitude of headroom, which sounds ample and is not: a
+two-core hosted runner with `-race` instrumentation on allocation-heavy
+XML DOM work loses far more than that. The runner's own numbers say so —
+the test reports `0.65s` elapsed for a 250 ms context, meaning the single
+in-flight refresh overran the deadline by ~400 ms, so one refresh there
+cost something like 600 ms. At 600 ms per refresh and a 250 ms budget,
+one call is all that can ever happen. The test was not flaky on that
+machine; it was deterministically wrong.
+
+**The restored seed is not the cause, measured rather than assumed.**
+[[D-107]] grew the embedded list by 4 772 bytes (the CRs it put back),
+which is an obvious suspect for a timing test that started failing in the
+same phase. Benchmarked both encodings through the same
+`verifyAndParse`: **28.6 ms for the CRLF seed against 29.5 ms for the
+LF one**, 20 iterations each — within noise, and if anything faster.
+The old test would have failed on that runner at either size.
+
+**The general point.** A test that asserts "N things happen inside a
+fixed wall-clock window" is asserting how fast the machine is, which is
+not a property of this code and not something anyone intended to pin.
+Waiting for the events proves the actual claim — refresh once
+immediately, then keep ticking, then stop when told — on any machine, and
+fails only when the behaviour is genuinely absent. The new interval is
+1 ms rather than 40 ms for the same reason: with the test waiting on
+events, a shorter interval only means less idling, never less rigour.
+
+The rewrite also removes a latent data race the old shape had been
+lucky to avoid: `Run` was called synchronously, so the `calls++` inside
+the fetcher happened on the test's own goroutine. Moving `Run` onto a
+goroutine — needed to observe cancellation — would have made that
+counter a genuine race, which is exactly what the channel avoids.
+
+**Verified.** Passes 20 consecutive runs locally in 3.0 s total (~150 ms
+each). `-race` cannot be run on this machine at all (no C compiler, the
+condition [[D-012]] already recorded), so the runner is the only place
+that check happens — which is the whole reason this had to be fixed
+rather than tuned by eye.
+
+A scan for other tests with the same shape found none: every remaining
+millisecond-scale duration in a `_test.go` file is either a value handed
+to a pure function (`internal/signing`'s timing tables,
+`internal/consent`'s progress arithmetic) or a sleep, neither of which
+can fail for being on a slow machine.
+
+**Rejected.**
+- **Raising the budget — 250 ms to 2 s, or the interval to 5 ms.** The
+  first thing to try and the wrong thing to keep: it re-picks a number
+  that happens to work on the two machines anyone has looked at, and
+  leaves the next slower runner, or the next `-race`-instrumented
+  change, to rediscover this. There is no budget that is both large
+  enough to be safe and small enough to mean anything.
+- **`t.Skip` under `-race`, or a `testing.Short()` guard.** Skipping the
+  test in the only environment that actually runs it with the race
+  detector is not a fix.
+- **Making `Refresh` cheaper so more of them fit — e.g. caching the
+  verification result.** A real optimisation to consider on its own
+  merits some day, but changing production code to satisfy a test's
+  arbitrary stopwatch is backwards, and the test would still be
+  measuring the machine.
