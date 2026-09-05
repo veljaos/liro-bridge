@@ -151,6 +151,17 @@ func ChooseFolder(owner uintptr, title string) (path string, ok bool, err error)
 	return pickFolder(owner, title)
 }
 
+// IconFilePath returns a path to the real Liro mark as an .ico file on
+// disk, extracting it from the embedded asset on first use.
+//
+// It exists for callers that must hand Windows a *file* rather than an
+// HICON — the Explorer context-menu registration, whose "Icon" value is
+// a path (F6 §2). The executable itself cannot serve: it carries no
+// icon resource of its own until F10 builds one (SPEC §5 puts
+// cmd/liro-bridge/rsrc.syso under packaging), so pointing at it gives
+// the generic Windows application icon.
+func IconFilePath() (string, error) { return iconFilePath() }
+
 // ChooseFiles shows the OS file chooser parented to owner, allowing
 // more than one file to be selected at once (F6 §1's Browse button —
 // "not everyone drags"). A cancelled dialog is ok == false with a nil

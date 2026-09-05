@@ -26,3 +26,7 @@ func pickFolder(uintptr, string) (string, bool, error) {
 func pickFiles(uintptr, string, string, string) ([]string, bool, error) {
 	return nil, false, ErrUnsupportedPlatform
 }
+
+// iconFilePath has no other-platform implementation this phase: there
+// is no Explorer to register a menu icon with (SPEC §11.11).
+func iconFilePath() (string, error) { return "", ErrUnsupportedPlatform }

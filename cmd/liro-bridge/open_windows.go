@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/config"
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
@@ -32,6 +33,16 @@ func runOpen(ctx context.Context, args []string, out io.Writer, cfg config.Confi
 		}
 		paths = append(paths, a)
 	}
+	// F6 §2: the entry is on by default, and only the tray applied it.
+	// A person who reaches the agent any other way — this command, a
+	// shortcut, the first run before autostart has ever fired — would
+	// have found no entry to right-click, which is a chicken and egg
+	// the entry cannot solve for itself. Registering is idempotent and
+	// costs two registry writes.
+	if err := applyExplorerMenu(cfg, i18n.Load(cfg.Locale)); err != nil {
+		slog.Warn("open: could not apply the Explorer context menu setting", "error", err)
+	}
+
 	return runMainWindow(ctx, cfg, cfg.Locale, paths)
 }
 

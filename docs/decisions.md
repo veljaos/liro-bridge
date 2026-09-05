@@ -7379,6 +7379,25 @@ backslash: an ordinary path came out as
 every separator doubled. It is a pair of literal quotes now. A Windows
 path cannot contain a double quote, so nothing needs escaping.
 
+**The menu icon is the extracted Liro mark, not the executable.** The
+obvious value for Explorer's `Icon` is the binary itself, whose first
+icon resource the shell would use — except the binary has no icon
+resource until F10 builds one (SPEC §5 puts `rsrc.syso` under
+packaging), so that shows the generic Windows application icon.
+`ui.IconFilePath` hands back the same extracted `.ico` the tray already
+loads, so the menu entry and the tray show one mark from one asset.
+Verified by asking the shell itself what it offers for a `.pdf` rather
+than by trusting that a registry key implies a menu entry: `Verbs()`
+lists "Potpiši koristeći Liro Bridge" second, immediately after Open.
+
+**Registration happens whenever the agent runs, not only from the
+tray.** It began as a tray-startup step, which leaves a chicken and egg
+the entry cannot solve for itself: a person who reaches the agent any
+other way — `liro-bridge open`, a shortcut, the first run before
+autostart has ever fired — finds no entry to right-click. `runOpen`
+applies it too. It is idempotent, and it is also what refreshes the
+label after a language change.
+
 **Rejected.**
 - **A longer quiet window instead of the watcher.** It trades a rare
   wrong answer for a constant slow one, and it is still only a guess

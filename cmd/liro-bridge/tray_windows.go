@@ -416,5 +416,15 @@ func applyExplorerMenu(cfg config.Config, c *i18n.Catalogue) error {
 		return menu.Unregister()
 	}
 	exe := exePath()
-	return menu.Register(c.T("settings.explorer_menu_verb"), exe, exe)
+	// The real Liro mark, not the executable: the binary carries no
+	// icon resource of its own until F10 builds one, so pointing the
+	// menu at it would show the generic Windows application icon.
+	// A failure to extract is not a reason to leave the entry
+	// unregistered — an entry with the default icon still works.
+	icon, err := ui.IconFilePath()
+	if err != nil {
+		slog.Warn("settings: could not extract the menu icon, falling back to the executable", "error", err)
+		icon = exe
+	}
+	return menu.Register(c.T("settings.explorer_menu_verb"), exe, icon)
 }

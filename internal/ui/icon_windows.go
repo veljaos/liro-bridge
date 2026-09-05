@@ -170,3 +170,8 @@ func setWindowIcons(hwnd uintptr) {
 		_, _, _ = procSendMessageW.Call(hwnd, wmSetIcon, iconBig, h)
 	}
 }
+
+// iconFilePath implements IconFilePath on Windows: the same extracted
+// file the tray icon is loaded from, so the menu entry and the tray
+// show one mark from one asset.
+func iconFilePath() (string, error) { return ensureTrayIconExtracted() }
