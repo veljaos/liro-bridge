@@ -20,6 +20,7 @@ testdata/pdfs/*.pdf                  -text
 testdata/certs/*.der                 -text
 internal/pades/appearance/*.flate    -text
 internal/pades/appearance/*.ttf      -text
+internal/pades/render/*.ttf          -text
 internal/ui/assets/icon.ico          -text
 internal/ui/assets/webview2/*.dll    -text
 assets/*.png                         -text

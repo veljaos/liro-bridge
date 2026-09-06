@@ -3,7 +3,7 @@
 
 package main
 
-// Builds the JSON payloads pushed to the consent window's page via
+// Builds the JSON payloads pushed to the signing window's pages via
 // Window.PostJSON. Every display string is resolved through the
 // locale catalogue here, in Go — the page only assembles DOM from
 // already-localised strings plus untrusted data inserted via
@@ -101,29 +101,15 @@ func buildConsentInit(c *i18n.Catalogue, vm consent.ViewModel) map[string]any {
 		"type": "init",
 		"strings": map[string]string{
 			// Static labels the page resolves itself via data-i18n.
-			"consent.cancel":                     c.T("consent.cancel"),
-			"consent.approve":                    c.T("consent.approve"),
-			"consent.application_label":          c.T("consent.application_label"),
-			"consent.details_toggle":             c.T("consent.details_toggle"),
-			"consent.fingerprint_label":          c.T("consent.fingerprint_label"),
-			"consent.files_label":                c.T("consent.files_label"),
-			"consent.select_certificate_prompt":  c.T("consent.select_certificate_prompt"),
-			"consent.no_usable_certificate":      c.T("consent.no_usable_certificate"),
-			"consent.state_preparing_card":       c.T("consent.state_preparing_card"),
-			"consent.state_done":                 c.T("consent.state_done"),
-			"consent.state_failed":               c.T("consent.state_failed"),
-			"consent.per_signature_pin_warning":  c.T("consent.per_signature_pin_warning"),
-			"consent.close":                      c.T("consent.close"),
-			"consent.tsa_choice_title":           c.T("consent.tsa_choice_title"),
-			"consent.tsa_choice_explain":         c.T("consent.tsa_choice_explain"),
-			"consent.tsa_save_without_timestamp": c.T("consent.tsa_save_without_timestamp"),
-			"consent.tsa_configure":              c.T("consent.tsa_configure"),
-			"consent.copy_technical_details":     c.T("consent.copy_technical_details"),
-			"consent.copy_fingerprint":           c.T("consent.copy_fingerprint"),
-			"consent.output_exists_title":        c.T("consent.output_exists_title"),
-			"consent.output_exists_explain":      c.T("consent.output_exists_explain"),
-			"consent.output_exists_path_label":   c.T("consent.output_exists_path_label"),
-			"consent.output_exists_overwrite":    c.T("consent.output_exists_overwrite"),
+			"consent.cancel":                    c.T("consent.cancel"),
+			"consent.approve":                   c.T("consent.approve"),
+			"consent.application_label":         c.T("consent.application_label"),
+			"consent.details_toggle":            c.T("consent.details_toggle"),
+			"consent.fingerprint_label":         c.T("consent.fingerprint_label"),
+			"consent.files_label":               c.T("consent.files_label"),
+			"consent.select_certificate_prompt": c.T("consent.select_certificate_prompt"),
+			"consent.no_usable_certificate":     c.T("consent.no_usable_certificate"),
+			"consent.copy_fingerprint":          c.T("consent.copy_fingerprint"),
 		},
 		"model": jsConsentModel{
 			DocumentCount:     vm.DocumentCount,
@@ -138,19 +124,13 @@ func buildConsentInit(c *i18n.Catalogue, vm consent.ViewModel) map[string]any {
 	}
 }
 
-type jsProgress struct {
-	State             string `json:"state"`
-	SigningLabelText  string `json:"signingLabelText"`
-	Percent           int    `json:"percent"`
-	ETAText           string `json:"etaText"`
-	PerSignaturePIN   bool   `json:"perSignaturePIN"`
-	DoneSummaryText   string `json:"doneSummaryText"`
-	DoneLevelText     string `json:"doneLevelText"`
-	DoneLevelIntent   string `json:"doneLevelIntent"`
-	DoneOutputText    string `json:"doneOutputText"`
-	FailedMessageText string `json:"failedMessageText"`
-	FailedDetails     string `json:"failedDetails"`
-	TSAReasonText     string `json:"tsaReasonText"`
+// jsAsk is one of the three questions asked between the approval and
+// the first signature: the timestamp, an output file that already
+// exists, and a failure that stopped the batch before it started.
+type jsAsk struct {
+	State string `json:"state"`
+
+	TSAReasonText string `json:"tsaReasonText"`
 
 	// Task 4: the existing file's path, and the label of the button
 	// that saves under a different name — which names the name it would
@@ -159,101 +139,87 @@ type jsProgress struct {
 	OutputExistsPath string `json:"outputExistsPath"`
 	OutputRenameText string `json:"outputRenameText"`
 	OutputRenamePath string `json:"outputRenamePath"`
+
+	FailedMessageText string `json:"failedMessageText"`
+	FailedDetails     string `json:"failedDetails"`
 }
 
-func consentProgressPayload(p consent.Progress, c *i18n.Catalogue) map[string]any {
-	jp := jsProgress{State: string(p.State)}
-	switch p.State {
-	case consent.StateSigning:
-		jp.SigningLabelText = fmt.Sprintf(c.T("consent.state_signing"), p.Current, p.Total)
-		if p.Total > 0 {
-			jp.Percent = p.Current * 100 / p.Total
-		}
-		if p.ETAKnown {
-			jp.ETAText = fmt.Sprintf(c.T("consent.eta_label"), p.ETA.Round(1e9))
-		}
-		jp.PerSignaturePIN = p.PerSignaturePIN
-	}
-	return map[string]any{"type": "progress", "progress": jp}
-}
-
-func consentDonePayload(p consent.Progress, c *i18n.Catalogue) map[string]any {
-	levelText, levelIntent := achievedLevelDisplay(c, p.AchievedLevel)
-	jp := jsProgress{
-		State:           string(consent.StateDone),
-		DoneSummaryText: fmt.Sprintf(c.T("consent.done_summary"), p.Succeeded, p.Succeeded+p.Failed),
-		DoneLevelText:   levelText,
-		DoneLevelIntent: levelIntent,
-		DoneOutputText:  c.T("consent.done_output_label") + ": " + p.OutputPath,
-	}
-	return map[string]any{"type": "progress", "progress": jp}
-}
-
-// achievedLevelDisplay renders the level a batch actually reached, and
-// the intent family that colours it (Task 1, F5 second-real-run
-// review). B-B — a signature with no timestamp, and so no proof of
-// when it was made — is the warning family; B-T and B-LT are positive.
+// achievedLevelIntent is the intent family that colours the level a
+// batch actually reached (Task 1, F5 second-real-run review). B-B — a
+// signature with no timestamp, and so no proof of when it was made — is
+// the warning family; B-T and B-LT are positive.
+//
 // The level is always stated, never inferred from its absence: SPEC
 // §18.11 forbids claiming a level that was not reached, and stating
-// nothing at all is how the previous build managed to be silent about a
+// nothing at all is how a previous build managed to be silent about a
 // downgrade it had already performed.
-func achievedLevelDisplay(c *i18n.Catalogue, level string) (text string, intent string) {
-	if level == "" {
-		return "", ""
-	}
+func achievedLevelIntent(level string) string {
 	switch pades.Level(level) {
 	case pades.LevelBB:
-		return c.T("consent.level_bb"), string(ui.IntentWarning)
-	case pades.LevelBT:
-		return fmt.Sprintf(c.T("consent.level_label"), string(pades.LevelBT)), string(ui.IntentPositive)
-	case pades.LevelBLT:
-		return fmt.Sprintf(c.T("consent.level_label"), string(pades.LevelBLT)), string(ui.IntentPositive)
+		return string(ui.IntentWarning)
+	case pades.LevelBT, pades.LevelBLT:
+		return string(ui.IntentPositive)
 	default:
-		return fmt.Sprintf(c.T("consent.level_label"), level), ""
+		return ""
 	}
 }
 
-// consentTSAChoicePayload puts the consent window into SPEC §12.8's
-// choice (Task 1): sign without a timestamp, configure a timestamp
-// authority, or cancel. reason decides only which sentence explains
-// why the choice is being offered; the three actions are the same in
-// both cases.
-func consentTSAChoicePayload(reason consent.TSAReason, c *i18n.Catalogue) map[string]any {
+// achievedLevelNote is the sentence a B-B batch gets under its level,
+// and nothing at all for the other two. "B-B" is a level to someone who
+// knows the profile and a two-letter code to everyone else; what it
+// means — a valid signature with no proof of when it was made — is what
+// belongs on the screen.
+func achievedLevelNote(c *i18n.Catalogue, level string) string {
+	if pades.Level(level) != pades.LevelBB {
+		return ""
+	}
+	return c.T("consent.level_bb")
+}
+
+// askTSAChoicePayload puts the window into SPEC §12.8's choice (Task
+// 1): sign without a timestamp, configure a timestamp authority, or
+// cancel. reason decides only which sentence explains why the choice is
+// being offered; the three actions are the same in both cases.
+//
+// The three "ask" payloads all render on the page that carries the
+// progress and the report, because that is where the flow is by the
+// time they are asked — after the approval, before the card.
+func askTSAChoicePayload(reason consent.TSAReason, c *i18n.Catalogue) map[string]any {
 	key := "consent.tsa_reason_unreachable"
 	if reason == consent.TSAReasonNotConfigured {
 		key = "consent.tsa_reason_not_configured"
 	}
-	jp := jsProgress{
+	return map[string]any{"type": "ask", "ask": jsAsk{
 		State:         string(consent.StateTSAChoice),
 		TSAReasonText: c.T(key),
-	}
-	return map[string]any{"type": "progress", "progress": jp}
+	}}
 }
 
-// consentOutputExistsPayload puts the consent window into Task 4's
-// choice: overwrite the existing file, save the signed document under
+// askOutputExistsPayload puts the window into Task 4's choice:
+// overwrite the existing file, save the signed document under
 // renamePath instead, or cancel. Both paths are shown in full —
 // nothing here decides for the user, and SPEC §12.11's rule that a file
 // is never silently replaced is upheld by asking, not by refusing.
-func consentOutputExistsPayload(existingPath, renamePath string, c *i18n.Catalogue) map[string]any {
-	jp := jsProgress{
+func askOutputExistsPayload(existingPath, renamePath string, c *i18n.Catalogue) map[string]any {
+	return map[string]any{"type": "ask", "ask": jsAsk{
 		State:            string(consent.StateOutputExists),
 		OutputExistsPath: existingPath,
 		OutputRenameText: fmt.Sprintf(c.T("consent.output_exists_rename"), filepath.Base(renamePath)),
 		OutputRenamePath: renamePath,
-	}
-	return map[string]any{"type": "progress", "progress": jp}
+	}}
 }
 
-func consentFailedPayload(message string, err error, c *i18n.Catalogue) map[string]any {
+// askFailedPayload is the screen for something that stopped the batch
+// before a single document could be signed.
+func askFailedPayload(message string, err error, c *i18n.Catalogue) map[string]any {
+	_ = c
 	details := ""
 	if err != nil {
 		details = err.Error()
 	}
-	jp := jsProgress{
+	return map[string]any{"type": "ask", "ask": jsAsk{
 		State:             string(consent.StateFailed),
 		FailedMessageText: message,
 		FailedDetails:     details,
-	}
-	return map[string]any{"type": "progress", "progress": jp}
+	}}
 }

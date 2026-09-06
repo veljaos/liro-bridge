@@ -30,18 +30,22 @@ import (
 	"github.com/veljaos/liro-bridge/internal/pades/appearance"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
 	"github.com/veljaos/liro-bridge/internal/platform"
-	"github.com/veljaos/liro-bridge/internal/signing"
-	"github.com/veljaos/liro-bridge/internal/trust/classify"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
-// runSignInteractive implements F5's exit condition: "a person runs
-// `liro-bridge sign --interactive`, a window appears, they choose a
-// certificate and press Approve, the card asks for a PIN, the document
-// is signed, and an audit entry is written." It is Windows-only,
-// matching internal/ui's own scope this phase (SPEC §11.11 already
-// establishes Windows-only for this project's phases 1 through 10).
+// runSignInteractive is `liro-bridge sign --interactive`: the same
+// signing flow the window opens, entered one step in.
+//
+// The documents came in on the command line, so the flow has no
+// document step; everything after that — the certificate and the
+// approval, the signing method, the position, the timestamp question,
+// the output paths, the progress and the report — is the same window
+// and the same code the tray's own window runs. There is no second
+// implementation of the consent screen to keep right (SPEC §6.5), and
+// no window opens on top of another one.
+//
+// Windows-only, matching internal/ui's own scope (SPEC §11.11).
 func runSignInteractive(ctx context.Context, args []string, out io.Writer, locale string, cfg config.Config) int {
 	c := i18n.Load(locale)
 
@@ -71,257 +75,7 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 		inputs = append(inputs, in)
 	}
 
-	report, err := gatherInteractiveCertificates(ctx)
-	if err != nil {
-		fprintln(out, "liro-bridge: sign:", err)
-		return 1
-	}
-	// Task 3: the consent window applies the same default visibility
-	// rule as "liro-bridge certs" (no --all) — a certificate that is
-	// both PurposeUnknown and not qualified is a Windows-internal
-	// artefact (GUID subject, no recognised use) the user has never
-	// heard of and cannot sign with, not a real choice to present.
-	certInfos := make([]classify.Info, 0, len(report.Certificates))
-	for _, row := range report.Certificates {
-		if row.Hidden() {
-			continue
-		}
-		certInfos = append(certInfos, row.Info)
-	}
-
-	digests := make([][]byte, len(inputs))
-	fileNames := make([]string, len(inputs))
-	for i, in := range inputs {
-		digests[i] = in.digest
-		fileNames[i] = filepath.Base(in.path)
-	}
-	vm := consent.BuildViewModel(consent.ApplicationLocal, digests, fileNames, certInfos)
-
-	messages := make(chan ui.Message, 8)
-	win, err := ui.NewWindow(ui.Options{
-		Title: c.T("consent.window_title"),
-		// The same measured size the main window's consent phase uses
-		// (consentphase_windows.go) — one window, one size, whichever
-		// front door opened it.
-		Width:       consentWindowWidth,
-		Height:      consentWindowHeight,
-		AlwaysOnTop: true,
-		Assets:      assetsFS,
-		VirtualHost: liroVirtualHost,
-		StartPage:   "/pages/consent.html",
-		OnMessage:   func(m ui.Message) { messages <- m },
-		OnClosed:    func() { messages <- ui.Message{Type: ui.MessageTypeCancel} },
-	})
-	if err != nil {
-		fprintln(out, "liro-bridge: sign:", err)
-		return 1
-	}
-	defer func() { _ = win.Close() }()
-
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
-		fprintln(out, "liro-bridge: sign:", err)
-		return 1
-	}
-
-	auditStore, auditErr := newAuditStore()
-
-	selected := ""
-	decided := false
-	approved := false
-	for !decided {
-		msg := <-messages
-		switch msg.Type {
-		case ui.MessageTypeSelectCertificate:
-			selected = msg.Thumbprint
-		case ui.MessageTypeApprove:
-			if selected != "" {
-				approved, decided = true, true
-			}
-		case ui.MessageTypeCancel:
-			approved, decided = false, true
-		}
-	}
-
-	if !approved {
-		if auditErr == nil {
-			_, _ = auditStore.Append(audit.Entry{
-				Timestamp:     time.Now(),
-				Thumbprint:    selected,
-				Application:   consent.ApplicationLocal,
-				DocumentCount: len(inputs),
-				Outcome:       audit.OutcomeDenied,
-			})
-		}
-		return 0
-	}
-
-	// Step 3 of the three-step flow: how to sign, in its own window,
-	// after the certificate has been chosen and approved. The command
-	// line reaches the same window the main window does, so the two
-	// front doors ask the same question in the same place.
-	var stampProceed bool
-	cfg, stampProceed = askHowToSign(cfg, locale, nil, win.Handle())
-	if !stampProceed {
-		if auditErr == nil {
-			recordInteractiveAudit(auditStore, auditErr, selected, len(inputs), audit.OutcomeDenied, nil, false, "")
-		}
-		return 0
-	}
-
-	// Task 1 (F5 second-real-run review): the timestamp question is
-	// settled before the card is touched, not after. With no TSA
-	// configured — this project's out-of-the-box state, since it ships
-	// no default authority (D-067 and this task's own decision) — the
-	// previous build reached this point, asked for the PIN, signed, and
-	// only then failed the whole batch with TSA_UNAVAILABLE. Asking
-	// first costs a user who cancels nothing, and never spends a PIN
-	// entry on a batch that was going to be refused anyway.
-	//
-	// Task 3 (F5 fourth-real-run review) adds the one case where the
-	// question is not asked at all: a configured level of B-B *is* the
-	// answer. The user settled it in Settings, deliberately, and asking
-	// again on every signature would be asking them to re-decide
-	// something they have already decided.
-	level := interactiveLevel(cfg)
-	var tsaClient *tsa.Client
-	allowBB := level == pades.LevelBB
-	if level != pades.LevelBB {
-		var err error
-		tsaClient, err = buildTSAClient(cfg)
-		if err != nil {
-			pushFailure(win, c, err)
-			waitForClose(messages)
-			return 1
-		}
-		if tsaClient == nil {
-			var proceed bool
-			cfg, tsaClient, allowBB, proceed = resolveTSAChoice(win, messages, c, cfg, locale, consent.TSAReasonNotConfigured)
-			if !proceed {
-				recordInteractiveAudit(auditStore, auditErr, selected, len(inputs), audit.OutcomeDenied, nil, false, "")
-				return 0
-			}
-		}
-	}
-
-	// Task 4 (F5 fourth-real-run review): where each signature will be
-	// written is settled here, before the card session is opened, for
-	// the same reason the timestamp question is (Task 1, previous
-	// round): a user who answers "cancel" must not have spent a PIN
-	// entry on a batch that was never going to be saved. Every output
-	// path is known before signing begins — it comes from the input
-	// name and the configured suffix, not from anything the signature
-	// produces.
-	outputs, outputsSettled := resolveInteractiveOutputs(win, messages, c, inputs, cfg.OutputSuffix, force)
-	if !outputsSettled {
-		recordInteractiveAudit(auditStore, auditErr, selected, len(inputs), audit.OutcomeDenied, nil, false, "")
-		return 0
-	}
-
-	session, err := openInteractiveSession(ctx, keysource.Thumbprint(selected), win.Handle())
-	if err != nil {
-		pushFailure(win, c, err)
-		waitForClose(messages)
-		return 1
-	}
-	defer func() { _ = session.Close() }()
-	wrapped := signing.WrapSession(session)
-
-	_ = win.PostJSON(consentProgressPayload(consent.ProgressForTiming(0, len(inputs), 0, 0, signing.PINPolicyUnknown), c))
-
-	trustStore := interactiveTrustStore(ctx)
-	succeeded, failed := 0, 0
-	var lastOutput string
-	var durations []time.Duration
-	var lastErr error
-	batchLevel := ""
-	cancelled := false
-
-	for i, in := range inputs {
-		start := time.Now()
-		outPath := outputs[i].path
-
-		opts := interactiveSignOptions{
-			level:      level,
-			trustStore: trustStore,
-			tsaClient:  tsaClient,
-			outPath:    outPath,
-			overwrite:  outputs[i].overwrite,
-			allowBB:    allowBB,
-			stamp:      stampOptionsFor(c, cfg),
-		}
-
-		var result *pades.Result
-		var signErr error
-		for {
-			result, signErr = signInteractiveOne(ctx, in.path, wrapped, opts)
-			if signErr == nil || !isTSAFailure(signErr) {
-				break
-			}
-			// SPEC §12.8: a TSA outage presents the choice, it does not
-			// end the batch. The same three actions as before signing
-			// began, now about an authority that was actually tried.
-			var proceed bool
-			cfg, tsaClient, allowBB, proceed = resolveTSAChoice(win, messages, c, cfg, locale, consent.TSAReasonUnreachable)
-			if !proceed {
-				cancelled = true
-				break
-			}
-			opts.tsaClient, opts.allowBB = tsaClient, allowBB
-			_ = win.PostJSON(consentProgressPayload(consent.ProgressForTiming(i, len(inputs), firstDuration(durations), 0, signing.PINPolicyUnknown), c))
-		}
-		durations = append(durations, time.Since(start))
-		if cancelled {
-			break
-		}
-		if signErr != nil {
-			failed++
-			lastErr = signErr
-		} else {
-			succeeded++
-			lastOutput = outPath
-			batchLevel = lowerLevel(batchLevel, string(result.AchievedLevel))
-		}
-
-		first := durations[0]
-		var median time.Duration
-		if len(durations) > 1 {
-			median = medianDuration(durations[1:])
-		}
-		progress := consent.ProgressForTiming(i+1, len(inputs), first, median, signing.PINPolicyUnknown)
-		_ = win.PostJSON(consentProgressPayload(progress, c))
-	}
-
-	skipped := len(inputs) - succeeded - failed
-	outcome := audit.OutcomeApproved
-	switch {
-	case succeeded == 0 && cancelled:
-		outcome = audit.OutcomeDenied
-	case succeeded == 0:
-		outcome = audit.OutcomeFailed
-	case failed > 0 || skipped > 0:
-		outcome = audit.OutcomePartial
-	}
-	recordInteractiveAudit(auditStore, auditErr, selected, len(inputs), outcome, lastErr, session.Certificate().IsTestKey, batchLevel)
-
-	if succeeded == 0 {
-		if cancelled {
-			return 0
-		}
-		pushFailure(win, c, lastErr)
-		waitForClose(messages)
-		return 1
-	}
-
-	done := consent.Progress{
-		State:         consent.StateDone,
-		Succeeded:     succeeded,
-		Failed:        failed + skipped,
-		OutputPath:    lastOutput,
-		AchievedLevel: batchLevel,
-	}
-	_ = win.PostJSON(consentDonePayload(done, c))
-	waitForClose(messages)
-	return 0
+	return runSigningFlow(ctx, cfg, locale, flowRequest{inputs: inputs, force: force})
 }
 
 // recordInteractiveAudit appends one batch outcome, or does nothing if
@@ -342,16 +96,6 @@ func recordInteractiveAudit(store *audit.Store, auditErr error, thumbprint strin
 		IsTestKey:     isTestKey,
 		AchievedLevel: level,
 	})
-}
-
-// firstDuration is the measured first-signature time, or 0 when no
-// signature has completed yet — StatePreparingCard's own trigger
-// (consent.ProgressForTiming).
-func firstDuration(d []time.Duration) time.Duration {
-	if len(d) == 0 {
-		return 0
-	}
-	return d[0]
 }
 
 // levelRank orders the three PAdES levels so lowerLevel can pick the
@@ -404,7 +148,7 @@ func isTSAFailure(err error) bool {
 // is asked the same question again rather than silently continuing.
 func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue, cfg config.Config, locale string, reason consent.TSAReason) (config.Config, *tsa.Client, bool, bool) {
 	for {
-		_ = win.PostJSON(consentTSAChoicePayload(reason, c))
+		_ = win.PostJSON(askTSAChoicePayload(reason, c))
 
 		msg := <-messages
 		if msg.Type != ui.MessageTypeApprove {
@@ -450,35 +194,50 @@ func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue
 
 // readTSAChoice reads back which of the two proceeding actions the page
 // recorded, through Window.Eval's own return value — the same channel
-// the settings window uses (D-083), so the page->Go message surface
-// stays at exactly three types.
+// every other button in this window uses (D-083), so the page->Go
+// message surface stays at exactly three types.
 func readTSAChoice(win ui.Window) string {
-	raw, err := win.Eval("window.__liroTSAChoice()")
+	switch readWindowAction(win, "the timestamp choice") {
+	case "tsaWithoutTimestamp":
+		return "withoutTimestamp"
+	case "tsaConfigure":
+		return "configure"
+	default:
+		return ""
+	}
+}
+
+// readWindowAction is the one read behind every recorded action:
+// bridge.js's __liroAction, decoded out of ExecuteScript's own JSON
+// envelope. what names the thing being read, for the log line when it
+// cannot be.
+func readWindowAction(win ui.Window, what string) string {
+	raw, err := win.Eval("window.__liroAction()")
 	if err != nil {
-		slog.Warn("consent: reading the timestamp choice failed", "error", err)
+		slog.Warn("consent: reading "+what+" failed", "error", err)
 		return ""
 	}
 	var jsonStr string
 	if err := json.Unmarshal([]byte(raw), &jsonStr); err != nil {
-		slog.Warn("consent: decoding the timestamp choice envelope failed", "error", err)
+		slog.Warn("consent: decoding the envelope of "+what+" failed", "error", err)
 		return ""
 	}
-	var choice struct {
-		Choice string `json:"choice"`
+	var recorded struct {
+		Action string `json:"action"`
 	}
-	if err := json.Unmarshal([]byte(jsonStr), &choice); err != nil {
-		slog.Warn("consent: decoding the timestamp choice failed", "error", err)
+	if err := json.Unmarshal([]byte(jsonStr), &recorded); err != nil {
+		slog.Warn("consent: decoding "+what+" failed", "error", err)
 		return ""
 	}
-	return choice.Choice
+	return recorded.Action
 }
 
 // interactiveInput is one document waiting to be signed: where it is,
-// and the digest the consent screen's batch fingerprint is built from
+// and the digest the certificate step's batch fingerprint is built from
 // (SPEC §6.6).
 //
 // It deliberately does not hold the document's bytes. It used to, read
-// in full for every input before the consent window even opened, which
+// in full for every input before the approval was even shown, which
 // is fine for the one or two files a command line is given and is not
 // fine for F6's own stated case of two hundred dropped at once — a
 // two-hundred-document batch of ordinary contracts is hundreds of
@@ -536,10 +295,6 @@ func expandInteractiveInput(pattern string) ([]string, error) {
 	return nil, fmt.Errorf("no files matched %q", pattern)
 }
 
-func defaultInteractiveOutputPath(in, suffix string) string {
-	return outputPathIn(in, "", suffix)
-}
-
 // outputPathIn is where one document's signature goes: beside the
 // input when dir is empty (F5's behaviour, and F6 §4's default), or in
 // dir when the user has chosen one. jobs.OutputPathFor is the single
@@ -548,23 +303,6 @@ func defaultInteractiveOutputPath(in, suffix string) string {
 // the other.
 func outputPathIn(in, dir, suffix string) string {
 	return jobs.OutputPathFor(in, dir, suffix)
-}
-
-func medianDuration(d []time.Duration) time.Duration {
-	sorted := append([]time.Duration(nil), d...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
-	n := len(sorted)
-	if n == 0 {
-		return 0
-	}
-	if n%2 == 1 {
-		return sorted[n/2]
-	}
-	return (sorted[n/2-1] + sorted[n/2]) / 2
-}
-
-func waitForClose(messages chan ui.Message) {
-	<-messages
 }
 
 func codeOfInteractive(err error) errs.Code {
@@ -576,17 +314,6 @@ func codeOfInteractive(err error) errs.Code {
 		return e.Code
 	}
 	return errs.CodeInternal
-}
-
-// pushFailure shows one failure on the consent window's failed screen.
-// The message comes from cli.ErrorMessage — the same renderer the
-// command line uses — so a code carrying Details reaches the user as a
-// finished sentence. Rendering the bare catalogue string here put
-// "The stamp contains a character the font does not support: %s (%s)."
-// on screen, placeholders and all; Task 1 makes that path reachable by
-// turning the stamp on by default.
-func pushFailure(win ui.Window, c *i18n.Catalogue, err error) {
-	_ = win.PostJSON(consentFailedPayload(cli.ErrorMessage(err, c), err, c))
 }
 
 // gatherInteractiveCertificates wires the real Windows CNG source and
@@ -610,8 +337,8 @@ func gatherInteractiveCertificates(ctx context.Context) (cli.Report, error) {
 	return cli.Gather(ctx, deps, time.Now())
 }
 
-// openInteractiveSession opens the signing session for the consent
-// window's chosen certificate. hwnd is the consent window's own HWND
+// openInteractiveSession opens the signing session for the certificate
+// the person approved. hwnd is the signing window's own HWND
 // (Task 2, F2 §2.3): without it, NCRYPT_WINDOW_HANDLE_PROPERTY stays 0
 // and the OS PIN dialog can appear behind the agent's window, which
 // looks like a frozen program rather than a prompt.
@@ -819,25 +546,6 @@ type interactiveOutput struct {
 	overwrite bool
 }
 
-// resolveInteractiveOutputs settles every document's output path up
-// front, asking about the first conflict and applying that answer to
-// the rest of the batch (Task 4). It returns false when the user
-// cancelled, in which case nothing is signed and no PIN was ever
-// requested.
-func resolveInteractiveOutputs(win ui.Window, messages chan ui.Message, c *i18n.Catalogue, inputs []interactiveInput, suffix string, force bool) ([]interactiveOutput, bool) {
-	answer := outputConflictUnanswered
-	out := make([]interactiveOutput, 0, len(inputs))
-	for _, in := range inputs {
-		path, overwrite, proceed := resolveOutputConflict(win, messages, c,
-			defaultInteractiveOutputPath(in.path, suffix), force, &answer)
-		if !proceed {
-			return nil, false
-		}
-		out = append(out, interactiveOutput{path: path, overwrite: overwrite})
-	}
-	return out, true
-}
-
 // resolveOutputConflict decides where one document's signature will be
 // written. It returns the path to write to, whether an existing file
 // there may be replaced, and whether to go on at all.
@@ -862,7 +570,7 @@ func resolveOutputConflict(win ui.Window, messages chan ui.Message, c *i18n.Cata
 	}
 
 	renamePath := nextFreeOutputPath(outPath)
-	_ = win.PostJSON(consentOutputExistsPayload(outPath, renamePath, c))
+	_ = win.PostJSON(askOutputExistsPayload(outPath, renamePath, c))
 
 	msg := <-messages
 	if msg.Type != ui.MessageTypeApprove {
@@ -887,24 +595,14 @@ func resolveOutputConflict(win ui.Window, messages chan ui.Message, c *i18n.Cata
 // readOutputChoice reads back which of the two proceeding actions the
 // page recorded, exactly as readTSAChoice does.
 func readOutputChoice(win ui.Window) string {
-	raw, err := win.Eval("window.__liroOutputChoice()")
-	if err != nil {
-		slog.Warn("consent: reading the output choice failed", "error", err)
+	switch readWindowAction(win, "the output choice") {
+	case "outputOverwrite":
+		return "overwrite"
+	case "outputRename":
+		return "rename"
+	default:
 		return ""
 	}
-	var jsonStr string
-	if err := json.Unmarshal([]byte(raw), &jsonStr); err != nil {
-		slog.Warn("consent: decoding the output choice envelope failed", "error", err)
-		return ""
-	}
-	var choice struct {
-		Choice string `json:"choice"`
-	}
-	if err := json.Unmarshal([]byte(jsonStr), &choice); err != nil {
-		slog.Warn("consent: decoding the output choice failed", "error", err)
-		return ""
-	}
-	return choice.Choice
 }
 
 // nextFreeOutputPath appends the first numeric suffix naming a file

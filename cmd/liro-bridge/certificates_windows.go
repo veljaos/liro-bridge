@@ -7,7 +7,7 @@ package main
 // did nothing visible at all — a menu item that looks enabled and does
 // nothing on click reads as a broken program. It reuses the same
 // certificate-gathering wiring and CertificateOption view model the
-// consent window (interactive_windows.go) and `liro-bridge certs`
+// certificate step of the signing flow and `liro-bridge certs`
 // (main.go's runCerts) already use, so the list shown here always
 // matches what signing would offer.
 import (
@@ -27,17 +27,11 @@ func runCertificatesWindow(locale string) error {
 	if err != nil {
 		return err
 	}
-	// Task 3: same default visibility rule as "liro-bridge certs" (no
-	// --all) and the consent window — a certificate that is both
-	// PurposeUnknown and not qualified is a Windows-internal artefact
-	// the user has never heard of and cannot sign with.
-	certInfos := make([]classify.Info, 0, len(report.Certificates))
-	for _, row := range report.Certificates {
-		if row.Hidden() {
-			continue
-		}
-		certInfos = append(certInfos, row.Info)
-	}
+	// The same default visibility rule as "liro-bridge certs" (no --all)
+	// and the certificate step of the signing flow, from the one place
+	// it lives (classify.Info.HiddenByDefault): a Windows-internal
+	// artefact, and anything that is not a signing certificate.
+	certInfos := visibleCertificates(report)
 
 	messages := make(chan ui.Message, 8)
 	win, err := ui.NewWindow(ui.Options{

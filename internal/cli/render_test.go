@@ -69,14 +69,20 @@ func TestRenderTextThumbprintShowsLastEightCharacters(t *testing.T) {
 	}
 }
 
-func TestRenderTextHidesUnknownUnqualifiedByDefault(t *testing.T) {
+func TestRenderTextHidesEverythingThatIsNotASigningCertificate(t *testing.T) {
 	var buf bytes.Buffer
 	RenderText(&buf, sampleReport(), i18n.Load("en"), referenceTime, false)
 	if strings.Contains(buf.String(), "{GUID}") {
 		t.Fatalf("default view must hide the unknown-purpose, unqualified certificate: %s", buf.String())
 	}
-	if !strings.Contains(buf.String(), "Certificates: 2") {
-		t.Fatalf("expected 2 visible certificates, got: %s", buf.String())
+	// The authentication certificate carries the same display name as
+	// the signing one — which is the whole point (SPEC §11.5) — so what
+	// says it is gone is the role line, not the name.
+	if strings.Contains(buf.String(), "authentication") {
+		t.Fatalf("default view must hide the authentication certificate: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "Certificates: 1") {
+		t.Fatalf("expected 1 visible certificate, got: %s", buf.String())
 	}
 }
 

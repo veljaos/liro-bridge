@@ -18,6 +18,130 @@ main {
   padding: var(--liro-space-1);
 }
 
+/* The one choice this window asks: three outcomes, one under another,
+   each a button-sized target. What an option reveals sits between it
+   and the next one, so the answer and the rest of the answer are never
+   on different screens. */
+.stamp-methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+}
+
+.stamp-method {
+  display: flex;
+  align-items: center;
+  gap: var(--liro-space-3);
+  padding: var(--liro-space-2) var(--liro-space-3);
+  border: 1px solid var(--liro-color-border);
+  border-radius: var(--liro-radius-sm);
+  background: var(--liro-color-surface-raised);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.stamp-method:hover {
+  background: var(--liro-color-neutral);
+}
+
+/* The same way a chosen certificate row shows itself (.liro-cert-row),
+   so "this is the one" looks the same everywhere in this program. */
+.stamp-method-selected {
+  border-color: var(--liro-color-brand);
+  background: var(--liro-color-surface);
+}
+
+/* The radio itself carries focus and the platform's own arrow-key
+   grouping; the card is what a person sees, so the card is what shows
+   the focus ring. */
+.stamp-method-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stamp-method:has(.stamp-method-input:focus-visible) {
+  outline: 2px solid var(--liro-color-focus-ring);
+  outline-offset: 2px;
+}
+
+.stamp-method-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--liro-color-text-secondary);
+}
+
+.stamp-method-selected .stamp-method-icon {
+  color: var(--liro-color-brand);
+}
+
+.stamp-method-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: var(--liro-font-weight-semibold);
+}
+
+/* Whatever the chosen option still needs answering, indented under it
+   so it reads as part of that option rather than as the next one. */
+.stamp-method-extra {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+  padding-left: var(--liro-space-5);
+}
+
+/* The four corners laid out where they actually are on a page: top row
+   above, bottom row below. Choosing one is aiming, not reading. */
+.stamp-corner-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--liro-space-2);
+}
+
+.stamp-corner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--liro-space-2);
+  padding: var(--liro-space-1) var(--liro-space-2);
+  border: 1px solid var(--liro-color-border);
+  border-radius: var(--liro-radius-sm);
+  background: var(--liro-color-surface-raised);
+  font-size: var(--liro-font-size-small);
+  cursor: pointer;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.stamp-corner:hover {
+  background: var(--liro-color-neutral);
+}
+
+.stamp-corner-selected {
+  border-color: var(--liro-color-brand);
+  background: var(--liro-color-surface);
+  font-weight: var(--liro-font-weight-semibold);
+}
+
+.stamp-corner-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stamp-corner:has(.stamp-corner-input:focus-visible) {
+  outline: 2px solid var(--liro-color-focus-ring);
+  outline-offset: 2px;
+}
+
 /* The standing preferences, one under another, shown only when this
    window was opened from Settings. */
 .stamp-more-body {
@@ -31,4 +155,21 @@ main {
   display: flex;
   justify-content: flex-end;
   gap: var(--liro-space-2);
+}
+
+/* The placed position: a line saying what is remembered, and — from
+   Settings — the two things that can be done about it. */
+.stamp-placed-actions {
+  display: flex;
+  gap: var(--liro-space-2);
+  flex-wrap: wrap;
+}
+
+#stamp-placed-summary {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+#stamp-none-note p {
+  margin: 0;
 }

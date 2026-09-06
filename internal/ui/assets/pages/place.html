@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://liro.invalid/tokens.css" />
+<link rel="stylesheet" href="https://liro.invalid/intents.css" />
+<link rel="stylesheet" href="https://liro.invalid/pages/place.css" />
+</head>
+<body class="liro-page">
+
+<!-- The placement window (F6b): the page as a reader shows it, with the
+     stamp on top of it, dragged where it belongs. Everything the page
+     knows about geometry arrives from Go in points; nothing here decides
+     where anything really is. -->
+<main>
+  <div class="liro-fixed-region place-bar">
+    <div class="place-group">
+      <button id="first-btn" class="liro-btn liro-btn-secondary place-nav" type="button"></button>
+      <button id="prev-btn" class="liro-btn liro-btn-secondary place-nav" type="button"></button>
+      <span class="place-pageof">
+        <input type="number" id="page-input" min="1" step="1" />
+        <span id="page-of" class="liro-text-small"></span>
+      </span>
+      <button id="next-btn" class="liro-btn liro-btn-secondary place-nav" type="button"></button>
+      <button id="last-btn" class="liro-btn liro-btn-secondary place-nav" type="button"></button>
+    </div>
+
+    <div class="place-group">
+      <button id="zoom-out-btn" class="liro-btn liro-btn-secondary place-nav" type="button">&minus;</button>
+      <button id="zoom-btn" class="liro-btn liro-btn-quiet place-zoom" type="button"></button>
+      <button id="zoom-in-btn" class="liro-btn liro-btn-secondary place-nav" type="button">+</button>
+    </div>
+  </div>
+
+  <div id="viewport" class="place-viewport" tabindex="0">
+    <div id="canvas" class="place-canvas">
+      <img id="page-image" alt="" draggable="false" />
+      <div id="margin-guide" class="place-margin"></div>
+      <div id="stamp" class="place-stamp" hidden>
+        <img id="stamp-image" alt="" draggable="false" />
+      </div>
+      <p id="preview-note" class="place-note liro-text-small" hidden></p>
+    </div>
+  </div>
+
+  <div class="liro-fixed-region place-footer">
+    <span id="position-readout" class="place-readout liro-text-small"></span>
+    <span id="snap-readout" class="liro-text-small liro-text-secondary"></span>
+    <span class="place-spacer"></span>
+    <!-- The position this document was last signed at, and the way back
+         to it. It belongs here rather than on the screen where the
+         method is chosen: someone choosing to place a stamp is about to
+         place it, and coordinates from last time mean nothing until
+         there is a page to compare them against. Here they are both a
+         reference and a target. -->
+    <span id="saved-readout" class="place-readout liro-text-small liro-text-secondary" hidden></span>
+    <button id="saved-reset-btn" class="liro-btn liro-btn-quiet liro-btn-compact" type="button" hidden></button>
+    <button id="cancel-btn" class="liro-btn liro-btn-secondary" type="button"></button>
+    <button id="use-btn" class="liro-btn liro-btn-primary" type="button"></button>
+  </div>
+</main>
+
+<script src="https://liro.invalid/bridge.js"></script>
+<script src="https://liro.invalid/pages/place.js"></script>
+</body>
+</html>

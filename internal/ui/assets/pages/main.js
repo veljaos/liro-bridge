@@ -7,28 +7,29 @@
   //
   // Actions travel back to Go the way D-083 established: the message
   // surface stays at exactly three types, so a button records what it
-  // was into __liroMainAction and sends "approve"; Go reads the record
-  // through ExecuteScript's own return value. Nothing here ever sends a
-  // path — a row is identified by its index, which Go validates against
-  // the list it already holds.
-  var pendingAction = null;
-
-  window.__liroMainAction = function () {
-    var a = pendingAction;
-    pendingAction = null;
-    return JSON.stringify(a || {});
-  };
-
-  function act(action, extra) {
-    pendingAction = Object.assign({ action: action }, extra || {});
-    window.liroSend("approve");
-  }
+  // was and sends "approve"; Go reads the record through
+  // ExecuteScript's own return value. The record itself lives in
+  // bridge.js now (liroAct / __liroAction), because every page of the
+  // flow needs one. Nothing here ever sends a path — a row is
+  // identified by its index, which Go validates against the list it
+  // already holds.
+  var act = window.liroAct;
 
   window.__liroOnMessage = function (payload) {
     switch (payload.type) {
       case "init":
         window.liroApplyStaticStrings();
         renderFiles(payload);
+        break;
+      // The page's own fixed labels and nothing else: no screen is
+      // chosen, because the step that navigated here says which one it
+      // wants next. Every screen starts hidden for the same reason —
+      // whatever a fresh document happened to show first would be
+      // visible for the length of the navigation, and on the way to
+      // the progress screen that was the document list, which reads as
+      // the flow jumping back to where it started.
+      case "strings":
+        window.liroApplyStaticStrings();
         break;
       case "files":
         renderFiles(payload);
@@ -42,11 +43,22 @@
       case "status":
         renderStatus(payload);
         break;
+      case "ask":
+        renderAsk(payload);
+        break;
     }
   };
 
+  // Every screen this page can show. The three at the end are the
+  // questions that come between the approval and the first signature;
+  // they were on the consent window while that was a window of its own.
+  var screens = [
+    "state-files", "state-queue", "state-report",
+    "state-tsachoice", "state-outputexists", "state-failed"
+  ];
+
   function show(id) {
-    ["state-files", "state-queue", "state-report"].forEach(function (s) {
+    screens.forEach(function (s) {
       document.getElementById(s).hidden = s !== id;
     });
   }
@@ -55,6 +67,7 @@
 
   function renderFiles(payload) {
     show("state-files");
+    window.liroRenderStep(payload.step);
     var files = payload.files || [];
 
     document.getElementById("empty-state").hidden = files.length !== 0;
@@ -101,11 +114,13 @@
 
     renderNotices(payload.notices || []);
 
-    // Sign goes back to being Sign on every re-render, which is what
-    // brings it out of the busy state below when the consent window was
-    // cancelled and the list is shown again.
+    // The primary action goes back to its own label on every re-render,
+    // which is what brings it out of the busy state below when the flow
+    // came back to this step. Its words are Go's: this step ends in
+    // Next when a certificate and a method are still to be chosen, and
+    // in Sign only when nothing else is being asked.
     var sign = document.getElementById("sign-btn");
-    window.liroSetText(sign, window.liroT("main.sign"));
+    window.liroSetText(sign, payload.primaryLabel || "");
     sign.disabled = files.length === 0;
     document.getElementById("clear-btn").disabled = files.length === 0;
     window.liroSetText(document.getElementById("output-folder"), payload.outputFolderText || "");
@@ -127,6 +142,9 @@
 
   function renderQueue(payload) {
     show("state-queue");
+    // The batch is running: it is not a step of anything, and a header
+    // saying which step it is would be left over from the one before.
+    window.liroRenderStep(null);
     window.liroSetText(document.getElementById("queue-label"), payload.label || "");
     window.liroSetText(document.getElementById("queue-eta"), payload.etaText || "");
     document.getElementById("queue-per-signature").hidden = !payload.perSignaturePIN;
@@ -191,6 +209,7 @@
 
   function renderReport(payload) {
     show("state-report");
+    window.liroRenderStep(null);
     window.liroSetText(document.getElementById("report-title"), payload.title || "");
     window.liroSetText(document.getElementById("report-counts"), payload.counts || "");
 
@@ -199,6 +218,10 @@
     if (payload.abortMessage) {
       window.liroSetText(abort, payload.abortMessage);
     }
+
+    var adjusted = document.getElementById("report-stamp-adjusted");
+    adjusted.hidden = !payload.stampAdjusted;
+    window.liroSetText(adjusted, payload.stampAdjusted || "");
 
     var failures = payload.failures || [];
     document.getElementById("report-failures").hidden = failures.length === 0;
@@ -212,9 +235,49 @@
     });
 
     window.liroSetText(document.getElementById("report-output"), payload.outputText || "");
-    window.liroSetText(document.getElementById("report-level"), payload.levelText || "");
+    var level = document.getElementById("report-level");
+    window.liroSetText(level, payload.levelText || "");
+    level.className = "liro-text-small" + (payload.levelIntent ? " liro-outcome liro-outcome-" + payload.levelIntent : "");
+    var levelNote = document.getElementById("report-level-note");
+    window.liroSetText(levelNote, payload.levelNote || "");
+    levelNote.hidden = !payload.levelNote;
     document.getElementById("report-open-btn").disabled = !payload.canOpenOutput;
+    // Signing more means going back to a document list, which a run
+    // that brought its own documents does not have.
+    document.getElementById("report-again-btn").hidden = payload.canSignMore === false;
     document.getElementById("report-status").hidden = true;
+  }
+
+  // ---- the questions between the approval and the first signature ---
+
+  function renderAsk(payload) {
+    var ask = payload.ask || {};
+    // Asked after the approval, so the flow is past its steps.
+    window.liroRenderStep(null);
+    if (ask.state === "tsaChoice") {
+      window.liroSetText(document.getElementById("tsa-reason"), ask.tsaReasonText || "");
+      show("state-tsachoice");
+      // Nothing that proceeds is focused first: Cancel gets it, the
+      // same rule F5 §5.6 applies to Approve on the certificate step.
+      document.getElementById("tsa-cancel-btn").focus();
+      return;
+    }
+    if (ask.state === "outputExists") {
+      window.liroSetText(document.getElementById("output-exists-path"), ask.outputExistsPath || "");
+      window.liroSetText(document.getElementById("output-rename-btn"), ask.outputRenameText || "");
+      show("state-outputexists");
+      // Nothing that writes a file is focused first either.
+      document.getElementById("output-cancel-btn").focus();
+      return;
+    }
+    if (ask.state === "failed") {
+      window.liroSetText(document.getElementById("failed-message"), ask.failedMessageText || "");
+      show("state-failed");
+      document.getElementById("copy-details-btn").onclick = function () {
+        if (navigator.clipboard) navigator.clipboard.writeText(ask.failedDetails || "");
+      };
+      document.getElementById("close-failed-btn").focus();
+    }
   }
 
   function renderStatus(payload) {
@@ -235,26 +298,41 @@
   on("browse-btn", "browse");
   on("clear-btn", "clear");
 
-  // Sign is the one action with a wait behind it: the consent window is
-  // a WebView2 window of its own, and creating one is measured at a
-  // little over two seconds on the machine this was reported from. Two
-  // seconds of a button that looks untouched is two seconds in which a
-  // person presses it again. So the first press takes the button out of
-  // service and says what is happening; renderFiles above puts it back.
+  // This is the one action with a wait behind it. Not the window any
+  // more — a step is a navigation now, measured in tens of milliseconds
+  // (D-148, D-150) — but the certificates: enumerating them touches the
+  // card and the Trusted List, and it happens on the way out of this
+  // step. A button that looks untouched is a button somebody presses
+  // again, so the first press takes it out of service and says what is
+  // happening; renderFiles above puts it back.
   document.getElementById("sign-btn").addEventListener("click", function () {
     var sign = document.getElementById("sign-btn");
     if (sign.disabled) return;
     sign.disabled = true;
     window.liroSetText(sign, window.liroT("main.sign_opening"));
-    act("sign");
+    act("next");
   });
 
+  on("step-back-btn", "back");
+  on("tsa-without-btn", "tsaWithoutTimestamp");
+  on("tsa-configure-btn", "tsaConfigure");
+  on("output-rename-btn", "outputRename");
+  on("output-overwrite-btn", "outputOverwrite");
   on("output-change-btn", "chooseOutputFolder");
   on("output-beside-btn", "clearOutputFolder");
   on("stop-btn", "stop");
   on("report-open-btn", "openOutput");
   on("report-export-btn", "exportReport");
   on("report-again-btn", "newBatch");
+  on("report-finish-btn", "finish");
+
+  // The three ways out of a question asked after the approval. Each is
+  // a refusal of this batch, which is what cancel has always meant.
+  ["tsa-cancel-btn", "output-cancel-btn", "close-failed-btn"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", function () {
+      window.liroSend("cancel");
+    });
+  });
 
   // WebView2's own external-drop handling is off for this window
   // (D-114), so the shell delivers the drop to the native frame and Go

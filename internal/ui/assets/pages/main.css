@@ -182,6 +182,14 @@ body.drag-over #file-list {
   margin-top: var(--liro-space-2);
 }
 
+/* The report's two action rows are one block: the second follows the
+   first by a gap rather than by another margin, so the pair of "what
+   next" buttons reads as belonging together and to the row above it
+   rather than as a second, unrelated footer. */
+.report-actions-next {
+  margin-top: 0;
+}
+
 #report-failure-list {
   margin: var(--liro-space-1) 0 0 0;
   padding-left: var(--liro-space-4);
@@ -199,4 +207,46 @@ body.drag-over #file-list {
 
 #report-counts {
   color: var(--liro-color-text-secondary);
+}
+
+/* The three screens that ask a question between the approval and the
+   first signature — the timestamp, an output file that already exists,
+   and a failure that stopped the batch before it started. Their actions
+   are stacked and full width, in the order the choice is described,
+   rather than crowded into one right-aligned row where the longest
+   label would decide the layout.
+
+   Their weights were settled in F5's third real run and are unchanged
+   by the move onto this page: signing without a timestamp is the
+   primary action, because with no authority configured — which is what
+   this project ships (D-095) — it is what most people reaching that
+   screen will choose; configuring one is the neutral secondary beneath
+   it; and Cancel is quieter than both, so two neutral buttons do not
+   sit there reading as equals. */
+.stacked-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+}
+
+#tsa-reason {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A path is as long as the user's folder structure makes it: it wraps
+   rather than widening the window. */
+.output-path {
+  font-family: var(--liro-font-family-mono);
+  color: var(--liro-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+#failed-message,
+#report-level-note {
+  overflow-wrap: anywhere;
+}
+
+#report-level-note {
+  margin: 0;
 }

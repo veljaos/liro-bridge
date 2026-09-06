@@ -1,0 +1,143 @@
+/* The placement window. One scrolling region (the page viewport), the
+   controls fixed above and below it — D-106's shape, applied to a
+   window whose whole middle is a picture that can be larger than the
+   space it is in. */
+
+body {
+  padding: 0;
+}
+
+main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.place-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--liro-space-4);
+  padding: var(--liro-space-2) var(--liro-space-3);
+  border-bottom: 1px solid var(--liro-color-border);
+  background: var(--liro-color-surface-raised);
+}
+
+.place-group {
+  display: flex;
+  align-items: center;
+  gap: var(--liro-space-1);
+}
+
+.place-nav {
+  padding: var(--liro-space-1) var(--liro-space-2);
+  min-width: 32px;
+}
+
+.place-zoom {
+  min-width: 64px;
+  font-variant-numeric: tabular-nums;
+}
+
+.place-pageof {
+  display: flex;
+  align-items: center;
+  gap: var(--liro-space-2);
+  margin: 0 var(--liro-space-2);
+}
+
+#page-input {
+  width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one scrolling region. The page image can be much larger than the
+   window at 400 percent, which is the whole point of zooming; the
+   window itself never changes size (F6b §2.3). */
+.place-viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--liro-color-surface);
+  padding: var(--liro-space-4);
+}
+
+/* The canvas is exactly the page's size on screen, so everything drawn
+   over it is positioned in the page's own pixels and nothing has to
+   account for where the viewport happens to be scrolled to. */
+.place-canvas {
+  position: relative;
+  margin: 0 auto;
+  background: var(--liro-color-bg);
+  box-shadow: var(--liro-shadow-card);
+}
+
+#page-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The margin guide: faint, so the limit is visible rather than merely
+   felt (F6b §2.5), and never in the way of reading the page under it. */
+.place-margin {
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed var(--liro-color-border-strong);
+  opacity: 0.55;
+}
+
+.place-stamp {
+  position: absolute;
+  cursor: move;
+  outline: 1px solid var(--liro-color-brand);
+  touch-action: none;
+}
+
+.place-stamp img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.place-stamp.is-snapped {
+  outline: 2px solid var(--liro-color-positive);
+}
+
+.place-stamp.is-dragging {
+  outline: 2px solid var(--liro-color-brand);
+}
+
+.place-note {
+  position: absolute;
+  top: var(--liro-space-4);
+  left: var(--liro-space-4);
+  right: var(--liro-space-4);
+  margin: 0;
+  padding: var(--liro-space-3);
+  border: 1px solid var(--liro-color-border);
+  border-radius: var(--liro-radius-sm);
+  background: var(--liro-color-warning-bg);
+  color: var(--liro-color-warning);
+}
+
+.place-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--liro-space-3);
+  padding: var(--liro-space-2) var(--liro-space-3);
+  border-top: 1px solid var(--liro-color-border);
+  background: var(--liro-color-surface-raised);
+}
+
+.place-readout {
+  font-family: var(--liro-font-family-mono);
+  color: var(--liro-color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.place-spacer {
+  flex: 1 1 auto;
+}

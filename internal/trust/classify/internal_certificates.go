@@ -3,8 +3,40 @@ package classify
 // This file holds the one rule that decides which certificates a listing
 // shows by default. Every surface that lists certificates — the `certs`
 // command, the consent window, the Certificates window — goes through
-// IsWindowsInternal, so there is one implementation and not three
+// HiddenByDefault, so there is one implementation and not three
 // (F6 §0b).
+
+// HiddenByDefault reports whether a listing leaves this certificate out
+// unless it was asked for everything (`certs --all`). Two shapes are
+// hidden: an artefact Windows made for itself (IsWindowsInternal,
+// below), and a certificate whose purpose is not signing.
+//
+// The second half reverses F1 §6.1, which asked for a non-signing
+// certificate to be shown and disabled with a reason, on the argument
+// that hiding it would make a user think their card was broken. That
+// argument was wrong about what a person actually sees. Every Serbian
+// card carries an authentication certificate beside the signing one,
+// and on Halcom cards their Subject DN is byte-for-byte identical
+// (SPEC §11.5) — so what the list showed was the person's own name
+// twice, the second time struck through under a sentence about a
+// distinction they have no vocabulary for. It is not a choice, and it
+// made every list twice as long for nothing.
+//
+// What is still shown, and still disabled with its reason, is a
+// *signing* certificate that cannot be used right now — an absent card,
+// an expired certificate. That is a real choice temporarily
+// unavailable, and hiding *that* is what would make the card look
+// broken.
+//
+// A soft-token certificate is never hidden, whatever its purpose:
+// SPEC §16.6 requires a test key to be loudly visible wherever it
+// appears.
+func (i Info) HiddenByDefault() bool {
+	if i.IsTestKey {
+		return false
+	}
+	return i.Purpose != PurposeSigning || i.IsWindowsInternal()
+}
 
 // IsWindowsInternal reports whether this certificate is an artefact
 // Windows created for its own use rather than something a person could

@@ -16,7 +16,7 @@ import (
 // liroVirtualHost is the hostname every window's assets are mapped to
 // (F5 §2.4). It resolves to nothing outside the WebView2 instance that
 // mapped it.
-const liroVirtualHost = "liro.local"
+const liroVirtualHost = "liro.invalid"
 
 // assetsFS is the subtree ui.Assets serves at the virtual host root —
 // computed once so every window creation reuses the same fs.FS value.

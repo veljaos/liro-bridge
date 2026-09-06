@@ -80,52 +80,49 @@ func TestConsentScreenAsksNothingAboutStamps(t *testing.T) {
 	}
 }
 
-// TestAskHowToSignSkipsTheWindowWhenTheAnswerIsSupplied is what keeps
-// this flow from needing unpicking when a program asks the agent to
-// sign: step 3 is a step, not a fixture. With the answer already in
-// hand no window opens, and the approval is the only thing shown.
+// TestASuppliedAnswerLeavesOnlyTheApproval is D-124's promise, and the
+// one the whole flow is measured against: when a caller supplies
+// everything, the person sees the certificate step alone. One window,
+// one click.
 //
-// It would hang, not fail, if the skip regressed — runStampWindow waits
-// for a click — so the call is raced against a deadline.
-func TestAskHowToSignSkipsTheWindowWhenTheAnswerIsSupplied(t *testing.T) {
+// It asserts the two halves that make that true — the flow has exactly
+// one step, so there is no step header and no way forward but Approve;
+// and the supplied answer reaches the configuration without anyone
+// being asked about it.
+func TestASuppliedAnswerLeavesOnlyTheApproval(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 
-	supplied := consent.StampChoice{Visible: true, Position: consent.StampPositionTopLeft}
-	type result struct {
-		cfg config.Config
-		ok  bool
-	}
-	done := make(chan result, 1)
-	go func() {
-		cfg, ok := askHowToSign(config.Default(), "sr-Latn", &supplied, 0)
-		done <- result{cfg, ok}
-	}()
+	for _, tc := range []struct {
+		name     string
+		supplied consent.StampChoice
+		visible  bool
+		position string
+	}{
+		{"a corner", consent.StampChoice{Visible: true, Position: consent.StampPositionTopLeft}, true, consent.StampPositionTopLeft},
+		// An invisible signature is an answer too, not an absent one.
+		{"nothing drawn", consent.StampChoice{Visible: false}, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			supplied := tc.supplied
+			m := newMainWindow(config.Default(), "sr-Latn")
+			m.documentsSupplied = true
+			m.suppliedStamp = &supplied
+			m.applySuppliedStamp()
 
-	select {
-	case got := <-done:
-		if !got.ok {
-			t.Fatal("a supplied answer was reported as a refusal")
-		}
-		if !got.cfg.VisibleStamp || got.cfg.StampPosition != consent.StampPositionTopLeft {
-			t.Errorf("the supplied answer did not reach the configuration: %+v", got.cfg)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("askHowToSign opened a window for an answer it was already given")
-	}
-
-	// An invisible signature is an answer too, not an absent one.
-	invisible := consent.StampChoice{Visible: false}
-	go func() {
-		cfg, ok := askHowToSign(config.Default(), "sr-Latn", &invisible, 0)
-		done <- result{cfg, ok}
-	}()
-	select {
-	case got := <-done:
-		if !got.ok || got.cfg.VisibleStamp {
-			t.Errorf("a supplied invisible answer produced %+v (ok %v)", got.cfg, got.ok)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("askHowToSign opened a window for a supplied invisible answer")
+			steps := m.stepsFor()
+			if len(steps) != 1 || steps[0] != stepCertificate {
+				t.Fatalf("steps = %v, want exactly [stepCertificate]", steps)
+			}
+			if h := m.headerFor(stepCertificate); h != nil {
+				t.Errorf("a one-step flow drew a step header: %+v", h)
+			}
+			if m.cfg.VisibleStamp != tc.visible {
+				t.Errorf("VisibleStamp = %v, want %v", m.cfg.VisibleStamp, tc.visible)
+			}
+			if tc.position != "" && m.cfg.StampPosition != tc.position {
+				t.Errorf("StampPosition = %q, want %q", m.cfg.StampPosition, tc.position)
+			}
+		})
 	}
 }
 
@@ -320,18 +317,18 @@ func TestSettingsSavePreservesTheStampChoice(t *testing.T) {
 // TestConsentOutputExistsScreenShowsBothPaths is Task 4: the choice
 // names the file that exists and the name it would save under instead,
 // so the decision is made with the answer in view.
-func TestConsentOutputExistsScreenShowsBothPaths(t *testing.T) {
+func TestOutputExistsScreenShowsBothPaths(t *testing.T) {
 	c := i18n.Load("sr-Latn")
-	win, _ := sharedConsentWindow(t)
-
-	// The window always receives an init before any progress payload —
-	// that is what resolves the page's static labels — so the test
-	// starts the same way the real flow does.
-	postConsent(t, win, c)
+	// The question is asked after the approval, on the page that
+	// carries the progress and the report. The window always receives
+	// an init first — that is what resolves the page's static labels —
+	// so the test starts the same way the real flow does.
+	m, _ := testMainWindow(t, "sr-Latn", config.Default(), nil)
+	win := m.win
 
 	existing := `C:\Users\Veljko\Documents\ugovor-potpisan.pdf`
 	rename := `C:\Users\Veljko\Documents\ugovor-potpisan-2.pdf`
-	if err := win.PostJSON(consentOutputExistsPayload(existing, rename, c)); err != nil {
+	if err := win.PostJSON(askOutputExistsPayload(existing, rename, c)); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 
@@ -471,8 +468,8 @@ func readSavedConfig(t *testing.T) config.Config {
 // (D-094's carve-out); nothing simulates the real cursor.
 func TestResolveOutputConflictAppliesTheChoice(t *testing.T) {
 	c := i18n.Load("sr-Latn")
-	win, messages := sharedConsentWindow(t)
-	postConsent(t, win, c)
+	m, messages := testMainWindow(t, "sr-Latn", config.Default(), nil)
+	win := m.win
 
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "ugovor-potpisan.pdf")
@@ -595,8 +592,8 @@ func waitForOutputExistsScreen(t *testing.T, win ui.Window) {
 // moved the timestamp question ahead of the card, D-095).
 func TestResolveInteractiveOutputsSettlesTheWholeBatchBeforeSigning(t *testing.T) {
 	c := i18n.Load("sr-Latn")
-	win, messages := sharedConsentWindow(t)
-	postConsent(t, win, c)
+	m, messages := testMainWindow(t, "sr-Latn", config.Default(), nil)
+	win := m.win
 
 	dir := t.TempDir()
 	inputs := make([]interactiveInput, 0, 3)
@@ -621,7 +618,7 @@ func TestResolveInteractiveOutputsSettlesTheWholeBatchBeforeSigning(t *testing.T
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		o, ok := resolveInteractiveOutputs(win, messages, c, inputs, "-potpisan", false)
+		o, ok := resolveOutputsIn(win, messages, c, inputs, "", "-potpisan", false)
 		done <- outcome{o, ok}
 	}()
 
@@ -634,7 +631,7 @@ func TestResolveInteractiveOutputsSettlesTheWholeBatchBeforeSigning(t *testing.T
 	select {
 	case got := <-done:
 		if !got.ok {
-			t.Fatal("resolveInteractiveOutputs reported cancellation after Save-as was chosen")
+			t.Fatal("resolveOutputsIn reported cancellation after Save-as was chosen")
 		}
 		if len(got.outputs) != 3 {
 			t.Fatalf("settled %d outputs, want 3", len(got.outputs))
@@ -653,7 +650,7 @@ func TestResolveInteractiveOutputsSettlesTheWholeBatchBeforeSigning(t *testing.T
 			}
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("resolveInteractiveOutputs never returned")
+		t.Fatal("resolveOutputsIn never returned")
 	}
 }
 
@@ -664,13 +661,22 @@ func TestStepThreePersistsItsAnswer(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 
 	cfg := config.Default()
-	form := stampSettings{
+	// Two answers, so the test covers both fields the three methods
+	// land on: a corner chosen, and then the stamp turned off. Choosing
+	// "nothing shown" leaves the corner alone deliberately — switching
+	// back to a visible signature must not lose the corner that was
+	// picked before.
+	cfg = applyStampSettings(cfg, stampSettings{
 		Saved:    true,
-		Visible:  false,
+		Method:   stampMethodCorners,
 		Position: consent.StampPositionTopRight,
 		Page:     config.StampPageFirst,
-	}
-	changed := applyStampSettings(cfg, form)
+	})
+	changed := applyStampSettings(cfg, stampSettings{
+		Saved:  true,
+		Method: stampMethodNone,
+		Page:   config.StampPageFirst,
+	})
 	if changed.VisibleStamp || changed.StampPosition != consent.StampPositionTopRight {
 		t.Fatalf("the form did not fold onto the configuration: %+v", changed)
 	}

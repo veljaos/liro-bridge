@@ -35,6 +35,7 @@ var (
 	procAdjustWindowRectEx    = user32DLL.NewProc("AdjustWindowRectEx")
 	procGetCursorPos          = user32DLL.NewProc("GetCursorPos")
 	procMonitorFromPoint      = user32DLL.NewProc("MonitorFromPoint")
+	procMonitorFromWindow     = user32DLL.NewProc("MonitorFromWindow")
 	procGetMonitorInfoW       = user32DLL.NewProc("GetMonitorInfoW")
 	procMessageBoxW           = user32DLL.NewProc("MessageBoxW")
 	procSetProcessDPIAwareCtx = user32DLL.NewProc("SetProcessDpiAwarenessContext")
@@ -276,6 +277,23 @@ func cursorMonitorRect() rect {
 	mi.Size = uint32(unsafe.Sizeof(mi))
 	_, _, _ = procGetMonitorInfoW.Call(hMonitor, uintptr(unsafe.Pointer(&mi)))
 	return mi.Monitor
+}
+
+// workAreaFor is the usable area — the monitor less the taskbar — of
+// the monitor a window is on. Used by Resize to keep a window that
+// changes shape between steps from putting its own buttons under the
+// taskbar.
+func workAreaFor(hwnd uintptr) (rect, bool) {
+	hMonitor, _, _ := procMonitorFromWindow.Call(hwnd, monitorDefaultToNearest)
+	if hMonitor == 0 {
+		return rect{}, false
+	}
+	var mi monitorInfo
+	mi.Size = uint32(unsafe.Sizeof(mi))
+	if ret, _, _ := procGetMonitorInfoW.Call(hMonitor, uintptr(unsafe.Pointer(&mi))); ret == 0 {
+		return rect{}, false
+	}
+	return mi.WorkArea, true
 }
 
 func moduleHandle() uintptr {

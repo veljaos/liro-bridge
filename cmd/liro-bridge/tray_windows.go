@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -154,7 +155,7 @@ func settingsOnOpening(fallback config.Config) (*i18n.Catalogue, config.Config, 
 // fallback is only that: the window reads the configuration file itself,
 // here, at the moment it opens, and takes both the form's values and its
 // own interface language from what it finds. Its callers are long-lived
-// — the tray for the life of the process, the consent window for the
+// — the tray for the life of the process, the signing window for the
 // life of a batch — and a Config handed down from one of them says what
 // was true when *that* started, which is how a language saved a moment
 // ago came back as the old one on reopening.
@@ -183,6 +184,13 @@ func runSettingsWindow(fallback config.Config, owner uintptr) error {
 	defer func() { _ = win.Close() }()
 
 	if err := win.PostJSON(init); err != nil {
+		// A window closed before its first payload landed is a window
+		// the person closed, not one that failed — the same outcome as
+		// closing it a moment later, which every other path here
+		// already treats as a plain cancellation.
+		if errors.Is(err, ui.ErrWindowClosed) {
+			return nil
+		}
 		return err
 	}
 
@@ -277,7 +285,10 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, s
 		// it and inert until it is answered — without the ownership it
 		// was drawn over the new window entirely, which is what made
 		// the whole program look dead (D-129).
-		if _, ok := runStampWindow(currentConfig(cfg), localeOf(cfg), stampRoleSettings, win.Handle()); !ok {
+		// No document and no certificate: Settings asks for one when the
+		// person presses Place, because there is nothing to line a stamp
+		// up against otherwise (F6b §4).
+		if _, ok := runStampWindow(currentConfig(cfg), localeOf(cfg), win.Handle()); !ok {
 			slog.Debug("settings: the stamp window was closed without saving")
 		}
 		return false

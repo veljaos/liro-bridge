@@ -69,15 +69,11 @@ func evalBool(t *testing.T, win ui.Window, script string) bool {
 func testMainWindow(t *testing.T, locale string, cfg config.Config, paths []string) (*mainWindow, chan ui.Message) {
 	t.Helper()
 	win, messages := sharedMainWindow(t)
-	m := &mainWindow{
-		win:      win,
-		messages: messages,
-		dropped:  make(chan []string, 8),
-		closed:   make(chan struct{}),
-		c:        i18n.Load(locale),
-		locale:   locale,
-		cfg:      cfg,
-	}
+	m := newMainWindow(cfg, locale)
+	m.win = win
+	m.messages = messages
+	m.page = pageMain
+	m.step = stepDocuments
 	if len(paths) > 0 {
 		_, m.notices = m.queue.Add(paths)
 	}
@@ -200,7 +196,7 @@ func TestMainWindowSignAndBrowseReachGo(t *testing.T) {
 	m, messages := testMainWindow(t, "sr-Latn", config.Default(), []string{a})
 
 	for _, tc := range []struct{ button, action string }{
-		{"sign-btn", "sign"},
+		{"sign-btn", "next"},
 		{"browse-btn", "browse"},
 		{"clear-btn", "clear"},
 		{"output-change-btn", "chooseOutputFolder"},
@@ -572,8 +568,8 @@ func TestMainWindowRendersInEveryLocale(t *testing.T) {
 					t.Errorf("%s rendered a raw catalogue key in %s: %q", id, locale, text)
 				}
 			}
-			if got := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); got != c.T("main.sign") {
-				t.Errorf("Sign = %q, want %q", got, c.T("main.sign"))
+			if got := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); got != c.T("step.next") {
+				t.Errorf("the primary action = %q, want %q", got, c.T("step.next"))
 			}
 		})
 	}
@@ -704,8 +700,8 @@ func TestSignSaysItIsOpeningAndCannotBePressedTwice(t *testing.T) {
 	if evalBool(t, m.win, "document.getElementById('sign-btn').disabled") {
 		t.Fatal("Sign is disabled with a document in the list")
 	}
-	if label := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); label != c.T("main.sign") {
-		t.Fatalf("Sign reads %q before it is pressed, want %q", label, c.T("main.sign"))
+	if label := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); label != c.T("step.next") {
+		t.Fatalf("the primary action reads %q before it is pressed, want %q", label, c.T("step.next"))
 	}
 
 	if _, err := m.win.Eval("document.getElementById('sign-btn').click()"); err != nil {
@@ -742,7 +738,7 @@ func TestSignSaysItIsOpeningAndCannotBePressedTwice(t *testing.T) {
 	if evalBool(t, m.win, "document.getElementById('sign-btn').disabled") {
 		t.Fatal("Sign is still disabled after the list was shown again")
 	}
-	if label := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); label != c.T("main.sign") {
-		t.Fatalf("Sign reads %q after the list was shown again, want %q", label, c.T("main.sign"))
+	if label := evalText(t, m.win, "document.getElementById('sign-btn').textContent"); label != c.T("step.next") {
+		t.Fatalf("the primary action reads %q after the list was shown again, want %q", label, c.T("step.next"))
 	}
 }

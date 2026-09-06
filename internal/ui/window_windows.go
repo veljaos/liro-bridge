@@ -51,7 +51,6 @@ package ui
 // flag set on entry rather than on exit (tearingDown, below), which is
 // what actually makes "exactly once" true.
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -72,6 +71,22 @@ import (
 // need to be reachable from anywhere else.
 const coreWebView2HostResourceAccessKindDeny = 0
 
+// coreWebView2HostResourceAccessKindAllow is
+// COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW (1): other origins may
+// load the virtual host's resources.
+//
+// The scratch host needs it and the asset host does not. A page served
+// from the asset host loading an image from the scratch host is a
+// cross-origin load, and Deny is exactly what stops one — measured, not
+// reasoned about: the placement window came up with its page and its
+// stamp both showing a broken-image icon and nothing else wrong.
+//
+// "Other origins" inside one WebView2 instance means the agent's own
+// page and nothing else. There is no third origin: the only two hosts
+// that resolve at all in this instance are the ones mapped here, and
+// neither is reachable from outside it.
+const coreWebView2HostResourceAccessKindAllow = 1
+
 type window struct {
 	hwnd       uintptr
 	env        uintptr
@@ -88,6 +103,12 @@ type window struct {
 	navHandler        *navigationCompletedHandler
 
 	widthPts, heightPts int
+
+	// virtualHost is Options.VirtualHost, kept so Navigate can build the
+	// same "https://host/path" URL setUpWebView2 built for StartPage —
+	// and so that the only thing a caller can hand Navigate is a path
+	// within Assets, never a URL of its own.
+	virtualHost string
 
 	// threadID is the OS thread that created this window's WebView2
 	// controller and is the only one allowed to release it (see this
@@ -161,6 +182,7 @@ func NewWindow(opts Options) (Window, error) {
 
 	w := &window{
 		widthPts: opts.Width, heightPts: opts.Height,
+		virtualHost:    opts.VirtualHost,
 		workCh:         make(chan func(), 8),
 		closedCh:       make(chan struct{}),
 		eventSignal:    make(chan struct{}, 1),
@@ -337,6 +359,12 @@ func (w *window) setUpWebView2(opts Options) error {
 		}
 		if err := coreWebView2SetVirtualHost(cw2v3, opts.VirtualHost, assetsDir, coreWebView2HostResourceAccessKindDeny); err != nil {
 			return fmt.Errorf("ui: SetVirtualHostNameToFolderMapping: %w", err)
+		}
+	}
+
+	if opts.ScratchHost != "" && opts.ScratchDir != "" {
+		if err := coreWebView2SetVirtualHost(cw2v3, opts.ScratchHost, opts.ScratchDir, coreWebView2HostResourceAccessKindAllow); err != nil {
+			return fmt.Errorf("ui: SetVirtualHostNameToFolderMapping for the scratch host: %w", err)
 		}
 	}
 
@@ -716,8 +744,127 @@ func (w *window) Eval(script string) (string, error) {
 	case r := <-result:
 		return r.s, r.err
 	case <-w.closedCh:
-		return "", errors.New("ui: window is closed")
+		return "", ErrWindowClosed
 	}
+}
+
+// Navigate implements Window.Navigate (window.go).
+//
+// The wait is the same one setUpWebView2 performs for the first page,
+// and for the same reason: PostJSON before NavigationCompleted lands in
+// a document whose bridge.js has not run, where the payload is silently
+// dropped by the "window.__liroReceive &&" guard and every label is
+// left blank (D-098). Waiting here means a caller can navigate and post
+// on the next line.
+//
+// The nested pump runs on the window's own thread, inside the wmRunFunc
+// handler, exactly as Eval's ExecuteScript wait already does.
+func (w *window) Navigate(page string) error {
+	if w.virtualHost == "" {
+		return fmt.Errorf("ui: this window has no virtual host to navigate within")
+	}
+	uri := "https://" + w.virtualHost + page
+	result := make(chan error, 1)
+	w.invoke(func() {
+		if w.navHandler == nil {
+			result <- fmt.Errorf("ui: this window is not subscribed to navigation events")
+			return
+		}
+		w.navHandler.done = false
+		if err := coreWebView2Navigate(w.cw2, uri); err != nil {
+			result <- err
+			return
+		}
+		pumpUntil(func() bool { return w.navHandler.done || w.tearingDown })
+		result <- nil
+	})
+
+	select {
+	case err := <-result:
+		if err != nil {
+			return err
+		}
+	case <-w.closedCh:
+		return ErrWindowClosed
+	}
+
+	// The browser's own child windows are what a drop lands on, and a
+	// navigation rebuilds that tree — so the registrations made for the
+	// previous page are given back and made again for this one.
+	// Without this, dropping a file worked until the first step of a
+	// flow and never again.
+	if w.onFilesDropped != nil {
+		revokeDropTargets(w.dropTargets)
+		w.dropTargets = registerDropTargets(w.hwnd, func(paths []string) {
+			w.queueEvent(windowEvent{dropped: paths})
+		})
+		if len(w.dropTargets) == 0 {
+			slog.Error("ui: this window will not accept dropped files after navigating", "page", page)
+		}
+	}
+	return nil
+}
+
+// Resize implements Window.Resize (window.go).
+//
+// The window keeps its own centre: a flow that changes shape between
+// steps must not also change place, or the person has to find the
+// window again every time they press Next. The result is clamped into
+// the work area of the monitor the window is on, so a step that is
+// taller than the last cannot push its own buttons under the taskbar.
+func (w *window) Resize(widthPts, heightPts int) error {
+	if widthPts <= 0 || heightPts <= 0 {
+		return fmt.Errorf("ui: Resize width and height must be positive")
+	}
+	done := make(chan struct{})
+	w.invoke(func() {
+		defer close(done)
+		w.widthPts, w.heightPts = widthPts, heightPts
+		dpi := getDpiForWindow(w.hwnd)
+		clientW, clientH := scaleForDPI(widthPts, dpi), scaleForDPI(heightPts, dpi)
+
+		r := rect{Left: 0, Top: 0, Right: clientW, Bottom: clientH}
+		style := uintptr(wsPopup | wsCaption | wsSysMenu)
+		_, _, _ = procAdjustWindowRectEx.Call(uintptr(unsafe.Pointer(&r)), style, 0, 0)
+		winW, winH := r.Right-r.Left, r.Bottom-r.Top
+
+		x, y := int32(0), int32(0)
+		if cur, ok := windowRect(w.hwnd); ok {
+			cx := cur.Left + (cur.Right-cur.Left)/2
+			cy := cur.Top + (cur.Bottom-cur.Top)/2
+			x, y = cx-winW/2, cy-winH/2
+		}
+		if area, ok := workAreaFor(w.hwnd); ok {
+			x = clampInt32(x, area.Left, area.Right-winW)
+			y = clampInt32(y, area.Top, area.Bottom-winH)
+		}
+		setWindowPos(w.hwnd, 0, x, y, winW, winH, 0)
+
+		if w.controller != 0 {
+			if err := controllerSetBounds(w.controller, 0, 0, clientW, clientH); err != nil {
+				slog.Warn("ui: resizing WebView2 bounds failed", "error", err)
+			}
+		}
+	})
+	select {
+	case <-done:
+		return nil
+	case <-w.closedCh:
+		return ErrWindowClosed
+	}
+}
+
+func clampInt32(v, lo, hi int32) int32 {
+	if hi < lo {
+		return lo
+	}
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // closeTeardownTimeout bounds how long Close waits for the window's own

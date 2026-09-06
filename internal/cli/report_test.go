@@ -216,10 +216,13 @@ func TestHiddenHidesUnknownPurposeUnqualifiedCertificates(t *testing.T) {
 	}
 }
 
-func TestHiddenDoesNotHideUnusableAuthenticationCertificates(t *testing.T) {
-	// The authentication certificate in F1's own §6.1 example is shown
-	// by default even though it is not usable — only PurposeUnknown +
-	// NotQualified together are hidden (SPEC §11.10/F1 §5.4).
+// TestHiddenHidesAuthenticationCertificates is the reversal of F1
+// §6.1's "shown disabled, not hidden" rule. The real Halcom pair is
+// what makes the case: the two certificates' Subject DNs are identical
+// byte for byte (SPEC §11.5), so leaving the authentication one in the
+// list shows the person their own name twice, the second time struck
+// through. It is not a choice, and `--all` still shows it.
+func TestHiddenHidesAuthenticationCertificates(t *testing.T) {
 	der := loadDER(t, "halcom_auth.der")
 	store := &fakeStore{list: bundledTSLList(t)}
 	deps := fakeDeps(t, []windowscng.Certificate{{DER: der, OnHardware: true}}, true, store)
@@ -228,7 +231,28 @@ func TestHiddenDoesNotHideUnusableAuthenticationCertificates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
+	if !report.Certificates[0].Hidden() {
+		t.Fatal("an authentication certificate must be Hidden() by default")
+	}
+}
+
+// TestHiddenKeepsASigningCertificateThatCannotBeUsedNow is the other
+// half of the same rule, and the one that must not slip: a signing
+// certificate whose card is absent is a real choice temporarily
+// unavailable. Hiding *that* is what would make a card look broken.
+func TestHiddenKeepsASigningCertificateThatCannotBeUsedNow(t *testing.T) {
+	der := loadDER(t, "halcom_signing.der")
+	store := &fakeStore{list: bundledTSLList(t)}
+	deps := fakeDeps(t, []windowscng.Certificate{{DER: der, OnHardware: true}}, false, store)
+
+	report, err := Gather(context.Background(), deps, referenceTime)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	if report.Certificates[0].Info.Usable {
+		t.Fatal("fixture assumption broken: with no card present this certificate must be unusable")
+	}
 	if report.Certificates[0].Hidden() {
-		t.Fatal("an authentication certificate must not be Hidden() by default")
+		t.Fatal("a signing certificate whose card is absent must stay visible, disabled with its reason")
 	}
 }

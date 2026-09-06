@@ -23,6 +23,15 @@ import (
 // and Linux get their own web view hosts in phases 12 and 13.
 var ErrUnsupportedPlatform = errors.New("ui: WebView2 is only supported on Windows")
 
+// ErrWindowClosed is returned by PostJSON and Eval when the window has
+// already closed. It is not a failure: a person who closes a window
+// while it is still drawing has cancelled it, which is exactly what
+// closing it means everywhere else in this program (Options.OnClosed).
+// Callers that would otherwise report "the settings window failed"
+// should treat it as the cancellation it is — errors.Is finds it
+// through any wrapping.
+var ErrWindowClosed = errors.New("ui: window is closed")
+
 // Options configures one native window hosting a WebView2 page.
 type Options struct {
 	// Title is the native window title (shown in the taskbar and Alt+Tab,
@@ -63,9 +72,27 @@ type Options struct {
 	Assets fs.FS
 
 	// VirtualHost is the hostname Assets is mapped to, e.g.
-	// "liro.local". The page's own links and asset references use this
+	// "liro.invalid". The page's own links and asset references use this
 	// host; it resolves to nothing outside the WebView2 instance.
 	VirtualHost string
+
+	// ScratchHost and ScratchDir map a second virtual host onto a real
+	// directory this caller owns, for content that is generated while
+	// the window is open rather than embedded in the binary — the
+	// rendered page images the stamp placement window shows (F6b §2.1).
+	//
+	// They are separate from Assets for two reasons. Assets is
+	// content-addressed and shared between every window in the process,
+	// which is exactly wrong for files that change while one window is
+	// looking at them; and an image that is a page of the document
+	// being signed should live for that window's lifetime and no
+	// longer, which is the caller's business to arrange and not this
+	// package's.
+	//
+	// Leaving either empty maps nothing, which is what every window but
+	// one does.
+	ScratchHost string
+	ScratchDir  string
 
 	// StartPage is the path within Assets to navigate to first, e.g.
 	// "/consent.html".
@@ -140,6 +167,31 @@ type Window interface {
 	// three types F5 §2.4 specifies (see D-08x) — script is trusted,
 	// written by this project, never built from untrusted input.
 	Eval(script string) (string, error)
+
+	// Navigate replaces the page this window is showing with another
+	// one from Assets, e.g. "/pages/consent.html". It blocks until the
+	// new page has loaded and its scripts have run, exactly as
+	// NewWindow blocks for Options.StartPage — so the caller's first
+	// PostJSON after it lands in a page that is ready to receive it.
+	//
+	// This is what makes a several-step flow one window rather than
+	// several: the native frame, its position and its WebView2 instance
+	// are kept, and only the content changes. A second WebView2 window
+	// costs a little over two seconds to create on the machine this was
+	// measured on; a navigation between two embedded pages costs a
+	// fraction of that and does not take the foreground from anything.
+	//
+	// Only VirtualHost content can be navigated to: the argument is a
+	// path within Assets, never a URL, so nothing this method is given
+	// can send the window somewhere off the machine.
+	Navigate(page string) error
+
+	// Resize changes the window's client area to width x height
+	// DPI-independent points, keeping the window's own centre where it
+	// is rather than re-centring on a monitor — a window that jumps
+	// across the screen at every step of a flow is a window that has to
+	// be found again at every step.
+	Resize(width, height int) error
 
 	// Close closes the window from Go. Idempotent. Does not invoke
 	// OnClosed — that callback fires only for a user-initiated close (see

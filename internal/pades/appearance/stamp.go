@@ -75,6 +75,19 @@ type Options struct {
 	X, Y  float64
 }
 
+// HeightFor is the height Render will give a stamp drawn with these
+// options: the number of lines it actually draws, through the height
+// table. Exported so a caller can work out the stamp's rectangle
+// without building it — which is what deciding whether a remembered
+// position still fits a particular page needs.
+func HeightFor(opts Options) (float64, error) {
+	lines, err := buildLines(opts)
+	if err != nil {
+		return 0, err
+	}
+	return HeightForLines(len(lines))
+}
+
 // Render builds every object this stamp needs (font, logo, content
 // stream, Form XObject — F4 §3/§4) as new objects in u, and returns the
 // signature widget's placement, ready for
@@ -96,16 +109,27 @@ func Render(doc *pdf.Document, pageDict pdf.Dict, u *pdf.Update, opts Options) (
 	if opts.UseXY {
 		// F6 §6: explicit coordinates are clamped into the page box
 		// less the margin, never rejected and never drawn hanging off
-		// the edge. The margin is the same 24 pt every corner
-		// placement keeps.
+		// the edge.
+		//
+		// The page's own rotation is honoured here as well as on the
+		// corner path. It was not, and a stamp placed by coordinate on
+		// a quarter-turned page was drawn on its side: the identity
+		// matrix leaves the stamp's content in the page's unrotated
+		// space, which is exactly what the viewer then turns. The
+		// footprint swaps for the same reason PlaceCorner swaps it.
 		box := pdf.ResolveMediaBox(doc, pageDict)
-		x, y, moved := ClampToPageBox(box, opts.X, opts.Y, StampWidth, height, Margin)
+		rotate := NormaliseRotate(pdf.ResolveRotate(doc, pageDict))
+		w, h := float64(StampWidth), height
+		if SwapsFootprint(rotate) {
+			w, h = height, StampWidth
+		}
+		x, y, moved := ClampToPageBox(box, opts.X, opts.Y, w, h, Margin)
 		if moved {
 			slog.Info("appearance: stamp coordinates moved inside the page margin",
 				"requestedX", opts.X, "requestedY", opts.Y, "x", x, "y", y)
 		}
-		rect = [4]float64{x, y, x + StampWidth, y + height}
-		matrix = [6]float64{1, 0, 0, 1, 0, 0}
+		rect = [4]float64{x, y, x + w, y + h}
+		matrix = RotationMatrix(rotate)
 	} else {
 		box := pdf.ResolveMediaBox(doc, pageDict)
 		rotate := NormaliseRotate(pdf.ResolveRotate(doc, pageDict))

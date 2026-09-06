@@ -8855,3 +8855,1267 @@ forbids simulating; that step remains the owner's, exactly as
   a screen that must not have one.
 
 ---
+
+## D-136 — The page is drawn by a rasteriser written for this project; WebView2's own PDF viewer cannot be dragged over
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** `internal/pades/render` is a from-scratch PDF page
+rasteriser: a content-stream interpreter, a signed-area scanline
+rasteriser, colour spaces and PDF functions, image XObjects with their
+masks, a TrueType glyph reader, and a CCITT Group 3/4 decoder. It draws
+a page — and each annotation's normal appearance stream — into an
+`image.RGBA` at a caller-chosen number of pixels per point. The
+placement window shows those images.
+
+**Why not WebView2's viewer.** F6b §2.1 rules it out and the reason is
+structural rather than aesthetic: that viewer owns its own scrolling,
+zoom and page navigation, and there is no way to put a rectangle over it
+and read where the rectangle is in *page* coordinates. The window's
+whole job is answering "where on this page is this stamp", so a viewer
+that will not answer it is not a viewer this window can use.
+
+**Why write one rather than embed one.** The alternatives were weighed
+and are recorded below. The argument that settles it is not "we write
+things ourselves here" — it is that this is the one hand-written layer
+in this project where a bug cannot do harm. SPEC §12.1's rule exists
+because a `/ByteRange` mistake produces a signature that looks valid and
+is not. Nothing this renderer produces is written into a document,
+compared against a golden file, or trusted by any validator. The worst a
+bug here can do is draw a page wrongly, on screen, in front of the one
+person who is looking at it. That is the whole risk, and it is visible
+on sight.
+
+**What it supports, measured against the documents this project has.**
+All three real fixtures (`testdata/pdfs/local`) render correctly and
+completely: justified Cyrillic body text, bold and italic serif
+headings, page furniture, and — from their annotation appearance
+streams — the signature stamps they already carry. Measured on this
+machine: mup.pdf page 1 in 12.7 ms at 1.5 px/pt, page 5 (dense body
+text) in 32.8 ms, and the same page at 5.33 px/pt (the 400 per cent zoom
+step) in 112 ms into a 3175 × 4491 image. Opening a 200-page document
+costs 0.8 ms; the whole document is parsed once and pages are drawn one
+at a time.
+
+What all three fixtures happen to contain is worth recording, because it
+is what "supported" was aimed at: `/FontFile2` TrueType, both simple
+(WinAnsi) and Type0/Identity-H with CIDFontType2 descendants; the
+standard fonts named but not embedded; `FlateDecode` and nothing else;
+no images, no shadings, no patterns. Those are the shapes a Serbian
+business document takes. Images, CCITT-compressed scans, JPEG, colour
+keys, soft masks on images, axial and radial shadings, Type 3 fonts and
+inline images are implemented too, because a scanned contract is an
+ordinary thing to be asked to sign and none of the fixtures is one.
+
+**What it does not do, stated rather than discovered later.** CFF and
+Type 1 font *programs* are not parsed — a font embedded in either is
+substituted (D-137), keeping the document's own widths. JBIG2 and
+JPEG 2000 images are not decoded and are skipped. `/SMask` in an
+ExtGState (a soft mask on a whole group) is ignored, so a shape masked
+that way draws at full strength. Tiling patterns become a flat mid grey.
+Mesh shadings (types 4–7) become the middle of their own colour ramp.
+Text rendering modes that stroke are filled. Each of these increments a
+counted note on the result, which goes to the log; the one that means
+the page is visibly incomplete — the operator budget running out — also
+puts a line on the window saying so.
+
+**The page shown is the /MediaBox, not the /CropBox.** A reader shows
+the CropBox. This shows the MediaBox, because the MediaBox is the
+coordinate system a stamp's position is measured in — `ClampToPageBox`,
+`PlaceCorner` and `internal/placement` all work in it — and a preview
+whose edges are not the edges of the coordinate space would put the
+stamp somewhere other than where it was dropped on any document where
+the two differ. They are the same box in every document this project has
+looked at. A document whose CropBox is genuinely smaller will preview
+larger than a reader shows it.
+
+**Rejected.**
+- **WebView2's built-in PDF viewer.** F6b §2.1's own reason, above.
+- **PDFium through cgo** (`go-fitz`, `go-pdfium`'s cgo mode). Would
+  render everything, and would end the "single binary, no C toolchain"
+  property F0 §10's `CGO_ENABLED=0` trap exists to protect and phase 11
+  is the first place to give up.
+- **PDFium compiled to WebAssembly, run under a pure-Go runtime**
+  (`go-pdfium`'s wazero mode). Genuinely pure Go, genuinely no cgo, and
+  it would draw every document perfectly. Rejected because it puts a ten
+  megabyte binary blob nobody in this project can read into a signing
+  agent, and a WASM runtime to execute it. SPEC §8.6's rule about
+  recording what a dependency does and why the standard library is
+  insufficient is answerable here; "and what it is" is not.
+- **Rendering only what the phase's own fixtures need and refusing the
+  rest.** Considered as a way to make the job smaller. Rejected: the
+  documents this project cannot draw are exactly the ones a person most
+  needs to look at before signing — a scan, a form, something from a
+  system nobody here has seen.
+
+---
+
+## D-137 — Shapes may be substituted; positions and widths never are
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** When a document does not embed a font program, or embeds
+one in a form `internal/pades/render` does not read, the glyphs are
+drawn from a substitute face this project embeds — but every metric
+comes from the document: which codes a string decodes into, and the
+advance width of each one, are read from `/Widths` or `/W` and nothing
+else. Two substitutes are embedded, a sans and a serif, chosen by the
+base font's own name; bold is synthesised by stroking the outline and
+italic by shearing it.
+
+Both are subsets of Noto (SIL Open Font License 1.1) generated by
+`scripts/gensubsetfont --set preview`, whose character sets are recorded
+beside them in `internal/pades/render/preview-sans-charset.txt` and
+`preview-serif-charset.txt`: printable ASCII, Latin-1, Latin Extended-A,
+Greek, Cyrillic, the punctuation a word processor emits without being
+asked, currency, and a handful of mathematical and geometric signs. 579
+glyphs each, 124 KB and 175 KB.
+
+**Why substitution is safe here and would not be elsewhere.** The thing
+this window measures is *where things are on the page*. A word drawn in
+Noto Sans instead of Helvetica begins and ends exactly where the real
+one does, because the position of every glyph is the sum of the
+document's own advance widths; only the letterforms differ. That is the
+one property that has to hold, and it holds by construction. Getting the
+width from the substitute font instead would break it a word at a time
+across a line — which is why the widths are read from the document even
+though the font program sitting right there has its own.
+
+**Measured, and the one case where the document does not say.** A
+document that names a standard font and supplies no `/Widths` array at
+all is entitled to: a reader is expected to know the fourteen standard
+fonts' metrics. This project does not carry those tables. The fallback
+is the substitute font's own advances, with Courier and its relatives
+given a flat six tenths of an em, and it is honest about being a few per
+cent long on a line of Helvetica. It was found by looking: a synthetic
+200-page fixture written without `/Widths` first rendered with every
+glyph half an em wide, which is visibly wrong on sight and would have
+been invisible to any test of the payload behind it.
+
+**Two faces rather than one.** Serbian legal documents are set in a
+serif face far more often than not, and a contract previewed in a
+sans-serif when it will print as Times reads as a different document.
+The choice is made from the base font's name rather than the
+`/FontDescriptor`'s Serif flag, which real producers set wrongly often
+enough that the name is the better evidence.
+
+**Rejected.**
+- **Drawing nothing for a font that cannot be read.** A page of blank
+  lines where the text is, which is worse than the wrong letterforms in
+  every way that matters here.
+- **Embedding the standard fourteen fonts' metric tables.** Six tables
+  of a couple of hundred entries each, to make a case right that no real
+  producer emits. Recorded as the honest gap instead.
+- **Embedding one face and shearing or emboldening it for everything.**
+  That is what bold and italic already do; serif from sans is not a
+  transformation.
+
+---
+
+## D-138 — The margin is 12 pt, superseding F6's 24, for every placement
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** `appearance.Margin` is 12. It was 24. The change applies
+to every placement, not only to the new one: a corner chosen by name, an
+explicit coordinate from the command line, and a position dragged in the
+placement window all keep the same twelve points clear of every page
+edge.
+
+**Why.** F6b §2.5 states the value and the owner's reasoning: not too
+large, because someone may genuinely want the stamp close to the edge —
+but never flush against it, which the original Bridge did not allow
+either. Twelve points is about four millimetres, past any printer's
+unprintable border and any binding, and small enough that a stamp
+deliberately tucked into a corner looks tucked in rather than floated.
+
+**Why it applies to corners too, rather than only to dragged
+positions.** The placement window snaps to the four corners, and the
+positions it snaps to are the ones `appearance.PlaceCorner` computes.
+Two margins would mean a stamp dragged to the bottom right landing
+twelve points from where choosing "bottom-right" puts it — two ways of
+asking for the same thing giving different answers, which is the kind of
+disagreement this project has spent three phases removing rather than
+adding. `TestCornersAgreeWithTheSignedDocument` compares the two
+directly.
+
+**What changes on disk.** Every corner-placed stamp moves twelve points
+towards its corner. No golden file changes: `testdata/golden/minimal-signed-bb.pdf`
+is an invisible signature with no stamp at all, and the stamp tests
+assert against `Margin` rather than against 24. The catalogues' own
+margin note said "24 pt" in all three languages and now says 12.
+
+**Rejected.**
+- **Twelve points for a dragged position and twenty-four for a corner.**
+  Above: it makes the snap land somewhere other than the corner it
+  claims to be.
+- **Keeping twenty-four and letting the window clamp closer.** Then the
+  window would let a person place a stamp the command line refuses to
+  place, which is the same disagreement pointing the other way.
+
+---
+
+## D-139 — The position is held in points; zoom is anchored on the cursor and cannot move the stamp
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** The placement window holds the stamp's position as two
+numbers in the page's own coordinates, in points. Screen pixels are
+derived from it to draw and read back from a drag; they are never what
+is kept. Zoom changes the scale used for that conversion and nothing
+else.
+
+Zooming is anchored on the pointer, not on the page's centre: the
+content point under the cursor is computed before the scale changes and
+the viewport is scrolled afterwards so that the same content point is
+under the cursor again. Zooming with the buttons anchors on the centre
+of the visible area, which is where a person clicking a button is
+looking.
+
+**Why the anchoring.** F6b §2.3 asks for it and gives the case:
+zooming in to read fine print near a signature line has to keep that
+line under the pointer, or the thing being aimed at leaves the window at
+the moment of aiming. Centre-anchored zoom is what makes a viewer feel
+like it is fighting back.
+
+**Why points rather than pixels, and how it is proven.** A position kept
+in pixels has to be recomputed on every zoom change, and every
+recomputation is a rounding. Kept in points, there is nothing for zoom
+to round. That is easy to claim and easy to get wrong, so it is checked
+two ways rather than asserted:
+
+- `TestZoomNeverMovesTheStamp` (`internal/placement`) takes a position,
+  draws it at one zoom, reads it back from the drawn rectangle, draws it
+  at the next, and so on through every step in both directions, for
+  three page shapes and all four rotations — which is what the window
+  actually does — and requires the position afterwards to be the one it
+  started at.
+- `TestZoomNeverMovesTheStampInTheWindow` (`cmd/liro-bridge`) does the
+  same through the real window, the real page and the real zoom buttons,
+  reading the position out of the page itself.
+
+Holding the position in a variable and never touching it would have
+passed neither: both go through the display and back.
+
+**The other half: the window never resizes.** F6b §2.3 is explicit and
+`TestZoomChangesTheImageAndNotTheWindow` pins it — the canvas changes
+width between 100 and 200 per cent and the window's own client area does
+not.
+
+**Rejected.**
+- **Anchoring on the page centre.** Simpler, and wrong for the one thing
+  zoom is for here.
+- **Scaling the already-rendered image with CSS instead of re-rendering
+  at the new zoom.** Instant, and blurry at exactly the moment sharpness
+  is the point: someone zooms to 400 per cent to see where a printed
+  line is.
+
+---
+
+## D-140 — One remembered position, not a named list of them
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** The configuration remembers exactly one placement —
+`stampPlacedPage`, `stampX`, `stampY`, in use when `stampPosition` is
+`"custom"` — and `internal/placement.Saved` is that one position. There
+is no list, no name, and no picker.
+
+**Why.** F6b §3 leaves the choice open and asks for the reasoning. The
+need it describes is specific: the owner signs documents of the same
+shape a thousand times and wants the stamp under the same printed
+initials every time. One position answers that completely.
+
+A named list answers a different need — several document shapes, each
+with its own place — that nobody has asked for, and it brings three
+things with it that the window is better without: a naming step at the
+moment of placing, a picker at the moment of signing, and a
+wrong-preset failure mode where a batch is stamped in the place meant
+for a different kind of document. The last is the one that decides it:
+this window's whole value is that it asks one thing.
+
+It is also the easy direction to grow in. A list of these is a list of
+these; the position type, the fitting, the clamping and the reporting
+are all per-position already and would not change.
+
+**What one position has to survive, and does.** A remembered position is
+reused across documents that are not all the same length or the same
+size, so it is fitted to each one rather than applied blindly: a page
+number past the end falls back to that document's last page, and a
+position off the edge of a smaller page is brought inside its margin.
+Both are reported afterwards — `pades.Result.StampPageFellBack` and
+`StampMoved`, counted into `jobs.Report.StampAdjusted`, shown on the
+report screen and printed by the command line — because a stamp
+somewhere other than where it was put is a surprise if nothing says so.
+
+**Rejected.**
+- **Named positions.** Above.
+- **One position per document shape, matched automatically by page
+  size.** A guess dressed as a convenience, and F6b's own instruction
+  about not guessing at occupied corners applies with more force here:
+  it would be wrong silently.
+- **Remembering nothing, and asking every time.** That is the corner
+  selector this window replaces, with more work.
+
+---
+
+## D-141 — Page images are files on a second virtual host, allowed cross-origin, deleted with the window
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** `ui.Options` gains `ScratchHost` and `ScratchDir`: a second
+virtual host mapped onto a directory the caller owns. The placement
+window creates a temporary directory under the agent's own per-user
+configuration directory, writes each rendered page into it as a PNG, and
+hands the page a URL. The directory is removed when the window closes.
+
+The mapping is made with `COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW`,
+unlike the asset host, which stays `DENY`.
+
+**Why files rather than payloads.** An A4 page at the 400 per cent zoom
+step is 3175 × 4491 pixels. Handing that to the page as a data URI means
+base64 through `ExecuteScript` — several megabytes of UTF-16 string per
+page change, on the same call this project has already had to make
+reliable twice (D-099, D-101). As a file, the browser fetches it
+asynchronously, decodes it off the UI thread and caches it, and a page
+change costs one short JSON payload naming a URL.
+
+**Why the second host, and why ALLOW.** The asset host is
+content-addressed and shared between every window in the process, which
+is exactly wrong for files that change while one window is looking at
+them. A second host is the smallest thing that separates them.
+
+`ALLOW` was not a preference: it was measured. With `DENY` the window
+came up with its page and its stamp both showing a broken-image icon and
+nothing else wrong. `DENY` refuses access from other origins, and a page
+served from `liro.local` loading an image from `liro.pages` is another
+origin. "Other origins" inside one WebView2 instance means the agent's
+own page and nothing else; the only two hosts that resolve at all in
+that instance are the two mapped there, and neither is reachable from
+outside it.
+
+**Why the directory is removed.** The images are pictures of the
+document being signed. Nothing in SPEC forbids a temporary file on the
+user's own machine — the WebView2 loader and the UI assets are already
+extracted the same way — but a rendered page of somebody's contract is a
+different kind of thing from a stylesheet, and it has no reason to
+outlive the window that needed it. `placeUI.close` removes the directory
+on every path, including the ones that end in an error.
+
+**Rejected.**
+- **`WebResourceRequested`, serving the image from memory.** The clean
+  answer, and the one that touches no disk at all: three more COM
+  interfaces implemented by hand, plus an `IStream`, on the layer whose
+  hand-written vtables have already cost this project two crash
+  investigations. Worth doing if the disk ever becomes a problem;
+  not worth doing first.
+- **Data URIs.** Above.
+- **Mapping the scratch directory as the asset host.** One host cannot
+  be two folders, and the asset host is shared.
+
+---
+
+## D-142 — The placement window keeps the three-message surface: every click reports what it meant
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** The placement window sends `approve` and `cancel` and
+nothing else, like every other window in this project. A page change and
+a zoom change are requests for Go to draw something — which is a message
+the three-type surface has no room for — so they send `approve`, and Go
+reads `window.__liroPlacementRequest()` back through `Eval` to find out
+what the click meant: `{action: "render"|"done", page, scale, x, y}`.
+Step 3's window does the same for its three buttons (`save`, `place`,
+`reset`).
+
+**Why.** F5 §2.4 makes the three-type surface a property of the host
+rather than of one window, and D-083 recorded it as such. D-095 then
+established the way out when a window genuinely has more than two things
+to say: the page reports what the click meant as explicit data, read
+back through the channel `ExecuteScript` already provides, rather than
+Go inferring it from which state the window was in. This is that
+pattern, applied to a window that asks for a page rather than to one
+that answers a question about a timestamp.
+
+The alternative — a fourth message type carrying an arbitrary payload —
+is exactly what the rule exists to prevent: once one window can send
+structured data, the "three things, deliberately small" property stops
+being true for the whole program, for the convenience of one window that
+had another way.
+
+**What it costs, and why that is acceptable here.** One extra round trip
+per page or zoom change, and a page that debounces its own requests by
+ninety milliseconds so a person dragging the zoom does not queue a
+dozen. A drag costs nothing at all: the stamp moves inside the page,
+with no Go involvement, which is also what F6b §6 asks for.
+
+**Rejected.**
+- **A fourth message type.** Above.
+- **Polling the page from Go on a timer.** Keeps the surface at three
+  and turns an idle window into twenty `ExecuteScript` calls a second on
+  the layer this project has twice had to make reliable.
+
+---
+
+## D-143 — Explicit coordinates now respect /Rotate, and a page past the end is clamped rather than refused
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** Two fixes in `internal/pades`, both found by building the
+placement window on top of the explicit-coordinate path that existed
+since F4 and had only ever been reached by a command-line flag.
+
+*(a) A stamp placed by coordinate on a rotated page is drawn upright.*
+`appearance.Render`'s `UseXY` branch used the identity matrix and the
+unswapped footprint. `PlaceCorner` had done the counter-rotation
+correctly since F4 (D-060) — the coordinate path simply never got it. On
+a `/Rotate 90` page the stamp was therefore drawn on its side, inside a
+rectangle of the wrong aspect. It now takes the same
+`RotationMatrix(rotate)` and the same width/height swap as a corner
+placement does. `TestPlacedPositionOnARotatedPageIsDrawnUpright` covers
+all four rotations.
+
+*(b) A page number past the end of a document is clamped to its last
+page.* `config.Config.StampPage`'s own doc comment has said since F6
+that "a number past the end of a document is clamped to its last page
+rather than refused". `applyStamp` did not do that: `pdf.FindPage`
+returned an error and the whole document failed. It now clamps and
+records `stampAdjustment.pageFellBack`, which reaches
+`pades.Result.StampPageFellBack` and from there the batch report.
+
+**Why they were invisible until now.** `--stamp-xy` and `--stamp-page N`
+are command-line flags a person passes deliberately for one document
+they are looking at; the rotated case and the past-the-end case both
+need a *saved* position reused across documents nobody chose it for,
+which is what F6b §3 introduces. The comment in (b) was written for a
+behaviour that was never implemented, which is the more instructive
+half: a doc comment describing what the code should do reads exactly
+like one describing what it does.
+
+**Rejected.**
+- **Refusing a page past the end, and making the batch report it as a
+  failed document.** It is not a failure — it is a position being reused
+  across documents of different lengths, which is the whole point of
+  remembering one. Failing would turn a placement that is right for most
+  of a batch into an error for the rest of it.
+- **Fixing (a) only in the placement window's own path, leaving
+  `--stamp-xy` as it was.** Two answers to the same question again.
+
+---
+
+## D-144 — The CCITT decoder is checked against an encoder this project did not write
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** `internal/pades/render/ccitt.go` implements ITU-T T.4 and
+T.6 (Group 3 one- and two-dimensional, Group 4) with the code tables
+written out. It is tested against a Group 4 and a Group 3 stream
+produced by Pillow 12.2.0, compared pixel by pixel against the bitmap
+that encoder was given.
+
+**Why the independence matters here specifically.** These tables are
+about two hundred numbers, and a single transposed bit produces a
+decoder that works on most images and garbles some. A test built from
+this decoder's own output would agree with any such mistake. This is F3
+§8's rule for the CMS verifier — "shared helpers between signer and
+verifier defeat the purpose" — applied to a codec.
+
+**What the fixture is, and one thing it taught.** A 137 × 71 image,
+deliberately not a multiple of eight wide so the ragged end of every row
+is exercised, containing filled rectangles, horizontal and diagonal
+rules, an ellipse outline and a row of single black pixels: long runs,
+short runs, and runs of one. The first version decoded perfectly and
+came out inverted, which turned out to be Pillow writing its Group 4
+TIFF with the opposite polarity from the fax convention
+(`PHOTOMETRIC_MINISBLACK`). The generator inverts the image before
+encoding so the *stream* follows the convention PDF's `CCITTFaxDecode`
+defaults to; a separate test then drives `/BlackIs1` and requires the
+output to be the exact complement.
+
+**Rejected.**
+- **Skipping CCITT and letting scanned documents preview blank.** A
+  scanned contract is an ordinary thing to be asked to sign, and it is
+  precisely the document where a person needs to see the page before
+  placing a stamp on it.
+- **Testing the decoder against a stream this project encoded.** Above.
+
+## D-145 — A window closed before its first payload landed is a cancellation, not a failure
+
+**Date:** 2026-09-06
+**Phase:** F6b
+
+**Decision.** `ui.ErrWindowClosed` is a new exported sentinel, returned
+by `Window.PostJSON` and `Window.Eval` when the window has already
+closed. `runSettingsWindow` treats it, on its own first `PostJSON`, as
+the cancellation it is and returns nil.
+
+**Why, and how it surfaced.** `ui.NewWindow` does not return until the
+page has finished loading, which is about two seconds; the window's
+title bar exists from the moment it is created. A person who closes the
+window in that gap — or a test that finds it by title and closes it,
+which is what `TestSettingsWindowOpensInTheLanguageOnDisk` does —
+produces a window that is gone before the first payload can be posted.
+The settings window then reported "ui: window is closed" as a *failure*
+from a function whose every other cancellation path returns nil.
+
+It surfaced as a deterministic test failure once this phase added a
+seventh long-lived window to `cmd/liro-bridge`'s test package and moved
+the timings: the test passed alone and failed in the package, every
+time. Widening the test's timing would have hidden a real behaviour, so
+the behaviour is what changed. Closing a window is how a person cancels
+every other window in this program (F5 §2.3, `Options.OnClosed`);
+closing it a second earlier means the same thing.
+
+**Rejected.**
+- **Making the test wait longer before closing the window.** It would
+  go green and leave a window that reports a person's cancellation as
+  an error in the log.
+- **Returning nil for every `PostJSON` failure.** A window that is open
+  and will not take a payload is a real fault and should still say so.
+  The sentinel is what separates the two.
+
+---
+
+## D-146 — Step 3 is one choice with three outcomes; the checkbox is gone and the method a person used last is what the configuration already says
+
+**Date:** 2026-09-06
+**Phase:** F6b — step 3 rework
+
+**Decision.** Step 3 is a single screen, *Metod potpisivanja*, offering
+three options one under another, each a button-sized target, in this
+order:
+
+```
+Potpiši birajući poziciju potpisa    → the F6b placement window, on the
+                                       batch's first document
+Potpiši sa definisanim pozicijama    → the four corners, revealed inline
+                                       beneath this option
+Potpiši bez vizuelnog prikaza        → nothing is drawn on the page
+```
+
+Each option reveals the rest of its own answer under itself and only
+while it is chosen: the remembered position for the first, the four
+corners for the second, and a sentence saying that nothing is drawn
+anywhere for the third. Nothing is on a second screen.
+
+The on/off checkbox is removed outright. It is what made this three
+questions instead of one — a control whose only job was to change which
+other controls existed, which is exactly the nesting the three options
+replace. "Visible or invisible" is no longer asked at all: it is the
+difference between the third option and the other two.
+
+**How a returning user's method is preselected, and why it needs no new
+setting.** The method is not a fourth thing on disk. It is read from
+the two fields that were already there (`stampMethodOf`):
+
+| Configuration | Method |
+|---|---|
+| `visibleStamp: false` | nothing shown |
+| `stampPosition: "custom"` with a position actually placed | choosing the position |
+| anything else | a set corner |
+
+So the option a person used last time is the one already selected this
+time, and confirming is one click. A fourth field would have been a
+second answer to a question the first two already answer, free to drift
+from them — the failure this project has recorded whenever one fact is
+stored twice ([[D-020]], [[D-093]], [[D-134]]). Writing back is the same
+mapping in reverse, with one guard: choosing the first option when
+nothing has ever been placed leaves the corner underneath it alone
+rather than writing a position nobody has chosen, which
+`config.validate` would replace on the next load anyway.
+
+Choosing "nothing shown" likewise leaves the corner alone. Turning the
+stamp back on afterwards must not have lost the corner that was picked
+for it.
+
+**The first option opens the placement window as part of the same
+click.** Pressing *Potpiši* with it chosen opens the placement window on
+the batch's first document, at whatever position is remembered; using
+that position signs, cancelling it comes back to this screen and signs
+nothing. The alternative — place, return here, press Sign again — is the
+errand F6b's own Place button already was, and the option's words
+("sign, choosing where the signature goes") promise one act, not two.
+A document the renderer cannot draw falls back exactly as F6b §5 says:
+the window comes back showing the corners, with the sentence saying
+why, and the remembered position is left untouched on disk. That is
+why `buildStampInit` takes the chosen method as a parameter rather than
+deriving it — the method being offered and the method the configuration
+holds are genuinely different things in that one case, and a window
+that re-derived it would offer the option that had just failed.
+
+**Two clicks for a corner.** The four corners are four targets laid out
+two by two, in the order they sit on a page — gore levo, gore desno,
+dole levo, dole desno — rather than a dropdown. Choosing one and
+confirming is two clicks; through a dropdown it was three. The grid
+also means picking a corner is aiming rather than reading.
+
+**The third option had to be unmistakable.** "No visible mark" and "a
+mark somewhere I cannot see" are the same words to someone who has just
+signed, and the second reading is precisely how F5's invisible default
+was first reported ([[D-103]]): a correct signature the owner concluded
+had never been applied. The option says *bez vizuelnog prikaza* and,
+when chosen, adds a line saying that no stamp is drawn anywhere in the
+document and the signature is still fully valid.
+
+**Step 3 is still skippable, and the skip is unchanged.** A caller that
+supplies its own answer (`consentRequest.stamp`) still sees no window at
+all ([[D-124]]). The screen it now skips is a cleaner one.
+
+**Settings: the same three options in the same words, not a second
+vocabulary.** The instruction for this pass was that Settings "keeps its
+own shape — it sets a default rather than making a choice for one batch
+— but its wording should match". That is read here as its *role*: it
+still saves rather than signs, and it still holds what a standing
+preference owns and a batch does not — which page, the reference line,
+the identity-document toggle, the margin note, and the two buttons that
+change or give back a remembered position. What it does not keep is the
+two dropdowns. Rendering the same one choice through a second, parallel
+control is the thing this project has spent three phases removing rather
+than adding ([[D-108]]'s three copies of one rule, [[D-124]]'s "two
+answers to the same question", [[D-138]]'s two margins), and it would
+mean every future change to the three methods had to be made twice and
+kept agreeing. Raised here rather than done silently, per SPEC §0; if
+the owner wants the dropdowns back in Settings specifically, that is a
+one-file change to the page and nothing else.
+
+**Sizes, measured in a real window in sr-Cyrl — the longest of the three
+catalogues — in each role's own size, in all three methods.**
+
+| Window | Was | Now | Form needs |
+|---|---|---|---|
+| Step 3 | 350 | **345** | 208, against 215 before |
+| Settings' way in | 730 | **775** | 597, against 551 before |
+
+Step 3 is five points shorter and its form seven points shorter, which
+is honest rather than impressive: three button-sized targets are most of
+the height, and they are the point of the screen — the saving is in what
+the screen no longer asks, not in what it takes up. Settings grew,
+because it now carries the same three options rather than two dropdowns;
+775 is well inside what this project already ships (the settings window
+itself is 880) and the layout test measures every method in both roles.
+
+**Verified by looking at it, in a real window at each role's own size,
+and by running the built binary.** Photographed with each of the three
+options chosen (`PrintWindow`, so taking the picture does not take the
+foreground from whoever is using the machine — [[D-122]]) and driven
+only through `Eval` inside the page's own DOM ([[D-094]]); the harness
+was created and deleted in the same session ([[D-100]]). The built
+`liro-bridge.exe` was launched with a document, its window photographed,
+and the process stopped by its own exact handle — never by image name.
+What no test and no screenshot here can do is reach step 3 the way a
+person does: that needs a card, a certificate and a click, and it is the
+owner's acceptance, exactly as [[D-097]], [[D-133]] and [[D-135]] already
+record for the folder chooser.
+
+**Catalogue.** `stampwindow.method_placed`, `method_corners`,
+`method_none` and `method_none_hint` are new in all three catalogues;
+`stampwindow.title` becomes *Metod potpisivanja* / *Метод потписивања* /
+*Signing method*. `stampwindow.mode_label`, `mode_visible`,
+`mode_invisible` and `position_placed` are deleted from all three rather
+than left unused, along with the Go that read them ([[D-132]]'s rule),
+and `TestStepThreeIsTitledForWhatItAsksAndSaysNothingElse` asserts each
+one is gone from the catalogues rather than merely unreferenced.
+
+**Rejected.**
+- **A `stampMethod` field in `config.Config`.** The obvious way to
+  remember the method, and unnecessary: the two fields already there say
+  it exactly, and a third that must agree with them is a third that can
+  disagree.
+- **Keeping the checkbox and only re-ordering what it revealed.** It is
+  the nesting itself that was reported, not its order.
+- **A dropdown for the four corners.** Three clicks where two will do,
+  and it hides the choice until it is opened — on a screen whose whole
+  job is showing what the choices are.
+- **Keeping Settings' two dropdowns.** Above.
+- **Making the first option sign with the remembered position without
+  reopening the placement window.** It would make one option mean two
+  different things depending on whether anything had been placed
+  before, and the option's own words say what it does.
+- **Explaining the third option permanently, under the option, whether
+  or not it is chosen.** It would make one of the three targets taller
+  than the other two for a sentence that only matters once that option
+  is being considered.
+
+---
+
+## D-147 — Finish is the completion screen's primary action, and it closes the window
+
+**Date:** 2026-09-06
+**Phase:** F6b — step 3 rework (second task)
+
+**Decision.** When a batch finishes, *Završi* / *Заврши* / *Finish* is
+the primary action, in brand blue, and it closes the window. *Potpiši
+još dokumenata* is the neutral button beside it. The button that opens
+the output folder is unchanged, and so is Save report.
+
+`finish` is a recorded action like every other button on this page, not
+a fourth page→Go message type ([[D-083]]): `handleAction` returns true
+for it, which is the same path a closed window already took, so a run
+still in flight is stopped between documents and nothing half-written is
+left behind.
+
+**Why.** Signing more was the primary action — the uncommon case dressed
+as the expected one. Someone who has just signed a hundred documents is
+finished; someone who wants more will look for it, and it is still one
+click away.
+
+**Two rows rather than four buttons on one line.** Measured, not
+assumed: four buttons do not fit on one line at the main window's 560
+points in any of the three languages, and left to wrap on their own they
+put Finish alone on a line of its own in sr-Latn and in English while
+pairing it with signing-more only in sr-Cyrl. So the pairing is decided
+in the markup instead — what to do with the documents just written on
+one row, what to do next on the row below — and the test asserts that
+Finish and signing-more share a line, with Finish last, in all three
+locales. Widening the window was not worth taking: the report is one of
+three screens in a window sized for the other two.
+
+**Verified.** `TestFinishIsThePrimaryActionOnTheReport` reads the
+rendered screen in all three locales — the words, the weights, that the
+two buttons resolve to different background colours rather than merely
+carrying different classes, that they are on one line with Finish last,
+and that all four actions are inside the window.
+`TestFinishClosesTheWindow` covers the half a rendering test cannot see:
+signing more clears the batch and stays open, Finish ends the loop.
+Photographed in the real window in sr-Latn and sr-Cyrl.
+
+**Rejected.**
+- **Leaving signing more as a primary alongside a second primary.** Two
+  blue buttons is no emphasis at all.
+- **Making Finish close the whole agent.** It closes the window, which
+  from the tray returns to the tray and from `liro-bridge open` ends the
+  process — the same thing closing the window has always done.
+- **Dropping Save report or shrinking the folder button to make one row
+  fit.** The folder button stays as it is, and a quieter Save report is
+  already as quiet as this project's weights go.
+
+---
+
+## D-148 — One window, whose content changes; the approval is a step of it and loses nothing by being one
+
+**Date:** 2026-09-06
+**Phase:** F6b — one window
+
+**The complaint.** Signing one document opened six windows in sequence.
+The owner counted them, and counted the buttons with them: *Potpiši,
+Potpiši, Izaberi, Potpiši, Dalje, Potpiši.* Each window was defensible
+alone — [[D-116]] put the approval in its own window precisely so there
+would be one implementation of it, [[D-124]] gave the signing method its
+own step, [[D-136]] gave the placement picker a window because it needs
+the room — and together they were a maze: every step took the
+foreground from the one before it, arrived somewhere else on the screen,
+and left nothing to press but a button that opened the next window.
+
+**Decision.** One window. Its content changes:
+
+```
+1  Documents     drop, browse, list, remove
+2  Certificate   the list, and the approval
+3  Method        three cards
+4  Position      only for the first method
+   -> Sign
+```
+
+Then the progress and the report, in the same window, as they already
+were. The placement picker is the one thing that still opens
+separately, and only because it has to show a page of the document at a
+size worth dragging on; closing it comes back to step 4.
+
+**How "content changes" is implemented: three pages, one window.** The
+steps are three HTML pages the one window navigates between
+(`ui.Window.Navigate`), not one page holding every screen's markup. The
+alternative — folding all four steps into a single page — was rejected
+for the reason [[D-116]] gives about the consent screen: it is the
+product's only real gate, and a second copy of it, however carefully
+merged, is a second thing that has to stay right. Keeping
+`consent.html` as its own page keeps that copy count at one, keeps each
+page's stylesheet and its own layout tests, and keeps the three files
+readable. Two of the four steps (the method and the position) share
+`stamp.html`, so moving between them costs no navigation at all.
+
+**A navigation is not a second window, and the difference is measured.**
+
+| | Before | After |
+|---|---|---|
+| Windows opened to sign one document | 4 (documents, approval, method, picker) | 1, plus the picker only when no position is remembered |
+| Cost of moving a step | 2.06 s — a second WebView2 window | 16–34 ms — a navigation |
+
+The 2.06 s was not WebView2 being slow. See [[D-150]]: the virtual host
+was named `liro.local`, and `.local` is the multicast-DNS TLD, so every
+page load paid a fixed 2 s of name resolution. Fixing that made both
+numbers small; collapsing the windows is what made the *number* of them
+small.
+
+**How the certificate step keeps every property SPEC §6.5 requires.**
+This is the part that was not allowed to soften, and each property is
+asserted by
+`TestApproveIsNotTheDefaultFocusAndNeedsADeliberatePress`:
+
+- **The window is the agent's own.** It always was and still is; a
+  caller supplies data, never markup, never a page, never a size.
+- **Approve is not the initially focused control.** Cancel is —
+  unchanged from F5 §5.6, and deliberately *not* the new Back button:
+  the way out of a decision is refusing it, not stepping away from it.
+- **Approve cannot be pressed until a certificate has been chosen**, and
+  pressing it without one sends nothing to Go.
+- **The approval is a press of a button, by a human.** Nothing about
+  being step 2 of 4 makes it automatic, skippable or implied by the step
+  before it: `next` from the documents step lands *on* the approval, and
+  only `approve` leaves it.
+- **A new batch is a new decision.** The page clears its selection on
+  every arrival — including an arrival by pressing Back from the step
+  after it, which is the case this now has that it did not before
+  ([[D-121]]'s rule, in the one new place it can be broken).
+- **What it shows is unchanged**: who is signing, how many documents,
+  the application, and the fingerprint and file list behind Details
+  (SPEC §6.6).
+- **A request that carries its own answers still sees the approval and
+  nothing else.** `stepsFor` returns exactly one step then, so there is
+  no header, no Back, and nothing to press but Cancel and Approve —
+  [[D-124]]'s "one window, one click", now literally one window.
+
+**Back.** Available on every step but the first, and never while
+signing. Someone who picked the wrong certificate goes back one step
+instead of closing a window, re-opening it and re-enumerating a smart
+card. It is not a decision and writes nothing to the audit log; Cancel
+is a decision — a refusal — and still records `denied`, as it always
+has. Escape stays Cancel rather than becoming Back: "dismiss" is what
+Escape means everywhere else in this program, and a second meaning for
+it on four screens is worse than one meaning on all of them.
+
+**The step is visible as four small dots, not as words.** Both forms
+were offered; the dots read more quietly, which is right for something
+that is context rather than the subject of the screen. The words are
+still there for anyone who needs them — the row's `aria-label` is
+*Korak 2 od 4*, so a screen reader says it while the eye sees dots. The
+current dot is larger as well as coloured, because colour alone is not a
+distinction everyone can see (SPEC §10.3).
+
+**The count of dots is the count of steps this run actually has**, which
+is not fixed: a caller that brings its own documents has no first step,
+one that brings its own method has no third or fourth, and the position
+step exists only for the first method. The method screen therefore
+carries both readings — three steps if a corner or nothing is chosen,
+four if the position is — and the page picks between them as the radio
+changes. It is rendering, not deciding: both readings came from Go with
+the payload. Getting that pair the wrong way round showed four dots for
+a three-step run, which is what
+`TestTheMethodScreenCountsTheStepItsChoiceAdds` now prevents.
+
+**The window resizes to its content, keeping its own centre.**
+
+| Step | Size | Why |
+|---|---|---|
+| Documents | 560 × 690 | eight rows without scrolling, footer and actions always on screen ([[D-106]]) |
+| Certificate | 520 × 760 | six certificate rows — a bookkeeper's machine, which SPEC §14.1 calls normal |
+| Method | 440 × **380** | three button-sized targets and whatever the chosen one reveals |
+| Position | 440 × 270 | one line, one button, and Sign |
+
+The method step was 345 when it was a window of its own; the step
+header costs it 35. That was found the hard way and is worth recording:
+the layout test passed at 345 because it was posting a payload with no
+header in it while the real screen had one, and the third option was
+cut off on screen. The layout tests now post the header the real screen
+carries, and the certificate step's do too.
+
+Keeping the window's own centre rather than re-centring on a monitor is
+what stops it walking across the screen: measured across the four steps,
+the centre stayed at (960, 539) throughout. The result is clamped into
+the monitor's work area so a taller step cannot push its own buttons
+under the taskbar.
+
+**The command line is the same window, entered one step in.**
+`liro-bridge sign --interactive --in x.pdf` brought its own documents,
+so it has no documents step; everything after that — the approval, the
+method, the position, the timestamp question, the output paths, the
+progress and the report — is the same code the tray's window runs. That
+removed a whole second implementation of the batch loop, the progress
+screen and the completion screen. The consent page's own progress,
+done, timestamp, output-exists and failure screens went with it: the
+three questions that are asked *after* the approval now live on the page
+that carries the progress and the report, which is where the flow is by
+the time they are asked.
+
+**What one saving cost, honestly.** Clicks from an empty window to a
+signed document are counted in the report; they are essentially
+unchanged. What collapsed is windows, waiting and recovery: four
+windows became one, a step costs 20 ms instead of two seconds, a wrong
+certificate costs one press instead of three, and a remembered position
+no longer reopens the picker at all — which is the case F6b §3 says the
+owner is in a thousand times over.
+
+**Also this pass, and smaller** (the owner's second task): the line
+under the third method — *"Na dokumentu se ne crta nikakav pečat.
+Potpis je i dalje potpuno važeći."* — is deleted, because the option's
+own title says it, and it made one of three equal targets taller than
+the other two for a sentence that only matters once that option is
+being considered ([[D-146]] rejected doing this permanently and was
+right; the fix was to delete it, not to reveal it). And *Sačuvano:
+strana 1, x 371, y 79* is gone from under the first method: someone
+choosing to place a stamp is about to place it, and coordinates from
+last time are noise at the moment of deciding. They are said where they
+mean something — on the position step, which is *about* the position,
+and inside the picker, where the same line is also a button that puts
+the stamp back on it.
+
+**Rejected.**
+- **One page holding all four steps.** Above: it would put a second
+  implementation of the consent screen in the tree, which is the one
+  thing [[D-116]] exists to prevent.
+- **Making the method cards advance the flow by themselves**, saving one
+  press per signature. A mis-click would then advance, and a returning
+  user whose method is already chosen would have to click it anyway —
+  no saving where it was wanted, and a new way to go somewhere by
+  accident.
+- **Escape as Back.** Above.
+- **A `Korak 2 od 4` label instead of dots.** Louder than the thing it
+  labels. It is the accessible name instead.
+- **Signing straight from the picker when a position was just chosen**,
+  saving one press the first time a position is set. The task asks for
+  the picker to return to step 4, and it is right to: what was just
+  dragged is worth seeing confirmed before it is signed with.
+- **Keeping `sign --interactive` on its own path.** It is how two
+  implementations of one gate come back.
+
+**Verified.** Photographed in a real window at each step's own size
+(`PrintWindow`, so taking the picture does not take the foreground —
+[[D-122]]), and driven only through `Eval` inside the page's own DOM
+([[D-094]]); the harness was created and deleted in the same session
+([[D-100]]). The built `liro-bridge.exe` was launched with a document,
+its window photographed, and the process stopped by its own exact PID —
+never by image name. What no screenshot here can do is press the
+buttons: that needs a card, a certificate and a hand, and it is the
+owner's acceptance, exactly as [[D-097]], [[D-133]] and [[D-146]]
+already record.
+
+---
+
+## D-149 — A certificate that is not for signing is not shown at all; F1 §6.1's rule is reversed
+
+**Date:** 2026-09-06
+**Phase:** F6b — one window
+
+**Decision.** A listing shows only signing certificates. The rule lives
+in one place, `classify.Info.HiddenByDefault`, and every surface that
+lists certificates goes through it: `liro-bridge certs`, the
+certificate step of the signing flow, and the Certificates window.
+`certs --all` still shows everything, exactly as before.
+
+**What was there before.** F1 §6.1 asked for a non-signing certificate
+to be shown and disabled with its reason, and F5 §5.2 repeated it, on
+this reasoning: *"Hiding them makes the user think the card is
+broken."* Both are amended.
+
+**Why that reasoning was wrong.** It was about a card, and the person is
+looking at a list. Every Serbian card carries an authentication
+certificate beside the signing one; on a Halcom card their Subject DN is
+byte-for-byte identical (SPEC §11.5), and on a MUP card the name and the
+issuer match too. So what the list actually showed was this:
+
+```
+ВЕЉКО СТАНОЈЕВИЋ
+za prijavu — MUP Gradjani CA 4          DA534AC6
+Ovaj sertifikat se ne može koristiti za potpisivanje.
+```
+
+— the person's own name, twice, the second time struck through under a
+sentence about a distinction they have no vocabulary for. It is not a
+choice. It cannot become a choice. And it makes every list twice as
+long: two entries on a one-card machine, twelve on the bookkeeper's six
+(SPEC §14.1).
+
+**What is still shown, disabled, with its reason.** A *signing*
+certificate that cannot be used right now: the card is out, or the
+certificate has expired. That is a real choice temporarily unavailable,
+and hiding *that* is what would actually make a card look broken —
+which is the true form of the concern F1 was reaching for.
+`TestHiddenKeepsASigningCertificateThatCannotBeUsedNow` is the guard.
+
+**Nothing else is hidden.** The rule is exactly two shapes: a purpose
+that is not signing, and the Windows-internal artefact [[D-108]] named
+(self-signed, GUID subject, unknown to the Trusted List). A soft-token
+certificate is never hidden whatever its purpose — SPEC §16.6 requires a
+test key to be loudly visible wherever it appears.
+
+**Rejected.**
+- **Hiding it only when a signing certificate from the same card is
+  present.** It sounds careful and is not: it makes the list depend on
+  what else is installed, so the same certificate appears or does not
+  depending on the machine, and the case it protects — a card carrying
+  only an authentication certificate — is one where the answer is still
+  "nothing here can sign", which `consent.no_usable_certificate`
+  already says in words.
+- **Keeping it and shortening its sentence.** The sentence was never the
+  problem; the second row was.
+- **A per-listing flag.** One rule, one place ([[D-108]]'s own lesson
+  about three copies of one rule).
+
+---
+
+## D-150 — The virtual host was named `.local`, and that cost two seconds at every page load
+
+**Date:** 2026-09-06
+**Phase:** F6b — one window
+
+**Found while measuring [[D-148]].** A navigation between two pages of
+one window was taking 2.02 seconds — every time, to the millisecond,
+whichever page, including navigating to the page already showing.
+`Eval` immediately afterwards took 1 ms, so the page was ready; the
+`NavigationCompleted` callback itself was firing two seconds after
+`Navigate` returned. It was not the message pump and not the page.
+
+**The cause.** The virtual host serving the embedded assets was named
+`liro.local`. `.local` is reserved for multicast DNS (RFC 6762), and
+Windows resolves such a name through mDNS/LLMNR before WebView2's
+virtual-host mapping is consulted. Every page load paid that timeout.
+
+**Decision.** The hosts are `liro.invalid` and
+`preview.liro.invalid`. `.invalid` is reserved by RFC 2606 precisely for
+names that must never resolve, which is exactly what a virtual host is,
+and it can never be delegated to anybody.
+
+**Measured, on the machine this was reported from:**
+
+| | `liro.local` | `liro.invalid` |
+|---|---|---|
+| Opening a window (environment, controller, first page) | 2.30 s | 0.37–0.42 s |
+| Navigating to another page | 2.02 s | 16–34 ms |
+| The package's window test suite | 266 s | 52 s |
+
+The window cost is the one this project has been quoting at itself since
+F5 — "creating a WebView2 window is measured at a little over two
+seconds", which is why the main window's Sign button had to say
+*Otvaranje…* so it would not be pressed twice. Nearly all of it was
+this.
+
+**SPEC §10.2 carries the rule** so the name cannot drift back: a virtual
+host name must not end in `.local`.
+
+**Rejected.**
+- **Leaving it and calling the two seconds WebView2's.** It was ours.
+- **`liro.assets` or any other invented TLD.** Measured equally fast,
+  but nothing stops `.assets` being delegated one day; `.invalid` cannot
+  be.
+- **Keeping `.local` and pre-warming a second window.** Hiding a
+  two-second stall behind a thread, instead of removing it.
+
+---
+
+## D-151 — The position step is deleted; the first method opens the picker, and the picker takes the step's name
+
+**Date:** 2026-09-06
+**Phase:** F6b — one window, second fix pass (Tasks 1 and 2)
+
+**Decision.** The signing flow is three steps, not four. `stepPosition`
+is gone, along with the screen it drew (`state-position` in
+`stamp.html`), its size constants, its payload fields (`screen`,
+`canSign`), and the two readings the method screen carried because the
+number of steps used to depend on which method was chosen (`stepAlt`,
+`primaryLabelPlaced`). `stepsFor` no longer takes a method, because the
+answer no longer varies with one; `headerFor`, `isLastStep` and
+`primaryLabelFor` lost the same parameter.
+
+Choosing *Potpiši birajući poziciju potpisa* and pressing **Potpiši**
+opens the placement picker directly, on the batch's first document, with
+the certificate just approved, at the remembered position if there is
+one. Using a position from it signs. Closing it comes back to the method
+step and signs nothing — the method screen is what the picker opened
+over, and it is still there behind it. A document the renderer cannot
+draw still falls back to the corners with the sentence saying why (F6b
+§5, unchanged).
+
+`placementOutcome` therefore answers *whether the batch can be signed*
+(`sign bool`) rather than *which step to go to*, which is the shape the
+question actually has now.
+
+**The picker is renamed.** `place.title` was "Gde ide pečat" / "Где иде
+печат" / "Where the stamp goes"; it is now **"Pozicija potpisa" /
+"Позиција потписа" / "Signature position"** — the exact wording the
+deleted step used, so a person who pressed Sign lands somewhere they
+recognise as the answer to what they just chose. That is the same
+decision, not a second one: the step's name moves to the thing the step
+was a preface to.
+
+**Why.** The step asked nothing. It said
+
+```
+Pozicija potpisa
+Sačuvano: strana 1, x 209, y 364
+```
+
+and then, if nothing was remembered, opened the picker by itself. A
+screen between a decision and its consequence, whose only content was a
+fact the picker shows anyway — and shows better, since there the same
+line is also the button that puts the stamp back on that position
+(`place.reset_to_saved`, "Vrati na sačuvanu"). [[D-146]] built the three
+methods as "one choice with three outcomes"; the fourth step made one of
+those three outcomes arrive in two acts.
+
+**Two catalogue keys die with it**, in all three locales rather than
+being left for someone to wire back ([[D-132]]'s rule):
+`stampwindow.position_step_title` (whose words moved to `place.title`)
+and `stampwindow.placed_none` — the "nothing saved yet" line, which only
+the deleted screen ever showed. `stampwindow.placed_at` stays, because
+the picker still writes the position out; `placedSummary` folded into
+`placedSummaryIfSet` beside its one remaining caller.
+
+**What it costs and what it saves, counted rather than asserted.**
+Presses from the method step to a signature, with the method already the
+one the configuration holds — the returning user, which is the case
+[[D-140]] says the owner is in a thousand times over:
+
+| Method | Before | After |
+|---|---|---|
+| Choosing the position, one remembered | Dalje, Potpiši = **2** (picker not opened) | Potpiši, Koristi ovu poziciju = **2** |
+| Choosing the position, nothing remembered | Dalje, [picker opens itself] Koristi ovu poziciju, Potpiši = **3** | Potpiši, Koristi ovu poziciju = **2** |
+| A set corner | Potpiši = **1** | Potpiši = **1** |
+| Nothing drawn | Potpiši = **1** | Potpiši = **1** |
+
+Add one press to any row for choosing a different method card, and one
+more for a different corner.
+
+So the first row costs nothing and gains the page: the position is now
+confirmed against the document being signed rather than against two
+numbers. The second row loses a press. Nothing else moves. Recorded
+this way because "fewer clicks" was not the point and would have been
+the wrong thing to claim — what came out is a screen, and the screen is
+what was reported.
+
+**Verified by looking at it**, in a real window at the step's own size,
+driven only through `Eval` inside the page's own DOM ([[D-094]]) and
+photographed with `PrintWindow` so taking the picture does not take the
+foreground ([[D-122]]); the harness was created and deleted in the same
+session ([[D-100]]). The method screen shows three dots with the last
+one current and **Potpiši** as the primary action for all three methods
+— it said *Dalje* for the first one before. The picker opens titled
+*Pozicija potpisa*, with the stamp already on the remembered position
+and "Sačuvano: strana 1, x 371, y 79 — Vrati na sačuvanu" along its
+foot. The built binary was run on a document and its window
+photographed; the process was stopped by its own exact PID, never by
+image name.
+
+Tests: `TestTheFlowIsOneWindowWithThreeSteps` (three steps for all three
+methods, and the picker is not one of them),
+`TestEveryMethodEndsTheFlowOnTheSameWord` (three dots and *Potpiši* for
+each method, read off the real DOM),
+`TestTheMethodScreenSaysNothingAboutCoordinates` (the coordinates are
+nowhere on that screen in either role, `state-position` is gone from the
+page entirely, and the picker's own line names them),
+`TestThePickerTitleIsThePositionOfTheSignature` (the new title in all
+three catalogues, and the deleted key gone rather than unused),
+`TestTheThreeEndingsOfThePicker` (chosen signs, cancelled signs nothing
+and changes nothing, undrawable offers the corners).
+
+**Rejected.**
+- **Keeping the step and only removing the picker's automatic opening.**
+  That leaves a screen whose whole content is two numbers, which is what
+  was reported.
+- **Signing straight from the picker with the remembered position, with
+  no picker at all when one is remembered.** It would keep the one-press
+  case at one press and make the option mean two different things
+  depending on whether anything had been placed before — the objection
+  [[D-146]] already recorded against exactly this shape.
+- **Leaving the picker titled "Gde ide pečat".** The person pressed
+  *Potpiši birajući poziciju potpisa*; the window that opens should
+  answer in the same words, and the words the deleted step used are
+  already those.
+
+---
+
+## D-152 — The progress screen covers the card session; a page that has just been navigated to shows nothing until it is told what to show
+
+**Date:** 2026-09-06
+**Phase:** F6b — one window, second fix pass (Task 3)
+
+**Decision.** Three changes, one defect.
+
+*(a)* `mainWindow.gotoPage` posts the page's strings and nothing else —
+`{"type": "strings", "strings": …}`, handled by `main.js` as
+`liroApplyStaticStrings()` with no screen chosen. It used to post
+`filesPayload("init")`, which carries the strings *and renders the
+document list*.
+
+*(b)* Every screen in `main.html` starts hidden, `state-files` included.
+A fresh document shows nothing until the step that navigated to it says
+which screen it wants.
+
+*(c)* `startSigning` posts the progress screen itself
+(`postPreparingCard`) immediately after it reaches the main page, and
+again after the timestamp and output questions, before the card session
+is opened.
+
+`bridge.js` now stores `payload.strings` from whichever payload carries
+them rather than only from an `init`, since the payload that refills the
+table after a navigation is no longer always the one that renders the
+first screen.
+
+**Why — what was actually happening.** Pressing *Potpiši* showed the
+documents screen for about a second before the card was used. The cause
+is (a) and only (a): `startSigning` navigates to the main page, that
+navigation posted the document list's whole payload, and nothing
+replaced it until `jobs.Runner`'s first progress hook — which is on the
+far side of `openInteractiveSession`. So for the length of the card
+being opened, the window showed step 1.
+
+That is not cosmetic and this entry says so plainly, because the fix
+looks small enough to be mistaken for one. SPEC §12.9 requires a
+distinct "Preparing card…" state precisely because the measured ~4.9 s
+of card initialisation reads as a hang otherwise; the window was instead
+showing a screen that says nothing is happening at all, and saying it in
+the shape of the flow having gone backwards. The state built to prevent
+that confusion existed and was not on screen.
+
+**Why the page starts blank rather than starting on the document list.**
+Posting the progress screen immediately after the navigation would have
+left the document list visible for the length of one `ExecuteScript`
+round trip — a frame or two rather than a second, but the same defect
+made smaller, and the sort of thing that grows back the first time
+something slow is added between the two. A page that shows nothing until
+Go names a screen cannot show the wrong one at all. What is visible in
+that gap is the window's own background, which is what any page load
+looks like and is not a step of anything.
+
+SPEC §10.2 carries both halves as rules — no step visible on the way to
+another, and the screen that covers a wait is the one that describes the
+wait — so the next screen added to this window inherits them.
+
+**Verified.** `TestTheDocumentsScreenIsNotShownOnTheWayToSigning` does
+what `startSigning` does: navigates a real window from the stamp page to
+the main page and asserts every one of the six screens has a computed
+`display` of `none` afterwards, that the strings did arrive, and that
+`postPreparingCard` then shows the queue with the catalogue's
+"Priprema kartice…", the indeterminate bar, and no percentage. It was
+confirmed to fail against each half of the fix reverted separately:
+with `state-files` visible by default, and with `gotoPage` posting the
+files payload again — both times reporting that state-files is on screen
+with a computed display of "flex" after navigating, before any screen
+was asked for.
+
+Photographed too, in a real window at the flow's own size: the main page
+immediately after the navigation (nothing), and immediately after
+`postPreparingCard` ("Priprema kartice…", the document listed as
+*čeka*, the indeterminate bar, *Zaustavi*). The built binary was run on
+a document and its documents step photographed, which is the other half
+of (b) — a page that starts hidden must still render the document list
+when that is what is asked for.
+
+**Rejected.**
+- **Posting the progress screen straight after the navigation and
+  leaving `state-files` visible by default.** Above: the same defect,
+  one round trip long instead of one second, and ready to grow back.
+- **Keeping `filesPayload("init")` in `gotoPage` and posting the
+  progress screen over it.** Same objection, and it leaves the page's
+  strings arriving in a payload that also decides a screen — which is
+  what tied the two together in the first place.
+- **Opening the card session before showing anything, and showing the
+  progress screen when it returns.** That is the interval the screen
+  exists to cover.

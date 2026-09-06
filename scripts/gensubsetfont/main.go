@@ -75,11 +75,16 @@ import (
 const subsetTag = "LIROBR"
 
 func main() {
-	fontPath := flag.String("font", "", "path to the source NotoSans-Regular.ttf")
+	fontPath := flag.String("font", "", "path to the source font (see the URLs in this file's doc comment)")
 	outDir := flag.String("out", "internal/pades/appearance", "output directory")
+	set := flag.String("set", "stamp", `which character set to build: "stamp" (the visual signature stamp) or "preview" (the placement preview's substitute font)`)
+	name := flag.String("name", "", "output .ttf file name (defaults to the set's own)")
 	flag.Parse()
 	if *fontPath == "" {
 		log.Fatal("gensubsetfont: --font is required")
+	}
+	if *set != "stamp" && *set != "preview" {
+		log.Fatalf("gensubsetfont: unknown --set %q", *set)
 	}
 
 	src, err := os.ReadFile(*fontPath)
@@ -92,9 +97,43 @@ func main() {
 	}
 
 	runes := charset()
-	sf, err := extractSubset(f, runes)
+	optional := false
+	ttfName := "notosans-subset.ttf"
+	charsetName := "charset.txt"
+	if *set == "preview" {
+		runes = previewCharset()
+		// The preview's substitute font asks for characters no single
+		// Noto face is required to carry (dingbat ticks, arrows, some
+		// currency signs). A character the source font does not have is
+		// left out with a note, not a reason to refuse to build: it is
+		// one glyph missing from a substitute, not a character missing
+		// from a signature (F4 §3.3's hard failure is about the stamp,
+		// which is a different thing entirely).
+		optional = true
+		ttfName = "preview-sans.ttf"
+		charsetName = "preview-charset.txt"
+	}
+	if *name != "" {
+		ttfName = *name
+		charsetName = strings.TrimSuffix(*name, ".ttf") + "-charset.txt"
+	}
+
+	sf, missing, err := extractSubset(f, runes, optional)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if len(missing) > 0 {
+		fmt.Printf("gensubsetfont: %d requested characters are not in the source font and were left out:\n", len(missing))
+		for _, r := range missing {
+			fmt.Printf("    U+%04X %c\n", r, r)
+		}
+		kept := runes[:0]
+		for _, r := range runes {
+			if _, ok := sf.runeToNewGID[r]; ok {
+				kept = append(kept, r)
+			}
+		}
+		runes = kept
 	}
 
 	ttf, err := sf.build()
@@ -108,18 +147,24 @@ func main() {
 		log.Fatalf("gensubsetfont: outline geometry self-verification failed: %v", err)
 	}
 
-	if err := os.WriteFile(*outDir+"/notosans-subset.ttf", ttf, 0o644); err != nil {
+	if err := os.WriteFile(*outDir+"/"+ttfName, ttf, 0o644); err != nil {
 		log.Fatalf("gensubsetfont: writing subset TTF: %v", err)
 	}
-	if err := os.WriteFile(*outDir+"/charset.txt", charsetFile(runes), 0o644); err != nil {
-		log.Fatalf("gensubsetfont: writing charset.txt: %v", err)
+	if err := os.WriteFile(*outDir+"/"+charsetName, charsetFile(runes, ttfName), 0o644); err != nil {
+		log.Fatalf("gensubsetfont: writing %s: %v", charsetName, err)
 	}
-	formatted, err := format.Source(subsetDataGo(sf))
-	if err != nil {
-		log.Fatalf("gensubsetfont: generated subset_data.go is not valid Go: %v", err)
-	}
-	if err := os.WriteFile(*outDir+"/subset_data.go", formatted, 0o644); err != nil {
-		log.Fatalf("gensubsetfont: writing subset_data.go: %v", err)
+	// subset_data.go is the stamp's rune -> GID table, which only the
+	// stamp needs: the preview reads the substitute font's own character
+	// map at run time, because it has to read embedded fonts' maps
+	// anyway and a second table would be one more thing to keep in step.
+	if *set == "stamp" {
+		formatted, err := format.Source(subsetDataGo(sf))
+		if err != nil {
+			log.Fatalf("gensubsetfont: generated subset_data.go is not valid Go: %v", err)
+		}
+		if err := os.WriteFile(*outDir+"/subset_data.go", formatted, 0o644); err != nil {
+			log.Fatalf("gensubsetfont: writing subset_data.go: %v", err)
+		}
 	}
 	fmt.Printf("gensubsetfont: wrote %d glyphs (%d bytes) to %s\n", len(sf.glyphs), len(ttf), *outDir)
 }
@@ -127,13 +172,13 @@ func main() {
 // extractSubset reads every rune's outline and advance width from f and
 // assigns new, sequential glyph indices (1..N, sorted by rune value; 0
 // is reserved for .notdef) — F4 §3.3's "build a rune → GID table."
-func extractSubset(f *sfnt.Font, runes []rune) (*subsetFont, error) {
+func extractSubset(f *sfnt.Font, runes []rune, optional bool) (*subsetFont, []rune, error) {
 	var buf sfnt.Buffer
 	upm := f.UnitsPerEm()
 
 	m, err := f.Metrics(&buf, fixed.I(int(upm)), font.HintingNone)
 	if err != nil {
-		return nil, fmt.Errorf("gensubsetfont: reading font metrics: %w", err)
+		return nil, nil, fmt.Errorf("gensubsetfont: reading font metrics: %w", err)
 	}
 
 	sf := &subsetFont{
@@ -147,23 +192,32 @@ func extractSubset(f *sfnt.Font, runes []rune) (*subsetFont, error) {
 	}
 	sf.glyphs = append(sf.glyphs, glyphOutline{}) // GID 0: .notdef, deliberately empty (F4 §3.3: a missing character is a hard error, so .notdef is never actually drawn)
 
+	var missing []rune
 	for _, r := range runes {
 		gid, err := f.GlyphIndex(&buf, r)
 		if err != nil {
-			return nil, fmt.Errorf("gensubsetfont: looking up U+%04X: %w", r, err)
+			return nil, nil, fmt.Errorf("gensubsetfont: looking up U+%04X: %w", r, err)
 		}
 		if gid == 0 {
-			return nil, fmt.Errorf("gensubsetfont: source font has no glyph for required character %q (U+%04X)", r, r)
+			if optional {
+				missing = append(missing, r)
+				continue
+			}
+			return nil, nil, fmt.Errorf("gensubsetfont: source font has no glyph for required character %q (U+%04X)", r, r)
 		}
 		outline, err := loadOutline(f, &buf, gid, upm)
 		if err != nil {
-			return nil, fmt.Errorf("gensubsetfont: loading glyph for %q (U+%04X): %w", r, r, err)
+			if optional {
+				missing = append(missing, r)
+				continue
+			}
+			return nil, nil, fmt.Errorf("gensubsetfont: loading glyph for %q (U+%04X): %w", r, r, err)
 		}
 		newGID := uint16(len(sf.glyphs))
 		sf.glyphs = append(sf.glyphs, outline)
 		sf.runeToNewGID[r] = newGID
 	}
-	return sf, nil
+	return sf, missing, nil
 }
 
 // loadOutline decodes one glyph's outline (flattening composites, which
@@ -305,12 +359,12 @@ func verifyOutlineGeometry(src *sfnt.Font, generatedTTF []byte) error {
 	return nil
 }
 
-func charsetFile(runes []rune) []byte {
+func charsetFile(runes []rune, ttfName string) []byte {
 	var b bytes.Buffer
 	b.WriteString("# Generated by scripts/gensubsetfont. Do not edit by hand.\n")
 	b.WriteString("# One character per line: U+XXXX  <character>  (name omitted; see the\n")
 	b.WriteString("# character itself). This is the exact, complete set of characters the\n")
-	b.WriteString("# embedded font subset (notosans-subset.ttf) can render (F4 §3.2).\n")
+	fmt.Fprintf(&b, "# embedded font subset (%s) can render.\n", ttfName)
 	fmt.Fprintf(&b, "# %d characters total.\n", len(runes))
 	for _, r := range runes {
 		fmt.Fprintf(&b, "U+%04X  %c\n", r, r)

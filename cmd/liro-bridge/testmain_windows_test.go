@@ -13,6 +13,7 @@ import (
 
 func TestMain(m *testing.M) {
 	code := m.Run()
+	closeSharedPlacementWindow()
 	closeSharedWindows()
 	os.Exit(code)
 }

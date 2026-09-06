@@ -1,34 +1,8 @@
 (function () {
   "use strict";
 
-  var states = ["waiting", "preparing", "signing", "done", "failed", "tsachoice", "outputexists"];
   var model = null;
   var selectedThumbprint = null;
-
-  // tsaChoice is read back by Go via Window.Eval after the page sends
-  // "approve" from the timestamp-choice screen — the same mechanism
-  // settings.js's __liroCollectState uses, and for the same reason: the
-  // page->Go message surface stays at exactly three types (D-083), so a
-  // choice that is neither "the original consent decision" nor "cancel"
-  // reports itself through ExecuteScript's own return value instead of a
-  // fourth message type.
-  var tsaChoice = "";
-  window.__liroTSAChoice = function () {
-    return JSON.stringify({ choice: tsaChoice });
-  };
-
-  // outputChoice is read back the same way (Task 4): "overwrite",
-  // "rename", or "" when the screen has not been answered.
-  var outputChoice = "";
-  window.__liroOutputChoice = function () {
-    return JSON.stringify({ choice: outputChoice });
-  };
-
-  function showState(name) {
-    states.forEach(function (s) {
-      document.getElementById("state-" + s).hidden = s !== name;
-    });
-  }
 
   function renderCertList() {
     var list = document.getElementById("cert-list");
@@ -71,6 +45,11 @@
         row.appendChild(badge);
       }
 
+      // A row that cannot be chosen is a signing certificate whose card
+      // is out or whose validity has run out — a real choice
+      // temporarily unavailable, which is why it is here at all with
+      // its reason on it. A certificate that is not for signing never
+      // reaches this list any more; Go leaves it out.
       if (!cert.usable) {
         var reason = document.createElement("div");
         reason.className = "cert-reason";
@@ -109,10 +88,10 @@
     // one place it is implemented — Approve would already be pressable,
     // for a certificate nobody chose for these documents.
     //
-    // Every consent window in production is created fresh, so this has
-    // never been reachable by a user; it became visible the moment a
-    // test posted two batches into one window, which is the shape a
-    // future re-render would take too (F6 §7).
+    // This now happens on every arrival at the step, including one
+    // reached by pressing Back from the step after it: coming back is
+    // how a wrong certificate is corrected, so coming back must not
+    // leave the wrong one still chosen.
     selectedThumbprint = null;
     document.getElementById("approve-btn").disabled = true;
 
@@ -137,102 +116,32 @@
     window.liroSetText(document.getElementById("file-overflow"), model.filesOverflowText);
 
     renderCertList();
-    showState("waiting");
 
     // F5 §5.6: Approve is never the initially focused control — Cancel
     // gets it instead, so the user must move to Approve deliberately.
+    // Cancel, not Back: the way out of a decision is refusing it, and a
+    // step header that happens to be there must not become the thing
+    // the keyboard lands on.
     document.getElementById("cancel-btn").focus();
   }
 
-  function renderProgress(p) {
-    if (p.state === "preparingCard") {
-      showState("preparing");
-    } else if (p.state === "signing") {
-      window.liroSetText(document.getElementById("signing-label"), p.signingLabelText);
-      document.getElementById("signing-bar").style.width = p.percent + "%";
-      window.liroSetText(document.getElementById("eta"), p.etaText);
-      document.getElementById("per-signature-warning").hidden = !p.perSignaturePIN;
-      showState("signing");
-    } else if (p.state === "done") {
-      window.liroSetText(document.getElementById("done-summary"), p.doneSummaryText);
-      var level = document.getElementById("done-level");
-      window.liroSetText(level, p.doneLevelText);
-      // Task 1: the achieved level is stated on every successful batch,
-      // and marked in the warning intent when it is B-B — a signature
-      // with no proof of when it was made (SPEC §12.8).
-      level.className = p.doneLevelIntent ? "liro-outcome liro-outcome-" + p.doneLevelIntent : "";
-      window.liroSetText(document.getElementById("done-output"), p.doneOutputText);
-      showState("done");
-      document.getElementById("close-btn").focus();
-    } else if (p.state === "failed") {
-      window.liroSetText(document.getElementById("failed-message"), p.failedMessageText);
-      showState("failed");
-      document.getElementById("copy-details-btn").onclick = function () {
-        if (navigator.clipboard) navigator.clipboard.writeText(p.failedDetails || "");
-      };
-      document.getElementById("close-failed-btn").focus();
-    } else if (p.state === "outputExists") {
-      window.liroSetText(document.getElementById("output-exists-path"), p.outputExistsPath);
-      window.liroSetText(document.getElementById("output-rename-btn"), p.outputRenameText);
-      outputChoice = "";
-      showState("outputexists");
-      // Nothing that writes a file is focused first, the same rule the
-      // waiting screen applies to Approve (F5 §5.6).
-      document.getElementById("output-cancel-btn").focus();
-    } else if (p.state === "tsaChoice") {
-      window.liroSetText(document.getElementById("tsa-reason"), p.tsaReasonText);
-      tsaChoice = "";
-      showState("tsachoice");
-      // Nothing that proceeds is focused first: Cancel gets it, the
-      // same rule F5 §5.6 applies to Approve on the waiting screen.
-      document.getElementById("tsa-cancel-btn").focus();
-    }
-  }
-
   window.__liroOnMessage = function (payload) {
-    if (payload.type === "init") {
-      model = payload.model;
-      window.liroApplyStaticStrings();
-      renderWaiting();
-    } else if (payload.type === "progress") {
-      renderProgress(payload.progress);
-    }
+    if (payload.type !== "init") return;
+    model = payload.model;
+    window.liroApplyStaticStrings();
+    window.liroRenderStep(payload.step);
+    renderWaiting();
   };
 
   document.getElementById("approve-btn").addEventListener("click", function () {
     if (!selectedThumbprint) return;
-    window.liroSend("approve");
+    window.liroAct("approve");
   });
   document.getElementById("cancel-btn").addEventListener("click", function () {
     window.liroSend("cancel");
   });
-  document.getElementById("close-btn").addEventListener("click", function () {
-    window.liroSend("cancel");
-  });
-  document.getElementById("close-failed-btn").addEventListener("click", function () {
-    window.liroSend("cancel");
-  });
-  document.getElementById("tsa-without-btn").addEventListener("click", function () {
-    tsaChoice = "withoutTimestamp";
-    window.liroSend("approve");
-  });
-  document.getElementById("tsa-configure-btn").addEventListener("click", function () {
-    tsaChoice = "configure";
-    window.liroSend("approve");
-  });
-  document.getElementById("tsa-cancel-btn").addEventListener("click", function () {
-    window.liroSend("cancel");
-  });
-  document.getElementById("output-rename-btn").addEventListener("click", function () {
-    outputChoice = "rename";
-    window.liroSend("approve");
-  });
-  document.getElementById("output-overwrite-btn").addEventListener("click", function () {
-    outputChoice = "overwrite";
-    window.liroSend("approve");
-  });
-  document.getElementById("output-cancel-btn").addEventListener("click", function () {
-    window.liroSend("cancel");
+  document.getElementById("step-back-btn").addEventListener("click", function () {
+    window.liroAct("back");
   });
 
   // F5 §5.6: Escape cancels.

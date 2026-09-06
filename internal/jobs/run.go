@@ -14,6 +14,18 @@ import (
 type Outcome struct {
 	OutputPath    string
 	AchievedLevel string
+
+	// StampAdjusted is set when a remembered stamp position did not fit
+	// this document as it stood and had to be brought inside the page's
+	// margin, or when the page it was saved on is past this document's
+	// last one (F6b §3).
+	//
+	// It is not a failure: a saved position is meant to be reused
+	// across documents of different lengths and shapes, and adjusting
+	// is what "reused" means. But the person has to be told, because a
+	// stamp somewhere other than where they put it is a surprise if
+	// nothing says so.
+	StampAdjusted bool
 }
 
 // SignFunc signs one document and writes it out. Injected, so the
@@ -107,6 +119,12 @@ type Report struct {
 	// (F6 §3). AbortCode says which.
 	Aborted   bool
 	AbortCode errs.Code
+
+	// StampAdjusted counts the documents whose stamp had to be moved to
+	// fit — a page that was shorter than the one the position was
+	// chosen on, or a smaller page box. Zero for a batch that all took
+	// the position as it stood, which is the ordinary case.
+	StampAdjusted int
 
 	// Timing is the measured shape of this batch, for the log and for
 	// anyone asking why it took what it took.
@@ -237,6 +255,9 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 			q.items[i].AchievedLevel = outcome.AchievedLevel
 			report.Succeeded++
 			report.AchievedLevel = weakestLevel(report.AchievedLevel, outcome.AchievedLevel)
+			if outcome.StampAdjusted {
+				report.StampAdjusted++
+			}
 			if dir := parentDir(outcome.OutputPath); dir != "" {
 				outputDirs[dir] = true
 			}

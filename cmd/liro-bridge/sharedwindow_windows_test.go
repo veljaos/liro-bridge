@@ -2,8 +2,11 @@
 
 package main
 
-// One consent window and one settings window, shared by every test in
-// this package that needs them.
+// One window per page, shared by every test in this package that needs
+// them. In production the signing flow navigates one window between
+// these pages; a test that only renders a payload does not need that,
+// and one window per page is what keeps the count of WebView2
+// environments down.
 //
 // F5 second-real-run review: each ui.NewWindow builds its own WebView2
 // environment, and each environment starts its own group of
@@ -59,8 +62,8 @@ func drain(ch chan ui.Message) {
 	}
 }
 
-// sharedConsentWindow returns the package's one consent window, at the
-// size runSignInteractive itself uses. Callers must not Close it —
+// sharedConsentWindow returns the package's one certificate-step
+// window, at the size that step gives it. Callers must not Close it —
 // closeSharedWindows does that once, from TestMain.
 func sharedConsentWindow(t *testing.T) (ui.Window, chan ui.Message) {
 	t.Helper()
@@ -68,8 +71,8 @@ func sharedConsentWindow(t *testing.T) (ui.Window, chan ui.Message) {
 		consentShared.messages = make(chan ui.Message, 16)
 		consentShared.win, consentShared.err = ui.NewWindow(ui.Options{
 			Title:       i18n.Load("sr-Latn").T("consent.window_title"),
-			Width:       consentWindowWidth,
-			Height:      consentWindowHeight,
+			Width:       stepCertificateWidth,
+			Height:      stepCertificateHeight,
 			Assets:      assetsFS,
 			VirtualHost: liroVirtualHost,
 			StartPage:   "/pages/consent.html",
@@ -166,16 +169,16 @@ func sharedAuditLogWindowWithMessages(t *testing.T) (ui.Window, chan ui.Message)
 	return auditLogShared.win, auditLogShared.messages
 }
 
-// sharedMainWindow returns the package's one main window, at the size
-// runMainWindow itself uses (F6 §1).
+// sharedMainWindow returns the package's one documents-step window, at
+// the size that step gives it (F6 §1).
 func sharedMainWindow(t *testing.T) (ui.Window, chan ui.Message) {
 	t.Helper()
 	mainShared.once.Do(func() {
 		mainShared.messages = make(chan ui.Message, 16)
 		mainShared.win, mainShared.err = ui.NewWindow(ui.Options{
 			Title:       i18n.Load("sr-Latn").T("main.title"),
-			Width:       mainWindowWidth,
-			Height:      mainWindowHeight,
+			Width:       stepDocumentsWidth,
+			Height:      stepDocumentsHeight,
 			Assets:      assetsFS,
 			VirtualHost: liroVirtualHost,
 			StartPage:   "/pages/main.html",
@@ -195,9 +198,8 @@ func sharedMainWindow(t *testing.T) (ui.Window, chan ui.Message) {
 	return mainShared.win, mainShared.messages
 }
 
-// sharedStampWindow returns the package's one stamp window (step 3 of
-// the three-step flow), with cfg's init payload freshly posted in the
-// given role.
+// sharedStampWindow returns the package's one signing-method window,
+// with cfg's init payload freshly posted in the given role.
 func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config, role stampWindowRole) (ui.Window, chan ui.Message) {
 	t.Helper()
 	stampShared.once.Do(func() {
@@ -217,7 +219,7 @@ func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config, role 
 		t.Fatalf("NewWindow(stamp): %v", stampShared.err)
 	}
 	drain(stampShared.messages)
-	if err := stampShared.win.PostJSON(buildStampInit(c, cfg, role)); err != nil {
+	if err := stampShared.win.PostJSON(buildStampInit(c, cfg, role, stampMethodOf(cfg))); err != nil {
 		t.Fatalf("PostJSON(stamp init): %v", err)
 	}
 	return stampShared.win, stampShared.messages

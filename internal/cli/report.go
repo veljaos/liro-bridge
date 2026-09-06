@@ -82,15 +82,17 @@ type Report struct {
 }
 
 // Hidden reports whether row is hidden from the default (non --all)
-// view: SPEC/F1 §5.4 measured that the store contains Windows-internal
-// certificates (self-signed, GUID subject, software KSP) that are
-// neither qualified nor anything a person could sign with.
+// view: a Windows-internal artefact (self-signed, GUID subject,
+// software KSP, unknown to the Trusted List), or a certificate whose
+// purpose is not signing — the authentication certificate every
+// Serbian card carries beside the signing one, which shows the person
+// their own name a second time and is not a choice they can make.
 //
 // The rule itself lives in classify.Info, not here, so that this
 // command, the consent window and the Certificates window share one
 // implementation rather than three copies that can drift (F6 §0b).
 func (r CertRow) Hidden() bool {
-	return r.Info.IsWindowsInternal()
+	return r.Info.HiddenByDefault()
 }
 
 // Gather assembles a Report: readers, enumerated certificates

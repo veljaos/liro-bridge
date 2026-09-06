@@ -2,12 +2,9 @@
 
 package main
 
-// The main window (F6 §1, §3, §4, §5): the surface a person uses
-// without a command line. Documents are gathered here, the consent
-// window approves them — unchanged, the same one `sign --interactive`
-// opens, because SPEC §6.5 makes that screen the product's only real
-// gate and two implementations of it would be two things to keep right
-// — and the batch is then watched and read here.
+// The signing window (F6 §1, §3, §4, §5): the one window a person
+// uses. It owns the flow's state and its event loop; signflow_windows.go
+// owns the steps themselves.
 //
 // Everything this file decides about a queue is decided in
 // internal/jobs, which has no window and is tested without one. What is
@@ -29,27 +26,20 @@ import (
 	"github.com/veljaos/liro-bridge/internal/audit"
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
+	"github.com/veljaos/liro-bridge/internal/consent"
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/jobs"
+	"github.com/veljaos/liro-bridge/internal/keysource"
+	"github.com/veljaos/liro-bridge/internal/pades"
+	"github.com/veljaos/liro-bridge/internal/pades/tsa"
 	"github.com/veljaos/liro-bridge/internal/signing"
+	"github.com/veljaos/liro-bridge/internal/trust/classify"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
-// mainWindowSize is measured, not guessed: the document list shows
-// eight rows without scrolling, which covers the ordinary batch, and
-// the footer plus the three actions stay on screen with a
-// two-hundred-document list scrolling above them (D-106).
-//
-// 690 rather than 720 because step 1 now asks one thing: the stamp
-// summary row left the footer when the stamp question moved to step 3,
-// and the footer measured 34 points shorter for it.
-const (
-	mainWindowWidth  = 560
-	mainWindowHeight = 690
-)
-
-// mainWindow is one open main window and everything it is driving.
+// mainWindow is the one open signing window and everything it is
+// driving.
 type mainWindow struct {
 	win      ui.Window
 	messages chan ui.Message
@@ -69,14 +59,124 @@ type mainWindow struct {
 	// report is the last finished run, for the export and open-folder
 	// actions.
 	report *jobs.Report
+
+	// ---- the flow (signflow_windows.go) ----
+
+	// page is the page the window is currently showing, so a step that
+	// shares a page with the one before it does not navigate.
+	page string
+	// step is where in the flow the window is.
+	step flowStep
+	// showingReport and failed say the window is on a screen that is
+	// not a step, which is what makes Cancel there mean "close" rather
+	// than "go back to the document list".
+	showingReport bool
+	failed        bool
+
+	// documentsSupplied means the caller brought the documents, so this
+	// run has no first step — `sign --interactive --in ...`, and every
+	// request that arrives with its documents already named.
+	documentsSupplied bool
+	// suppliedStamp is the method question already answered by the
+	// caller. With it set the flow is the certificate step and nothing
+	// else: one window, one click (D-124).
+	suppliedStamp *consent.StampChoice
+	// force skips the output-file question, matching the command line's
+	// --force.
+	force bool
+
+	// inputs is the batch as the flow sees it: one entry per document,
+	// with the digest the batch fingerprint is built from.
+	inputs []interactiveInput
+
+	// certs is the last enumeration, and certInfos what the certificate
+	// step offers from it. Gathered once per batch, on the way into
+	// that step — pressing Back must not re-enumerate a smart card.
+	certs     cli.Report
+	certInfos []classify.Info
+	// selected is the chosen certificate's thumbprint, empty until the
+	// person picks one.
+	selected string
+	// method is the signing method the flow is working with, which is
+	// what decides whether there is a position step after the method
+	// step.
+	method string
+
+	// exit is the process exit code for a run started from the command
+	// line. Zero unless something failed.
+	exit int
 }
 
-// runMainWindow opens the main window and runs it until it is closed.
-// initialPaths seeds the queue — the Explorer context menu and the
-// command line both arrive that way; an empty slice opens the empty
+// runMainWindow opens the signing window and runs it until it is
+// closed. initialPaths seeds the queue — the Explorer context menu and
+// the command line both arrive that way; an empty slice opens the empty
 // state.
 func runMainWindow(ctx context.Context, cfg config.Config, locale string, initialPaths []string) int {
 	return runMainWindowWatching(ctx, cfg, locale, initialPaths, nil)
+}
+
+// flowRequest is a run of the signing flow that does not begin at the
+// document list: the command line's `sign --interactive`, and — when
+// F7 brings it — a request from a paired application. What it carries
+// is what the person is then not asked.
+type flowRequest struct {
+	// inputs are the documents, already read for their digests.
+	inputs []interactiveInput
+	// force skips the output-file question.
+	force bool
+	// stamp, when non-nil, answers the method question, so the person
+	// sees the approval and nothing else.
+	stamp *consent.StampChoice
+}
+
+// runSigningFlow opens the window on the certificate step, for a caller
+// that brought its own documents. It returns the process exit code.
+func runSigningFlow(ctx context.Context, cfg config.Config, locale string, req flowRequest) int {
+	m := newMainWindow(cfg, locale)
+	m.documentsSupplied = true
+	m.suppliedStamp = req.stamp
+	m.force = req.force
+	m.inputs = req.inputs
+	m.applySuppliedStamp()
+
+	paths := make([]string, 0, len(req.inputs))
+	for _, in := range req.inputs {
+		paths = append(paths, in.path)
+	}
+	_, m.notices = m.queue.Add(paths)
+
+	if !m.gatherCertificatesBeforeOpening(ctx) {
+		return 1
+	}
+	return m.open(ctx, nil, stepCertificate)
+}
+
+// newMainWindow is the window's state before there is a window.
+func newMainWindow(cfg config.Config, locale string) *mainWindow {
+	return &mainWindow{
+		messages: make(chan ui.Message, 16),
+		dropped:  make(chan []string, 16),
+		closed:   make(chan struct{}),
+		c:        i18n.Load(locale),
+		locale:   locale,
+		cfg:      cfg,
+		method:   stampMethodOf(cfg),
+	}
+}
+
+// gatherCertificatesBeforeOpening enumerates for a run that starts at
+// the certificate step, where there is no earlier step to do it on the
+// way out of. A failure here is fatal rather than a screen: there is no
+// window yet to put one on.
+func (m *mainWindow) gatherCertificatesBeforeOpening(ctx context.Context) bool {
+	report, err := gatherInteractiveCertificates(ctx)
+	if err != nil {
+		slog.Error("signing flow: listing certificates failed", "error", err)
+		return false
+	}
+	m.certs = report
+	m.certInfos = visibleCertificates(report)
+	return true
 }
 
 // runMainWindowWatching is runMainWindow with an inbox to keep draining
@@ -90,26 +190,32 @@ func runMainWindow(ctx context.Context, cfg config.Config, locale string, initia
 // list already on screen, exactly as a dropped file does. Nothing is
 // stranded and nothing is signed that the person did not select.
 func runMainWindowWatching(ctx context.Context, cfg config.Config, locale string, initialPaths []string, inbox *jobs.Inbox) int {
-	m := &mainWindow{
-		messages: make(chan ui.Message, 16),
-		dropped:  make(chan []string, 16),
-		closed:   make(chan struct{}),
-		c:        i18n.Load(locale),
-		locale:   locale,
-		cfg:      cfg,
-	}
+	m := newMainWindow(cfg, locale)
 	if len(initialPaths) > 0 {
 		_, notices := m.queue.Add(initialPaths)
 		m.notices = notices
 	}
+	return m.open(ctx, inbox, stepDocuments)
+}
 
+// open creates the window on first and runs the flow until the window
+// closes.
+func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep) int {
+	width, height := first.size()
 	win, err := ui.NewWindow(ui.Options{
-		Title:       m.c.T("main.title"),
-		Width:       mainWindowWidth,
-		Height:      mainWindowHeight,
+		Title:  m.c.T("main.title"),
+		Width:  width,
+		Height: height,
+		// A request that begins at the approval is a request the person
+		// did not initiate, and SPEC §6.5 requires that window to come
+		// to the front and stay there. A window the person opened
+		// themselves is one they are already looking at, and making it
+		// topmost would only put it over everything else they do with
+		// it — the file chooser included.
+		AlwaysOnTop: first == stepCertificate,
 		Assets:      assetsFS,
 		VirtualHost: liroVirtualHost,
-		StartPage:   "/pages/main.html",
+		StartPage:   first.page(),
 		OnMessage:   func(msg ui.Message) { m.messages <- msg },
 		// F6 §1: files dropped from Explorer. It hands the paths to
 		// the loop and does nothing else — reading two hundred files'
@@ -119,15 +225,22 @@ func runMainWindowWatching(ctx context.Context, cfg config.Config, locale string
 		OnClosed:       func() { close(m.closed) },
 	})
 	if err != nil {
-		slog.Error("main window: could not open", "error", err)
+		slog.Error("signing window: could not open", "error", err)
 		return 1
 	}
 	m.win = win
+	m.page = first.page()
+	m.step = first
 	defer func() { _ = win.Close() }()
 
-	if err := win.PostJSON(m.filesPayload("init")); err != nil {
-		slog.Error("main window: could not post the initial state", "error", err)
-		return 1
+	switch first {
+	case stepCertificate:
+		m.postCertificateStep()
+	default:
+		if err := win.PostJSON(m.filesPayload("init")); err != nil {
+			slog.Error("signing window: could not post the initial state", "error", err)
+			return 1
+		}
 	}
 
 	if inbox != nil {
@@ -137,7 +250,7 @@ func runMainWindowWatching(ctx context.Context, cfg config.Config, locale string
 	}
 
 	m.loop(ctx)
-	return 0
+	return m.exit
 }
 
 // inboxPollInterval is how often an open window looks for stragglers.
@@ -157,13 +270,13 @@ func watchInbox(box *jobs.Inbox, dropped chan<- []string, stop <-chan struct{}) 
 		case <-ticker.C:
 			paths, err := box.Take()
 			if err != nil {
-				slog.Warn("main window: reading the shell inbox failed", "error", err)
+				slog.Warn("signing window: reading the shell inbox failed", "error", err)
 				continue
 			}
 			if len(paths) == 0 {
 				continue
 			}
-			slog.Info("main window: adding documents that arrived after the window opened", "count", len(paths))
+			slog.Info("signing window: adding documents that arrived after the window opened", "count", len(paths))
 			select {
 			case dropped <- paths:
 			case <-stop:
@@ -190,19 +303,31 @@ func (m *mainWindow) loop(ctx context.Context) {
 			}
 			return
 		case paths := <-m.dropped:
-			m.addPaths(paths)
-		case msg := <-m.messages:
-			if msg.Type == ui.MessageTypeCancel {
-				if m.runner != nil {
-					m.runner.Stop()
-				}
-				return
-			}
-			if msg.Type != ui.MessageTypeApprove {
+			// Documents are added at the step that is about them.
+			// Anywhere else the drop is not lost and not silently
+			// folded into a batch that has already been approved
+			// (SPEC §6.5) — it is refused, loudly in the log.
+			if m.step != stepDocuments || m.showingReport {
+				slog.Info("signing window: files dropped away from the document step are ignored", "count", len(paths))
 				continue
 			}
-			if done := m.handleAction(ctx); done {
-				return
+			m.addPaths(paths)
+		case msg := <-m.messages:
+			switch msg.Type {
+			case ui.MessageTypeSelectCertificate:
+				m.selected = msg.Thumbprint
+			case ui.MessageTypeCancel:
+				if m.runner != nil {
+					m.runner.Stop()
+					return
+				}
+				if m.cancelFlow() {
+					return
+				}
+			case ui.MessageTypeApprove:
+				if done := m.handleAction(ctx); done {
+					return
+				}
 			}
 		}
 	}
@@ -216,19 +341,19 @@ type mainAction struct {
 }
 
 func (m *mainWindow) readAction() mainAction {
-	raw, err := m.win.Eval("window.__liroMainAction()")
+	raw, err := m.win.Eval("window.__liroAction()")
 	if err != nil {
-		slog.Warn("main window: reading the action failed", "error", err)
+		slog.Warn("signing window: reading the action failed", "error", err)
 		return mainAction{}
 	}
 	var jsonStr string
 	if err := json.Unmarshal([]byte(raw), &jsonStr); err != nil {
-		slog.Warn("main window: decoding the action envelope failed", "error", err)
+		slog.Warn("signing window: decoding the action envelope failed", "error", err)
 		return mainAction{}
 	}
 	var a mainAction
 	if err := json.Unmarshal([]byte(jsonStr), &a); err != nil {
-		slog.Warn("main window: decoding the action failed", "error", err)
+		slog.Warn("signing window: decoding the action failed", "error", err)
 		return mainAction{}
 	}
 	return a
@@ -237,6 +362,12 @@ func (m *mainWindow) readAction() mainAction {
 // handleAction runs one page action. It returns true when the window
 // should close.
 func (m *mainWindow) handleAction(ctx context.Context) bool {
+	// The method step reports its whole form in one read, so it is
+	// read as a form and not as a bare action.
+	if !m.showingReport && !m.failed && m.step == stepMethod {
+		return m.handleStampAction(ctx)
+	}
+
 	a := m.readAction()
 	switch a.Action {
 	case "browse":
@@ -251,8 +382,12 @@ func (m *mainWindow) handleAction(ctx context.Context) bool {
 		m.chooseOutputFolder()
 	case "clearOutputFolder":
 		m.clearOutputFolder()
-	case "sign":
-		m.sign(ctx)
+	case "next":
+		return m.next(ctx)
+	case "back":
+		m.back()
+	case "approve":
+		return m.approveCertificate(ctx)
 	case "stop":
 		if m.runner != nil {
 			m.runner.Stop()
@@ -265,11 +400,31 @@ func (m *mainWindow) handleAction(ctx context.Context) bool {
 		m.queue.Clear()
 		m.notices = nil
 		m.report = nil
-		m.postFiles()
+		m.selected = ""
+		m.show(stepDocuments)
+	case "finish":
+		// The expected end of a batch, and the report screen's primary
+		// action: the work is done, so the window closes. Signing more
+		// is the other button, beside it.
+		return true
 	default:
-		slog.Warn("main window: approve with no action recorded")
+		slog.Warn("signing window: approve with no action recorded")
 	}
 	return false
+}
+
+// next is the primary action of whichever step is showing.
+func (m *mainWindow) next(ctx context.Context) bool {
+	if m.step == stepDocuments {
+		if m.queue.Len() == 0 {
+			return false
+		}
+		m.readInputs()
+		if !m.gatherCertificates(ctx) {
+			return false
+		}
+	}
+	return m.advance(ctx)
 }
 
 func (m *mainWindow) addPaths(paths []string) {
@@ -291,7 +446,7 @@ func (m *mainWindow) addPaths(paths []string) {
 			unreadable++
 		}
 	}
-	slog.Info("main window: documents added",
+	slog.Info("signing window: documents added",
 		"arrived", len(paths), "added", added,
 		"duplicates", duplicates, "unreadable", unreadable,
 		"queueWas", before, "queueNow", m.queue.Len())
@@ -304,7 +459,7 @@ func (m *mainWindow) removeAt(index int) {
 		// The page's index and Go's list disagreeing means a stale
 		// click, not an attack — but acting on it would remove the
 		// wrong document, so it is dropped and logged.
-		slog.Warn("main window: remove for an index that is not in the queue", "index", index)
+		slog.Warn("signing window: remove for an index that is not in the queue", "index", index)
 		return
 	}
 	m.queue.Remove(items[index].Path)
@@ -318,7 +473,7 @@ func (m *mainWindow) browse() {
 		m.c.T("main.file_filter_pdf"),
 		m.c.T("main.file_filter_all"))
 	if err != nil {
-		slog.Warn("main window: the file chooser failed", "error", err)
+		slog.Warn("signing window: the file chooser failed", "error", err)
 		return
 	}
 	if !ok || len(paths) == 0 {
@@ -336,7 +491,7 @@ func (m *mainWindow) browse() {
 func (m *mainWindow) chooseOutputFolder() {
 	dir, ok, err := ui.ChooseFolder(m.win.Handle(), m.c.T("main.choose_output_folder"), m.cfg.OutputFolder)
 	if err != nil {
-		slog.Warn("main window: the folder chooser failed", "error", err)
+		slog.Warn("signing window: the folder chooser failed", "error", err)
 		return
 	}
 	if !ok {
@@ -359,7 +514,7 @@ func (m *mainWindow) clearOutputFolder() {
 
 func (m *mainWindow) saveConfig() {
 	if err := config.Save(config.DefaultPath(), m.cfg); err != nil {
-		slog.Warn("main window: saving the configuration failed", "error", err)
+		slog.Warn("signing window: saving the configuration failed", "error", err)
 	}
 }
 
@@ -367,7 +522,7 @@ func (m *mainWindow) saveConfig() {
 
 func (m *mainWindow) postFiles() {
 	if err := m.win.PostJSON(m.filesPayload("files")); err != nil {
-		slog.Warn("main window: posting the file list failed", "error", err)
+		slog.Warn("signing window: posting the file list failed", "error", err)
 	}
 }
 
@@ -405,6 +560,8 @@ func (m *mainWindow) filesPayload(kind string) map[string]any {
 		"countText":        m.countText(),
 		"notices":          m.noticeTexts(),
 		"outputFolderText": m.outputFolderText(),
+		"step":             m.headerFor(stepDocuments),
+		"primaryLabel":     m.primaryLabelFor(stepDocuments),
 		// Only shown when there is something to undo: a "beside each
 		// document" button next to a row that already says exactly that
 		// is a button that does nothing.
@@ -468,12 +625,20 @@ func (m *mainWindow) outputFolderText() string {
 func (m *mainWindow) staticStrings() map[string]string {
 	keys := []string{
 		"main.empty_title", "main.empty_hint", "main.browse", "main.clear",
-		"main.sign", "main.sign_opening", "main.remove_file",
+		"main.sign_opening", "main.remove_file",
 		"main.output_label", "main.output_change",
-		"main.output_beside", "main.queue_title", "main.stop", "main.stopping",
+		"main.output_beside", "main.stop", "main.stopping",
 		"main.report_failures_title", "main.report_output_label",
 		"main.report_level_label", "main.open_output", "main.export_report",
-		"main.new_batch", "consent.per_signature_pin_warning",
+		"main.new_batch", "main.finish", "consent.per_signature_pin_warning",
+		// The questions asked between the approval and the first
+		// signature live on this page now, so its static labels do too.
+		"consent.tsa_choice_title", "consent.tsa_choice_explain",
+		"consent.tsa_save_without_timestamp", "consent.tsa_configure",
+		"consent.output_exists_title", "consent.output_exists_explain",
+		"consent.output_exists_path_label", "consent.output_exists_overwrite",
+		"consent.state_failed", "consent.copy_technical_details",
+		"consent.close", "consent.cancel",
 	}
 	out := make(map[string]string, len(keys))
 	for _, k := range keys {
@@ -484,20 +649,121 @@ func (m *mainWindow) staticStrings() map[string]string {
 
 // ---- the run -------------------------------------------------------
 
-// sign takes the queue through the consent window and then runs it.
-func (m *mainWindow) sign(ctx context.Context) {
-	if m.queue.Len() == 0 {
-		return
+// startSigning is everything between the last step and the first
+// signature: the timestamp question, the output paths, and the card
+// session — in that order, and all of them before the card is touched,
+// so a person who cancels has not spent a PIN entry on a batch that was
+// never going to be saved (D-095, D-104).
+//
+// All of it happens on the same window, which by now shows the page
+// that will carry the progress and the report — and shows the progress
+// screen itself from the moment Sign is pressed, not from the moment
+// the first signature completes.
+//
+// That last is not cosmetic. Navigating here used to put the document
+// list back on screen, and it stayed there while the card session was
+// opened — measured at about a second, and the whole point of the
+// "Preparing card…" state (SPEC §12.9) is that this is exactly the
+// interval a person must not be told nothing is happening in. Worse,
+// what it showed was step 1: the flow appeared to jump back to where it
+// started.
+func (m *mainWindow) startSigning(ctx context.Context) bool {
+	if m.queue.Len() == 0 || m.selected == "" {
+		return false
+	}
+	if !m.gotoPage(pageMain) {
+		return false
+	}
+	m.resize(stepDocumentsWidth, stepDocumentsHeight)
+	m.postPreparingCard()
+
+	level := interactiveLevel(m.cfg)
+	var tsaClient *tsa.Client
+	allowBB := level == pades.LevelBB
+	if level != pades.LevelBB {
+		client, err := buildTSAClient(m.cfg)
+		if err != nil {
+			m.fail(err)
+			return false
+		}
+		tsaClient = client
+		if tsaClient == nil {
+			cfg, next, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonNotConfigured)
+			if !proceed {
+				m.deny()
+				m.backToStart()
+				return false
+			}
+			m.cfg, tsaClient, allowBB = cfg, next, bb
+		}
 	}
 
-	decision, ok := m.approve(ctx)
-	if !ok {
-		m.postFiles()
+	outputs, settled := resolveOutputsIn(m.win, m.messages, m.c, m.inputs, m.cfg.OutputFolder, m.cfg.OutputSuffix, m.force)
+	if !settled {
+		m.deny()
+		m.backToStart()
+		return false
+	}
+
+	// Either question above puts its own screen up. Whichever way they
+	// were answered, the progress screen is what covers the card being
+	// opened — the slowest thing that happens with nothing to show for
+	// it.
+	m.postPreparingCard()
+
+	session, err := openInteractiveSession(ctx, keysource.Thumbprint(m.selected), m.win.Handle())
+	if err != nil {
+		m.fail(err)
+		return false
+	}
+	defer func() { _ = session.Close() }()
+
+	m.runBatch(ctx, consentDecision{
+		approved:   true,
+		thumbprint: m.selected,
+		session:    session,
+		level:      level,
+		tsaClient:  tsaClient,
+		allowBB:    allowBB,
+		outputs:    outputs,
+		cfg:        m.cfg,
+	})
+	return false
+}
+
+// backToStart is where cancelling a question asked after the approval
+// lands: the document list when there is one, and nowhere otherwise —
+// a run that brought its own documents has nothing to go back to, so
+// the window closes and the loop ends on the next cancel.
+func (m *mainWindow) backToStart() {
+	if m.documentsSupplied {
+		m.exit = 0
+		close(m.closed)
 		return
 	}
-	defer func() { _ = decision.session.Close() }()
+	m.selected = ""
+	m.show(stepDocuments)
+}
 
-	m.runBatch(ctx, decision)
+// readInputs reads every queued document for the digest the batch
+// fingerprint is built from (SPEC §6.6).
+func (m *mainWindow) readInputs() {
+	items := m.queue.Items()
+	inputs := make([]interactiveInput, 0, len(items))
+	for _, it := range items {
+		in, err := newInteractiveInput(it.Path)
+		if err != nil {
+			// A document that cannot even be read for its digest is
+			// not something to ask consent about. It is reported in
+			// the queue instead, where the rest of the batch's own
+			// failures are.
+			slog.Warn("signing window: a document could not be read for the batch fingerprint",
+				"error", err)
+			in = interactiveInput{path: it.Path, digest: nil}
+		}
+		inputs = append(inputs, in)
+	}
+	m.inputs = inputs
 }
 
 // runBatch signs the queue and shows the report.
@@ -510,6 +776,14 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	trustStore := interactiveTrustStore(ctx)
 	stampOpts := stampOptionsFor(m.c, m.cfg)
 
+	// SPEC §12.8: a timestamp authority that stops answering mid-batch
+	// presents the choice, it does not end the batch. The question has
+	// to be asked on the goroutine that owns the window's messages,
+	// which is this one — so the signing goroutine hands a reply
+	// channel across and waits for the answer.
+	tsaAsk := make(chan chan tsaAnswer)
+	tsaClient, allowBB := d.tsaClient, d.allowBB
+
 	// The run is on its own goroutine so the message loop keeps
 	// answering — Stop must reach the runner while it is signing, and a
 	// window that stops repainting mid-batch is the freeze F6 §3 asks
@@ -518,19 +792,48 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	go func() {
 		reportCh <- runner.Run(ctx, &m.queue, func(rctx context.Context, i int, item jobs.Item) (jobs.Outcome, error) {
 			out := d.outputs[i]
-			result, err := signInteractiveOne(rctx, item.Path, wrapped, interactiveSignOptions{
+			opts := interactiveSignOptions{
 				level:      d.level,
 				trustStore: trustStore,
-				tsaClient:  d.tsaClient,
+				tsaClient:  tsaClient,
 				outPath:    out.path,
 				overwrite:  out.overwrite,
-				allowBB:    d.allowBB,
+				allowBB:    allowBB,
 				stamp:      stampOpts,
-			})
+			}
+			var result *pades.Result
+			var err error
+			for {
+				result, err = signInteractiveOne(rctx, item.Path, wrapped, opts)
+				if err == nil || !isTSAFailure(err) {
+					break
+				}
+				reply := make(chan tsaAnswer, 1)
+				select {
+				case tsaAsk <- reply:
+				case <-rctx.Done():
+					return jobs.Outcome{}, err
+				}
+				answer := <-reply
+				if !answer.proceed {
+					return jobs.Outcome{}, err
+				}
+				// The answer holds for every document after this one
+				// too: a batch of a hundred must not ask a hundred
+				// times about one dead authority.
+				tsaClient, allowBB = answer.client, answer.allowBB
+				opts.tsaClient, opts.allowBB = answer.client, answer.allowBB
+			}
 			if err != nil {
 				return jobs.Outcome{}, err
 			}
-			return jobs.Outcome{OutputPath: out.path, AchievedLevel: string(result.AchievedLevel)}, nil
+			return jobs.Outcome{
+				OutputPath:    out.path,
+				AchievedLevel: string(result.AchievedLevel),
+				// A remembered position that did not fit this document
+				// as it stood is reported, not hidden (F6b §3).
+				StampAdjusted: result.StampMoved || result.StampPageFellBack,
+			}, nil
 		}, jobs.Hooks{
 			OnProgress: func(p jobs.Progress) { m.postQueue(p, runner.Stopped()) },
 		})
@@ -558,17 +861,37 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 					m.postQueue(jobs.Progress{Phase: jobs.PhaseSigning, Total: m.queue.Len()}, true)
 				}
 			}
+		case reply := <-tsaAsk:
+			// The timestamp authority stopped answering. The same three
+			// actions as before signing began, now about an authority
+			// that was actually tried.
+			cfg, client, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonUnreachable)
+			m.cfg = cfg
+			reply <- tsaAnswer{client: client, allowBB: bb, proceed: proceed}
+			if proceed {
+				// The window is showing the question; put the queue
+				// back before the next document finishes.
+				m.postQueue(jobs.Progress{Phase: jobs.PhaseSigning, Total: m.queue.Len()}, runner.Stopped())
+			}
 		case paths := <-m.dropped:
 			// Files dropped mid-batch are not silently lost, and not
 			// added to a batch already approved either — the consent
 			// screen approved a specific set (SPEC §6.5). They wait.
-			slog.Info("main window: files dropped during a run are ignored", "count", len(paths))
+			slog.Info("signing window: files dropped during a run are ignored", "count", len(paths))
 		}
 	}
 
 	m.report = &report
 	m.recordAudit(d, report)
 	m.postReport(report)
+}
+
+// tsaAnswer is what the message loop tells the signing goroutine after
+// asking SPEC §12.8's question mid-batch.
+type tsaAnswer struct {
+	client  *tsa.Client
+	allowBB bool
+	proceed bool
 }
 
 // stampPageNumber turns the configured page selection into the page
@@ -614,9 +937,22 @@ func (m *mainWindow) recordAudit(d consentDecision, report jobs.Report) {
 
 // ---- queue and report payloads -------------------------------------
 
+// postPreparingCard is the progress screen before there is any progress
+// to report: the queue with every document still waiting, the label
+// SPEC §12.9 asks for, and an indeterminate bar rather than a
+// percentage — nothing has been signed, so 0% would be a number
+// pretending to be information.
+//
+// It is the same screen jobs.Runner's own first progress hook posts, in
+// the same phase, so nothing changes on screen when the run begins.
+func (m *mainWindow) postPreparingCard() {
+	m.postQueue(jobs.Progress{Phase: jobs.PhasePreparingCard, Total: m.queue.Len()}, false)
+}
+
 func (m *mainWindow) postQueue(p jobs.Progress, stopping bool) {
+	m.showingReport = false
 	if err := m.win.PostJSON(m.queuePayload(m.queue.Items(), p, stopping)); err != nil {
-		slog.Warn("main window: posting progress failed", "error", err)
+		slog.Warn("signing window: posting progress failed", "error", err)
 	}
 }
 
@@ -755,9 +1091,37 @@ func (m *mainWindow) postReport(r jobs.Report) {
 		"levelText":     levelText,
 		"canOpenOutput": r.OutputDir != "",
 		"abortMessage":  abortMessage,
+		// F6b §3: a remembered position reused across a batch of
+		// differently shaped documents is adjusted to fit some of them,
+		// and the person is told how many rather than left to notice.
+		"stampAdjusted": stampAdjustedText(m.c, r.StampAdjusted),
+		// SPEC §18.11: the level a batch actually reached is stated,
+		// and B-B — a signature with no proof of when it was made —
+		// says so in words rather than being left to read as just
+		// another level.
+		"levelIntent": achievedLevelIntent(r.AchievedLevel),
+		"levelNote":   achievedLevelNote(m.c, r.AchievedLevel),
+		// Signing more means going back to a document list, which a run
+		// that brought its own documents does not have.
+		"canSignMore": !m.documentsSupplied,
 	}
+	m.showingReport = true
 	if err := m.win.PostJSON(payload); err != nil {
-		slog.Warn("main window: posting the report failed", "error", err)
+		slog.Warn("signing window: posting the report failed", "error", err)
+	}
+}
+
+// stampAdjustedText says how many documents needed the saved stamp
+// position moved to fit them. Empty when none did, which is the
+// ordinary case and deserves no line of its own.
+func stampAdjustedText(c *i18n.Catalogue, n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n == 1:
+		return c.T("sign.stamp_adjusted_one")
+	default:
+		return fmt.Sprintf(c.T("sign.stamp_adjusted_many"), n)
 	}
 }
 
@@ -785,7 +1149,7 @@ func (m *mainWindow) openOutputFolder() {
 	}
 	cmd := exec.Command("explorer.exe", m.report.OutputDir) //nolint:gosec // a path this process computed, never page input
 	if err := cmd.Start(); err != nil {
-		slog.Warn("main window: opening the output folder failed", "error", err)
+		slog.Warn("signing window: opening the output folder failed", "error", err)
 	}
 }
 
@@ -800,14 +1164,14 @@ func (m *mainWindow) exportReport() {
 	dir, ok, err := ui.ChooseFolder(m.win.Handle(), m.c.T("main.export_report_title"), m.cfg.OutputFolder)
 	if err != nil || !ok {
 		if err != nil {
-			slog.Warn("main window: the folder chooser failed", "error", err)
+			slog.Warn("signing window: the folder chooser failed", "error", err)
 		}
 		return
 	}
 	name := fmt.Sprintf("liro-report-%s.txt", time.Now().Format("20060102-150405"))
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(m.reportText(*m.report)), 0o600); err != nil {
-		slog.Warn("main window: writing the report failed", "error", err)
+		slog.Warn("signing window: writing the report failed", "error", err)
 		m.postStatus(m.c.T("main.export_report_failed"), "negative")
 		return
 	}
@@ -845,6 +1209,6 @@ func (m *mainWindow) postStatus(text, intent string) {
 	if err := m.win.PostJSON(map[string]any{
 		"type": "status", "text": text, "intent": intent,
 	}); err != nil {
-		slog.Warn("main window: posting a status line failed", "error", err)
+		slog.Warn("signing window: posting a status line failed", "error", err)
 	}
 }

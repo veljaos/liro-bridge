@@ -106,8 +106,8 @@ func TestADropReachesTheListItLandsIn(t *testing.T) {
 	}
 	win, err := ui.NewWindow(ui.Options{
 		Title:          c.T("main.title"),
-		Width:          mainWindowWidth,
-		Height:         mainWindowHeight,
+		Width:          stepDocumentsWidth,
+		Height:         stepDocumentsHeight,
 		Assets:         assetsFS,
 		VirtualHost:    liroVirtualHost,
 		StartPage:      "/pages/main.html",
@@ -163,15 +163,26 @@ func TestADropReachesTheListItLandsIn(t *testing.T) {
 	waitForRows(4)
 
 	// The same two again: refused, said out loud, and the list unchanged.
+	//
+	// The list is already four rows long, so waiting for a row count
+	// says nothing about whether the repeats have been handled yet.
+	// What is waited for is the sentence about them.
 	drop(paths[3])
 	drop(paths[2])
+	notices := ""
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
+		notices = evalText(t, win, "document.getElementById('notices').textContent")
+		if notices != "" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if notices == "" {
+		t.Fatal("a repeated document was refused without the window saying so")
+	}
 	waitForRows(4)
 	if m.queue.Len() != 4 {
 		t.Fatalf("the queue holds %d documents after four were dropped and two repeated", m.queue.Len())
-	}
-	notices := evalText(t, win, "document.getElementById('notices').textContent")
-	if notices == "" {
-		t.Fatal("a repeated document was refused without the window saying so")
 	}
 	list := evalText(t, win, "document.getElementById('file-list').textContent")
 	for _, name := range []string{"TEST 1.pdf", "TEST 2.pdf", "TEST 3.pdf", "TEST 4.pdf"} {

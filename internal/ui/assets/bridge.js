@@ -7,9 +7,34 @@
 
   var strings = {};
 
+  // What the click that sent "approve" meant. The page->Go message
+  // surface stays at exactly three types (D-083), so a button reports
+  // what it was here and Go reads the record through ExecuteScript's
+  // own return value. Shared by every page, because every page in the
+  // signing flow now has more than one thing a click can mean — Back,
+  // at the very least.
+  var pendingAction = null;
+
+  window.__liroAction = function () {
+    var a = pendingAction;
+    pendingAction = null;
+    return JSON.stringify(a || {});
+  };
+
+  window.liroAct = function (action, extra) {
+    pendingAction = Object.assign({ action: action }, extra || {});
+    window.liroSend("approve");
+  };
+
   window.__liroReceive = function (payload) {
     if (!payload || typeof payload !== "object") return;
-    if (payload.type === "init" && payload.strings) {
+    // Whichever payload carries them, whatever its type. A navigation
+    // is a fresh document with an empty table, and the payload that
+    // refills it is not always the one that renders the first screen:
+    // the signing window navigates to its main page on the way to the
+    // progress screen, and that page's document list must not be shown
+    // on the way past (signflow_windows.go's gotoPage).
+    if (payload.strings) {
       strings = payload.strings;
     }
     if (typeof window.__liroOnMessage === "function") {
@@ -69,6 +94,37 @@
       el.appendChild(detail);
     });
     el.hidden = false;
+  };
+
+  // renderStep draws the step header every step of the signing flow
+  // carries: the way back on the left, and where you are on the right.
+  // A missing or absent step object hides the header outright, which is
+  // what a window that is not a step of anything gets — Settings, and a
+  // request that carries its own answers and shows the approval alone.
+  //
+  // step: {index, total, back, backText, label}. index is 1-based.
+  window.liroRenderStep = function (step) {
+    var host = document.getElementById("step-header");
+    if (!host) return;
+    if (!step || !step.total) {
+      host.hidden = true;
+      return;
+    }
+    host.hidden = false;
+    host.setAttribute("aria-label", step.label || "");
+
+    var back = document.getElementById("step-back-btn");
+    back.hidden = step.back !== true;
+    window.liroSetText(back, step.backText || "");
+
+    var dots = document.getElementById("step-dots");
+    dots.innerHTML = "";
+    for (var i = 1; i <= step.total; i++) {
+      var dot = document.createElement("span");
+      dot.className = "liro-steps-dot" +
+        (i === step.index ? " liro-steps-dot-current" : (i < step.index ? " liro-steps-dot-done" : ""));
+      dots.appendChild(dot);
+    }
   };
 
   // applyStaticStrings resolves every element with data-i18n to

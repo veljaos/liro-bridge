@@ -23,6 +23,9 @@ type Document struct {
 	cache      map[int]Object
 	objStmData map[int][]Object // decoded contents of each object stream, by its own object number
 	resolving  map[int]bool     // objects currently being resolved, breaking self-referential cycles
+
+	pageNums []int // page object numbers in reading order, walked once by Pages
+	pageErr  error // why that walk failed, so it is not retried on every page change
 }
 
 // Data returns the document's original bytes, exactly as parsed. Callers
@@ -186,7 +189,7 @@ func (d *Document) objectStreamContents(stmNum int) ([]Object, error) {
 	if !ok {
 		return nil, fmt.Errorf("pdf: object stream %d is not a stream", stmNum)
 	}
-	decoded, err := decodeStream(stream.Dict, stream.Raw)
+	decoded, err := decodeStream(d.Resolve, stream.Dict, stream.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("pdf: decoding object stream %d: %w", stmNum, err)
 	}

@@ -27,17 +27,6 @@ main {
   gap: var(--liro-space-3);
 }
 
-/* consent.html's five states are all <main>, toggled with the [hidden]
-   attribute (consent.js's showState) rather than a class — an author
-   stylesheet's plain "main { display: flex }" above outranks the
-   browser's own "[hidden] { display: none }" default regardless of
-   selector specificity, because author styles always beat user-agent
-   styles in the cascade. Without this rule every state rendered at
-   once, stacked, the moment `main` got a display of its own. */
-main[hidden] {
-  display: none;
-}
-
 #signer-name,
 #document-count {
   margin: 0;
@@ -111,53 +100,6 @@ main[hidden] {
 }
 
 #fingerprint {
-  font-family: var(--liro-font-family-mono);
-  color: var(--liro-color-text-secondary);
-  overflow-wrap: anywhere;
-}
-
-/* Every remaining free-text value in this window: the output path on
-   the done screen, and the failure message. Neither is bounded in
-   length by anything this project controls. */
-#done-output,
-#done-summary {
-  overflow-wrap: anywhere;
-}
-
-/* Task 1 (F5 second-real-run review): the timestamp choice's three
-   actions. Stacked, full width, in the order the choice is described —
-   proceeding without a timestamp first, configuring second, cancelling
-   last — rather than crowded into one right-aligned row where the
-   longest label would decide the layout.
-
-   Task 3 (F5 third-real-run review) settled their weights, which the
-   order alone had left ambiguous: signing without a timestamp is the
-   primary action, in brand blue, because with no default timestamp
-   authority configured — which is what this project ships (D-095) — it
-   is what most people reaching this screen will choose. Configuring an
-   authority is the neutral secondary beneath it, and Cancel is quieter
-   than both, so that two neutral buttons do not sit here reading as
-   equals. */
-.tsa-actions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--liro-space-2);
-}
-
-#tsa-reason {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-#done-level {
-  margin: 0;
-  text-align: left;
-}
-
-/* Task 4: the existing output path, in monospace, wrapping rather than
-   widening the window — a path is as long as the user's folder
-   structure makes it. */
-.output-path {
   font-family: var(--liro-font-family-mono);
   color: var(--liro-color-text-secondary);
   overflow-wrap: anywhere;

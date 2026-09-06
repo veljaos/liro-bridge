@@ -498,15 +498,44 @@ If a value is needed that does not exist as a token, the answer is to add a toke
 
 ### 10.2 Windows
 
-Three, all small, all keyboard-navigable, all trilingual:
+All small, all keyboard-navigable, all trilingual:
 
 | Window | Purpose |
 |---|---|
+| Signing | One window whose content changes: the documents, the certificate picker and the approval, how to sign, where the signature goes, then the progress and the report. |
+| Placement | The page of a document with the stamp on it, dragged where it belongs. Opened from the signing window and returning to it. |
 | Pairing | "«App» wants to connect." Approve / Deny. |
-| Consent | Certificate picker, document count, fingerprint, file list, progress. |
 | Settings | Language, TSA, output naming, audit export, update preferences. |
 
 Plus a tray icon with a short menu.
+
+**The signing window is one window.** It was several — a window for the
+documents, a window for the approval, a window for the signing method —
+each opening on top of the last, each taking the foreground, each
+arriving somewhere else on the screen. Every step now replaces the
+content of the window already open, and the window resizes to what that
+step needs. The placement picker is the one exception, because it has to
+show a page of the document at a size worth dragging on.
+
+**No step of that window is ever visible on the way to another.** A step
+is a screen a person is being asked something on; showing one for a
+moment while the program is on its way somewhere else tells them the
+flow went backwards. A page that has just been navigated to shows
+nothing until the step that navigated to it says which screen it wants,
+and the screen that covers a wait is the one that describes the wait —
+"Preparing card…" from the moment Sign is pressed, not from the moment
+the first signature completes.
+
+**A step that asks nothing is not a step.** If a screen has no question
+on it, its content belongs on the screen before it or in the thing it
+was about to open, and the step comes out.
+
+**A window's content is served from a virtual host, and that host's name
+must not end in `.local`.** `.local` is reserved for multicast DNS (RFC
+6762): Windows resolves such a name through mDNS before the virtual-host
+mapping is consulted, and every page load pays a fixed ~2 s for it —
+measured. Use a name under `.invalid` (RFC 2606), which is permanently
+reserved and can never resolve.
 
 ### 10.3 Accessibility
 
@@ -583,6 +612,8 @@ Serbian CAs issue **two** certificates per card: one for signing, one for authen
 Consequences:
 
 - The `contentCommitment` filter is not stylistic. It is the only thing that separates them.
+- **A listing shows only signing certificates by default.** The authentication certificate is not a choice: it cannot sign, and on a Halcom card it carries the same name as the one that can. Showing it disabled — which F1 §6.1 asked for, on the reasoning that hiding it would make a user think their card was broken — shows the person their own name twice, the second time struck through, and makes every list twice as long for nothing. `certs --all` still shows everything. See docs/decisions.md.
+- **A *signing* certificate that cannot be used right now stays visible, disabled, with its reason.** An absent card and an expired certificate are real choices temporarily unavailable, and hiding *those* is what would make a card look broken.
 - **The certificate list must never rely on CN alone.** Every row shows: the name, the role derived from KeyUsage ("for signing" / "for login"), and the last four characters of the SHA-1 thumbprint.
 - Certificate choice is explicit per session. There is no "remember last used" — on a bookkeeper's machine, several clients' certificates may be installed at once, and a remembered default becomes a wrong-signer incident.
 

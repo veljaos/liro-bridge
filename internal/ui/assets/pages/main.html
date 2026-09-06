@@ -2,16 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<link rel="stylesheet" href="https://liro.local/tokens.css" />
-<link rel="stylesheet" href="https://liro.local/intents.css" />
-<link rel="stylesheet" href="https://liro.local/pages/main.css" />
+<link rel="stylesheet" href="https://liro.invalid/tokens.css" />
+<link rel="stylesheet" href="https://liro.invalid/intents.css" />
+<link rel="stylesheet" href="https://liro.invalid/pages/main.css" />
 </head>
 <body class="liro-page">
 
-<!-- F6 §1: the working surface. Files are gathered here, the consent
-     window is what approves them, and the queue and report below are
-     where the batch is watched and read. -->
-<main id="state-files">
+<!-- The signing window. One window, whose content changes: the
+     documents step is this page, the certificate step and the signing
+     method are pages this same window navigates to, and the batch
+     comes back here to be watched and read. Nothing opens on top of
+     anything except the placement picker, which needs the room to show
+     a page. -->
+<header id="step-header" class="liro-steps liro-fixed-region" role="group" hidden>
+  <button id="step-back-btn" class="liro-btn liro-btn-quiet liro-btn-compact liro-steps-back" hidden></button>
+  <div id="step-dots" class="liro-steps-dots" aria-hidden="true"></div>
+</header>
+
+<!-- F6 §1: step 1. Which documents. -->
+<main id="state-files" hidden>
   <div class="files-header liro-fixed-region">
     <p class="liro-display" id="files-count"></p>
     <div id="notices"></div>
@@ -27,8 +36,8 @@
   </section>
 
   <div class="files-footer liro-fixed-region">
-    <!-- Step 1 asks one thing: which documents. How to sign is step 3's
-         question, in its own window, so it is not also asked here. -->
+    <!-- This step asks one thing: which documents. How to sign is the
+         method step's question, so it is not also asked here. -->
     <div class="liro-row setting-row">
       <span class="liro-text-small" data-i18n="main.output_label"></span>
       <span class="setting-value">
@@ -43,7 +52,10 @@
     <div class="actions">
       <button id="clear-btn" class="liro-btn liro-btn-quiet" data-i18n="main.clear"></button>
       <button id="browse-btn" class="liro-btn liro-btn-secondary" data-i18n="main.browse"></button>
-      <button id="sign-btn" class="liro-btn liro-btn-primary" data-i18n="main.sign" disabled></button>
+      <!-- The label is Go's: this step ends in Next when a certificate
+           and a method still have to be chosen, and in Sign only when
+           nothing else is being asked. -->
+      <button id="sign-btn" class="liro-btn liro-btn-primary" disabled></button>
     </div>
   </div>
 </main>
@@ -74,6 +86,9 @@
     <p class="liro-display" id="report-title"></p>
     <p id="report-counts"></p>
     <p id="report-abort" class="liro-error-box" hidden></p>
+    <!-- F6b §3: which documents a saved stamp position had to be moved
+         to fit. Absent when none of them did. -->
+    <p id="report-stamp-adjusted" class="liro-text-small liro-text-secondary" hidden></p>
   </div>
 
   <section id="report-body" class="liro-scroll-region">
@@ -92,16 +107,79 @@
       <span class="liro-text-small" data-i18n="main.report_level_label"></span>
       <span class="liro-text-small" id="report-level"></span>
     </div>
+    <!-- A signature with no proof of when it was made says so, in
+         words, rather than leaving B-B to be read as just another
+         level (SPEC §12.8/§18.11). -->
+    <p id="report-level-note" class="liro-text-small liro-outcome liro-outcome-warning" hidden></p>
     <p id="report-status" class="liro-text-small" hidden></p>
+    <!-- Someone who has just signed a hundred documents is finished.
+         Someone who wants more will look for it: Finish is the primary
+         action and closes the window, signing more is the neutral one
+         beside it, and the folder button is unchanged.
+
+         Two rows rather than four buttons on one, because four do not
+         fit on one line in any of the three languages — measured, not
+         assumed — and left to wrap on their own they put Finish alone
+         on a line of its own in two of them. What goes with what is
+         decided here instead: what to do with the documents just
+         written, and then what to do next. -->
     <div class="actions">
       <button id="report-export-btn" class="liro-btn liro-btn-quiet" data-i18n="main.export_report"></button>
       <button id="report-open-btn" class="liro-btn liro-btn-secondary" data-i18n="main.open_output"></button>
-      <button id="report-again-btn" class="liro-btn liro-btn-primary" data-i18n="main.new_batch"></button>
+    </div>
+    <div class="actions report-actions-next">
+      <button id="report-again-btn" class="liro-btn liro-btn-secondary" data-i18n="main.new_batch"></button>
+      <button id="report-finish-btn" class="liro-btn liro-btn-primary" data-i18n="main.finish"></button>
     </div>
   </div>
 </main>
 
-<script src="https://liro.local/bridge.js"></script>
-<script src="https://liro.local/pages/main.js"></script>
+<!-- SPEC §12.8's choice, made by the person signing, after the
+     approval and before the card is touched (D-095). Never preselected,
+     and never taken silently — "Sign without a timestamp" says what it
+     produces (B-B) right on the button's own explanation, above it. -->
+<main id="state-tsachoice" hidden>
+  <p class="liro-display" data-i18n="consent.tsa_choice_title"></p>
+  <p id="tsa-reason" class="liro-text-secondary"></p>
+  <p class="liro-text-small" data-i18n="consent.tsa_choice_explain"></p>
+  <div class="stacked-actions">
+    <button id="tsa-without-btn" class="liro-btn liro-btn-primary" data-i18n="consent.tsa_save_without_timestamp"></button>
+    <button id="tsa-configure-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.tsa_configure"></button>
+    <button id="tsa-cancel-btn" class="liro-btn liro-btn-quiet" data-i18n="consent.cancel"></button>
+  </div>
+</main>
+
+<!-- The output file already exists. SPEC §12.11 forbids replacing it
+     silently, which is why this screen exists at all. Saving under a
+     different name is the primary action: it is the one that loses
+     nothing. -->
+<main id="state-outputexists" hidden>
+  <p class="liro-display" data-i18n="consent.output_exists_title"></p>
+  <p class="liro-text-secondary" data-i18n="consent.output_exists_explain"></p>
+  <div class="liro-field">
+    <span class="liro-field-label liro-text-small" data-i18n="consent.output_exists_path_label"></span>
+    <code id="output-exists-path" class="output-path"></code>
+  </div>
+  <div class="stacked-actions">
+    <button id="output-rename-btn" class="liro-btn liro-btn-primary"></button>
+    <button id="output-overwrite-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.output_exists_overwrite"></button>
+    <button id="output-cancel-btn" class="liro-btn liro-btn-quiet" data-i18n="consent.cancel"></button>
+  </div>
+</main>
+
+<!-- Something went wrong before a single document could be signed —
+     the card, the timestamp authority, the certificate. The report
+     screen is for a batch that ran; this is for one that never did. -->
+<main id="state-failed" hidden>
+  <p class="liro-display" data-i18n="consent.state_failed"></p>
+  <p id="failed-message" class="liro-error-box"></p>
+  <div class="actions">
+    <button id="copy-details-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.copy_technical_details"></button>
+    <button id="close-failed-btn" class="liro-btn liro-btn-primary" data-i18n="consent.close"></button>
+  </div>
+</main>
+
+<script src="https://liro.invalid/bridge.js"></script>
+<script src="https://liro.invalid/pages/main.js"></script>
 </body>
 </html>

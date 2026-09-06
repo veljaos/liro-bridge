@@ -191,7 +191,7 @@ func parseXrefStreamAt(data []byte, offset int64) (map[int]xrefEntry, Dict, int6
 	if stream.Dict.GetName(Name("Type")) != "XRef" {
 		return nil, nil, 0, 0, fmt.Errorf("pdf: object at offset %d is not an XRef stream", offset)
 	}
-	decoded, err := decodeStream(stream.Dict, stream.Raw)
+	decoded, err := decodeStream(nil, stream.Dict, stream.Raw)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("pdf: decoding xref stream: %w", err)
 	}

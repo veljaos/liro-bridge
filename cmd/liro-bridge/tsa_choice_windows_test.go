@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/audit"
+	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/pades"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
@@ -60,32 +62,30 @@ func TestLowerLevelReportsTheWeakestLevelReached(t *testing.T) {
 	}
 }
 
-// TestAchievedLevelDisplayMarksBB proves B-B is never rendered as a
-// bare level string: it carries its own explanation, in the warning
-// intent family (never a colour chosen here — D-093).
-func TestAchievedLevelDisplayMarksBB(t *testing.T) {
+// TestAchievedLevelMarksBB proves B-B is never left to read as just
+// another level: it is coloured in the warning intent family (never a
+// colour chosen here - D-093) and carries its own sentence beside it.
+func TestAchievedLevelMarksBB(t *testing.T) {
 	c := i18n.Load("en")
 
-	text, intent := achievedLevelDisplay(c, string(pades.LevelBB))
-	if intent != string(ui.IntentWarning) {
-		t.Errorf("B-B intent = %q, want %q", intent, ui.IntentWarning)
+	if got := achievedLevelIntent(string(pades.LevelBB)); got != string(ui.IntentWarning) {
+		t.Errorf("B-B intent = %q, want %q", got, ui.IntentWarning)
 	}
-	if text != c.T("consent.level_bb") {
-		t.Errorf("B-B text = %q, want the catalogue's own %q", text, c.T("consent.level_bb"))
+	if got := achievedLevelNote(c, string(pades.LevelBB)); got != c.T("consent.level_bb") {
+		t.Errorf("B-B note = %q, want the catalogue's own %q", got, c.T("consent.level_bb"))
 	}
 
 	for _, level := range []pades.Level{pades.LevelBT, pades.LevelBLT} {
-		text, intent := achievedLevelDisplay(c, string(level))
-		if intent != string(ui.IntentPositive) {
-			t.Errorf("%s intent = %q, want %q", level, intent, ui.IntentPositive)
+		if got := achievedLevelIntent(string(level)); got != string(ui.IntentPositive) {
+			t.Errorf("%s intent = %q, want %q", level, got, ui.IntentPositive)
 		}
-		if text == "" {
-			t.Errorf("%s rendered no text at all", level)
+		if got := achievedLevelNote(c, string(level)); got != "" {
+			t.Errorf("%s carried a warning of its own: %q", level, got)
 		}
 	}
 
-	if text, intent := achievedLevelDisplay(c, ""); text != "" || intent != "" {
-		t.Errorf("no level rendered %q/%q, want both empty rather than a guess", text, intent)
+	if got := achievedLevelIntent(""); got != "" {
+		t.Errorf("no level rendered intent %q, want none rather than a guess", got)
 	}
 }
 
@@ -119,17 +119,21 @@ func TestAuditEntryRecordsTheAchievedLevel(t *testing.T) {
 	}
 }
 
-// TestConsentTSAChoiceScreenRoundTrips is the real-window half: the
-// choice screen renders its three actions with real text, and each of
-// the two proceeding actions reaches Go as an approve whose recorded
-// choice Window.Eval reads back — the page->Go message surface staying
-// at exactly three types (D-083).
-func TestConsentTSAChoiceScreenRoundTrips(t *testing.T) {
+// TestTSAChoiceScreenRoundTrips is the real-window half: the choice
+// screen renders its three actions with real text, and each of the two
+// proceeding actions reaches Go as an approve whose recorded choice
+// Window.Eval reads back — the page->Go message surface staying at
+// exactly three types (D-083).
+//
+// It is asked on the page that carries the progress and the report,
+// because that is where the flow is by the time it is asked: after the
+// approval and before the card.
+func TestTSAChoiceScreenRoundTrips(t *testing.T) {
 	c := i18n.Load("sr-Latn")
-	win, messages := sharedConsentWindow(t)
-	postConsentInitForTest(t, win, c)
+	m, messages := testMainWindow(t, "sr-Latn", config.Default(), nil)
+	win := m.win
 
-	if err := win.PostJSON(consentTSAChoicePayload(consent.TSAReasonNotConfigured, c)); err != nil {
+	if err := win.PostJSON(askTSAChoicePayload(consent.TSAReasonNotConfigured, c)); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 	if hidden := evalString(t, win, "String(document.getElementById('state-tsachoice').hidden)"); hidden != "false" {
@@ -168,7 +172,7 @@ func TestConsentTSAChoiceScreenRoundTrips(t *testing.T) {
 
 	// Re-entering the screen clears the previous answer: an approve that
 	// arrives with no fresh choice must never replay the last one.
-	if err := win.PostJSON(consentTSAChoicePayload(consent.TSAReasonUnreachable, c)); err != nil {
+	if err := win.PostJSON(askTSAChoicePayload(consent.TSAReasonUnreachable, c)); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 	if got := readTSAChoice(win); got != "" {
@@ -179,39 +183,30 @@ func TestConsentTSAChoiceScreenRoundTrips(t *testing.T) {
 	}
 }
 
-// TestConsentDoneScreenStatesTheAchievedLevel proves the level a batch
-// reached is on screen, in words, not merely absent from the claims —
-// SPEC §12.8's "visibly marked as such".
-func TestConsentDoneScreenStatesTheAchievedLevel(t *testing.T) {
+// TestTheReportStatesTheAchievedLevel proves the level a batch reached
+// is on screen, in words, not merely absent from the claims — SPEC
+// §12.8's "visibly marked as such". The report is where a finished
+// batch says it now; there is no separate done screen on a separate
+// window any more.
+func TestTheReportStatesTheAchievedLevel(t *testing.T) {
 	c := i18n.Load("sr-Latn")
-	win, _ := sharedConsentWindow(t)
-	postConsentInitForTest(t, win, c)
+	m, _ := testMainWindow(t, "sr-Latn", config.Default(), nil)
 
-	done := consent.Progress{
-		State:         consent.StateDone,
-		Succeeded:     1,
-		OutputPath:    `C:\docs\document-signed.pdf`,
-		AchievedLevel: string(pades.LevelBB),
+	m.postReport(jobs.Report{Succeeded: 1, OutputDir: `C:\docs`, AchievedLevel: string(pades.LevelBB)})
+	if got := evalString(t, m.win, "document.getElementById('report-level').textContent"); got != string(pades.LevelBB) {
+		t.Errorf("report level = %q, want %q", got, pades.LevelBB)
 	}
-	if err := win.PostJSON(consentDonePayload(done, c)); err != nil {
-		t.Fatalf("PostJSON: %v", err)
+	if got := evalString(t, m.win, "document.getElementById('report-level').className"); got != "liro-text-small liro-outcome liro-outcome-warning" {
+		t.Errorf("report level class = %q, want the warning intent", got)
 	}
-	if got := evalString(t, win, "document.getElementById('done-level').textContent"); got != c.T("consent.level_bb") {
-		t.Errorf("done screen level = %q, want %q", got, c.T("consent.level_bb"))
+	if got := evalString(t, m.win, "document.getElementById('report-level-note').textContent"); got != c.T("consent.level_bb") {
+		t.Errorf("report level note = %q, want %q", got, c.T("consent.level_bb"))
 	}
-	if got := evalString(t, win, "document.getElementById('done-level').className"); got != "liro-outcome liro-outcome-warning" {
-		t.Errorf("done screen level class = %q, want the warning intent", got)
-	}
-}
 
-// postConsentInitForTest posts the init payload the real flow always
-// sends first — it is what resolves the page's static labels, so a test
-// that jumps straight to a later state would find every button blank
-// for a reason no user could ever hit.
-func postConsentInitForTest(t *testing.T, win ui.Window, c *i18n.Catalogue) {
-	t.Helper()
-	vm := consent.BuildViewModel(consent.ApplicationLocal, [][]byte{{1}}, []string{"document.pdf"}, nil)
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
-		t.Fatalf("PostJSON(init): %v", err)
+	// A timestamped batch says its level positively and needs no
+	// sentence of its own.
+	m.postReport(jobs.Report{Succeeded: 1, OutputDir: `C:\docs`, AchievedLevel: string(pades.LevelBLT)})
+	if got := evalString(t, m.win, "String(document.getElementById('report-level-note').hidden)"); got != "true" {
+		t.Error("a timestamped batch still carried the no-timestamp warning")
 	}
 }

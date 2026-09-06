@@ -109,6 +109,26 @@ type Config struct {
 	// and is unreachable from the stamp entirely (D-054/D-064).
 	StampShowDocumentID bool `json:"stampShowDocumentID"`
 
+	// StampX, StampY and StampPlacedPage are the position chosen in the
+	// placement window: the stamp's lower-left corner in the page's own
+	// coordinates, in points, and the page it was chosen on (F6b §3).
+	//
+	// They are read only when StampPosition is "custom", and they are
+	// the whole of what is remembered. One position rather than a named
+	// list of them: the need this answers is a person who signs the
+	// same shaped document over and over and wants the stamp under the
+	// same printed initials each time, which one position covers
+	// completely — see internal/placement.Saved for the rest of that
+	// reasoning.
+	//
+	// A saved page past the end of a particular document falls back to
+	// that document's last page, and a position off the edge of a
+	// smaller page is brought inside its margin; both are reported
+	// afterwards rather than refused.
+	StampX          float64 `json:"stampX"`
+	StampY          float64 `json:"stampY"`
+	StampPlacedPage int     `json:"stampPlacedPage"`
+
 	// OutputFolder is where signed documents are written. Empty — the
 	// default — means beside each input, which is F6 §4's own default
 	// and the only one that behaves sensibly for a batch gathered from
@@ -161,14 +181,21 @@ var validSignatureLevels = map[string]bool{
 	"b-lt": true,
 }
 
-// validStampPositions are the four corners SPEC §13.1 names. Explicit
-// x/y coordinates remain a command-line-only capability (--stamp-xy);
-// the window offers corners alone until the placement picker phase.
+// StampPositionCustom is the fifth value StampPosition can take: not a
+// corner, but the exact place chosen in the placement window and kept
+// in StampX, StampY and StampPlacedPage (F6b §3).
+const StampPositionCustom = "custom"
+
+// validStampPositions are the four corners SPEC §13.1 names, plus the
+// placed position F6b §2 adds. Explicit x/y coordinates are still a
+// command-line capability too (--stamp-xy); what is new is that the
+// window can now produce them.
 var validStampPositions = map[string]bool{
-	"bottom-right": true,
-	"bottom-left":  true,
-	"top-right":    true,
-	"top-left":     true,
+	"bottom-right":      true,
+	"bottom-left":       true,
+	"top-right":         true,
+	"top-left":          true,
+	StampPositionCustom: true,
 }
 
 // Default returns the configuration used when no file exists and when a
@@ -274,6 +301,17 @@ func validate(cfg *Config) {
 	if !validStampPositions[cfg.StampPosition] {
 		slog.Warn("config: invalid stampPosition, using default", "value", cfg.StampPosition, "default", defaultStampPosition)
 		cfg.StampPosition = defaultStampPosition
+	}
+	if cfg.StampPosition == StampPositionCustom && cfg.StampPlacedPage < 1 {
+		// "custom" with nothing placed is not a position; it is a
+		// half-written configuration, and the corner it falls back to
+		// is the one a stamp gets when nobody has said otherwise.
+		slog.Warn("config: stampPosition is custom but no position is stored, using default",
+			"default", defaultStampPosition)
+		cfg.StampPosition = defaultStampPosition
+	}
+	if cfg.StampPlacedPage < 0 {
+		cfg.StampPlacedPage = 0
 	}
 	if cfg.OutputSuffix == "" {
 		cfg.OutputSuffix = defaultOutputSuffix

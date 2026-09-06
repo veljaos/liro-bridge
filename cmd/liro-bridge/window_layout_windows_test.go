@@ -199,13 +199,23 @@ func assertScrolls(t *testing.T, win ui.Window, window, selector string) {
 	}
 }
 
+// withStepHeader adds the step header the certificate step really
+// carries. A layout measured without it is a layout measured on a
+// screen nobody sees — which is exactly how the method step came to
+// ship four points too short for its own third option.
+func withStepHeader(payload map[string]any) map[string]any {
+	m := newMainWindow(config.Default(), "sr-Cyrl")
+	payload["step"] = m.headerFor(stepCertificate)
+	return payload
+}
+
 func TestConsentWindowFitsWithSixCertificates(t *testing.T) {
 	c := i18n.Load("sr-Cyrl")
 	win, _ := sharedConsentWindow(t)
 
 	vm := consent.BuildViewModel(consent.ApplicationLocal,
 		[][]byte{{1}, {2}, {3}}, []string{"ugovor.pdf", "aneks.pdf", "izjava.pdf"}, sixCertificates())
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
+	if err := win.PostJSON(withStepHeader(buildConsentInit(c, vm))); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 
@@ -236,7 +246,7 @@ func TestConsentWindowFitsWithTenLongFileNames(t *testing.T) {
 		names = append(names, strings.Repeat("ugovor-o-poslovnoj-saradnji-", 6)+"0.pdf")
 	}
 	vm := consent.BuildViewModel(consent.ApplicationLocal, digests, names, sixCertificates())
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
+	if err := win.PostJSON(withStepHeader(buildConsentInit(c, vm))); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 	openConsentDetails(t, win)
@@ -245,34 +255,30 @@ func TestConsentWindowFitsWithTenLongFileNames(t *testing.T) {
 	assertButtonsVisible(t, win, "consent (ten long file names)", "#cert-list")
 }
 
-// TestConsentOtherScreensFitToo covers the states a batch passes
-// through after Approve — each has its own actions row.
-func TestConsentOtherScreensFitToo(t *testing.T) {
+// TestTheQuestionsAfterApprovalFitToo covers the three screens a batch
+// passes through between the approval and the first signature — each
+// has its own actions row, and each is now on the page that carries the
+// progress and the report rather than on a window of its own.
+func TestTheQuestionsAfterApprovalFitToo(t *testing.T) {
 	c := i18n.Load("sr-Cyrl")
-	win, _ := sharedConsentWindow(t)
+	m, _ := testMainWindow(t, "sr-Cyrl", config.Default(), nil)
 
-	done := consent.Progress{
-		State: consent.StateDone, Succeeded: 3, Failed: 0,
-		OutputPath:    `C:\Users\Veljko\Documents\Ugovori\2026\ugovor-o-poslovnoj-saradnji-potpisan.pdf`,
-		AchievedLevel: "B-B",
-	}
 	for _, tc := range []struct {
 		name    string
 		payload map[string]any
 	}{
-		{"done", consentDonePayload(done, c)},
-		{"tsaChoice", consentTSAChoicePayload(consent.TSAReasonNotConfigured, c)},
-		{"outputExists", consentOutputExistsPayload(
+		{"tsaChoice", askTSAChoicePayload(consent.TSAReasonNotConfigured, c)},
+		{"outputExists", askOutputExistsPayload(
 			`C:\Users\Veljko\Documents\Ugovori\ugovor-potpisan.pdf`,
 			`C:\Users\Veljko\Documents\Ugovori\ugovor-potpisan-2.pdf`, c)},
-		{"failed", consentFailedPayload(c.T("error.output_exists"), fmt.Errorf("output file already exists"), c)},
+		{"failed", askFailedPayload(c.T("error.output_exists"), fmt.Errorf("output file already exists"), c)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := win.PostJSON(tc.payload); err != nil {
+			if err := m.win.PostJSON(tc.payload); err != nil {
 				t.Fatalf("PostJSON: %v", err)
 			}
-			assertPageDoesNotScroll(t, win, "consent ("+tc.name+")", "#cert-list")
-			assertButtonsVisible(t, win, "consent ("+tc.name+")", "#cert-list")
+			assertPageDoesNotScroll(t, m.win, "signing window ("+tc.name+")", "#file-list")
+			assertButtonsVisible(t, m.win, "signing window ("+tc.name+")", "#file-list")
 		})
 	}
 }

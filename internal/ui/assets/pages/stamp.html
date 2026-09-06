@@ -2,39 +2,112 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<link rel="stylesheet" href="https://liro.local/tokens.css" />
-<link rel="stylesheet" href="https://liro.local/intents.css" />
-<link rel="stylesheet" href="https://liro.local/pages/stamp.css" />
+<link rel="stylesheet" href="https://liro.invalid/tokens.css" />
+<link rel="stylesheet" href="https://liro.invalid/intents.css" />
+<link rel="stylesheet" href="https://liro.invalid/pages/stamp.css" />
 </head>
 <body class="liro-page">
 
-<!-- Step 3 of three: how to sign. One question — visible or not, and
-     if visible, which corner — and then the signature happens.
-     Everything else the stamp can carry (which page, a reference line,
-     the identity document number) is a standing preference rather than
-     a decision about this batch: it is not on this screen at all when
-     the window is step 3, and is the whole of it when Settings opened
-     it. -->
-<main>
+<header id="step-header" class="liro-steps liro-fixed-region" role="group" hidden>
+  <button id="step-back-btn" class="liro-btn liro-btn-quiet liro-btn-compact liro-steps-back" hidden></button>
+  <div id="step-dots" class="liro-steps-dots" aria-hidden="true"></div>
+</header>
+
+<!-- The signing method: one choice with three outcomes, one under
+     another, each a button-sized target — the shape the eGovernment
+     portal uses and the people who will use this already know.
+
+     What an option reveals under itself is the rest of that same
+     answer, and only what is still to be decided. The remembered
+     coordinates are not that: someone choosing to place a stamp is
+     about to place it, and being told where it went last time is noise
+     at the moment of deciding. They are shown where they mean
+     something — inside the picker, where the same line is also the
+     position to go back to.
+
+     Everything else the stamp can carry — which page, a reference
+     line, the identity document number — is a standing preference
+     rather than a decision about this batch: absent when this is a
+     step of signing, and present when Settings opened it. -->
+<main id="state-method">
   <div class="liro-fixed-region">
-    <p class="liro-display" data-i18n="stampwindow.title"></p>
+    <p class="liro-display" id="stamp-title" data-i18n="stampwindow.title"></p>
     <p class="liro-text-secondary liro-text-small" id="stamp-subtitle"></p>
+    <!-- What the last action did, when it did something worth saying:
+         a document that could not be previewed, so the stamp is placed
+         by corner instead (F6b §5). The same payload and the same
+         markup the settings and audit log windows already use. -->
+    <div id="stamp-status" class="liro-fixed-region" hidden>
+      <p id="stamp-status-text" class="liro-status-text"></p>
+    </div>
   </div>
 
   <section class="liro-scroll-region stamp-form">
-    <div class="liro-field">
-      <label class="liro-field-label liro-text-small" for="stamp-mode" data-i18n="stampwindow.mode_label"></label>
-      <select id="stamp-mode"></select>
-    </div>
+    <!-- Native radios rather than ARIA-flavoured buttons: the grouping,
+         the arrow-key navigation and the "exactly one is chosen" rule
+         are the platform's, not this page's. Each one is visually
+         hidden inside its own card and is still what carries focus. -->
+    <div class="stamp-methods" id="stamp-methods" role="group" aria-labelledby="stamp-title">
+      <label class="stamp-method">
+        <input class="stamp-method-input" type="radio" name="stamp-method" id="method-placed" value="placed" />
+        <span class="stamp-method-icon" aria-hidden="true">
+          <!-- A page with a cursor over it: you say where. -->
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 3h9l5 5v6" />
+            <path d="M14 3v5h5" />
+            <path d="M5 3v16h6" />
+            <path d="M14 13l7 7-3 .6L16.4 24 14 13z" />
+          </svg>
+        </span>
+        <span class="stamp-method-label" data-i18n="stampwindow.method_placed"></span>
+      </label>
+      <!-- Changing or giving back a remembered position is a standing
+           preference, so it belongs to Settings. Signing reaches the
+           picker by choosing this method and pressing Sign. -->
+      <div class="stamp-method-extra" id="stamp-placed" hidden>
+        <div class="stamp-placed-actions" id="stamp-placed-actions" hidden>
+          <button type="button" id="stamp-place-btn" class="liro-btn liro-btn-secondary liro-btn-compact"></button>
+          <button type="button" id="stamp-placed-reset-btn" class="liro-btn liro-btn-quiet liro-btn-compact"></button>
+        </div>
+      </div>
 
-    <div class="liro-field" id="stamp-position-field">
-      <label class="liro-field-label liro-text-small" for="stamp-position" data-i18n="stampwindow.position_label"></label>
-      <select id="stamp-position"></select>
+      <label class="stamp-method">
+        <input class="stamp-method-input" type="radio" name="stamp-method" id="method-corners" value="corners" />
+        <span class="stamp-method-icon" aria-hidden="true">
+          <!-- A page with its four corners marked: you pick one. -->
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M6 9V6h3M15 6h3v3M18 15v3h-3M9 18H6v-3" />
+          </svg>
+        </span>
+        <span class="stamp-method-label" data-i18n="stampwindow.method_corners"></span>
+      </label>
+      <!-- The four corners, inline under the option that needs them and
+           nowhere else. Laid out as they sit on the page, so choosing
+           one is aiming rather than reading: top row above, bottom row
+           below. One click here and one on the primary action. -->
+      <div class="stamp-method-extra" id="stamp-corners" hidden>
+        <div class="stamp-corner-grid" id="stamp-corner-grid" role="group"></div>
+      </div>
+
+      <label class="stamp-method">
+        <input class="stamp-method-input" type="radio" name="stamp-method" id="method-none" value="none" />
+        <span class="stamp-method-icon" aria-hidden="true">
+          <!-- A page with nothing on it, struck through: nothing is
+               drawn, anywhere. -->
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 3h9l5 5v13H5z" />
+            <path d="M14 3v5h5" />
+            <path d="M4 20L20 4" />
+          </svg>
+        </span>
+        <span class="stamp-method-label" data-i18n="stampwindow.method_none"></span>
+      </label>
     </div>
 
     <!-- Standing preferences, not decisions about this batch: shown
-         when the window was opened from Settings, absent when it is
-         step 3 of signing. -->
+         when the window was opened from Settings, absent when this is a
+         step of signing. -->
     <div id="stamp-more" hidden>
       <div class="stamp-more-body">
         <div class="liro-field">
@@ -70,7 +143,7 @@
   </div>
 </main>
 
-<script src="https://liro.local/bridge.js"></script>
-<script src="https://liro.local/pages/stamp.js"></script>
+<script src="https://liro.invalid/bridge.js"></script>
+<script src="https://liro.invalid/pages/stamp.js"></script>
 </body>
 </html>

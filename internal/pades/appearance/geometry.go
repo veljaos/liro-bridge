@@ -12,7 +12,20 @@ import "fmt"
 const StampWidth = 190
 
 // Margin is the stamp's distance from the page edge, in points.
-const Margin = 24
+//
+// Twelve, superseding F6's twenty-four. The owner's instruction with the
+// placement window (F6b §2.5): not too large, because someone may
+// genuinely want the stamp close to the edge — but never flush against
+// it, which the original Bridge did not allow either. Twelve points is
+// about four millimetres, enough that no printer's unprintable border
+// and no binding clips it, and small enough that a stamp deliberately
+// tucked into a corner looks tucked in rather than floated.
+//
+// It applies to every placement, corner and coordinate alike: a stamp
+// dragged to the bottom right in the placement window has to land where
+// choosing "bottom-right" puts it, and two margins would make that
+// false.
+const Margin = 12
 
 // LogoSize is the logo's fixed placement width and height, in points
 // (SPEC §13.1). This is independent of the source image's pixel
@@ -193,6 +206,28 @@ func PlaceCorner(box [4]float64, rotate int, corner Corner, margin, stampW, stam
 		rect = [4]float64{x1 - margin - w, y1 - margin - h, x1 - margin, y1 - margin}
 	}
 	return rect, plan.matrix, nil
+}
+
+// RotationMatrix is the Form XObject /Matrix that counter-rotates a
+// stamp's own content so it displays upright on a page whose /Rotate is
+// rotate. It is what PlaceCorner returns alongside a corner placement,
+// exposed on its own for the explicit-coordinate path, which needs the
+// same counter-rotation and used to be given the identity — drawing the
+// stamp on its side on any rotated page.
+func RotationMatrix(rotate int) [6]float64 {
+	if plan, ok := rotationTable[NormaliseRotate(rotate)][BottomRight]; ok {
+		return plan.matrix
+	}
+	return [6]float64{1, 0, 0, 1, 0, 0}
+}
+
+// SwapsFootprint reports whether a stamp's width and height exchange
+// places in the page's own coordinates — which they do on a page
+// displayed a quarter turn from its content, because the stamp is drawn
+// upright as displayed.
+func SwapsFootprint(rotate int) bool {
+	r := NormaliseRotate(rotate)
+	return r == 90 || r == 270
 }
 
 // NormaliseRotate reduces an arbitrary /Rotate value (PDF permits any

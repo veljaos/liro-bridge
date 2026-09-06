@@ -161,6 +161,20 @@ type Result struct {
 	ClockDriftWarning bool
 	MachineTime       time.Time
 	TimestampTime     time.Time
+
+	// StampPage is the page the visible stamp was actually drawn on,
+	// zero when none was drawn. StampPageFellBack says the page asked
+	// for was past this document's last one and the stamp went on the
+	// last page instead; StampMoved says the coordinates asked for were
+	// outside this page's margin and were brought inside it.
+	//
+	// Both are ordinary outcomes of reusing one remembered position
+	// across a batch of differently shaped documents (F6b §3), not
+	// failures — but the person has to be told which documents were
+	// adjusted, and these are what the report says it from.
+	StampPage         int
+	StampPageFellBack bool
+	StampMoved        bool
 }
 
 // SignDocument signs pdfBytes with session, on the document's first
@@ -188,8 +202,9 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 	docBytes := pdfBytes
 	stampPage := 0
 	var stampAppearance *pdf.Appearance
+	var stampAdjust stampAdjustment
 	if opts.Stamp != nil {
-		docBytes, stampPage, stampAppearance, err = applyStamp(docBytes, signerCert, signingDate, opts.Stamp)
+		docBytes, stampPage, stampAppearance, stampAdjust, err = applyStamp(docBytes, signerCert, signingDate, opts.Stamp)
 		if err != nil {
 			return nil, err
 		}
@@ -228,7 +243,12 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 	}
 	builder.SetSignature(sig)
 
-	result := &Result{AchievedLevel: LevelBB}
+	result := &Result{
+		AchievedLevel:     LevelBB,
+		StampPage:         stampPage,
+		StampPageFellBack: stampAdjust.pageFellBack,
+		StampMoved:        stampAdjust.moved,
+	}
 
 	// A level was requested (the CLI's --level always sets one; only
 	// this package's own tests pass Options{} to mean "no particular
@@ -317,42 +337,89 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 // rule governs the cryptographic signed attributes and is unaffected —
 // nothing about this line changes what the CMS asserts or what an
 // independent verifier checks. See docs/decisions.md.
-func applyStamp(pdfBytes []byte, signerCert *x509.Certificate, signingDate time.Time, stamp *StampOptions) ([]byte, int, *pdf.Appearance, error) {
+// stampAdjustment records what had to change to fit the requested
+// placement onto this particular document.
+type stampAdjustment struct {
+	pageFellBack bool
+	moved        bool
+}
+
+func applyStamp(pdfBytes []byte, signerCert *x509.Certificate, signingDate time.Time, stamp *StampOptions) ([]byte, int, *pdf.Appearance, stampAdjustment, error) {
+	var adj stampAdjustment
 	doc, err := pdf.Parse(pdfBytes)
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, nil, adj, err
 	}
 	rootRef, ok := doc.Trailer().Get(pdf.Name("Root")).(pdf.Reference)
 	if !ok {
-		return nil, 0, nil, fmt.Errorf("pades: trailer /Root is not an indirect reference")
+		return nil, 0, nil, adj, fmt.Errorf("pades: trailer /Root is not an indirect reference")
 	}
 	catalog, ok := doc.ResolveDict(rootRef)
 	if !ok {
-		return nil, 0, nil, fmt.Errorf("pades: /Root does not resolve to a dictionary")
+		return nil, 0, nil, adj, fmt.Errorf("pades: /Root does not resolve to a dictionary")
 	}
+
+	// A page number past the end of *this* document is clamped to its
+	// last page rather than refused. A remembered position is meant to
+	// be reused across a batch, and a fifty-page report and a one-page
+	// contract do not have the same page twelve (F6b §3); refusing
+	// would turn a placement that is right for most of a batch into a
+	// failure for the rest of it.
 	page := stamp.Page
 	if page == 0 {
 		page = 1
 	}
+	if page > 0 {
+		count, err := doc.PageCount()
+		if err == nil && page > count {
+			page = count
+			adj.pageFellBack = true
+		}
+	}
 	pageNum, err := pdf.FindPage(doc, catalog, page)
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, nil, adj, err
 	}
 	pageDict, ok := doc.ResolveDict(pdf.Reference{Num: pageNum})
 	if !ok {
-		return nil, 0, nil, fmt.Errorf("pades: page %d does not resolve to a dictionary", pageNum)
+		return nil, 0, nil, adj, fmt.Errorf("pades: page %d does not resolve to a dictionary", pageNum)
+	}
+
+	if stamp.UseXY {
+		box := pdf.ResolveMediaBox(doc, pageDict)
+		rotate := appearance.NormaliseRotate(pdf.ResolveRotate(doc, pageDict))
+		w, h := float64(appearance.StampWidth), stampHeightFor(signerCert, signingDate, stamp)
+		if appearance.SwapsFootprint(rotate) {
+			w, h = h, w
+		}
+		if _, _, moved := appearance.ClampToPageBox(box, stamp.X, stamp.Y, w, h, appearance.Margin); moved {
+			adj.moved = true
+		}
 	}
 
 	u := pdf.NewUpdate(doc)
 	result, err := appearance.Render(doc, pageDict, u, buildAppearanceOptions(signerCert, signingDate, stamp))
 	if err != nil {
-		return nil, 0, nil, wrapStampError(err)
+		return nil, 0, nil, adj, wrapStampError(err)
 	}
 	out, err := u.Apply()
 	if err != nil {
-		return nil, 0, nil, err
+		return nil, 0, nil, adj, err
 	}
-	return out, page, &result, nil
+	return out, page, &result, adj, nil
+}
+
+// stampHeightFor is the height Render will give this stamp, worked out
+// the same way it does — from the lines it will actually draw — so the
+// "was it moved" answer is about the rectangle that ends up in the
+// document rather than about an assumed one.
+func stampHeightFor(signerCert *x509.Certificate, signingDate time.Time, stamp *StampOptions) float64 {
+	opts := buildAppearanceOptions(signerCert, signingDate, stamp)
+	h, err := appearance.HeightFor(opts)
+	if err != nil {
+		return 48
+	}
+	return h
 }
 
 // buildAppearanceOptions assembles appearance.Options from the signer

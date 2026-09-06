@@ -7,26 +7,77 @@ import (
 	"io"
 )
 
+// resolver resolves an indirect reference to the object it names.
+// decodeStream takes one because /Filter, /DecodeParms and the values
+// inside a /DecodeParms dictionary are all permitted to be indirect
+// references in a real document (PDF 32000-1 §7.3.10 places no
+// restriction on them), and a document that uses one is not rare enough
+// to treat as malformed. A nil resolver means "these bytes are being
+// read before the cross-reference table itself is usable" — the xref
+// and object-stream callers, where an indirect reference could not be
+// followed even in principle.
+type resolver func(Object) Object
+
+func (r resolver) call(o Object) Object {
+	if r == nil {
+		return o
+	}
+	return r(o)
+}
+
 // decodeStream applies the filter chain named in dict's /Filter (a Name
 // or an Array of Names) to raw, using /DecodeParms for any predictor
-// parameters. Only the filters PDF actually uses for xref streams,
-// object streams and (occasionally) content streams are implemented:
-// FlateDecode (with PNG/TIFF predictors), ASCIIHexDecode and
-// ASCII85Decode. An unsupported filter is a clear error, not a silent
+// parameters. An unsupported filter is a clear error, not a silent
 // pass-through.
-func decodeStream(dict Dict, raw []byte) ([]byte, error) {
-	filters := filterNames(dict.Get(Name("Filter")))
-	parms := decodeParms(dict.Get(Name("DecodeParms")), len(filters))
-
-	data := raw
-	for i, f := range filters {
-		var err error
-		data, err = applyFilter(f, data, parms[i])
-		if err != nil {
-			return nil, fmt.Errorf("pdf: filter %s: %w", f, err)
-		}
+func decodeStream(res resolver, dict Dict, raw []byte) ([]byte, error) {
+	data, remaining, _, err := decodeStreamUntil(res, dict, raw, nil)
+	if err != nil {
+		return nil, err
+	}
+	if remaining != "" {
+		return nil, fmt.Errorf("pdf: filter %s: unsupported filter %q", remaining, remaining)
 	}
 	return data, nil
+}
+
+// decodeStreamUntil applies the filter chain to raw, stopping before the
+// first filter for which stopAt reports true and returning that filter's
+// name and its own /DecodeParms unapplied. It exists for image XObjects,
+// whose final filter is an image codec (DCTDecode, JPXDecode,
+// CCITTFaxDecode, JBIG2Decode) that produces pixels rather than bytes
+// and therefore belongs to whoever is decoding the image, not to the
+// generic stream reader. stopAt nil means "apply everything".
+func decodeStreamUntil(res resolver, dict Dict, raw []byte, stopAt func(Name) bool) (data []byte, stopped Name, stoppedParms Dict, err error) {
+	filters := filterNames(res.call(dict.Get(Name("Filter"))))
+	parms := decodeParms(res.call(dict.Get(Name("DecodeParms"))), len(filters))
+
+	data = raw
+	for i, f := range filters {
+		p := resolveParms(res, parms[i])
+		if stopAt != nil && stopAt(f) {
+			return data, f, p, nil
+		}
+		data, err = applyFilter(f, data, p)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("pdf: filter %s: %w", f, err)
+		}
+	}
+	return data, "", nil, nil
+}
+
+// resolveParms resolves the values inside one /DecodeParms dictionary.
+// Only the scalar entries matter to any filter implemented here, so a
+// shallow resolve is enough — and a nil dictionary stays nil rather
+// than becoming an empty one, since applyPredictor distinguishes them.
+func resolveParms(res resolver, parms Dict) Dict {
+	if parms == nil || res == nil {
+		return parms
+	}
+	out := make(Dict, len(parms))
+	for k, v := range parms {
+		out[k] = res(v)
+	}
+	return out
 }
 
 func filterNames(o Object) []Name {
@@ -77,6 +128,23 @@ func applyFilter(name Name, data []byte, parms Dict) ([]byte, error) {
 		return asciiHexDecode(data)
 	case "ASCII85Decode", "A85":
 		return ascii85Decode(data)
+	case "LZWDecode", "LZW":
+		early := int64(1)
+		if v, ok := asInt64(parms.Get(Name("EarlyChange"))); ok {
+			early = v
+		}
+		out, err := lzwDecode(data, early != 0)
+		if err != nil {
+			return nil, err
+		}
+		return applyPredictor(out, parms)
+	case "RunLengthDecode", "RL":
+		return runLengthDecode(data)
+	case "Crypt":
+		// The only /Crypt filter a document this project will open can
+		// carry is /Name /Identity: an encrypted document is refused
+		// outright, before any stream is read (D-043).
+		return data, nil
 	default:
 		return nil, fmt.Errorf("unsupported filter %q", name)
 	}
@@ -301,6 +369,152 @@ func ascii85Decode(data []byte) ([]byte, error) {
 	if n > 0 {
 		if err := flush(n); err != nil {
 			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// lzwDecode implements PDF's LZWDecode filter (PDF 32000-1 §7.4.4):
+// variable-width MSB-first codes over a 4096-entry table, 8-bit input
+// alphabet, with 256 as the clear-table code and 257 as end-of-data.
+//
+// It is written out here rather than delegated to compress/lzw because
+// of earlyChange. PDF's /EarlyChange parameter selects whether the code
+// width grows one code before the table is actually full (the value 1,
+// and the default, matching TIFF) or exactly when it fills (the value
+// 0). The standard library's MSB reader implements one of those two and
+// documents neither as a PDF guarantee, so a document setting
+// /EarlyChange 0 would decode to plausible-looking rubbish rather than
+// to an error — the worst shape of failure for a decoder.
+func lzwDecode(data []byte, earlyChange bool) ([]byte, error) {
+	const (
+		clearCode = 256
+		eodCode   = 257
+		firstCode = 258
+		maxCode   = 4096
+	)
+
+	var table [maxCode][]byte
+	next := firstCode
+	width := 9
+	reset := func() {
+		next = firstCode
+		width = 9
+	}
+	reset()
+
+	var out []byte
+	var prev []byte
+	bitPos := 0
+	totalBits := len(data) * 8
+
+	readCode := func() (int, bool) {
+		if bitPos+width > totalBits {
+			return 0, false
+		}
+		v := 0
+		for i := 0; i < width; i++ {
+			byteIdx := (bitPos + i) / 8
+			bit := (data[byteIdx] >> (7 - uint((bitPos+i)%8))) & 1
+			v = v<<1 | int(bit)
+		}
+		bitPos += width
+		return v, true
+	}
+
+	entry := func(code int) ([]byte, bool) {
+		if code < 256 {
+			return []byte{byte(code)}, true
+		}
+		if code >= firstCode && code < next && table[code] != nil {
+			return table[code], true
+		}
+		return nil, false
+	}
+
+	for {
+		code, ok := readCode()
+		if !ok {
+			// Running out of bits without an end-of-data code is
+			// common enough in real files (producers pad, or omit the
+			// marker) that it is treated as the end rather than as
+			// corruption.
+			return out, nil
+		}
+		switch code {
+		case eodCode:
+			return out, nil
+		case clearCode:
+			reset()
+			prev = nil
+			continue
+		}
+
+		var cur []byte
+		if seq, ok := entry(code); ok {
+			cur = seq
+		} else if code == next && prev != nil {
+			// The KwKwK case: the encoder emitted a code for a sequence
+			// it is defining with this very code.
+			cur = append(append([]byte{}, prev...), prev[0])
+		} else {
+			return nil, fmt.Errorf("lzw: code %d out of range (next %d)", code, next)
+		}
+
+		if len(out)+len(cur) > maxDecodedStreamSize {
+			return nil, fmt.Errorf("decoded stream exceeds %d bytes", maxDecodedStreamSize)
+		}
+		out = append(out, cur...)
+
+		if prev != nil && next < maxCode {
+			table[next] = append(append([]byte{}, prev...), cur[0])
+			next++
+		}
+		prev = cur
+
+		limit := next
+		if earlyChange {
+			limit = next + 1
+		}
+		switch {
+		case limit > 2048 && width < 12:
+			width = 12
+		case limit > 1024 && width < 11:
+			width = 11
+		case limit > 512 && width < 10:
+			width = 10
+		}
+	}
+}
+
+// runLengthDecode implements PDF's RunLengthDecode filter (PDF 32000-1
+// §7.4.5): a length byte, then either that many literal bytes (0..127)
+// or one byte repeated 257-length times (129..255). 128 ends the data.
+func runLengthDecode(data []byte) ([]byte, error) {
+	var out []byte
+	for i := 0; i < len(data); {
+		n := int(data[i])
+		i++
+		switch {
+		case n == 128:
+			return out, nil
+		case n < 128:
+			if i+n+1 > len(data) {
+				return nil, fmt.Errorf("runlength: literal run of %d bytes runs past the end", n+1)
+			}
+			out = append(out, data[i:i+n+1]...)
+			i += n + 1
+		default:
+			if i >= len(data) {
+				return nil, fmt.Errorf("runlength: repeat run with no byte to repeat")
+			}
+			for j := 0; j < 257-n; j++ {
+				out = append(out, data[i])
+			}
+			i++
+		}
+		if len(out) > maxDecodedStreamSize {
+			return nil, fmt.Errorf("decoded stream exceeds %d bytes", maxDecodedStreamSize)
 		}
 	}
 	return out, nil
