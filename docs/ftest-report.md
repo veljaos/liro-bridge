@@ -479,6 +479,297 @@ list, so SPEC §6.6's "a file name is inserted with `textContent`, never
 
 **One thing worth the owner's eye rather than a change** — see J-3.
 
+
+---
+
+## Group 2 — the soft token, the real card without a PIN, and failure injection
+
+### B-7 — B-LT was claimed for a document with no `/DSS` at all (fixed)
+
+**What it was.** Found by signing at every level through the shipped
+binary and then looking at the bytes rather than at the reported level:
+
+```
+liro-bridge sign --level b-lt --tsa https://freetsa.org/tsr
+  Nivo: B-LT
+66714 bytes   /DSS=False  /OCSPs=False  /CRLs=False  /VRI=False
+```
+
+Every one of the five level runs produced a file of exactly 66 714
+bytes, which is the first thing that gave it away: the `/Contents`
+placeholder is a fixed 32 768 bytes (D-042), so B-B and B-T are the same
+size by construction — but B-LT appends a whole `/DSS` revision, and a
+B-LT file the same size as the B-B one has no revision in it.
+
+B-LT is B-T plus a `/DSS` carrying revocation evidence (SPEC §12.6), so a
+document with no `/DSS` has not reached it, and saying it has is the
+overclaim SPEC §18.11 and D-047 forbid outright.
+
+**Why it was reachable and why the existing test missed it.**
+`dss.Apply`'s `case i+1 < len(certs)` only expects evidence for a
+certificate whose issuer is also in the list, so a chain of **exactly one
+certificate** expects none at all and comes out `Complete: true` having
+collected nothing. D-079 then correctly skips the revision, while
+`applyDSS` raises the level on that same flag.
+
+One certificate is not a contrivance: MUP embeds only the signer
+certificate in its CMS (SPEC §11.8), so a failed AIA fetch with nothing
+matching in the bundled trust store leaves exactly one — and that is the
+same outage that stops OCSP answering, so the two arrive together. It is
+also the soft token's own shape, which is why every `--level b-lt` run in
+this session hit it.
+
+Every other test in `internal/pades` uses `chainedSession`, whose chain
+is two certificates long, so the single-certificate path had never been
+signed at all.
+
+**The fix.** `Apply` returns `Complete: false` whenever it writes no
+revision — the one place that already knows, which is D-079's own
+reasoning for putting the skip there. The shipped binary now reports
+
+```
+Nivo: B-T  (B-LT requested; OCSP/CRL unavailable for at least one certificate)
+```
+
+**The test.** `TestBLTIsNeverClaimedForADocumentWithNoDSS`, with a signer
+whose `Chain()` is empty. Confirmed to fail against the previous code
+(`AchievedLevel = B-LT for output containing no /DSS…`) and pass against
+this one; `TestSignDocumentBLTAchievedWithOCSPEvidence` keeps the other
+direction, and `TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence`
+keeps the two-certificate case.
+
+### B-8 — every presence probe leaks Windows handles, and costs half a second
+
+**What it is.** FTEST §2 asks for `certs` a thousand times, watching the
+handle count, because "a leak in the presence probe would show here and
+nowhere else". It does.
+
+In-process, enumerating and probing every hardware certificate:
+
+```
+  after     1: handles  226
+  after   100: handles 1245
+  after   250: handles 2746
+```
+
+— about **ten handles per enumeration**, growing linearly. Isolated call
+by call, 200 iterations each:
+
+| Call | handles per call | ms per call |
+|---|---|---|
+| `windowscng.Enumerate` (5 certificates) | +0.01 | 1.0 |
+| `windowscng.Source.Presence` (one certificate) | **+4.08** | **857** |
+| `platform.SmartCardService.Readers` | +2.00 | 1.2 |
+| `platform.SmartCardService.AnyCardPresent` | +2.00 | 1.2 |
+
+Split further, into the three Windows calls the probe makes:
+
+| Call | handles per call | first quarter | last quarter |
+|---|---|---|---|
+| `CertOpenStore` + `CertCloseStore` | +0.02 | 0.94 ms | 0.83 ms |
+| \+ `CertFindCertificateInStore` + free | +0.00 | 0.92 ms | 0.89 ms |
+| \+ `CryptAcquireCertificatePrivateKey` (silent), **card present** | **+2.12** | 457 ms | 435 ms |
+| \+ the same, **card absent** | **+4.08** | 855 ms | 824 ms |
+
+**This project's own code is clean.** `CertOpenStore`/
+`CertFindCertificateInStore` leak nothing; the store is closed, the
+certificate context freed, and `callerFree` was **true on 101 of 101**
+successful acquisitions, so `NCryptFreeObject` really is called every
+time (D-026's rule is being honoured, not skipped). The handles are
+leaked inside `CryptAcquireCertificatePrivateKey` — the smart-card KSP
+and the middleware behind it — including four per *failed* acquisition,
+where there is nothing for a caller to free at all.
+
+**It does not escape the process, which bounds how bad it is.** Forty
+runs of `liro-bridge certs` moved the Smart Card service's own handle
+count by **4** in total (220 → 224) and its working set not at all, so a
+short-lived command leaks nothing that outlives it. The exposure is the
+**tray**, which runs for weeks and probes every hardware certificate each
+time the certificate list is gathered: roughly six handles per gather on
+this machine, more on a bookkeeper's.
+
+**And the second half of the measurement is the more immediately
+visible one.** The probe costs **457 ms for a certificate whose card is
+present and 855 ms for one whose card is not**, stable across the run
+(the first and last quarters agree, so this is not the leak slowing
+things down). That is 1.3 s of the 2.4 s a `liro-bridge certs` takes on
+this machine, and it is paid again before the certificate step of every
+signing flow.
+
+D-131 measured this at "presence probe, all four: 44 ms cold, 10–13 ms
+warm" and concluded that "the wait is the WebView2 window". That
+conclusion does not hold on this machine's current state — there is now a
+Pošta certificate in the store whose card is not in the reader, and
+probing it alone costs more than opening a window does after D-150. The
+per-certificate cost scales with how many cards are *absent*, which is
+exactly SPEC §14.1's bookkeeper: six certificates, one card.
+
+**Not fixed here, and why.** Nothing in this project's own code is
+leaking or slow. The three things that would help are all changes to how
+presence is decided rather than bugs to fix: probing concurrently (D-027
+rejected concurrent smart-card access for signing, and the same argument
+about driver-level failures applies), caching a probe result for a few
+seconds, or asking a cheaper question first. Each is a design decision
+about SPEC §11.10's model, which FTEST §10 says to hand over rather than
+decide. See J-7.
+
+**One thing deliberately not measured.** Whether the leak also occurs
+*without* `CRYPT_ACQUIRE_SILENT_FLAG` is the obvious next question and
+was not asked: D-087 measured that the same call without that flag can
+raise an interactive credential/PIN prompt, and FTEST §0.1 makes causing
+one a stop-work condition. It stays unmeasured rather than risked.
+
+### §2 — the real card, without a PIN
+
+Nothing in this session opened a signing session against the card, and no
+PIN dialog appeared at any point.
+
+**Enumeration and classification, card in the reader** (release build, no
+soft token compiled in):
+
+```
+Čitači: 1
+  Generic Smart Card Reader Interface 0 — kartica prisutna
+
+Sertifikati: 2
+  [1] Savka Odžić ✗ neupotrebljiv    Pošta Srbije CA 1   kartica nije prisutna
+  [2] ВЕЉКО СТАНОЈЕВИЋ ✓ upotrebljiv  MUP Gradjani CA 4
+Lista poverenja: sekvenca 36, izdata 2026-05-20 (109 dana, upravo osvežena)
+```
+
+Both are classified correctly and **presence is per certificate**, which
+is the property D-077 exists for: one card in the reader, and the
+certificate whose card is *not* there is the one marked unusable, with
+its own reason. `--all` shows five rows — the two above plus the MUP
+authentication twin and the two Windows-internal GUID certificates —
+which is D-149 and D-108 both holding at once.
+
+The Cyrillic subject renders in Cyrillic in all three interface
+languages, and the Latin one in Latin (SPEC §9.3).
+
+**Reader state**, read independently of the certificate store: one
+reader, card present.
+
+**What could not be done, and why.** FTEST §2 also asks for the card to
+be removed and reinserted while `certs` runs, for a different card to be
+inserted, and for the reader to be unplugged and replugged. **All four
+need a hand at the machine and nobody was there.** They are listed for
+the owner in §12 rather than reported as passing.
+
+Stopping the Windows Smart Card service was not attempted either: it
+needs elevation, it is a machine-wide change on someone else's working
+computer, and a failed restart would leave their card unusable. The
+distinct code exists (`errs.CodeSmartCardServiceDown`, in `AllCodes` and
+in all three catalogues, now proven complete by B-6) but the path it
+covers is unexercised here.
+
+### §3 — everything the soft token reaches
+
+**A thousand documents, four ways.** Signed in process, so what is being
+measured is the pipeline rather than process startup. Every output
+verified with `internal/pades/verify`.
+
+| What | signed | verified | wall clock | per document (min / median / p95 / max) | heap after | distinct outputs |
+|---|---|---|---|---|---|---|
+| `blank.pdf` ×1000 | 1000 | **1000** | 1.6 s | 0.0 / 0.5 / 4.8 / 10.6 ms | 2.1 MB | **1** |
+| the whole 45-document corpus, cycled to 1000 | 1000 | **1000** | 1.9 s | 0.0 / 0.5 / 5.3 / 10.3 ms | 1.6 MB | 41 (one per distinct input) |
+| `mup.pdf` ×1000 — 582 KB, already carrying two signatures | 1000 | **1000** | 5.2 s | 0.0 / 3.6 / 7.0 / 10.7 ms | 3.6 MB | **1** |
+| the 500-page document ×1000 | 1000 | **1000** | 5.6 s | 0.0 / 4.3 / 7.7 / 12.1 ms | 2.2 MB | **1** |
+
+**No drift.** With a fixed key and a fixed `Now`, the same document
+signed a thousand times produced **one** distinct SHA-256 every time —
+including the 582 KB real fixture and the 500-page one. Memory is flat:
+the heap ends between 1.6 and 3.6 MB after a thousand signatures, and
+`Sys` never passed 17 MB.
+
+**Five deep.** Each document signed, then its own output signed, five
+times over, verifying every signature at every depth (SPEC §16.3 calls
+the already-signed case "the single most important test in the project"):
+
+| Document | depth 5 | slots at depth 5 | fully verifying | original bytes still a prefix |
+|---|---|---|---|---|
+| `blank.pdf` | 331 709 B | 5 | 5 | yes, at every depth |
+| `xref-stream-objstm.pdf` | 331 790 B | 5 | 5 | yes |
+| `xref-mixed-history.pdf` | 332 832 B | 5 | 5 | yes |
+| `halcom.pdf` | 692 880 B | 7 | 6 | yes |
+| `mup.pdf` | 916 228 B | 7 | 6 | yes |
+| `posta.pdf` | 659 994 B | 7 | 6 | yes |
+
+The one slot that does not fully verify in each real fixture is that
+document's **own pre-existing document-timestamp slot**, whose
+`messageDigest` covers its embedded TSTInfo rather than the `/ByteRange`
+— documented in `verify/real_test.go`, present before this project
+touched the file, and **unchanged at every depth**, which is the point:
+resigning five times over never disturbed it.
+
+All six depth-5 outputs open in pypdf and in PDFium, with the field
+counts they should have (5 for a document that started with none, 7 for
+one that started with two).
+
+**Every level, against real timestamp authorities:**
+
+| Level and authority | result | wall clock |
+|---|---|---|
+| no TSA configured, `--on-tsa-failure b-b` | `Nivo: B-B` with the reason stated | 80 ms |
+| B-T, Pošta test TSA, HTTP Basic | `Nivo: B-T` | 157 ms |
+| B-T, freetsa.org | `Nivo: B-T` | 766 ms |
+| B-LT, Pošta test TSA | `Nivo: B-T` + why (B-7; was wrongly `B-LT`) | 147 ms |
+| B-LT, freetsa.org | `Nivo: B-T` + why (B-7) | 889 ms |
+
+Pošta's test TSA and freetsa.org both answered every request. The
+client-certificate endpoint (`timestamp2`) was not exercised: the PFX
+SPEC §12.7 names is not in `testdata/tsa/local/`, and there is nothing
+here to generate it from.
+
+**Every stamp placement.** One document signed once per placement, each
+output independently verified:
+
+- four corners × {first page, a middle page, the last page, `-1`, a page
+  past the end} = 20 cases, on the 17-page `mup.pdf` and on each of the
+  four page rotations;
+- explicit coordinates at (0,0), (50,50), (400,700), (−100,−100) and
+  (10000,10000).
+
+**125 placements, 125 verified.** The clamping is D-138's 12 pt margin,
+exactly:
+
+```
+(0, 0)            -> (12, 12)          moved
+(-100, -100)      -> (12, 12)          moved
+(400, 700)        -> (393.32, 700)     moved
+(10000, 10000)    -> (393.32, 782.04)  moved
+(50, 50)          -> unchanged
+```
+
+and a page number past the end reports `StampPageFellBack` rather than
+failing (D-143).
+
+**Where the stamp actually landed, as a reader displays it.** The
+byte-level checks cannot see this, so it was measured: each stamped
+output was rendered with PDFium and the Liro turquoise `#038387` — which
+appears nowhere else in these documents — located by centroid.
+**Every corner landed in the corner asked for, on all four `/Rotate`
+values**, which is D-060's counter-rotation and D-143's fix for the
+explicit-coordinate path holding on real output:
+
+```
+/Rotate 0, 90, 180 and 270, page 1, each corner:
+  bottom-left   (x 0.06, y 0.96)     top-left   (x 0.06, y 0.05)
+  bottom-right  (x 0.70, y 0.96)     top-right  (x 0.70, y 0.05)
+```
+
+One thing that fell out of doing it: **PDFium draws the signature widget
+only after `init_forms()`.** Without that call the stamp is simply not in
+the rendered image — which is worth knowing as a fact about how a reader
+that does not initialise forms shows a stamped document, and is why the
+first run of this check found nothing.
+
+**Rotation handling agrees with PDFium** on all five rotation fixtures.
+`reportlab`'s `setPageRotation(90)` writes a landscape MediaBox plus
+`/Rotate 90`, so the displayed page is portrait, and both renderers
+produce 595×842; `box-inherited.pdf` (portrait box, `/Rotate 90`
+inherited from the `Pages` node) displays 842×595 in both.
+
 ---
 
 ## For the owner — judgement calls, recorded rather than changed
