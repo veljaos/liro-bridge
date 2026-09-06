@@ -10485,3 +10485,508 @@ between a new code and a user seeing `error.cert_revoked`.
   pattern is the finding. Three previous phases recorded the same lesson
   about windows, about fonts and about settings; this pass says it about
   fixtures.
+
+---
+
+## D-162 — Revocation failures are remembered for the length of one batch; successes are not
+
+**Date:** 2026-09-07
+**Phase:** FTEST decisions — J-10
+
+**Decision.** `dss.EndpointMemory` is one batch's record of revocation
+endpoints that did not answer. `CollectRevocation` takes one, skips any
+URL already in it, and adds a URL that produced no answer after every
+attempt. `pades.Options.RevocationMemory` carries it; `internal/cli`'s
+`RunSign` creates one before its loop and `cmd/liro-bridge`'s `runBatch`
+one per run. Nil — the zero value, and what a single-document signature
+passes — remembers nothing.
+
+**A successful response is deliberately not cached across documents.**
+[[D-046]]'s rule stands: revocation is collected after the signature
+exists so that the response postdates it, and a response fetched after
+document 1 predates document 100's signature. Whether that matters for a
+qualified signature is the owner's call and he has not made it. Only
+failures are remembered.
+
+**The scope is one batch, never the process.** A new batch starts with
+no assumptions, because a responder that was down five minutes ago may
+be up now.
+
+**Measured, on this machine, ten documents against an OCSP responder
+that accepts the request and never answers:**
+
+| | Before | After |
+|---|---|---|
+| Ten documents | **3m20s** (200.2 s) | **20.1 s** |
+| Per document | 20.0 s each | 20.0 s, then 0 s x9 |
+| Requests that reached the responder | 20 | 2 |
+
+Twenty seconds is [[D-046]]'s own policy working — two attempts of ten
+— and it is now paid once for the batch instead of once per document. A
+hundred-document B-LT batch against MUP's responder, which [[D-076]]
+measured as dropping connections (exactly this case), goes from about 33
+minutes of timeouts to twenty seconds.
+
+**What counts as "did not answer", precisely.** An endpoint that
+returned *something* is not remembered, even when what it returned was
+unusable: a responder that is plainly up is not the twenty-second cost
+this exists to remove, and giving up on it after one document would turn
+a transient server-side problem into a whole batch with no revocation
+evidence. `TestAResponderThatAnswersBadlyIsStillAsked` pins that.
+
+**Not remembered, and recorded rather than done: an artefact that was
+fetched and then refused for being too large.** [[D-076]]'s size cap
+discards a 30 MB CRL after downloading it, and that download repeats per
+document. Remembering it would make documents 2..100 report "no
+evidence" instead of "too large", which is the specific, honest reason
+[[D-076]] built `Result.TooLarge` to carry. Remembering both the URL and
+the skipped size would keep the message and remove the download; it is a
+larger change than J-10 asked for, and it is noted here rather than made.
+
+**Verified both ways.** The counting tests
+(`TestASilentOCSPResponderIsContactedOnlyTwice` and its siblings) were
+run against the code with `mem.remember` disabled and report "a silent
+responder was contacted 20 times across ten documents, want 2"; with it,
+2. The timing above is from a throwaway harness created and deleted in
+the same session ([[D-100]]), not from a test that spends 200 s in the
+suite.
+
+**Rejected.**
+- **Caching successful responses too, turning 33 minutes into 20
+  seconds *and* saving the successful fetches.** That is the change
+  [[D-046]] forbids without the owner deciding, and this pass was told
+  to implement the smaller one only.
+- **Remembering per certificate rather than per endpoint URL.** Two
+  certificates from one issuer share a responder; keyed on the URL, the
+  second one benefits from the first one's timeout. Keyed on the
+  certificate it would not.
+- **A process-wide memory.** It would turn one bad afternoon into a
+  permanently degraded agent, and nothing would ever find out the
+  responder came back.
+
+---
+
+## D-163 — The presence probe is answered once per certificate per listing; the cheaper question exists, is measured, and is not taken
+
+**Date:** 2026-09-07
+**Phase:** FTEST decisions — J-7
+
+**Decision.** `internal/cli.Gather` builds a `presenceMemo` — a
+thumbprint-keyed map of probe answers — and throws it away with the
+listing. A certificate enumerated more than once in one listing is
+probed once; a failed probe's conservative "not present" is remembered
+too, so it is not paid for twice either. Nothing is cached across
+listings, and nothing is probed concurrently.
+
+**Why not across listings.** A card really can be inserted between one
+`certs` and the next, and SPEC §11.10 exists because reporting a
+certificate as available when it is not produces the worst outcome this
+product has: the user clicks, enters a PIN, and fails five seconds later.
+
+**Why not concurrently.** [[D-027]] rejected concurrent smart-card
+access for signing — the card is a single serial device whose driver
+queues requests anyway, and concurrent access is a known source of
+driver-level failures. A probe goes through the same middleware and the
+same card.
+
+**Measured, on this machine, one card present.**
+
+| | Before | After |
+|---|---|---|
+| This machine's real store (5 rows, 3 hardware-backed) | Gather 2.76 s, **3 probes**, 2.43 s of probing | **identical** |
+| A six-row listing whose three hardware certificates are each enumerated twice | 3.58 s, **6 probes** | **1.97 s, 3 probes** |
+
+Per probe, measured again here: **451–590 ms** when the card is present,
+**873–1273 ms** when it is not. `liro-bridge certs` through the rebuilt
+binary: 2.31 s, three runs, unchanged.
+
+**The honest reading of the first row.** On a store where every
+certificate is enumerated once — which is this machine, and which is
+also SPEC §14.1's bookkeeper with six *distinct* certificates — the memo
+saves nothing, because there is no repeat to remove. It costs nothing
+and makes a repeat free, and that is the whole of what it does. The five
+seconds a bookkeeper pays is not what this removes, and saying otherwise
+would be the kind of claim this project's own FTEST pass exists to stop.
+
+**The cheaper question exists, and here is what it is.**
+`NCryptEnumKeys` on the "Microsoft Smart Card Key Storage Provider"
+enumerates the key containers on *currently inserted* cards. Measured
+directly, three runs, with one card in the reader and one certificate
+whose card is absent:
+
+```
+NCryptEnumKeys: 2 keys in 913 ms / 921 ms / 915 ms
+    "da552541b5504c418eb0ab4eb55eb0e6"   <- the present card
+    "ab5fdde7ec79468281adbcf4feadd778"   <- the present card
+                                         <- the absent card's container
+                                            BD60C020...  is not listed
+```
+
+It answers the question exactly: the two containers it lists are the two
+certificates the per-certificate probe reports present, and the absent
+card's container is absent from the list. It costs **one call for the
+whole machine**, about 0.9 s, *independent of how many certificates there
+are* — against 2.43 s for three and about 5 s for the bookkeeper's six.
+It also never opens a key, which is what J-7 asked about.
+
+**It is not taken, and that is the owner's call to make, not this
+pass's.** SPEC §11.10 states the mechanism — "determine it per
+certificate by attempting to open that certificate's own key" — and
+[[D-014]] and [[D-077]] are recorded decisions behind it. Switching to
+container enumeration is a change to that rule, with its own questions:
+it depends on every middleware registering through the Microsoft KSP
+(all three Serbian issuers do, SPEC §11.11, but the PKCS#11 platforms in
+F11+ will not), and a container name that matches is evidence about a
+key, not about the certificate that names it. Recorded here, measured,
+for the owner.
+
+**Rejected.**
+- **Caching the probe for a few seconds across listings.** Named in J-7
+  as one of the three options and rejected outright: a card inserted in
+  those seconds is invisible, and this is the one place where being
+  wrong costs a PIN entry.
+- **Skipping the probe for certificates the listing will hide anyway.**
+  It would remove one of this machine's three probes (the MUP
+  authentication twin, hidden by [[D-149]]) — but `certs --all` and
+  `certs --json` show every row with its own state, so the answer is
+  needed whether or not the default view shows it.
+
+---
+
+## D-164 — An input that already carries the output suffix is asked about in the window and skipped, with a count, on the command line
+
+**Date:** 2026-09-07
+**Phase:** FTEST decisions — J-3
+
+**Decision.** `jobs.LooksLikeOutput(path, suffix)` is the one rule:
+does this input's own name, before its extension, already end in the
+configured output suffix. Both front doors ask it and neither guesses
+what the answer means.
+
+*The window* asks the person, once, for the whole batch:
+`consent.StateAlreadySigned` says how many there are and offers **Skip
+them and sign the rest** (primary — it loses nothing), **Sign them too**
+(neutral), **Cancel** (quiet, and the initially focused control, like
+every other question this window asks). The skipped documents are not
+removed from the queue: they run through the batch as
+`jobs.ErrSkipDocument`, so they show as *skipped* rather than *failed*
+and the report says how many were left alone and why.
+
+*The command line* reports the count and does the safe thing: inputs
+whose names already end in the suffix are skipped unless `--resign` is
+given, and either way a sentence names how many there are and what is
+happening to them. If skipping leaves nothing to sign, that is said and
+the exit code is 1.
+
+**Why a question and not a rule.** The previous session declined to skip
+these on the grounds that guessing intent could be wrong, and that
+reasoning is right: counter-signing a `ugovor-signed.pdf` that arrived
+from somebody else is an entirely ordinary thing to want, and nothing in
+the file says which of the two this is. So nothing guesses. The window
+asks; the command line names what is about to happen and requires a flag
+to do the other thing.
+
+**Why a dedicated flag rather than `--force`.** `--force` already means
+"replace the file that is there". Overloading it would mean that
+somebody who passes it to overwrite last week's outputs *also* silently
+starts signing them again — which is precisely how
+`ugovor-signed-signed.pdf` was reached in the first place. `--resign`
+says the one thing it means.
+
+**Measured in the shipped binary**, a folder holding `ugovor.pdf`,
+`racun.pdf` and a `prethodni-signed.pdf` left by an earlier run:
+
+```
+run 1:  1 ulaz je vec potpisan dokument (ime se zavrsava na -signed) i preskocen je.
+        Koristite --resign da bude potpisan.
+        Potpisano 2/2 dokumenata
+run 2:  3 ulaza su vec potpisani dokumenti ... i preskoceni su.
+        izlazni fajl vec postoji; koristite --force za prepisivanje.  (x2)
+        Potpisano 0/2 dokumenata
+run 3:  identical to run 2
+```
+
+No `-signed-signed.pdf` at any point, where three runs used to produce
+`-signed`, `-signed-signed` and `-signed-signed-signed`. `--force` alone
+does not change that. `--resign` produces
+`prethodni-signed-signed.pdf` and says so.
+
+**The window path stays what it was.** A person who put a list together
+deliberately still signs exactly that list; the addition is a sentence
+and a choice that appears only when there is something to say, before
+the card session opens — so cancelling has not cost a PIN entry
+([[D-095]]'s and [[D-104]]'s own reasoning for where a question goes).
+
+**Rejected.**
+- **Skipping them silently in the window too.** The window's list was
+  assembled by hand; dropping something from it without a word is worse
+  than the doubled suffix.
+- **Removing the skipped documents from the queue before the approval,
+  so the consent screen counts only what will be signed.** It is the
+  tidier count, and it puts a question in front of SPEC §6.5's gate for
+  something that is not about consent. Signing a subset of what was
+  approved is never a weakening; the report says which and why.
+- **Comparing against the output path rather than the input's name.**
+  That is [[D-104]]'s question ("does the output already exist"), which
+  is separate and still asked. An input named like an output is a
+  different fact, and it is the one J-3 is about.
+
+---
+
+## D-165 — The signed document is written beside its destination and renamed over it; a destination held open is refused, with its own code
+
+**Date:** 2026-09-07
+**Phase:** FTEST decisions — J-8
+
+**Decision.** `platform.WriteFileAtomic` writes to a temporary file in
+the destination's own directory, flushes it, closes it, and renames it
+over the target. Both signing paths use it —
+`internal/cli.signOneFile` and `cmd/liro-bridge.signInteractiveOne` —
+in place of `os.WriteFile`. On any failure the temporary file is removed
+and the destination is untouched. `errs.CodeOutputInUse`
+(`OUTPUT_IN_USE`) is a new code with a message in all three catalogues.
+
+**What it fixes.** `os.WriteFile` opens with `O_CREATE|O_TRUNC` and then
+writes, so between those two moments the destination exists at the wrong
+length. Measured with four pollers watching a destination while a 4 MB
+file replaced an existing 300 KB one, the sizes another program observed
+were 0 (x3 — neither the old file nor the new one), 4194304 and 307200.
+A program watching the folder can pick up an empty or partial signed
+document, and a write that fails partway destroys a previously good
+signed file and leaves a truncated one.
+
+**The temporary file is in the same directory** so the rename is within
+one volume and therefore atomic. A temporary directory elsewhere would
+make it a copy, which is the same half-written window again.
+
+**The cost is accepted and is the point.** Reproduced here: with a
+reader holding the destination open the way a C runtime's `fopen("rb")`
+does — share read and write, not delete — `os.WriteFile` **replaced the
+file**, and `os.Rename` refuses. Refusing is better than destroying, and
+it is what careful tools do.
+
+**Why a new code.** `OUTPUT_WRITE_FAILED` means "the disk would not take
+it" and sends a person to look at the folder and the free space. A
+destination somebody has open needs one thing and nothing else will do:
+close it. The message says so, in all three catalogues. Measured in the
+shipped binary:
+
+```
+liro-bridge: sign: ...\ugovor.pdf: Potpisani dokument nije mogao da zameni
+postojeci fajl jer je taj fajl otvoren u drugom programu. Zatvorite ga i
+pokusajte ponovo. (path=...\ugovor-signed.pdf)
+exit code: 1
+target after: 66714 bytes, SHA-256 unchanged
+```
+
+**One ambiguity had to be measured rather than assumed.** Windows
+returns `ERROR_ACCESS_DENIED` for a rename onto a destination another
+program holds *and* for a rename onto a read-only file — confirmed
+directly with a throwaway program. The two need opposite answers, so
+`isSharingViolation` asks which it is (`FILE_ATTRIBUTE_READONLY`) rather
+than guessing; a read-only destination stays `OUTPUT_WRITE_FAILED`.
+`ERROR_SHARING_VIOLATION`, `ERROR_LOCK_VIOLATION` and
+`ERROR_USER_MAPPED_FILE` are unambiguous and need no such question. The
+folder is never in question at that point: a temporary file was created,
+written and closed in it moments earlier.
+
+**Tests.** `TestWriteFileAtomicLeavesTheOriginalIntactWhenTheDestinationIsHeldOpen`
+holds the destination open, asserts the original survives byte for byte,
+that the temporary file is gone and that the code is `OUTPUT_IN_USE`;
+run against `os.WriteFile` it reports "WriteFileAtomic replaced a
+destination held open by another program".
+`TestWriteFileAtomicNeverTruncatesTheDestination` watches the
+destination throughout and requires every size a watcher sees to be
+either the whole old file or the whole new one; against `os.WriteFile`
+it reports "a watcher observed the destination at 0 bytes".
+`TestWriteFileAtomicTellsAReadOnlyFileFromAHeldOneApart` pins the
+ambiguity above. `TestOutputHeldOpenIsNamedAndTheOriginalSurvives`
+covers the same through the real signing step.
+
+**Rejected.**
+- **Keeping `os.WriteFile` and writing an empty marker first**, or any
+  other way of narrowing the window without closing it. The window is
+  the defect.
+- **Falling back to `os.WriteFile` when the rename is refused.** That is
+  the destruction this change exists to prevent, restored under a
+  condition nobody would notice.
+- **Reporting a held-open destination as `OUTPUT_WRITE_FAILED` and
+  putting the specifics in `Details`.** [[D-066]] and [[D-104]] rejected
+  the same shortcut twice: a code whose message names the disk sends the
+  person to look at the disk.
+
+---
+
+## D-166 — A chain that cannot be continued is left where it is and a new one is started beside it, recording the break; SPEC §6.7 amended
+
+**Date:** 2026-09-07
+**Phase:** FTEST decisions — J-9
+
+**Decision.** A store holds one or more chains. When `Store.Append`
+finds that the current chain cannot be continued — its last entry cannot
+be read, because a line is not a whole entry or because a file cannot be
+read at all — it leaves that chain's files exactly as they are and
+writes into a new chain beside them, whose first entry carries a
+`Discontinuity`: which file preceded it, at which sequence and line it
+stopped, and why. SPEC §6.7 gains a subsection stating all of this,
+because it did not say what happens when a chain cannot be continued.
+
+**File naming.** Chain 1 keeps the names it always had
+(`2026-09-001.jsonl`), so an existing audit directory reads exactly as
+it did; later chains carry their number before the extension
+(`2026-09-001.c2.jsonl`). Grouping is done by reading names, never by
+moving files — the broken file must not be touched, and that includes
+renaming it.
+
+**The record is enumerated, not prose.** `Discontinuity` has named
+fields and a `BreakReason` of `unparseable` or `unreachable`.
+`audit.Entry`'s field set is a deliberate allow-list ([[D-084]]): a
+free-text note is where a file name eventually ends up. The one file
+name it does carry is this package's own generated `YYYY-MM-NNN.jsonl`,
+which is produced from a date and a rotation number and cannot become a
+document's name.
+
+**It is part of what the entry hashes**, behind a one-byte presence
+marker appended after `AchievedLevel`. A record of a break that could be
+edited without breaking the chain it starts would be worth nothing. An
+entry with neither optional field canonicalises to exactly the bytes it
+always did, so a log written before either existed still verifies —
+`TestTheDiscontinuityIsPartOfWhatIsHashed` pins all three properties.
+
+**Told once.** Only the entry that opened the new chain carries the
+record, so "not on every subsequent signature" is a property of the data
+rather than a flag somebody has to clear. `recordInteractiveAudit`
+returns it; the report screen shows one sentence in the caution family —
+a notice, not an error — naming the file that broke, the file the log
+continued in, and the folder. `TestTheNextSignatureAfterABreakSaysNothing`
+is the guard.
+
+**Reading became tolerant, and that is a behaviour change worth naming.**
+`All` used to return an error for the whole store if any line anywhere
+was unparseable, so a log with one truncated last line showed *nothing*
+in the audit window and exported *nothing*. It now returns what
+survives; the break is reported by `Chains`/`Verify` instead. A chain
+that breaks at line 400 still has 399 entries worth keeping.
+
+**Verification reports each chain separately**, because a new chain's
+first entry has no `PrevHash` by construction and walking the store as
+one sequence would report the discontinuity itself as tampering.
+`StoreVerification` carries one `ChainVerification` per chain — files,
+count, first and last timestamps, its own walk, its discontinuity, and
+where reading stopped — plus a store-wide `BrokenAt` counted across the
+exported file's own lines, so [[D-135]]'s "entry 42" message still
+points at a line a person has in front of them. Tampering inside a chain
+is still detected at exactly the entry that was altered
+(`TestTamperingIsStillDetectedWithinAChain`).
+
+**Export writes every chain**, and the exported log carries the
+discontinuity records, so it is self-describing without the report
+beside it. The confirmation line says how many chains there are, whether
+each is intact, and when and why each break happened:
+
+```
+integrity check: the log could not be read to its end - 2 chains,
+not all intact, breaks: break on 06.09.2026. (an entry could not be read)
+```
+
+A two-way ok/broken split produced "integrity check: passed - not all
+intact" for that state, which is a contradiction on the one screen that
+must not have one ([[D-135]]); "could not be read to its end" is a third
+sentence for a third finding. The chain count takes Serbian's two plural
+stems (`2 lanca`, `5 lanaca`, with the teens on the larger form), because
+a machine-shaped plural on the screen that reports the integrity of an
+audit log is not the impression to give.
+
+**The unreachable case is the same shape.** A chain whose file cannot be
+read at all — a permissions change, a network drive that has gone away —
+starts a new chain whose first entry says `unreachable`. Refusing to
+sign over a log is worse than recording that the log moved. What this
+does *not* recover from is the whole audit directory being gone, which
+`NewStore` fails on: in this product that directory is
+`%LOCALAPPDATA%\Liro\audit` and is local by construction, and that path
+still reports at error level and records nothing ([[D-160]]'s behaviour,
+unchanged).
+
+**Nothing ever overwrites, truncates or deletes a broken chain file.**
+Every write is `O_APPEND|O_CREATE` into the *new* chain's own file.
+`TestTheBrokenFileIsNeverTouchedByAnythingTheWindowDoes` reads, verifies,
+exports and signs again, then compares the broken file byte for byte.
+
+**Verified in the shipped binary**, against a scratch profile holding a
+chain truncated mid-entry and then continued: the tray's audit-log
+window lists both chains' entries newest-first and shows, on the entry
+that opened chain 2, "Ovde pocinje novi lanac: 2026-09-001.jsonl nije
+mogao da se nastavi (zapis nije mogao da se procita)." The window was
+opened by posting the tray's own `WM_COMMAND` to its message-only window
+— a window message, never synthetic input ([[D-094]]) — and photographed
+with `PrintWindow` ([[D-122]]). The process was stopped by its own exact
+PID.
+
+**Rejected.**
+- **Refusing to sign until the log is dealt with.** One of J-9's three
+  options, and the one that stops a bookkeeper's afternoon over a file
+  that is not the signature.
+- **Warning and carrying on without recovering.** That is what [[D-160]]
+  already did, and it leaves every later signature unrecorded.
+- **Recovering by truncating the broken file back to its last whole
+  line.** It would let the chain continue in place, and it destroys the
+  evidence of exactly what happened — which is the one thing an
+  append-only log is for.
+- **A subdirectory per chain.** Cleaner to read, and it would mean
+  moving the broken file, which is forbidden.
+- **Restarting the sequence numbering from where the broken chain left
+  off, so numbers never repeat across chains.** It suggests a
+  continuation that does not exist. Each chain verifies on its own from
+  sequence 0, and the discontinuity record is what ties them together.
+
+---
+
+## D-167 — The one defect in this pass was found by looking at the shipped window, and it was a class this project has a rule about
+
+**Date:** 2026-09-07
+**Phase:** FTEST decisions
+
+**Decision, recorded because the pass turned on it.** Every test written
+for these five tasks passed, in both build configurations, before the
+binary was rebuilt and looked at. The audit-log window then showed this:
+
+```
+Ovde pocinje novi lanac: 2026-09-001.jsonl nije mogao da se nastavi (zap|
+[------------------- horizontal scrollbar -------------------]
+```
+
+The break line ran off the right edge and the entry list had grown a
+horizontal scrollbar. The cause was one class name: the sentence was
+given `.liro-outcome`, which carries the colour — and, because it exists
+for the one-word outcome badge on the right of a row, also
+`white-space: nowrap` and `text-align: right`. The fix is to take the
+colour class alone, plus `min-width: 0` on the flex items above it.
+
+**Why no test caught it.** `assertPageDoesNotScroll` checks the page's
+own scrollWidth and, for every other element, only whether it scrolls
+*vertically*. The list is the window's designated scrolling region, so
+its horizontal overflow was inside the one place nothing was looking.
+`TestTheChainBreakLineWrapsRatherThanWideningTheWindow` now measures the
+list's own `scrollWidth` against its `clientWidth`, the line's right edge
+against the window's, and the computed `white-space`; run against the
+`.liro-outcome` version it reports "the entry list scrolls sideways:
+scrollWidth 601 exceeds clientWidth 413" in sr-Cyrl, the longest of the
+three catalogues. `TestTheReportNoticeWrapsToo` does the same for the
+report screen's own notice, which is the longest sentence either screen
+carries.
+
+**This is [[D-096]]'s rule for the third time** — a value with no length
+bound wraps, it does not widen its container — and [[D-087]], [[D-122]],
+[[D-128]] and [[D-161]] for the fifth: *a green suite is not evidence
+about what a window shows.* The specific trap is worth naming on its
+own, because it will catch the next person too: **`.liro-outcome` is a
+badge class, not a colour class.** The colour lives in
+`.liro-outcome-<intent>`; taking both gives a sentence the geometry of a
+one-word label.
+
+**Rejected.**
+- **Widening the window.** [[D-106]]'s answer, unchanged: widening is
+  not a fix, it is a delay.
+- **Truncating the sentence with an ellipsis.** [[D-096]] rejected it
+  for the fingerprint and [[D-106]] for a settings label; a sentence
+  about the integrity of the audit log is not one to cut short.

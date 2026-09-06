@@ -38,12 +38,18 @@ exists with one. What gave it away was a file size: five outputs at five
 different levels, all exactly 66 714 bytes, when a `/DSS` revision has to
 add bytes.
 
-**Eleven judgement calls (J-1 … J-11)** are recorded rather than
-decided. The two with real consequences are **J-8** — a signed document
+**Eleven judgement calls (J-1 … J-11)** were recorded rather than
+decided. The two with real consequences were **J-8** — a signed document
 can be observed half-written, and the obvious fix is not free on Windows
 — and **J-10** — revocation is fetched once per document, so a
 hundred-document batch against MUP's responder costs about 33 minutes of
 timeouts.
+
+**Five of the eleven have since been decided by the owner and
+implemented** (2026-09-07): **J-3**, **J-7**, **J-8**, **J-9** and
+**J-10**, each marked DECIDED in its own section below with what was
+decided and the measured before and after. D-162 through D-167 record
+them. J-1, J-2, J-4, J-5, J-6 and J-11 remain the owner's.
 
 **What held**, with numbers: 45 corpus documents and three real fixtures
 signed, 51 signature slots all verifying; a thousand signatures four
@@ -1076,7 +1082,13 @@ than changed. The same path inside the window (`internal/jobs`) is
 unaffected: it reads each document at the moment it signs it and reports
 `INPUT_UNREADABLE` per document (D-117, D-118).
 
-### J-3 — signing a folder twice produces `-signed-signed.pdf`
+### J-3 — signing a folder twice produces `-signed-signed.pdf` — DECIDED
+
+**Decided 2026-09-07: do not guess — ask.** The window says how many of
+the batch's documents already carry the output suffix and offers to skip
+them, once, for the whole batch; the command line reports the count and
+skips them unless `--resign` is given. Both answers stay available,
+because both are legitimate. Implemented; see D-164.
 
 `sign --in "C:\docs\*.pdf"` run a second time refuses each original
 (`izlazni fajl već postoji`) and then cheerfully signs each
@@ -1091,6 +1103,26 @@ guess about intent that could equally be wrong (someone may genuinely
 want to counter-sign a document called `ugovor-signed.pdf` that arrived
 from elsewhere). The window path does not have this problem: it signs the
 list a person put in it.
+
+**What was done.** Nothing guesses. `jobs.LooksLikeOutput` answers the
+question and each front door decides what to do about it in the way that
+suits the person in front of it:
+
+- **The window** shows a screen naming how many there are — *Skip them
+  and sign the rest* (primary), *Sign them too*, *Cancel* — asked once,
+  applied to the whole batch, before the card session opens. Skipped
+  documents are reported as skipped rather than failed, and the report
+  says how many were left alone and why.
+- **The command line** skips them and says so, naming `--resign` as the
+  way to sign them anyway; with `--resign` it says that instead. If
+  skipping leaves nothing, that is said and the exit code is 1.
+  `--force` is untouched: it still means "replace the file that is
+  there", and it no longer implies "and sign last week's outputs again".
+
+Measured through the rebuilt binary on a folder with two documents and
+one `prethodni-signed.pdf` left by an earlier run: run 1 signs 2/2 and
+names the one it skipped; runs 2 and 3 sign nothing and leave the folder
+untouched. No `-signed-signed.pdf` is produced at any point.
 
 ### J-4 — the console encoding is not this program's to choose
 
@@ -1122,7 +1154,12 @@ actually make it faster, recorded rather than done". It is still the
 right next change to the window layer and it is still bigger than a
 bounded fix pass, so it is recorded again rather than attempted here.
 
-### J-7 — the presence probe is now the biggest thing a signer waits for
+### J-7 — the presence probe is now the biggest thing a signer waits for — DECIDED
+
+**Decided 2026-09-07: cache the probe result within one listing, never
+across listings, never concurrently; and investigate whether a cheaper
+question exists.** Implemented, measured, and the cheaper question found
+and reported rather than taken; see D-163.
 
 B-8's second half. `CryptAcquireCertificatePrivateKey` costs **457 ms**
 for a certificate whose card is present and **855 ms** for one whose card
@@ -1146,7 +1183,43 @@ failures applies), caching a probe result for a few seconds within one
 listing, or asking a cheaper question first. Which of those is right is
 the owner's call.
 
-### J-8 — the output file passes through a state that is neither the old file nor the new one
+**What was done, and what it is worth.** `cli.Gather` now answers the
+presence question once per certificate per listing and throws the answers
+away with the listing. Nothing is cached across listings and nothing is
+probed concurrently.
+
+| | Before | After |
+|---|---|---|
+| This machine's real store (5 rows, 3 hardware-backed, one card in) | Gather 2.76 s, 3 probes, 2.43 s probing | **identical** |
+| A six-row listing whose three hardware certificates are each enumerated twice | 3.58 s, 6 probes | **1.97 s, 3 probes** |
+| `liro-bridge certs`, rebuilt binary, three runs | 2.31 s | 2.31 s |
+
+Said plainly: on a store where every certificate is enumerated once —
+this machine, and equally a bookkeeper's six *distinct* certificates —
+there is no repeat to remove, so the memo saves nothing there. It costs
+nothing and makes a repeat free. The five seconds is not what it removes.
+
+**The cheaper question exists.** `NCryptEnumKeys` on the "Microsoft Smart
+Card Key Storage Provider" enumerates the key containers on currently
+inserted cards. Measured three times: **2 keys in 913/921/915 ms**,
+listing exactly the two containers of the card that is in the reader and
+omitting the absent card's — the same answer the three probes give, for
+**one call for the whole machine**, independent of how many certificates
+there are, and without opening a key at all. Against 2.43 s for three
+certificates and about 5 s for the bookkeeper's six.
+
+It is not taken. SPEC §11.10 states the mechanism and D-014/D-077 stand
+behind it; switching to container enumeration is a change to that rule,
+and it depends on every middleware registering through the Microsoft KSP
+(all three Serbian issuers do; the PKCS#11 platforms in F11+ will not).
+Measured and handed over, per J-7's own instruction.
+
+### J-8 — the output file passes through a state that is neither the old file nor the new one — DECIDED
+
+**Decided 2026-09-07: write to a temporary file in the same directory
+and rename over the target; accept that a destination another program
+holds is then refused, and say so in words that name the remedy.**
+Implemented, with a new `OUTPUT_IN_USE` code; see D-165.
 
 `os.WriteFile(out, result.Bytes, 0o600)` opens with `O_CREATE|O_TRUNC`
 and then writes, so between those two moments the destination exists at
@@ -1185,7 +1258,37 @@ turns "a reader has it open" into a refusal the user must act on. Most
 careful tools choose the second. It is a behaviour change on the only
 platform this ships on, so it is the owner's.
 
-### J-9 — nothing tells the user their audit log has stopped recording
+**What was done.** `platform.WriteFileAtomic` writes beside the target,
+flushes, closes and renames over it; both signing paths use it. On any
+failure the temporary file is removed and the destination is untouched.
+A destination held open is refused with `OUTPUT_IN_USE`, a new code whose
+message in all three catalogues says to close the file and try again —
+`OUTPUT_WRITE_FAILED` would have sent the person to look at the disk.
+
+One thing had to be measured rather than assumed: Windows returns
+`ERROR_ACCESS_DENIED` for a rename onto a held-open destination *and* for
+a rename onto a read-only file. The two need opposite answers, so the
+classifier asks which it is; a read-only destination stays
+`OUTPUT_WRITE_FAILED`.
+
+In the rebuilt binary, with a reader holding the previous signed output
+the way an ordinary Windows program does:
+
+```
+liro-bridge: sign: ...\ugovor.pdf: Potpisani dokument nije mogao da zameni
+postojeći fajl jer je taj fajl otvoren u drugom programu. Zatvorite ga i
+pokušajte ponovo. (path=...\ugovor-signed.pdf)
+exit code: 1
+target after: 66714 bytes, SHA-256 unchanged
+```
+
+The same reader made the old `os.WriteFile` path replace the file.
+
+### J-9 — nothing tells the user their audit log has stopped recording — DECIDED
+
+**Decided 2026-09-07: start a new chain beside the broken one, record
+the break, and tell the user once.** The third of the three options.
+Implemented; SPEC §6.7 amended to say so; see D-166.
 
 B-9 makes a failed append visible in the log file. It does not tell the
 person. A log whose last line was truncated by a power cut can never be
@@ -1200,7 +1303,35 @@ recording the discontinuity. The third is what most append-only logs do
 and it is the one this project's own audit-window and export code could
 already display. SPEC §6.7 does not say, so neither does this.
 
-### J-10 — revocation is fetched once per document, not once per batch
+**What was done.** The third option, and SPEC §6.7 now says it.
+
+- The broken file is left exactly as it is — never overwritten,
+  truncated, renamed or deleted — and a new chain is started beside it,
+  under a name carrying its own chain number. Chain 1 keeps the names it
+  always had, so an existing audit directory reads as it did.
+- The new chain's first entry records the break: which file preceded it,
+  at which sequence and line it stopped, and why (`unparseable` or
+  `unreachable`). The record is part of what the entry hashes, so it
+  cannot be altered without breaking the chain it starts.
+- The person is told once, on the report screen, as a notice in the
+  caution family rather than an error: the log continued in a new file,
+  and where it is. Only the entry that opened the chain carries the
+  record, so nothing has to remember to stop saying it.
+- The same happens when a chain cannot be read at all.
+- Verification walks each chain separately and reports each one's own
+  result plus the breaks between them; export writes every chain, and
+  the exported log carries the discontinuity records.
+
+Reading is now tolerant of a broken tail, which is a behaviour change
+worth naming: a log with one truncated last line used to show *nothing*
+in the audit window and export *nothing*. It now shows what survives.
+
+### J-10 — revocation is fetched once per document, not once per batch — DECIDED
+
+**Decided 2026-09-07: implement the smaller change only — remember, for
+the length of one batch, that an endpoint did not answer, and stop
+asking. Successes are still fetched per document, so D-046's ordering
+rule is untouched.** Implemented; see D-162.
 
 Measured: an OCSP responder that accepts the request and never answers
 costs **20 s per document** (D-046's two attempts of ten seconds), and it
@@ -1225,6 +1356,33 @@ A smaller version needs no such call and would help immediately:
 remember, for the length of one batch, that an endpoint did not answer,
 and stop asking. That turns 33 minutes into 20 seconds without changing
 what any successfully-fetched evidence means.
+
+**What was done, and what it measured.** One `dss.EndpointMemory` per
+batch, holding only the endpoints that did not answer. A fresh one for
+the next batch, because a responder that was down five minutes ago may be
+up. A successful response is still fetched per document: D-046's rule
+that the response must postdate the signature is untouched, and whether
+it can be relaxed is still the owner's call.
+
+Ten documents against an OCSP responder that accepts the request and
+never answers, measured on this machine:
+
+| | Before | After |
+|---|---|---|
+| Ten documents | **3m20s** (200.2 s) | **20.1 s** |
+| Per document | 20.0 s each | 20.0 s, then 0 s for the other nine |
+| Requests that reached the responder | 20 | 2 |
+
+An endpoint that answered with something unusable is *not* remembered: a
+responder that is plainly up is not the twenty-second cost this removes,
+and giving up on it after one document would turn a transient server-side
+problem into a whole batch with no revocation evidence.
+
+One cost this deliberately does not touch, recorded rather than fixed: an
+artefact that is fetched and then refused for being too large (D-076's
+30 MB MUP CRL) is downloaded again for every document. Remembering it
+would lose the specific "too large" reason the report gives, and that is
+a wider change than J-10 asked for.
 
 ### J-11 — the MUP certificate on this machine expires on 2026-09-24
 
@@ -1345,10 +1503,12 @@ Listed so he knows what is waiting, per FTEST §12.
 5. **Another machine entirely** — clean Windows, no middleware, no
    WebView2 runtime, SmartScreen on first run. Deferred by his own
    decision; noted and moved past.
-6. **The eleven judgement calls above (J-1 … J-11).** J-8 and J-10 are
-   the two with real consequences: a signed document that can be observed
-   half-written, and 33 minutes of OCSP timeouts on a hundred-document
-   batch.
+6. **The six judgement calls still open (J-1, J-2, J-4, J-5, J-6,
+   J-11).** J-3, J-7, J-8, J-9 and J-10 were decided on 2026-09-07 and
+   are implemented; each is marked DECIDED in its own section above.
+   Of what is left, J-1 (a partly-failed batch exits 0) is the one with
+   a contract behind it: F9's Delphi caller will read that exit code and
+   nothing else.
 
 ---
 

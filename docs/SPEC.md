@@ -347,6 +347,51 @@ Each entry contains: timestamp, certificate SHA-1 thumbprint, document count, re
 
 Rotation by size. Export on user request. There is no upload path in the code.
 
+#### When a chain cannot be continued
+
+The hash chain's defining property cuts both ways. Because each entry
+carries the hash of the one before it, an entry cannot be removed or
+altered without breaking every entry after it — and **a corrupt final
+line can never be appended to.** A power cut mid-write, a full disk, a
+killed process: from that moment the last entry cannot be read, the next
+`PrevHash` cannot be computed, and every signature after it goes
+unrecorded. Measured: one truncated last line made every subsequent
+append fail, permanently.
+
+Refusing to append onto a chain nobody can read is correct — a hash
+chain continued by guessing is not a hash chain — but it is not the end
+of what has to happen. The rule is:
+
+- **The broken file is left exactly as it is.** Never overwritten, never
+  truncated, never renamed, never deleted. It is evidence up to the
+  point it broke.
+- **A new chain is started beside it**, in the same directory. The two
+  are distinguished by file name; the original chain keeps the names it
+  already had.
+- **The new chain's first entry records the discontinuity**: which file
+  preceded it, at which sequence and line it stopped, and why, as far as
+  that is known. That record is part of what the entry hashes, so it
+  cannot be altered without breaking the chain it starts.
+- **The person is told once**, on the report screen, as a notice rather
+  than an error: the log continued in a new file, and where it is. Only
+  the entry that opened the new chain carries the record, so no
+  subsequent signature repeats it.
+- **The same applies when the log cannot be read at all** — a
+  permissions change, a network drive that has gone away. A new chain is
+  started whose first entry says the previous one was unreachable. The
+  alternative is refusing to sign, and blocking a bookkeeper's afternoon
+  over a log is worse than recording that the log moved.
+- **Verification and export understand several chains.** Verification
+  walks each chain separately — a new chain's first entry has no
+  `PrevHash` by construction, so walking the whole store as one sequence
+  would report the discontinuity itself as tampering — and reports each
+  chain's own result alongside the breaks between them: "three chains,
+  each intact, breaks on 12.03. and 04.09., with reasons". Export writes
+  every chain.
+
+The break is itself a fact worth recording rather than a state to escape
+quietly. That is what append-only logs do.
+
 ### 6.8 Telemetry
 
 **None.** The agent makes exactly four kinds of outbound network request, all of them functional and all of them explicable to the user:
