@@ -25,16 +25,7 @@ func TestWindowsAutostartRoundTrip(t *testing.T) {
 	}
 
 	a := NewAutostart()
-
-	before, err := a.IsEnabled()
-	if err != nil {
-		t.Fatalf("IsEnabled (before): %v", err)
-	}
-	t.Cleanup(func() {
-		if err := a.SetEnabled(before, testExePath); err != nil {
-			t.Errorf("restoring autostart state: %v", err)
-		}
-	})
+	keepAutostartValue(t, runKeyPath)
 
 	if err := a.SetEnabled(true, testExePath); err != nil {
 		t.Fatalf("SetEnabled(true): %v", err)
@@ -56,6 +47,123 @@ func TestWindowsAutostartRoundTrip(t *testing.T) {
 	}
 	if enabled {
 		t.Fatal("IsEnabled() = true after SetEnabled(false)")
+	}
+}
+
+// keepAutostartValue snapshots this project's own Run value verbatim —
+// whether it is there and, if so, what it points at — and puts exactly
+// that back when the test ends.
+//
+// Restoring only *whether* the entry exists is not enough, and this is
+// not hypothetical: this test used to record a bool from IsEnabled and
+// restore it with SetEnabled(before, testExePath), so on any machine
+// where autostart was on, one `go test ./...` rewrote the developer's
+// real autostart entry to point at C:\test\liro-bridge.exe — a path
+// that does not exist, leaving the agent silently not starting with
+// Windows. D-134 recorded that defect and left it; this is the fix.
+func keepAutostartValue(t *testing.T, keyPath string) {
+	t.Helper()
+
+	before, present := readRunValue(t, keyPath)
+	t.Cleanup(func() {
+		k, _, err := registry.CreateKey(registry.CURRENT_USER, keyPath, registry.SET_VALUE)
+		if err != nil {
+			t.Errorf("restoring HKCU\\%s: %v", keyPath, err)
+			return
+		}
+		defer func() { _ = k.Close() }()
+		if !present {
+			if err := k.DeleteValue(runValueName); err != nil && err != registry.ErrNotExist {
+				t.Errorf("removing HKCU\\%s\\%s: %v", keyPath, runValueName, err)
+			}
+			return
+		}
+		if err := k.SetStringValue(runValueName, before); err != nil {
+			t.Errorf("restoring HKCU\\%s\\%s: %v", keyPath, runValueName, err)
+		}
+	})
+}
+
+func readRunValue(t *testing.T, keyPath string) (string, bool) {
+	t.Helper()
+	k, err := registry.OpenKey(registry.CURRENT_USER, keyPath, registry.QUERY_VALUE)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = k.Close() }()
+	s, _, err := k.GetStringValue(runValueName)
+	if err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// TestAutostartTestsPutBackWhatTheyFound is the regression test for the
+// defect above, exercised against a scratch key so it can seed a value
+// of its own rather than depending on what this machine happens to hold.
+//
+// It fails against the previous shape of TestWindowsAutostartRoundTrip:
+// recording only IsEnabled()'s bool and restoring with
+// SetEnabled(before, testExePath) leaves the *seeded* value replaced by
+// testExePath, which is what actually happened on this machine.
+func TestAutostartTestsPutBackWhatTheyFound(t *testing.T) {
+	deleteScratchKey(t)
+	t.Cleanup(func() { deleteScratchKey(t) })
+
+	const ownersValue = `"C:\Users\Somebody\Desktop\liro-bridge\liro-bridge.exe"`
+	k, _, err := registry.CreateKey(registry.CURRENT_USER, scratchKeyPath, registry.SET_VALUE)
+	if err != nil {
+		t.Fatalf("creating scratch key: %v", err)
+	}
+	if err := k.SetStringValue(runValueName, ownersValue); err != nil {
+		t.Fatalf("seeding the value: %v", err)
+	}
+	_ = k.Close()
+
+	// A nested test is the only way to observe what a t.Cleanup actually
+	// restores: cleanups run when that test ends, not when this one does.
+	inner := func(t *testing.T) {
+		keepAutostartValue(t, scratchKeyPath)
+		a := windowsAutostart{keyPath: scratchKeyPath}
+		if err := a.SetEnabled(true, testExePath); err != nil {
+			t.Fatalf("SetEnabled(true): %v", err)
+		}
+		if err := a.SetEnabled(false, testExePath); err != nil {
+			t.Fatalf("SetEnabled(false): %v", err)
+		}
+	}
+	if !t.Run("round trip", inner) {
+		t.Fatal("the inner test failed; the restoration check below means nothing")
+	}
+
+	got, present := readRunValue(t, scratchKeyPath)
+	if !present {
+		t.Fatalf("the value is gone: a test that found autostart enabled left it disabled")
+	}
+	if got != ownersValue {
+		t.Fatalf("autostart value = %q after a test run, want it untouched at %q", got, ownersValue)
+	}
+}
+
+// TestAutostartTestsDoNotInventAnEntry is the other direction: a machine
+// with no autostart entry must not have one after a test run.
+func TestAutostartTestsDoNotInventAnEntry(t *testing.T) {
+	deleteScratchKey(t)
+	t.Cleanup(func() { deleteScratchKey(t) })
+
+	inner := func(t *testing.T) {
+		keepAutostartValue(t, scratchKeyPath)
+		a := windowsAutostart{keyPath: scratchKeyPath}
+		if err := a.SetEnabled(true, testExePath); err != nil {
+			t.Fatalf("SetEnabled(true): %v", err)
+		}
+	}
+	if !t.Run("enable only", inner) {
+		t.Fatal("the inner test failed; the restoration check below means nothing")
+	}
+
+	if got, present := readRunValue(t, scratchKeyPath); present {
+		t.Fatalf("a test left an autostart entry behind, pointing at %q", got)
 	}
 }
 
