@@ -770,6 +770,163 @@ first run of this check found nothing.
 produce 595×842; `box-inherited.pdf` (portrait box, `/Rotate 90`
 inherited from the `Pages` node) displays 842×595 in both.
 
+
+### B-9 — a batch that could not be written to the audit log went unrecorded in silence (fixed)
+
+**What it was.** `recordInteractiveAudit` discarded both of its error
+paths: a bare `return` when the store could not be opened, and
+`_, _ = store.Append(...)` when the append failed.
+
+Measured by breaking the log deliberately: **a single unparseable line
+anywhere in it makes every subsequent `Append` fail forever**, because
+the chain's last entry cannot be read and so the next `PrevHash` cannot
+be computed. One truncated last line is exactly what a power cut leaves
+behind:
+
+```
+=== the last line truncated mid-JSON ===
+  Verify -> OK=false BrokenAt=0 err=audit: parsing …: unexpected end of JSON input
+  All()  -> 0 entries, err=… unexpected end of JSON input
+  Append onto a truncated log -> err=… unexpected end of JSON input
+```
+
+From that moment the agent goes on signing and goes on not recording,
+with nothing in the log file, nothing on screen and nothing in the exit
+code — while SPEC §6.7 makes the audit log the record of every signature.
+
+**The fix.** Refusing to append onto a chain nobody can read is correct
+and is unchanged. Both error paths now log at error level, carrying the
+outcome and the document count and nothing else (SPEC §18.3 keeps file
+names, personal names and content out of every log line). What the *user*
+should be told is a separate question and is left to the owner (J-9).
+
+**The tests.** `TestAFailedAuditAppendIsSaidOutLoud` covers both failing
+paths and the healthy one — it fails against the previous code with
+`log was: ""` for every case.
+`TestATamperedAuditLogIsStillReadableAndSaysWhereItBroke` pins what the
+export and the audit window rely on and which nothing had asserted end to
+end.
+
+### §8 — failure injection
+
+Every case is a real server or a real file this session controlled,
+driven through the shipped pipeline.
+
+**Timestamp authorities.** Fourteen behaviours, each signed twice —
+once with `--on-tsa-failure abort` and once with `b-b`:
+
+| TSA behaviour | abort | b-b | elapsed |
+|---|---|---|---|
+| accepts the connection and never answers | `TSA_UNAVAILABLE` | B-B, reason stated | **49.0 s** |
+| 3 s delay then HTTP 500 | `TSA_UNAVAILABLE` | B-B, reason stated | 13.0 s |
+| HTTP 400 / 401 / 403 / 404 | `TSA_REJECTED` | B-B, reason stated | **0.0 s** |
+| HTTP 500 / 502 / 503 | `TSA_UNAVAILABLE` | B-B, reason stated | 4.0 s |
+| 200 with 4 KB of `0xFF` | `TSA_UNAVAILABLE` | B-B, reason stated | 0.0 s |
+| 200 with an empty body | `TSA_UNAVAILABLE` | B-B, reason stated | 0.0 s |
+| 200 with an HTML error page | `TSA_UNAVAILABLE` | B-B, reason stated | 0.0 s |
+| 200 with 64 MB of body | `TSA_UNAVAILABLE` | B-B, reason stated | **0.0 s** |
+| connection closed mid-response | `TSA_UNAVAILABLE` | B-B, reason stated | 4.0 s |
+
+D-045's policy is visible in the numbers and is exactly right: 4xx and
+RFC 3161 rejections are **not** retried (0.0 s), 5xx and network failures
+are (4.0 s = 1 s + 3 s of backoff across three attempts), and the worst
+case is 49 s — three 15-second attempts plus the same backoff — for a TSA
+that accepts a connection and then says nothing. The 64 MB body is
+refused in **0.0 s**: the BER length check rejects it before reading it.
+
+**Never a silent downgrade** in any of the twenty-eight runs. With
+`abort` the operation is refused with a code; with `b-b` the document is
+signed at B-B and the note says which TSA and why. Every B-B output
+independently verifies.
+
+**The Trusted List.** Seven sources, each against a store holding the
+real embedded list:
+
+| Source | refresh | list afterwards |
+|---|---|---|
+| connection refused | error, keeps current | seq 36, embedded |
+| HTTP 404 | error, keeps current | seq 36, embedded |
+| 200 with 4 KB of NUL bytes | signature invalid, keeps current | seq 36, embedded |
+| 200 with well-formed XML that is not a TSL | "no XML-DSig Signature element", keeps current | seq 36, embedded |
+| 200 with the real list, sequence tampered to 99 | "document digest does not match the signed DigestValue", keeps current | seq 36, embedded |
+| 200 with the real, valid list | accepted | seq 36, **network** |
+| 200 with an empty body | "document has no element", keeps current | seq 36, embedded |
+
+Never fails closed, never fails open, and the tampered sequence number is
+caught by the signature rather than by a sequence check. Each rejection
+logs one warning naming the reason.
+
+A *validly signed* older list could not be served, because the Ministry's
+signature covers the sequence number and there is nothing here that can
+forge one; `TestRefreshRejectsRollback` covers that path by setting the
+store's own current sequence by hand, which is what D-107 already
+recorded.
+
+**The configuration file.** Twenty-two shapes, each against a scratch
+profile so the owner's own `config.json` was never touched (verified by
+hash afterwards):
+
+Absent, empty, `{`, plain text, a JSON array, valid JSON with only
+unknown keys, a UTF-8 BOM, UTF-16 with a BOM, `locale: "sr"` (the
+forbidden bare form), `locale: "klingon"`, ports 0 and 99999, ports with
+start greater than end, `logLevel: "shout"`, `signatureLevel: "b-xyz"`,
+`stampPosition: "middle"`, `stampPage: "-5"`, `stampX` of 1e308, every
+field of the wrong type, 10 MB of JSON, 2000 levels of nesting, the path
+being a directory, and the file held open exclusively by another process.
+
+**All twenty-two: exit 0, a usable listing, and a warning naming the
+field and the value that was replaced.** No crash, no hang, and nothing
+rewritten on disk. The BOM case now loads `sr-Cyrl` end to end through
+the shipped binary, which is B-5's fix in the product rather than in a
+test. The unreadable-file case logs "config file could not be read, using
+defaults" to the log file rather than to stderr, which is SPEC §9.2
+holding.
+
+**The audit log.** Six states:
+
+| State | Verify | All() | Append | Export |
+|---|---|---|---|---|
+| 40 healthy entries | OK, `BrokenAt=-1` | 40 | — | — |
+| entry 13 altered (still valid JSON) | **not OK, `BrokenAt=12`** | **40** | — | both files written, break reported |
+| one line that is not JSON | fails, parse error | fails | **fails** | — |
+| the last line truncated | fails, parse error | fails | **fails** | — |
+| the file held open exclusively | — | — | fails with the OS reason, **succeeds again once released**, chain intact | — |
+| the directory is a file | `NewStore` refuses | — | — | — |
+
+The hash chain does what it is for: a single altered field in entry 13 is
+detected at exactly entry 13, and every entry stays readable so the log
+can still be exported and looked at. The two unreadable-line rows are
+B-9.
+
+**Revocation.** An OCSP responder that accepts the request and never
+answers, and CRLs of 1, 8 and 40 MB:
+
+| Configuration | cost | evidence collected |
+|---|---|---|
+| no endpoints at all | 0.0 s | none |
+| OCSP hangs, no CRL | **20.0 s** | none |
+| OCSP hangs, CRL host refuses | **20.0 s** | none |
+| a 1 / 8 / 40 MB CRL of unparseable bytes | 0.0–0.1 s | none — rejected as not a CRL before the size cap |
+
+The 20 s is D-046's own policy working (two attempts, 10 s each) — and it
+is paid **per document**, because revocation is collected inside each
+`SignDocument`. D-076 measured MUP's real OCSP responder as *dropping*
+connections rather than refusing them, which is precisely the 10-second
+case. So a hundred-document B-LT batch against MUP's responder as
+measured today costs about **33 minutes** of timeouts on top of the
+signing. See J-10.
+
+The size cap itself was not re-exercised: bytes that are not a CRL are
+rejected before the cap is reached, and there is nothing here that can
+produce a validly-signed 8 MB CRL. D-076 measured it against the real
+30 136 214-byte MUP CRL.
+
+**Disk full.** Could not be produced. The only volume on this machine has
+254 GB free, and every way of making a small one — a VHD, a quota, a
+formatted image — needs administrator rights on someone else's working
+computer. What was measured instead is the property the disk-full case
+would expose, and it is J-8.
+
 ---
 
 ## For the owner — judgement calls, recorded rather than changed
@@ -857,3 +1014,118 @@ build one per process. D-099 noted it; D-131 named it as "what would
 actually make it faster, recorded rather than done". It is still the
 right next change to the window layer and it is still bigger than a
 bounded fix pass, so it is recorded again rather than attempted here.
+
+### J-7 — the presence probe is now the biggest thing a signer waits for
+
+B-8's second half. `CryptAcquireCertificatePrivateKey` costs **457 ms**
+for a certificate whose card is present and **855 ms** for one whose card
+is not, measured over 200 calls each and stable across the run. On this
+machine that is 1.3 s of the 2.4 s `liro-bridge certs` takes, and it is
+paid again before the certificate step of every signing flow.
+
+It scales with the number of certificates whose cards are *absent* —
+SPEC §14.1's bookkeeper with six certificates and one card in the reader
+would pay around five seconds every time.
+
+D-131 measured this at 44 ms for all four certificates and concluded the
+wait was the WebView2 window. That was true then; it is not true now, and
+the difference is a Pošta certificate in the store whose card is not in
+the reader.
+
+The three things that would help are all changes to SPEC §11.10's model
+rather than bugs to fix: probing concurrently (D-027 rejected concurrent
+smart-card access for signing, and its argument about driver-level
+failures applies), caching a probe result for a few seconds within one
+listing, or asking a cheaper question first. Which of those is right is
+the owner's call.
+
+### J-8 — the output file passes through a state that is neither the old file nor the new one
+
+`os.WriteFile(out, result.Bytes, 0o600)` opens with `O_CREATE|O_TRUNC`
+and then writes, so between those two moments the destination exists at
+the wrong length. Measured, with four pollers watching a destination
+while a 4 MB file was written over an existing 300 KB one:
+
+```
+sizes another program observed at the destination path:
+         0  x3        <-- neither the old file nor the new one
+   4194304  x636      (the new file, complete)
+    307200  x662      (the old file, intact)
+```
+
+Two consequences. A program watching the output folder — an ERP, a sync
+client, an indexer — can pick up an empty or partial signed document. And
+if the write fails partway (a full disk, a network drive that goes away),
+that truncated state is what the destination is *left* holding: with
+`--force`, a previously good signed file is destroyed and replaced by a
+partial one.
+
+**The obvious fix is not free on Windows, which is why this is a question
+rather than a change.** Writing to a temporary file and renaming over the
+target makes the destination atomic — but measured here, `os.Rename` over
+a destination that *any* other program has open, even only for reading,
+fails with "Access is denied":
+
+```
+os.WriteFile:   reader that opened the old file now reads "NEW NEW NEW…"
+os.Rename over an open destination FAILED: … Access is denied.
+```
+
+So the trade is real: today `--force` overwrites even while a PDF reader
+has the old output open, at the cost of a window where the file is
+neither one thing nor the other. Write-then-rename closes that window and
+turns "a reader has it open" into a refusal the user must act on. Most
+careful tools choose the second. It is a behaviour change on the only
+platform this ships on, so it is the owner's.
+
+### J-9 — nothing tells the user their audit log has stopped recording
+
+B-9 makes a failed append visible in the log file. It does not tell the
+person. A log whose last line was truncated by a power cut can never be
+appended to again, so from that moment every signature is unrecorded,
+and the only place that says so is a file for developers.
+
+The options are all reasonable and all different: refuse to sign until
+the log is dealt with (safest, and it stops a bookkeeper's afternoon);
+show a warning on the report screen and keep going; or start a new
+chain file beside the broken one, keeping the old one for evidence and
+recording the discontinuity. The third is what most append-only logs do
+and it is the one this project's own audit-window and export code could
+already display. SPEC §6.7 does not say, so neither does this.
+
+### J-10 — revocation is fetched once per document, not once per batch
+
+Measured: an OCSP responder that accepts the request and never answers
+costs **20 s per document** (D-046's two attempts of ten seconds), and it
+is paid inside every `SignDocument`. A hundred-document B-LT batch
+against MUP's responder — which D-076 measured as *dropping* connections,
+which is exactly this case — is about **33 minutes** of timeouts.
+
+The evidence being fetched is a property of the *certificate*, not of the
+document, and it is the same answer every time within one batch. Fetching
+it once would turn 33 minutes into 20 seconds.
+
+The reason this is a question and not a change is D-046's own rule:
+revocation is collected after the signature exists "so the OCSP response
+postdates the signature — which is what a validator expects". A response
+fetched after document 1 predates document 100's signature, by however
+long the batch takes. For a batch signed in a minute that is probably
+immaterial; whether "probably" is good enough for a qualified signature
+is exactly the kind of judgement this project has been right to keep with
+its owner.
+
+A smaller version needs no such call and would help immediately:
+remember, for the length of one batch, that an endpoint did not answer,
+and stop asking. That turns 33 minutes into 20 seconds without changing
+what any successfully-fetched evidence means.
+
+### J-11 — the MUP certificate on this machine expires on 2026-09-24
+
+Not a defect, and noticed while reading the certificate listing: the MUP
+signing certificate that this session enumerated is valid until
+**2026-09-24**, which is eighteen days after this run. The Pošta one runs
+to 2030.
+
+Worth saying because the whole of §2, and every future real-hardware
+acceptance run, depends on there being a usable qualified certificate in
+the reader.
