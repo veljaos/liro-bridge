@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/i18n"
@@ -109,16 +110,61 @@ func renderRow(w io.Writer, index int, row CertRow, c *i18n.Catalogue) {
 	}
 	fprintf(w, "  [%d] %s %s %s\n", index, name, mark, status)
 
-	fprintf(w, "      %s      %s\n", c.T("certs.purpose_label"), purposeLabel(row.Info.Purpose, c))
-	fprintf(w, "      %s       %s\n", c.T("certs.issuer_label"), row.Info.IssuerCN)
-	fprintf(w, "      %s    %s\n", c.T("certs.qualified_label"), qualifiedLabel(row.Info, c))
+	field := certFieldFormatter(c)
+	field(w, "certs.purpose_label", purposeLabel(row.Info.Purpose, c))
+	field(w, "certs.issuer_label", row.Info.IssuerCN)
+	field(w, "certs.qualified_label", qualifiedLabel(row.Info, c))
 	if !row.Info.Usable && row.Info.NotUsableReason != "" {
-		fprintf(w, "      %s       %s\n", c.T("certs.reason_label"), reasonLabel(row.Info.NotUsableReason, c))
+		field(w, "certs.reason_label", reasonLabel(row.Info.NotUsableReason, c))
 	}
-	fprintf(w, "      %s        %s\n", c.T("certs.valid_label"),
+	field(w, "certs.valid_label",
 		fmt.Sprintf(c.T("certs.valid_range"), row.Info.NotBefore.Format("2006-01-02"), row.Info.NotAfter.Format("2006-01-02")))
-	fprintf(w, "      %s   %s\n", c.T("certs.thumbprint_label"), thumbprintSuffix(row.Info.Thumbprint))
-	fprintf(w, "      %s      %s\n", c.T("certs.storage_label"), storageLabel(row.OnHardware, c))
+	field(w, "certs.thumbprint_label", thumbprintSuffix(row.Info.Thumbprint))
+	field(w, "certs.storage_label", storageLabel(row.OnHardware, c))
+}
+
+// certFieldLabels are the seven labels a certificate row can show, in
+// the order it shows them. They share one column, so the column has to
+// be as wide as the widest of them *in the locale being rendered*.
+var certFieldLabels = []string{
+	"certs.purpose_label",
+	"certs.issuer_label",
+	"certs.qualified_label",
+	"certs.reason_label",
+	"certs.valid_label",
+	"certs.thumbprint_label",
+	"certs.storage_label",
+}
+
+// certFieldFormatter returns a function that writes one label/value
+// line with the value column aligned across every row.
+//
+// The width is computed from the catalogue, not written into the format
+// string. It used to be written in: seven literal runs of spaces, each
+// the right length for the *English* label beside it, so the listing
+// lined up in English and was ragged in both Serbian spellings — the
+// listing being, on the command line, the one screen a signer actually
+// reads. In sr-Latn the value column started at 12, 16, 16, 13, 12, 9
+// and 13 characters for the seven fields.
+//
+// Rune count is the right measure here and Go's own fmt agrees: every
+// character in these labels is a single-width Latin or Cyrillic letter,
+// and fmt pads %s by runes rather than by bytes, so "Važi" and "Vazi"
+// occupy the same column.
+func certFieldFormatter(c *i18n.Catalogue) func(io.Writer, string, string) {
+	width := 0
+	for _, key := range certFieldLabels {
+		if n := utf8.RuneCountInString(c.T(key)); n > width {
+			width = n
+		}
+	}
+	// Three spaces between the widest label and the values, which is
+	// what the English listing already had between "Thumbprint" and its
+	// value — the tightest of the seven, and therefore the one the
+	// column width was really set by.
+	return func(w io.Writer, key, value string) {
+		fprintf(w, "      %-*s   %s\n", width, c.T(key), value)
+	}
 }
 
 func purposeLabel(p classify.Purpose, c *i18n.Catalogue) string {

@@ -438,7 +438,14 @@ func TestStampWindowRendersInEveryLocale(t *testing.T) {
 // is measured in every method, because which one is chosen decides
 // what is revealed underneath it.
 func TestStampWindowFitsBothRolesWithoutScrolling(t *testing.T) {
-	c := i18n.Load("sr-Cyrl") // the longest labels of the three
+	// All three, not the one assumed to have the longest labels: the
+	// assumption does not survive checking. "Sign, choosing where the
+	// signature goes" is 39 characters against 33 for either Serbian
+	// spelling of the same option, so English is the longest label on
+	// this particular screen. The windows are created once per role and
+	// each locale is one more PostJSON into them, not one more WebView2
+	// environment -- D-099's rate of window creations is what this
+	// package has to keep down, not the number of assertions.
 	cfg := config.Default()
 	cfg.VisibleStamp = true
 	cfg.StampPage = "3" // the page-number box shown too
@@ -458,7 +465,7 @@ func TestStampWindowFitsBothRolesWithoutScrolling(t *testing.T) {
 	} {
 		role, roleHeight := tc.role, tc.height
 		win, err := ui.NewWindow(ui.Options{
-			Title:       c.T("stampwindow.title"),
+			Title:       i18n.Load("sr-Latn").T("stampwindow.title"),
 			Width:       stampWindowWidth,
 			Height:      roleHeight,
 			Assets:      assetsFS,
@@ -468,33 +475,36 @@ func TestStampWindowFitsBothRolesWithoutScrolling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewWindow(role %v): %v", role, err)
 		}
-		for _, method := range []string{stampMethodPlaced, stampMethodCorners, stampMethodNone} {
-			payload := buildStampInit(c, cfg, role, method)
-			if role == stampRoleStep {
-				// With the step header the real screen carries. Measuring
-				// without it is how this test passed at 345 points while
-				// the third option was cut off on screen.
-				m := newMainWindow(cfg, "sr-Cyrl")
-				m.method = method
-				payload["step"] = m.headerFor(stepMethod)
-			}
-			if err := win.PostJSON(payload); err != nil {
-				t.Fatalf("PostJSON(role %v, method %s): %v", role, method, err)
-			}
+		for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+			c := i18n.Load(locale)
+			for _, method := range []string{stampMethodPlaced, stampMethodCorners, stampMethodNone} {
+				payload := buildStampInit(c, cfg, role, method)
+				if role == stampRoleStep {
+					// With the step header the real screen carries. Measuring
+					// without it is how this test passed at 345 points while
+					// the third option was cut off on screen.
+					m := newMainWindow(cfg, locale)
+					m.method = method
+					payload["step"] = m.headerFor(stepMethod)
+				}
+				if err := win.PostJSON(payload); err != nil {
+					t.Fatalf("PostJSON(role %v, %s, method %s): %v", role, locale, method, err)
+				}
 
-			scrolls := evalBool(t, win,
-				"document.querySelector('.stamp-form').scrollHeight > document.querySelector('.stamp-form').clientHeight + 1")
-			if scrolls {
-				h := evalNumber(t, win, "document.querySelector('.stamp-form').scrollHeight")
-				cH := evalNumber(t, win, "document.querySelector('.stamp-form').clientHeight")
-				t.Errorf("role %v, method %s at %d points scrolls: %v of %v visible",
-					role, method, roleHeight, cH, h)
-			}
-			assertNoPageScroll(t, win)
-			bottom := evalNumber(t, win, "document.getElementById('save-btn').getBoundingClientRect().bottom")
-			if height := evalNumber(t, win, "window.innerHeight"); bottom > height {
-				t.Errorf("role %v, method %s: the primary action's bottom edge is at %v, past the window's %v",
-					role, method, bottom, height)
+				scrolls := evalBool(t, win,
+					"document.querySelector('.stamp-form').scrollHeight > document.querySelector('.stamp-form').clientHeight + 1")
+				if scrolls {
+					h := evalNumber(t, win, "document.querySelector('.stamp-form').scrollHeight")
+					cH := evalNumber(t, win, "document.querySelector('.stamp-form').clientHeight")
+					t.Errorf("role %v, %s, method %s at %d points scrolls: %v of %v visible",
+						role, locale, method, roleHeight, cH, h)
+				}
+				assertNoPageScroll(t, win)
+				bottom := evalNumber(t, win, "document.getElementById('save-btn').getBoundingClientRect().bottom")
+				if height := evalNumber(t, win, "window.innerHeight"); bottom > height {
+					t.Errorf("role %v, %s, method %s: the primary action's bottom edge is at %v, past the window's %v",
+						role, locale, method, bottom, height)
+				}
 			}
 		}
 		_ = win.Close()

@@ -229,3 +229,83 @@ func TestRenderJSONStructure(t *testing.T) {
 		t.Fatalf("TrustedList.Sequence = %d, want 36", decoded.TrustedList.Sequence)
 	}
 }
+
+// TestCertificateFieldsLineUpInEveryLocale is FTEST §9's "anything that
+// behaves differently in one of the three languages", found by looking
+// at `liro-bridge certs` in each of them rather than at the payload
+// behind it.
+//
+// The seven label/value lines used to be written with seven literal runs
+// of spaces, each the right length for the *English* label beside it. In
+// English the values lined up at column 13. Measured in sr-Latn, they
+// started at 12, 16, 16, 13, 12, 9 and 13 — on the one screen the
+// command line actually shows a signer, in the two languages almost all
+// of them read.
+//
+// This asserts the property rather than the numbers: whatever the
+// catalogue holds, every value in a certificate's block starts at the
+// same column, and there is at least one space of gap.
+func TestCertificateFieldsLineUpInEveryLocale(t *testing.T) {
+	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+		t.Run(locale, func(t *testing.T) {
+			c := i18n.Load(locale)
+			var buf bytes.Buffer
+			// --all, so the row carrying a "Reason" line is rendered too;
+			// that is the seventh label and one of the two long ones.
+			RenderText(&buf, sampleReport(), c, referenceTime, true)
+
+			labels := map[string]bool{}
+			for _, key := range certFieldLabels {
+				labels[c.T(key)] = true
+			}
+
+			column := -1
+			first := ""
+			seen := 0
+			for _, line := range strings.Split(buf.String(), "\n") {
+				trimmed := strings.TrimLeft(line, " ")
+				if len(trimmed) == len(line) {
+					continue // not one of the indented field lines
+				}
+				fields := strings.SplitN(trimmed, " ", 2)
+				if len(fields) != 2 || !labels[fields[0]] {
+					continue
+				}
+				value := strings.TrimLeft(fields[1], " ")
+				if value == "" {
+					// The fixture deliberately carries a certificate with
+					// no issuer CN; a blank value says nothing about the
+					// column it would have started in.
+					continue
+				}
+				at := len([]rune(line)) - len([]rune(value))
+				seen++
+				if column == -1 {
+					column, first = at, line
+					continue
+				}
+				if at != column {
+					t.Errorf("values do not line up:\n  %q starts its value at column %d\n  %q starts its value at column %d",
+						first, column, line, at)
+				}
+			}
+			if seen < len(certFieldLabels) {
+				t.Fatalf("only %d of %d field lines were found; this test is not reading the listing",
+					seen, len(certFieldLabels))
+			}
+
+			// And the gap is real: the widest label is followed by at
+			// least one space, never butted against its value.
+			widest := 0
+			for l := range labels {
+				if n := len([]rune(l)); n > widest {
+					widest = n
+				}
+			}
+			if column <= widest+6 {
+				t.Errorf("the value column is at %d for a widest label of %d runes (plus 6 of indent) — no gap",
+					column, widest)
+			}
+		})
+	}
+}

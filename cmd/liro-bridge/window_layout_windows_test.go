@@ -203,31 +203,51 @@ func assertScrolls(t *testing.T, win ui.Window, window, selector string) {
 // carries. A layout measured without it is a layout measured on a
 // screen nobody sees — which is exactly how the method step came to
 // ship four points too short for its own third option.
-func withStepHeader(payload map[string]any) map[string]any {
-	m := newMainWindow(config.Default(), "sr-Cyrl")
+func withStepHeaderIn(locale string, payload map[string]any) map[string]any {
+	m := newMainWindow(config.Default(), locale)
 	payload["step"] = m.headerFor(stepCertificate)
 	return payload
 }
 
+// everyLocale is the three this product ships (SPEC 9.1), always with
+// the script subtag.
+//
+// Measuring only sr-Cyrl was reasonable -- it is usually the longest
+// catalogue -- but "usually" is not a property, and FTEST 9 asks for
+// every window at every step in all three with realistic content.
+// Serbian Latin carries diacritics Cyrillic does not, and English is
+// shorter in most places and longer in a few; a layout that holds in one
+// is not evidence about the other two. The windows are shared
+// (sharedwindow_windows_test.go), so a second and third locale costs one
+// PostJSON each, not a second and third WebView2 environment.
+var everyLocale = []string{"sr-Latn", "sr-Cyrl", "en"}
+
 func TestConsentWindowFitsWithSixCertificates(t *testing.T) {
-	c := i18n.Load("sr-Cyrl")
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) { consentSixCertificates(t, locale) })
+	}
+}
+
+func consentSixCertificates(t *testing.T, locale string) {
+	t.Helper()
+	c := i18n.Load(locale)
 	win, _ := sharedConsentWindow(t)
 
 	vm := consent.BuildViewModel(consent.ApplicationLocal,
 		[][]byte{{1}, {2}, {3}}, []string{"ugovor.pdf", "aneks.pdf", "izjava.pdf"}, sixCertificates())
-	if err := win.PostJSON(withStepHeader(buildConsentInit(c, vm))); err != nil {
+	if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm))); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 
-	assertPageDoesNotScroll(t, win, "consent (waiting)", "#cert-list")
-	assertButtonsVisible(t, win, "consent (waiting)", "#cert-list")
-	assertScrolls(t, win, "consent (waiting)", "#cert-list")
+	assertPageDoesNotScroll(t, win, "consent (waiting) "+locale, "#cert-list")
+	assertButtonsVisible(t, win, "consent (waiting) "+locale, "#cert-list")
+	assertScrolls(t, win, "consent (waiting) "+locale, "#cert-list")
 
 	// With the Details disclosure open the fixed content grows; the
 	// certificate list must give way rather than the buttons.
 	openConsentDetails(t, win)
-	assertPageDoesNotScroll(t, win, "consent (waiting, details open)", "#cert-list", "#file-list")
-	assertButtonsVisible(t, win, "consent (waiting, details open)", "#cert-list")
+	assertPageDoesNotScroll(t, win, "consent (details open) "+locale, "#cert-list", "#file-list")
+	assertButtonsVisible(t, win, "consent (details open) "+locale, "#cert-list")
 }
 
 // TestConsentWindowFitsWithTenLongFileNames is SPEC §6.6's own reason
@@ -236,7 +256,14 @@ func TestConsentWindowFitsWithSixCertificates(t *testing.T) {
 // at the 120-character display cap, with the Details section open and
 // six certificates behind it.
 func TestConsentWindowFitsWithTenLongFileNames(t *testing.T) {
-	c := i18n.Load("sr-Cyrl")
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) { consentTenLongNames(t, locale) })
+	}
+}
+
+func consentTenLongNames(t *testing.T, locale string) {
+	t.Helper()
+	c := i18n.Load(locale)
 	win, _ := sharedConsentWindow(t)
 
 	digests := make([][]byte, 0, 14)
@@ -246,13 +273,13 @@ func TestConsentWindowFitsWithTenLongFileNames(t *testing.T) {
 		names = append(names, strings.Repeat("ugovor-o-poslovnoj-saradnji-", 6)+"0.pdf")
 	}
 	vm := consent.BuildViewModel(consent.ApplicationLocal, digests, names, sixCertificates())
-	if err := win.PostJSON(withStepHeader(buildConsentInit(c, vm))); err != nil {
+	if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm))); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 	openConsentDetails(t, win)
 
-	assertPageDoesNotScroll(t, win, "consent (ten long file names)", "#cert-list", "#file-list")
-	assertButtonsVisible(t, win, "consent (ten long file names)", "#cert-list")
+	assertPageDoesNotScroll(t, win, "consent (ten long names) "+locale, "#cert-list", "#file-list")
+	assertButtonsVisible(t, win, "consent (ten long names) "+locale, "#cert-list")
 }
 
 // TestTheQuestionsAfterApprovalFitToo covers the three screens a batch
@@ -260,8 +287,15 @@ func TestConsentWindowFitsWithTenLongFileNames(t *testing.T) {
 // has its own actions row, and each is now on the page that carries the
 // progress and the report rather than on a window of its own.
 func TestTheQuestionsAfterApprovalFitToo(t *testing.T) {
-	c := i18n.Load("sr-Cyrl")
-	m, _ := testMainWindow(t, "sr-Cyrl", config.Default(), nil)
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) { questionsAfterApproval(t, locale) })
+	}
+}
+
+func questionsAfterApproval(t *testing.T, locale string) {
+	t.Helper()
+	c := i18n.Load(locale)
+	m, _ := testMainWindow(t, locale, config.Default(), nil)
 
 	for _, tc := range []struct {
 		name    string
@@ -277,53 +311,70 @@ func TestTheQuestionsAfterApprovalFitToo(t *testing.T) {
 			if err := m.win.PostJSON(tc.payload); err != nil {
 				t.Fatalf("PostJSON: %v", err)
 			}
-			assertPageDoesNotScroll(t, m.win, "signing window ("+tc.name+")", "#file-list")
-			assertButtonsVisible(t, m.win, "signing window ("+tc.name+")", "#file-list")
+			assertPageDoesNotScroll(t, m.win, "signing window ("+tc.name+") "+locale, "#file-list")
+			assertButtonsVisible(t, m.win, "signing window ("+tc.name+") "+locale, "#file-list")
 		})
 	}
 }
 
 func TestCertificatesWindowFitsWithSixCertificates(t *testing.T) {
-	c := i18n.Load("sr-Cyrl")
-	win := sharedCertificatesWindow(t)
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) {
+			c := i18n.Load(locale)
+			win := sharedCertificatesWindow(t)
 
-	if err := win.PostJSON(buildCertificatesInit(c, sixCertificates())); err != nil {
-		t.Fatalf("PostJSON: %v", err)
+			if err := win.PostJSON(buildCertificatesInit(c, sixCertificates())); err != nil {
+				t.Fatalf("PostJSON: %v", err)
+			}
+			if got := evalNumber(t, win, "document.querySelectorAll('#cert-list .liro-cert-row').length"); got != 6 {
+				t.Fatalf("rendered %v certificate rows, want 6", got)
+			}
+			assertPageDoesNotScroll(t, win, "certificates "+locale, "#cert-list")
+			assertButtonsVisible(t, win, "certificates "+locale, "#cert-list")
+			assertScrolls(t, win, "certificates "+locale, "#cert-list")
+		})
 	}
-	if got := evalNumber(t, win, "document.querySelectorAll('#cert-list .liro-cert-row').length"); got != 6 {
-		t.Fatalf("rendered %v certificate rows, want 6", got)
-	}
-	assertPageDoesNotScroll(t, win, "certificates", "#cert-list")
-	assertButtonsVisible(t, win, "certificates", "#cert-list")
-	assertScrolls(t, win, "certificates", "#cert-list")
 }
 
 func TestAuditLogWindowFitsWithTwentyEntries(t *testing.T) {
-	c := i18n.Load("sr-Cyrl")
-	win := sharedAuditLogWindow(t)
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) {
+			c := i18n.Load(locale)
+			win := sharedAuditLogWindow(t)
 
-	if err := win.PostJSON(buildAuditLogInit(c, twentyAuditEntries())); err != nil {
-		t.Fatalf("PostJSON: %v", err)
+			if err := win.PostJSON(buildAuditLogInit(c, twentyAuditEntries())); err != nil {
+				t.Fatalf("PostJSON: %v", err)
+			}
+			if got := evalNumber(t, win, "document.querySelectorAll('#entry-list .audit-entry').length"); got != 20 {
+				t.Fatalf("rendered %v audit entries, want 20", got)
+			}
+			assertPageDoesNotScroll(t, win, "audit log "+locale, "#entry-list")
+			assertButtonsVisible(t, win, "audit log "+locale, "#entry-list")
+			assertScrolls(t, win, "audit log "+locale, "#entry-list")
+		})
 	}
-	if got := evalNumber(t, win, "document.querySelectorAll('#entry-list .audit-entry').length"); got != 20 {
-		t.Fatalf("rendered %v audit entries, want 20", got)
-	}
-	assertPageDoesNotScroll(t, win, "audit log", "#entry-list")
-	assertButtonsVisible(t, win, "audit log", "#entry-list")
-	assertScrolls(t, win, "audit log", "#entry-list")
 }
 
 func TestSettingsWindowFitsWithEveryFieldPopulated(t *testing.T) {
-	c := i18n.Load("sr-Cyrl")
-	win, _ := sharedSettingsWindow(t, c, populatedSettings())
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) { settingsFitsPopulated(t, locale) })
+	}
+}
+
+func settingsFitsPopulated(t *testing.T, locale string) {
+	t.Helper()
+	c := i18n.Load(locale)
+	cfg := populatedSettings()
+	cfg.Locale = locale
+	win, _ := sharedSettingsWindow(t, c, cfg)
 
 	// A status line is part of the fixed content too, and appears
 	// exactly when an action has run.
 	postWindowStatus(win, fmt.Sprintf(c.T("settings.export_done"), `C:\Users\Veljko\Desktop\Izvoz`), ui.IntentPositive)
 
-	assertPageDoesNotScroll(t, win, "settings", ".settings-form")
-	assertButtonsVisible(t, win, "settings", ".settings-form")
-	assertScrolls(t, win, "settings", ".settings-form")
+	assertPageDoesNotScroll(t, win, "settings "+locale, ".settings-form")
+	assertButtonsVisible(t, win, "settings "+locale, ".settings-form")
+	assertScrolls(t, win, "settings "+locale, ".settings-form")
 }
 
 // TestSettingsLabelsSitAboveTheirInputs is Task 2 measured rather than
@@ -332,8 +383,17 @@ func TestSettingsWindowFitsWithEveryFieldPopulated(t *testing.T) {
 // the input spans the field's full width. Serbian is the locale that
 // matters here — its labels are the long ones.
 func TestSettingsLabelsSitAboveTheirInputs(t *testing.T) {
-	c := i18n.Load("sr-Cyrl")
-	win, _ := sharedSettingsWindow(t, c, populatedSettings())
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) { settingsLabelsStack(t, locale) })
+	}
+}
+
+func settingsLabelsStack(t *testing.T, locale string) {
+	t.Helper()
+	c := i18n.Load(locale)
+	cfg := populatedSettings()
+	cfg.Locale = locale
+	win, _ := sharedSettingsWindow(t, c, cfg)
 
 	script := "(function(){var bad=[];" +
 		"document.querySelectorAll('.liro-field').forEach(function(f){" +

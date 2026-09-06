@@ -310,3 +310,73 @@ func TestNewSettingsDefaults(t *testing.T) {
 		t.Error("StampShowDocumentID defaults on; SPEC §13.5 says never the default")
 	}
 }
+
+// TestLoadAcceptsAUTF8ByteOrderMark is FTEST's finding from §8's
+// "configuration file corrupt" case, reached by accident while checking
+// the three locales: writing config.json with PowerShell's
+// `Set-Content -Encoding utf8` — the obvious way to script an edit on
+// Windows — prepends EF BB BF, encoding/json then rejects the file at
+// offset 1, and Load silently returns Default(). Every setting reverts:
+// the language, the signature level, the remembered stamp position, the
+// output folder. The only trace is a line in a log file.
+//
+// D-134 ran into this once and recorded it as "worth knowing on its
+// own". It is a defect, not a curiosity: the file is documented as the
+// single authority on the configuration (D-134), and a hand-edited copy
+// of it must not be silently discarded for carrying transfer encoding
+// the project already strips from the one other outside text file it
+// reads (the Trusted List seed, D-018/D-107).
+func TestLoadAcceptsAUTF8ByteOrderMark(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	body := `{"locale":"sr-Cyrl","signatureLevel":"b-t","outputSuffix":"-potpisan"}`
+	withBOM := append([]byte{0xEF, 0xBB, 0xBF}, body...)
+	if err := os.WriteFile(path, withBOM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load with a BOM: %v", err)
+	}
+	if cfg.Locale != "sr-Cyrl" {
+		t.Errorf("Locale = %q, want sr-Cyrl — the file was discarded for its byte-order mark", cfg.Locale)
+	}
+	if cfg.SignatureLevel != "b-t" {
+		t.Errorf("SignatureLevel = %q, want b-t", cfg.SignatureLevel)
+	}
+	if cfg.OutputSuffix != "-potpisan" {
+		t.Errorf("OutputSuffix = %q, want -potpisan", cfg.OutputSuffix)
+	}
+}
+
+// TestLoadStillRejectsGenuineRubbish keeps the other half true: a
+// byte-order mark is stripped, and nothing else is. A file that is not
+// JSON is still a file that is not JSON.
+func TestLoadStillRejectsGenuineRubbish(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		name string
+		body []byte
+	}{
+		{"plain text", []byte("this is not json at all\n")},
+		{"UTF-16 little-endian", append([]byte{0xFF, 0xFE}, []byte("{\x00}\x00")...)},
+		{"truncated", []byte(`{"locale":"sr-Cyr`)},
+		{"a BOM and nothing else", []byte{0xEF, 0xBB, 0xBF}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(dir, "c-"+tc.name+".json")
+			if err := os.WriteFile(path, tc.body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err == nil {
+				t.Fatalf("Load(%s) returned no error", tc.name)
+			}
+			if cfg.Locale != defaultLocale {
+				t.Errorf("Locale = %q, want the default %q", cfg.Locale, defaultLocale)
+			}
+		})
+	}
+}

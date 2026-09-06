@@ -3,6 +3,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -265,6 +266,20 @@ func Load(path string) (Config, error) {
 		}
 		return cfg, err
 	}
+
+	// A UTF-8 byte-order mark is transfer encoding, not content, and
+	// encoding/json rejects it as a syntax error at offset 1. Every
+	// ordinary way of editing this file on Windows writes one:
+	// PowerShell's `Set-Content -Encoding utf8` does, and Notepad's
+	// "UTF-8 with BOM" is one entry in a dropdown. Without this, a
+	// hand-edited configuration is silently replaced by the defaults —
+	// the locale reverts, the signature level reverts, the remembered
+	// stamp position is lost — with nothing but a line in a log file to
+	// say so. Measured during FTEST, and D-134 already recorded running
+	// into it once. This project already strips a BOM from the one other
+	// text file it reads from outside itself (the Trusted List seed,
+	// D-018/D-107); the same rule belongs here.
+	b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})
 
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		slog.Warn("config: file is not valid JSON, using defaults", "path", path, "error", err)
