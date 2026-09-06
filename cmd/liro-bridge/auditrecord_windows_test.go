@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/audit"
+	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
+	"github.com/veljaos/liro-bridge/internal/platform"
 )
 
 // captureLog swaps slog's default logger for one writing into a buffer,
@@ -206,5 +208,67 @@ func TestATamperedAuditLogIsStillReadableAndSaysWhereItBroke(t *testing.T) {
 		if st, err := os.Stat(filepath.Join(out, name)); err != nil || st.Size() == 0 {
 			t.Errorf("%s was not written (%v)", name, err)
 		}
+	}
+}
+
+// TestTheBatchLoopNeverRecordsIntoTheRealAuditLog is the regression test
+// for the second thing FTEST found by looking at the machine rather than
+// at the suite: `go test ./...` was appending to the developer's own
+// audit log.
+//
+// Measured over one session, sixteen entries — four per full run,
+// matching the four batch tests exactly by document count (6, 2, 4 with
+// PDF_INVALID, 8):
+//
+//	{"sequence":308,…,"documentCount":6,"outcome":"approved",…}
+//	{"sequence":310,…,"documentCount":4,"outcome":"partial","failureCode":"PDF_INVALID",…}
+//
+// The batch tests drive the real signing loop, which is the only way to
+// test it, and that loop records its outcome through newAuditStore() —
+// %LOCALAPPDATA%\Liro\audit. The log is append-only and hash-chained, so
+// an entry a test adds cannot be taken out again without breaking the
+// chain for everything after it, and to anyone reading the log later a
+// fabricated entry is indistinguishable from a real signing session.
+// SPEC §6.7 makes that log the record of what was actually signed.
+//
+// This asserts the property rather than any one call site: a mainWindow
+// built by the test helper records somewhere of the test's own choosing,
+// and one built by newMainWindow records where the product does.
+func TestTheBatchLoopNeverRecordsIntoTheRealAuditLog(t *testing.T) {
+	realDir := filepath.Join(platform.ConfigDir("windows", platform.OSEnv), "audit")
+
+	m, _ := testMainWindow(t, "sr-Latn", config.Default(), nil)
+	if m.auditStore == nil {
+		t.Fatal("the test helper left auditStore nil, so a batch would record into the real log")
+	}
+	store, err := m.auditStore()
+	if err != nil {
+		t.Fatalf("the test helper's audit store could not be opened: %v", err)
+	}
+	if _, err := store.Append(audit.Entry{
+		Timestamp:     time.Now(),
+		Thumbprint:    "TESTONLY",
+		Application:   consent.ApplicationLocal,
+		DocumentCount: 1,
+		Outcome:       audit.OutcomeApproved,
+	}); err != nil {
+		t.Fatalf("appending to the test's own store: %v", err)
+	}
+
+	// Whatever directory it is, it is not the one the product uses.
+	entries, err := store.All()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("the test's own store holds %d entries (%v), want exactly the one just written — "+
+			"more than one means it is the real log", len(entries), err)
+	}
+
+	// And the product's own constructor still points at the real one, so
+	// this seam cannot quietly disable recording in the shipped agent.
+	prod := newMainWindow(config.Default(), "sr-Latn")
+	if prod.auditStore == nil {
+		t.Fatal("newMainWindow left auditStore nil: the product would not record anything")
+	}
+	if realDir == "" {
+		t.Skip("no per-user configuration directory on this machine")
 	}
 }

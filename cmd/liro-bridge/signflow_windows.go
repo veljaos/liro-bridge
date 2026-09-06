@@ -380,7 +380,11 @@ func (m *mainWindow) approveCertificate(ctx context.Context) bool {
 // after the certificate step has been reached goes through it: SPEC
 // §6.7 wants the refusals as much as the approvals.
 func (m *mainWindow) deny() {
-	store, err := newAuditStore()
+	open := m.auditStore
+	if open == nil {
+		open = newAuditStore
+	}
+	store, err := open()
 	recordInteractiveAudit(store, err, m.selected, m.queue.Len(), audit.OutcomeDenied, nil, false, "")
 }
 

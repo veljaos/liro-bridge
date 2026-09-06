@@ -105,6 +105,19 @@ type mainWindow struct {
 	// exit is the process exit code for a run started from the command
 	// line. Zero unless something failed.
 	exit int
+
+	// auditStore opens the log this flow records its batch in. It is a
+	// field rather than a direct call to newAuditStore so a test can run
+	// the real batch loop -- which is the only way to test it -- without
+	// appending to the developer's own audit log.
+	//
+	// That is not hypothetical: FTEST measured four fabricated entries
+	// added to the owner's real log by every `go test ./...`, sixteen
+	// over one session, in an append-only hash-chained file that is
+	// meant to be the record of what was actually signed (SPEC 6.7).
+	// They are indistinguishable, to anyone reading the log later, from
+	// real signing sessions.
+	auditStore func() (*audit.Store, error)
 }
 
 // runMainWindow opens the signing window and runs it until it is
@@ -154,13 +167,14 @@ func runSigningFlow(ctx context.Context, cfg config.Config, locale string, req f
 // newMainWindow is the window's state before there is a window.
 func newMainWindow(cfg config.Config, locale string) *mainWindow {
 	return &mainWindow{
-		messages: make(chan ui.Message, 16),
-		dropped:  make(chan []string, 16),
-		closed:   make(chan struct{}),
-		c:        i18n.Load(locale),
-		locale:   locale,
-		cfg:      cfg,
-		method:   stampMethodOf(cfg),
+		messages:   make(chan ui.Message, 16),
+		dropped:    make(chan []string, 16),
+		closed:     make(chan struct{}),
+		c:          i18n.Load(locale),
+		locale:     locale,
+		cfg:        cfg,
+		method:     stampMethodOf(cfg),
+		auditStore: newAuditStore,
 	}
 }
 
@@ -917,7 +931,11 @@ func stampPageNumber(page string) int {
 }
 
 func (m *mainWindow) recordAudit(d consentDecision, report jobs.Report) {
-	store, err := newAuditStore()
+	open := m.auditStore
+	if open == nil {
+		open = newAuditStore
+	}
+	store, err := open()
 	outcome := audit.OutcomeApproved
 	switch {
 	case report.Succeeded == 0 && (report.Stopped || report.Aborted):

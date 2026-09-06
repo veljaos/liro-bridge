@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/veljaos/liro-bridge/internal/audit"
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/errs"
@@ -72,6 +73,13 @@ func testMainWindow(t *testing.T, locale string, cfg config.Config, paths []stri
 	m := newMainWindow(cfg, locale)
 	m.win = win
 	m.messages = messages
+	// Never the real %LOCALAPPDATA%\Liro\audit. The batch tests drive
+	// the real signing loop, which records its outcome, and the audit
+	// log is append-only and hash-chained: an entry a test adds can
+	// never be taken out again without breaking the chain for everything
+	// after it. Measured: four fabricated entries per `go test ./...`.
+	auditDir := t.TempDir()
+	m.auditStore = func() (*audit.Store, error) { return audit.NewStore(auditDir) }
 	m.page = pageMain
 	m.step = stepDocuments
 	if len(paths) > 0 {
