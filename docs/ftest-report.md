@@ -1372,3 +1372,31 @@ fix six further full suite runs left it untouched.
 Every configuration-injection case ran against a scratch profile
 directory rather than the real one, and the owner's `config.json` was
 hash-compared against its snapshot afterwards each time.
+
+### One thing left undone: the push
+
+FTEST §0.5 says to push when the suite is green, and it is — three
+consecutive clean full runs after the last change. **The push itself was
+blocked by this session's own permission layer**, not by anything in the
+repository, and working around that is not something an unattended run
+should do.
+
+So the eleven commits below are on `master` locally and need one
+`git push origin master`:
+
+```
+f47bfa8  B-1  autostart tests put back the value they found
+58a0408  B-2, B-3  renderer notes; the command line's own error codes
+7cf6848        report: Group 1 sections 4 and 5
+48e4e8b  B-4, B-5, B-6  listing alignment; the byte-order mark; AllCodes
+2973ef5        report: Group 1, and the judgement calls
+8e71dab  B-7  B-LT is not claimed for a document with no /DSS
+6542436        report: Group 2 sections 2 and 3
+42850d1  B-9  a failed audit append is said out loud
+0829243        report: Group 2 section 8
+6ff677b  B-10  the batch tests stop writing to the real audit log
+ef1cf6a        report: the summary and the closing sections; D-153..D-161
+```
+
+`git ls-files | Select-String "local/"` lists only the four
+`README.md` files, as it must.
