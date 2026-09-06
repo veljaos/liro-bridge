@@ -78,15 +78,30 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 	return runSigningFlow(ctx, cfg, locale, flowRequest{inputs: inputs, force: force})
 }
 
-// recordInteractiveAudit appends one batch outcome, or does nothing if
-// the store could not be opened (auditErr) — the same tolerance the
-// previous code had inline, now in one place because three call sites
-// need it.
+// recordInteractiveAudit appends one batch outcome. A store that could
+// not be opened (auditErr), or an append that fails, does not stop a
+// signature that has already happened — but it is said out loud in the
+// log rather than swallowed.
+//
+// Both errors used to be discarded outright (`_, _ = store.Append(...)`
+// and a bare `return`), which made a real and reachable state silent:
+// measured during FTEST, a single unparseable line anywhere in the log
+// — one truncated last line is what a power cut leaves — makes every
+// subsequent Append fail forever, because the chain's last entry cannot
+// be read and so the next PrevHash cannot be computed. Refusing to
+// append is the right answer to that (a hash chain nobody can continue
+// must not be continued by guessing), but doing it without a word means
+// the agent keeps signing and keeps not recording, and SPEC §6.7 makes
+// the log the record of every signature. What the *user* should be told
+// is a separate question and is left to the owner; that the program
+// should not lose the fact in silence is not.
 func recordInteractiveAudit(store *audit.Store, auditErr error, thumbprint string, documents int, outcome audit.Outcome, lastErr error, isTestKey bool, level string) {
 	if auditErr != nil {
+		slog.Error("audit: the log could not be opened, so this batch is not recorded",
+			"error", auditErr, "outcome", outcome, "documents", documents)
 		return
 	}
-	_, _ = store.Append(audit.Entry{
+	if _, err := store.Append(audit.Entry{
 		Timestamp:     time.Now(),
 		Thumbprint:    thumbprint,
 		Application:   consent.ApplicationLocal,
@@ -95,7 +110,13 @@ func recordInteractiveAudit(store *audit.Store, auditErr error, thumbprint strin
 		FailureCode:   codeOfInteractive(lastErr),
 		IsTestKey:     isTestKey,
 		AchievedLevel: level,
-	})
+	}); err != nil {
+		// No file name, no personal name, no document content: SPEC
+		// §18.3. The outcome and the count are already what the entry
+		// itself would have carried.
+		slog.Error("audit: this batch could not be appended to the log",
+			"error", err, "outcome", outcome, "documents", documents)
+	}
 }
 
 // levelRank orders the three PAdES levels so lowerLevel can pick the
