@@ -191,9 +191,17 @@ func signOneFile(ctx context.Context, in, out string, force bool, session keysou
 			return errors.New(c.T("sign.output_exists"))
 		}
 	}
+	// INPUT_UNREADABLE and OUTPUT_WRITE_FAILED exist for exactly these
+	// two moments (D-118, D-104) and the window path has used them since
+	// F6. This one did not: it returned the raw os error, so a Serbian
+	// user signing from the command line was shown "open C:\...: Access
+	// is denied." — English, from the operating system, for a situation
+	// this project already has a localised sentence for. Two front doors
+	// answering the same question differently is what D-108, D-124 and
+	// D-138 each had to remove once already.
 	pdfBytes, err := os.ReadFile(in)
 	if err != nil {
-		return err
+		return errs.New(errs.CodeInputUnreadable, err)
 	}
 
 	result, err := pades.SignDocument(ctx, pdfBytes, session, pades.Options{
@@ -211,7 +219,7 @@ func signOneFile(ctx context.Context, in, out string, force bool, session keysou
 	}
 
 	if err := os.WriteFile(out, result.Bytes, 0o600); err != nil {
-		return err
+		return errs.New(errs.CodeOutputWriteFailed, err)
 	}
 
 	fprintln(stdout, c.T("sign.signed_label"), out)

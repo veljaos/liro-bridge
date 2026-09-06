@@ -396,3 +396,142 @@ func TestPrintClockDriftWarningSilentWithoutDrift(t *testing.T) {
 		t.Fatalf("printClockDriftWarning wrote %q, want nothing when ClockDriftWarning is false", buf.String())
 	}
 }
+
+// TestSignCommandNeverShowsARawOperatingSystemError is the regression
+// test for what FTEST found by driving the shipped binary over a corpus
+// of deliberately broken documents.
+//
+// Every message a signer reads is localised (SPEC §9.2), and every
+// situation a signer can act on has a code of its own rather than
+// falling into INTERNAL (D-066, D-104, D-118). Neither held for the
+// command line's own I/O and structural-parse failures: measured
+// against the shipped binary, signing a directory named ".pdf" printed
+//
+//	read C:\...\folder-not-a-file.pdf: Incorrect function.
+//
+// and signing to a read-only or exclusively-locked output printed
+//
+//	open C:\...\out.pdf: Access is denied.
+//
+// — the operating system's own English, in a Serbian interface, for two
+// situations INPUT_UNREADABLE and OUTPUT_WRITE_FAILED were added for.
+// Three structural failures did the same in English from the parser:
+// "pdf: document has no startxref to chain /Prev from", "pdf: /Root does
+// not resolve to a dictionary" and "pdf: no /Page found under node 2".
+//
+// The window path already got all of this right; the command line did
+// not, which is two front doors answering one question differently —
+// what D-108, D-124 and D-138 each had to remove once already.
+func TestSignCommandNeverShowsARawOperatingSystemError(t *testing.T) {
+	sess := newFakeSignPDFSession(t)
+
+	cases := []struct {
+		name string
+		// setup returns the --in path, having prepared whatever state
+		// the case needs, and the --out path if it needs a specific one.
+		setup func(t *testing.T, dir string) (in, out string)
+		// want is the catalogue key whose text must appear.
+		want string
+	}{
+		{
+			name: "a directory where a file was expected",
+			setup: func(t *testing.T, dir string) (string, string) {
+				in := filepath.Join(dir, "folder.pdf")
+				if err := os.Mkdir(in, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return in, ""
+			},
+			want: "error.input_unreadable",
+		},
+		{
+			name: "an output path whose directory does not exist",
+			setup: func(t *testing.T, dir string) (string, string) {
+				in := filepath.Join(dir, "document.pdf")
+				writeMinimalPDF(t, in)
+				return in, filepath.Join(dir, "no", "such", "dir", "out.pdf")
+			},
+			want: "error.output_write_failed",
+		},
+		{
+			name: "a document with no usable startxref",
+			setup: func(t *testing.T, dir string) (string, string) {
+				in := filepath.Join(dir, "document.pdf")
+				writeMinimalPDF(t, in)
+				b, err := os.ReadFile(in)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Break the keyword only: the file still parses through
+				// the rebuild fallback, so this reaches the /Prev
+				// chaining step rather than failing earlier.
+				b = bytes.Replace(b, []byte("startxref"), []byte("startxrEf"), 1)
+				if err := os.WriteFile(in, b, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return in, ""
+			},
+			want: "error.pdf_invalid",
+		},
+	}
+
+	en := i18n.Load("en")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			in, out := tc.setup(t, dir)
+			args := []string{"--in", in, "--thumbprint", "SIGNPDFTEST", "--on-tsa-failure", "b-b"}
+			if out != "" {
+				args = append(args, "--out", out)
+			}
+			var stdout, stderr bytes.Buffer
+			code := RunSign(context.Background(), args, &stdout, &stderr, "en", signPDFDeps(sess))
+			if code == 0 {
+				t.Fatalf("exit code = 0, want a failure; stdout %q stderr %q", stdout.String(), stderr.String())
+			}
+			got := stderr.String()
+			want := en.T(tc.want)
+			if !strings.Contains(got, want) {
+				t.Errorf("stderr = %q\nwant it to contain the message for %s: %q", got, tc.want, want)
+			}
+			// The raw operating-system and parser wordings are what this
+			// test exists to keep out of a signer's view.
+			for _, raw := range []string{
+				"Access is denied", "Incorrect function", "The system cannot find",
+				"pdf: document has no startxref", "pdf: /Root does not resolve",
+				"pdf: no /Page found under node",
+			} {
+				if strings.Contains(got, raw) {
+					t.Errorf("stderr shows the raw wording %q:\n%s", raw, got)
+				}
+			}
+		})
+	}
+}
+
+// TestSignCommandSaysTheSameThingInEveryLanguage is §9's other half for
+// the three situations above: the sentence a signer reads must come from
+// their own catalogue, not from the operating system, in all three.
+func TestSignCommandSaysTheSameThingInEveryLanguage(t *testing.T) {
+	sess := newFakeSignPDFSession(t)
+	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+		t.Run(locale, func(t *testing.T) {
+			dir := t.TempDir()
+			in := filepath.Join(dir, "folder.pdf")
+			if err := os.Mkdir(in, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			code := RunSign(context.Background(),
+				[]string{"--in", in, "--thumbprint", "SIGNPDFTEST", "--on-tsa-failure", "b-b"},
+				&stdout, &stderr, locale, signPDFDeps(sess))
+			if code == 0 {
+				t.Fatalf("exit code = 0, want a failure")
+			}
+			want := i18n.Load(locale).T("error.input_unreadable")
+			if !strings.Contains(stderr.String(), want) {
+				t.Errorf("in %s stderr = %q, want it to contain %q", locale, stderr.String(), want)
+			}
+		})
+	}
+}

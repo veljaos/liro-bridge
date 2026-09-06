@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+
+	"github.com/veljaos/liro-bridge/internal/errs"
 )
 
 // Update builds one incremental revision on top of a parsed Document
@@ -92,7 +94,7 @@ func (u *Update) Apply() ([]byte, error) {
 
 	prevStartxref, ok := findStartxref(u.doc.data)
 	if !ok {
-		return nil, fmt.Errorf("pdf: document has no startxref to chain /Prev from")
+		return nil, errs.New(errs.CodePDFInvalid, fmt.Errorf("pdf: document has no startxref to chain /Prev from"))
 	}
 
 	if u.doc.UsesXrefStreams() {

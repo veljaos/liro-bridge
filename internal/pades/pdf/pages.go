@@ -1,6 +1,10 @@
 package pdf
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/veljaos/liro-bridge/internal/errs"
+)
 
 // a4MediaBox is the fallback page box (F4 §2.1: "Fall back to A4 only
 // when it is genuinely absent everywhere"), in points — the standard
@@ -21,7 +25,7 @@ func collectPages(doc *Document, ref Reference, depth int) ([]int, error) {
 	}
 	dict, ok := doc.ResolveDict(ref)
 	if !ok {
-		return nil, fmt.Errorf("pdf: page tree node %d does not resolve to a dictionary", ref.Num)
+		return nil, errs.New(errs.CodePDFInvalid, fmt.Errorf("pdf: page tree node %d does not resolve to a dictionary", ref.Num))
 	}
 	if dict.GetName(Name("Type")) == "Page" {
 		return []int{ref.Num}, nil
@@ -40,7 +44,7 @@ func collectPages(doc *Document, ref Reference, depth int) ([]int, error) {
 		out = append(out, pages...)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("pdf: no /Page found under node %d", ref.Num)
+		return nil, errs.New(errs.CodePDFInvalid, fmt.Errorf("pdf: no /Page found under node %d", ref.Num))
 	}
 	return out, nil
 }

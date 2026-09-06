@@ -150,7 +150,7 @@ func BuildPlaceholder(doc *Document, opts PlaceholderOptions) (*Placeholder, err
 	}
 	catalog, ok := doc.ResolveDict(rootRef)
 	if !ok {
-		return nil, fmt.Errorf("pdf: /Root does not resolve to a dictionary")
+		return nil, errs.New(errs.CodePDFInvalid, fmt.Errorf("pdf: /Root does not resolve to a dictionary"))
 	}
 	targetPage := opts.PageNumber
 	if targetPage == 0 {
@@ -162,7 +162,7 @@ func BuildPlaceholder(doc *Document, opts PlaceholderOptions) (*Placeholder, err
 	}
 	pageDict, ok := doc.ResolveDict(Reference{Num: pageNum})
 	if !ok {
-		return nil, fmt.Errorf("pdf: page %d does not resolve to a dictionary", pageNum)
+		return nil, errs.New(errs.CodePDFInvalid, fmt.Errorf("pdf: page %d does not resolve to a dictionary", pageNum))
 	}
 
 	u := NewUpdate(doc)

@@ -378,3 +378,117 @@ func TestOversizedPageIsRefusedRatherThanAllocated(t *testing.T) {
 		t.Fatalf("the same page at a sane scale was refused: %v", err)
 	}
 }
+
+// TestSubstitutedFontAndGuessedWidthsAreCounted is the regression test
+// for a gap FTEST found by rendering a corpus: D-136 states that
+// everything this renderer cannot draw faithfully "increments a counted
+// note on the result", and D-137 states that "every metric comes from
+// the document". Neither held for the most ordinary substitution there
+// is — a standard-14 font named with no /FontDescriptor and no /Widths,
+// which is what a PDF written against the fourteen standard fonts is
+// entitled to be.
+//
+// Measured before the fix: of 380 corpus documents, every one whose
+// text was drawn entirely in substituted glyphs reported an empty Notes
+// map, including the ones whose advance widths this package had to
+// invent. A person looking at a preview drawn that way had no signal at
+// all that the letterforms were not the document's own, or that the
+// line lengths were approximate.
+//
+// Both halves are asserted, because they are different facts: shapes
+// substituted is normal and harmless for placing a stamp; widths
+// guessed is the case where D-137's load-bearing property does not
+// hold.
+func TestSubstitutedFontAndGuessedWidthsAreCounted(t *testing.T) {
+	// buildTestPDF's own font is /Helvetica with no descriptor and no
+	// /Widths — exactly the case.
+	doc, err := Open(buildTestPDF([]testPage{{
+		box:     [4]float64{0, 0, 300, 100},
+		content: "BT /F1 14 Tf 20 40 Td (Standard font, no Widths) Tj ET",
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := doc.RenderPage(1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		shapes = "substituted the shapes of a font the document does not embed"
+		widths = "advance widths guessed: the document declares none"
+	)
+	if res.Notes[shapes] != 1 {
+		t.Errorf("Notes[%q] = %d, want 1; notes were %v", shapes, res.Notes[shapes], res.Notes)
+	}
+	if res.Notes[widths] != 1 {
+		t.Errorf("Notes[%q] = %d, want 1; notes were %v", widths, res.Notes[widths], res.Notes)
+	}
+}
+
+// TestWidthsTheDocumentSuppliesAreNotReportedAsGuessed is the other
+// direction, and the one that keeps the note worth reading: a document
+// that says how wide its own characters are must not be accused of
+// having declined to.
+func TestWidthsTheDocumentSuppliesAreNotReportedAsGuessed(t *testing.T) {
+	// A font dictionary of this test's own, with a real /Widths array
+	// covering every code the string below uses.
+	widthsFont := "<</Type /Font /Subtype /Type1 /BaseFont /Helvetica " +
+		"/Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 90 /Widths ["
+	for i := 0; i < 26; i++ {
+		widthsFont += "667 "
+	}
+	widthsFont += "]>>"
+
+	doc, err := Open(buildTestPDFWithFont(widthsFont,
+		"BT /F1 14 Tf 20 40 Td (ABCDEF) Tj ET"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := doc.RenderPage(1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const widths = "advance widths guessed: the document declares none"
+	if res.Notes[widths] != 0 {
+		t.Errorf("Notes[%q] = %d for a font with a /Widths array, want 0; notes were %v",
+			widths, res.Notes[widths], res.Notes)
+	}
+	// The shapes are still substituted — /Helvetica is not embedded —
+	// and that is still worth saying.
+	const shapes = "substituted the shapes of a font the document does not embed"
+	if res.Notes[shapes] != 1 {
+		t.Errorf("Notes[%q] = %d, want 1; notes were %v", shapes, res.Notes[shapes], res.Notes)
+	}
+}
+
+// buildTestPDFWithFont is buildTestPDF for one page whose only font
+// resource is the caller's own dictionary.
+func buildTestPDFWithFont(fontDict, content string) []byte {
+	var b bytes.Buffer
+	var offsets []int
+	obj := func(body string) int {
+		offsets = append(offsets, b.Len())
+		n := len(offsets)
+		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", n, body)
+		return n
+	}
+	b.WriteString("%PDF-1.7\n")
+	obj("<</Type /Catalog /Pages 2 0 R>>")
+	obj("<</Type /Pages /Kids [5 0 R] /Count 1>>")
+	fontObj := obj(fontDict)
+	contentObj := obj(fmt.Sprintf("<</Length %d>>\nstream\n%s\nendstream", len(content), content))
+	pageObj := obj(fmt.Sprintf(
+		"<</Type /Page /Parent 2 0 R /MediaBox [0 0 300 100] /Resources <</Font <</F1 %d 0 R>>>> /Contents %d 0 R>>",
+		fontObj, contentObj))
+	_ = pageObj
+
+	xref := b.Len()
+	fmt.Fprintf(&b, "xref\n0 %d\n0000000000 65535 f \n", len(offsets)+1)
+	for _, off := range offsets {
+		fmt.Fprintf(&b, "%010d 00000 n \n", off)
+	}
+	fmt.Fprintf(&b, "trailer\n<</Size %d /Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n",
+		len(offsets)+1, xref)
+	return b.Bytes()
+}

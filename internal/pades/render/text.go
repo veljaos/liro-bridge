@@ -27,6 +27,19 @@ func (r *renderer) showText(gs gstate, res pdf.Dict, s pdf.String, tm matrix) ma
 	glyphs := f.decode(s)
 	invisible := gs.renderMode == 3 || gs.renderMode == 7
 
+	// Noted here rather than at load time, so a font that is declared in
+	// /Resources and never drawn does not report anything, and so the
+	// guessed-width case — which only becomes known once a code has been
+	// looked up — is reported the same way as the substituted-shape one.
+	if f.substitute && !f.notedSubstitute {
+		f.notedSubstitute = true
+		r.note("substituted the shapes of a font the document does not embed")
+	}
+	if f.guessedWidths && !f.notedGuessed {
+		f.notedGuessed = true
+		r.note("advance widths guessed: the document declares none")
+	}
+
 	for _, g := range glyphs {
 		w0 := g.width
 		if f.type3 {

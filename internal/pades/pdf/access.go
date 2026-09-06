@@ -3,6 +3,8 @@ package pdf
 import (
 	"bytes"
 	"fmt"
+
+	"github.com/veljaos/liro-bridge/internal/errs"
 )
 
 // Catalog resolves the trailer's /Root to the document catalog.
@@ -27,7 +29,7 @@ func (d *Document) Pages() ([]int, error) {
 	}
 	catalog, ok := d.Catalog()
 	if !ok {
-		d.pageErr = fmt.Errorf("pdf: /Root does not resolve to a dictionary")
+		d.pageErr = errs.New(errs.CodePDFInvalid, fmt.Errorf("pdf: /Root does not resolve to a dictionary"))
 		return nil, d.pageErr
 	}
 	ref, ok := catalog.Get(Name("Pages")).(Reference)
@@ -64,7 +66,7 @@ func (d *Document) PageDict(n int) (Dict, error) {
 	}
 	dict, ok := d.ResolveDict(Reference{Num: pages[n-1]})
 	if !ok {
-		return nil, fmt.Errorf("pdf: page %d does not resolve to a dictionary", n)
+		return nil, errs.New(errs.CodePDFInvalid, fmt.Errorf("pdf: page %d does not resolve to a dictionary", n))
 	}
 	return dict, nil
 }

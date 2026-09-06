@@ -356,7 +356,7 @@ func applyStamp(pdfBytes []byte, signerCert *x509.Certificate, signingDate time.
 	}
 	catalog, ok := doc.ResolveDict(rootRef)
 	if !ok {
-		return nil, 0, nil, adj, fmt.Errorf("pades: /Root does not resolve to a dictionary")
+		return nil, 0, nil, adj, errs.New(errs.CodePDFInvalid, fmt.Errorf("pades: /Root does not resolve to a dictionary"))
 	}
 
 	// A page number past the end of *this* document is clamped to its
@@ -382,7 +382,7 @@ func applyStamp(pdfBytes []byte, signerCert *x509.Certificate, signingDate time.
 	}
 	pageDict, ok := doc.ResolveDict(pdf.Reference{Num: pageNum})
 	if !ok {
-		return nil, 0, nil, adj, fmt.Errorf("pades: page %d does not resolve to a dictionary", pageNum)
+		return nil, 0, nil, adj, errs.New(errs.CodePDFInvalid, fmt.Errorf("pades: page %d does not resolve to a dictionary", pageNum))
 	}
 
 	if stamp.UseXY {

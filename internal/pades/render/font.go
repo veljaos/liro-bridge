@@ -11,12 +11,22 @@ import (
 //
 // The division that matters here is between *metrics* and *shapes*.
 // Metrics — which codes a string decodes into and how wide each one is —
-// always come from the document, never from a font program, because the
+// come from the document, not from a font program, because the
 // document's own layout was computed against them. Shapes come from the
 // embedded font program when there is one this package can read, and
 // from the substitute font when there is not. A page drawn with
 // substituted shapes is a page whose every word begins and ends exactly
 // where the real one does; only the letterforms differ.
+//
+// There is one case where the metrics cannot come from the document,
+// because the document does not carry any: a standard-14 font named
+// with no /Widths and no /FontDescriptor, which PDF 32000-1 §9.6.2.2
+// entitles a producer to write on the understanding that a reader knows
+// the fourteen fonts' metrics. This package does not carry those tables
+// (D-137), so widthOf falls back to the substitute font's own advances
+// and the line comes out a few percent long. That is a case where the
+// property above does not hold, so it is *counted as a note* rather than
+// only recorded in a decision entry — see guessedWidths.
 type pdfFont struct {
 	composite bool
 	type3     bool
@@ -48,6 +58,17 @@ type pdfFont struct {
 	bold       bool
 	italic     bool
 	monospaced bool
+
+	// guessedWidths is set the first time widthOf has to invent an
+	// advance because the document supplied none. See the type comment.
+	guessedWidths bool
+	// notedSubstitute and notedGuessed keep each note to one per font
+	// per page rather than one per glyph drawn: the reader of the note
+	// wants to know that it happened, not how many letters it happened
+	// to. They are only ever read and written while drawing, which is
+	// single-threaded per renderer.
+	notedSubstitute bool
+	notedGuessed    bool
 
 	// Type 3
 	fontMatrix matrix
@@ -342,6 +363,7 @@ func (f *pdfFont) widthOf(key int, g shownGlyph) float64 {
 	if f.missingWidth != 0 {
 		return f.missingWidth / 1000
 	}
+	f.guessedWidths = true
 	if f.monospaced {
 		// Courier and its relatives: every glyph six tenths of an em,
 		// which is the one standard font metric that is a single number
