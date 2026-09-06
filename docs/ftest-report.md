@@ -327,3 +327,242 @@ depends on:**
 
 The three-page cost is identical for both, so it scales with pages
 rendered, not with pages present.
+
+### B-4 — the certificate listing was aligned in English only (fixed)
+
+**What it was.** `renderRow` wrote its seven label/value lines with seven
+literal runs of spaces, each the right length for the *English* label
+beside it:
+
+```go
+fprintf(w, "      %s      %s\n", c.T("certs.purpose_label"), ...)   // "Purpose"    + 6
+fprintf(w, "      %s   %s\n",    c.T("certs.thumbprint_label"), ...) // "Thumbprint" + 3
+```
+
+In English every value starts at column 13. Measured in `sr-Latn`, the
+seven values started at columns **12, 16, 16, 13, 12, 9 and 13** — on the
+one screen the command line actually shows a signer, in the two languages
+almost all of them read:
+
+```
+      Namena      potpisivanje
+      Izdavalac       Pošta Srbije CA 1
+      Kvalifikovan    da — kvalifikovani sertifikat na QSCD uređaju
+      Razlog       kartica nije prisutna
+      Važi        2025-10-08 do 2030-10-08
+      Otisak   …5BA2AA54
+      Smeštaj      pametna kartica
+```
+
+**The fix.** `certFieldFormatter` computes the column from the widest
+label *in the locale being rendered* and pads with `%-*s`. Go's `fmt`
+pads `%s` by runes, not bytes, so "Važi" and "Vazi" occupy the same
+column. After:
+
+```
+sr-Latn            sr-Cyrl                  en
+Namena         …   Намена         …         Purpose      …
+Izdavalac      …   Издавалац      …         Issuer       …
+Kvalifikovan   …   Квалификован   …         Qualified    …
+Razlog         …   Разлог         …         Reason       …
+Važi           …   Важи           …         Valid        …
+Otisak         …   Отисак         …         Thumbprint   …
+Smeštaj        …   Смештај        …         Storage      …
+```
+
+**The test.** `TestCertificateFieldsLineUpInEveryLocale` asserts the
+property rather than the numbers — whatever the catalogue holds, every
+value in a certificate's block starts at the same column — in all three.
+Against the previous code it fails in `sr-Latn` and `sr-Cyrl` with four
+mismatches each and passes in `en`, which is the shape of the defect.
+
+### B-5 — a `config.json` with a byte-order mark was silently discarded (fixed)
+
+**What it was.** Found by accident while checking the three locales: this
+session wrote `config.json` with PowerShell's `Set-Content -Encoding
+utf8`, which prepends `EF BB BF`. `encoding/json` rejects that at offset
+1, `config.Load` logged a warning and returned `Default()`, and the agent
+ran on defaults — the language, the signature level, the remembered stamp
+position and the output folder all reverted, with nothing on screen or in
+the window to say so.
+
+Every ordinary way of editing that file on Windows writes a BOM.
+D-134 ran into this once and recorded it as "worth knowing on its own";
+it is a defect against D-134's own rule that the file is the single
+authority on the configuration, and this project already strips exactly
+this from the one other outside text file it reads (the Trusted List
+seed, D-018/D-107).
+
+**The fix.** `bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})` before
+`json.Unmarshal`, and nothing else: `TestLoadStillRejectsGenuineRubbish`
+keeps plain text, a UTF-16 file, a truncated file and a lone BOM
+rejected. `TestLoadAcceptsAUTF8ByteOrderMark` fails against the previous
+code with `invalid character '﻿' looking for beginning of value`.
+
+### B-6 — the catalogue check was as strong as a hand-maintained list (fixed)
+
+**What it was.** `TestEveryErrorCodeHasAMessageInEveryCatalogue` walks
+`errs.AllCodes()` and requires a message in each locale. It is exactly as
+strong as `AllCodes()` is complete, and nothing checked that. A `Code`
+constant declared and forgotten there compiles, passes every test in the
+repository, and reaches a user as its own key — `error.cert_revoked` —
+which is the failure D-104 added the catalogue check to prevent. The list
+has already had to be kept in step by hand four times (`INPUT_UNREADABLE`,
+`OUTPUT_WRITE_FAILED` and the two TSA client-certificate codes).
+
+**The fix.** `TestAllCodesListsEveryDeclaredCode` parses `errs.go`'s own
+syntax tree — the discipline D-025 used for the "no PIN field" check,
+because the property is about what is *declared* and a declaration
+nothing references is invisible to anything but the AST. It reports
+`27 Code constants declared, 27 listed by AllCodes()`, and adding a
+constant without listing it fails with
+`AllCodes() does not list 1 declared code(s): CodeDiskFull`.
+`TestEveryCodeValueIsScreamingSnakeCase` pins SPEC §7's own naming rule
+and that no two constants share a value, neither of which was checked
+either.
+
+### §9 — the three languages
+
+**Every layout test now measures all three.** The six window-layout
+tests and the stamp window's measured `sr-Cyrl` alone, on the reasonable
+theory that it is the longest catalogue. The theory does not survive
+checking: *"Sign, choosing where the signature goes"* is 39 characters
+against 33 for either Serbian spelling of the same option, so on the
+method screen **English is the longest**. All seven are now table-driven
+over `sr-Latn`, `sr-Cyrl` and `en`. Because the windows are shared, this
+cost one `PostJSON` per locale rather than a second and third WebView2
+environment — measured at 0.02–0.2 s per extra locale.
+
+All pass. Sample measurements, `#cert-list` and `.settings-form`:
+
+| Window | sr-Latn | sr-Cyrl | en |
+|---|---|---|---|
+| certificates, 6 rows | 505 of 701 visible | 505 of 701 | 505 of 701 |
+| audit log, 20 entries | 385 of 1792 | 385 of 1792 | 385 of 1792 |
+| settings, every field populated | 715 of 1147 | 715 of 1147 | 715 of 1130 |
+
+In every case the page itself does not scroll, no element outside the
+named region scrolls, and every action button is inside the viewport.
+
+**Looked at, not only measured.** 45 screenshots were taken with
+`PrintWindow` and `PW_RENDERFULLCONTENT` — which asks the window to
+render itself, so taking the picture never takes the foreground from
+whoever is using the machine (D-122) — across nine screens × three
+locales: the certificate step (closed and with Details open), settings,
+certificates, the audit log, the documents step, the timestamp question,
+the output-file question, the method step in both its roles with each of
+the three methods, and the report. Every one was driven only through
+`Window.Eval` inside the page's own DOM; nothing simulated input (D-094).
+
+Nothing was clipped, nothing overflowed, and no screen scrolled that
+should not. Specific things confirmed by looking: the fingerprint is
+elided with a Copy button beside it and the full 64 characters are
+nowhere in the DOM (D-096); the timestamp question shows three distinct
+weights, not two (D-102); the audit log renders its four outcomes in four
+different colours (D-093); the report puts Finish last on its own row as
+the primary (D-147); the settings form stacks every label above its input
+and no label wraps in any of the three (D-106).
+
+**Log lines and help text are English.** The agent's own log file —
+100 508 bytes of it, from real runs including this session's — contains
+**zero non-ASCII characters**. `--help` and every subcommand's `--help`
+are English regardless of locale (D-092), re-checked in this session.
+
+**Every string a person sees comes from a catalogue.** The page assets
+carry exactly three hardcoded human-readable strings — `Srpski
+(latinica)`, `Srpski (ćirilica)` and `English`, the language picker's own
+options, which name each language in its own language and are correctly
+never translated. No page script assigns a literal to `textContent` or
+`liroSetText`, and `innerHTML` is only ever assigned `""` to clear a
+list, so SPEC §6.6's "a file name is inserted with `textContent`, never
+`innerHTML`" holds by construction.
+
+**One thing worth the owner's eye rather than a change** — see J-3.
+
+---
+
+## For the owner — judgement calls, recorded rather than changed
+
+These are things FTEST §10 says to hand over rather than decide: each is
+a contract, a wording or a taste question, and the owner's opinions have
+been right before.
+
+### J-1 — a batch that partly failed exits 0
+
+`liro-bridge sign --in "C:\docs\*.pdf"` returns **0** whenever at least
+one document succeeded, and 1 only when every one failed. Measured: 100
+documents with one corrupt among them exit 0; the corrupt one is named on
+stderr and the summary says `Potpisano 99/100 dokumenata`, so nothing is
+hidden from a person.
+
+A script cannot tell the two apart. SPEC §19 puts "a Delphi program signs
+via `exec`" in F9's scope, and that program will read the exit code and
+nothing else. The three plausible contracts are: 0 unless everything
+failed (today), non-zero if anything failed, or a third code for
+"partial". Changing it is a breaking change to a documented surface, and
+which one it should be is the owner's call, so it is left alone.
+
+### J-2 — an unreachable network path costs 42 seconds of silence
+
+`--in \\10.255.255.1\share\doc.pdf` returned after **42.3 s** with
+`nijedan ulazni fajl ne odgovara --in` — "no input file matches --in".
+Two things about that:
+
+- Forty-two seconds is the operating system's own SMB connect timeout
+  inside `filepath.Glob`, not anything this project chose. It could be
+  bounded by resolving the pattern on a goroutine with a deadline, at the
+  cost of a timeout constant nobody has measured a right value for.
+- The message is wrong about *why*. "No file matches" and "that machine
+  did not answer" are different things needing different reactions, and a
+  network share that has gone away is F6 §7's own named case.
+
+Neither is a crash and neither loses data, so this is recorded rather
+than changed. The same path inside the window (`internal/jobs`) is
+unaffected: it reads each document at the moment it signs it and reports
+`INPUT_UNREADABLE` per document (D-117, D-118).
+
+### J-3 — signing a folder twice produces `-signed-signed.pdf`
+
+`sign --in "C:\docs\*.pdf"` run a second time refuses each original
+(`izlazni fajl već postoji`) and then cheerfully signs each
+`…-signed.pdf` from the first run, producing `…-signed-signed.pdf`. A
+third run gets `…-signed-signed-signed.pdf`. Observed while running the
+abuse batches, and reproduced deliberately.
+
+It is not destructive and every output is valid. But it is the shape of
+mistake a bookkeeper makes on a Monday morning, and the fix — skipping an
+input whose name already ends in the configured output suffix — is a
+guess about intent that could equally be wrong (someone may genuinely
+want to counter-sign a document called `ugovor-signed.pdf` that arrived
+from elsewhere). The window path does not have this problem: it signs the
+list a person put in it.
+
+### J-4 — the console encoding is not this program's to choose
+
+`liro-bridge certs` writes UTF-8. This machine's console code page is
+65001, so Cyrillic and the Latin diacritics render correctly, checked
+directly. On a machine whose console is still at 852 or 437 — a plain
+`cmd.exe` on an older install — the same bytes render as mojibake.
+
+Windows offers no good answer here (a program that calls
+`SetConsoleOutputCP` changes the console for whatever runs after it), and
+every modern Windows terminal defaults to UTF-8. Recorded so that a
+future report of "the certificate list is unreadable" has an explanation
+waiting rather than a search.
+
+### J-5 — the report screen says "B-B" twice
+
+The completion screen shows `Nivo potpisa   B-B` and, on the line under
+it, `Nivo B-B — bez vremenskog žiga` in the warning colour. Both are
+correct and the second is the one that explains itself; together they
+read as a repetition. A taste question, not a defect.
+
+### J-6 — one WebView2 environment per window is still the biggest cost left
+
+D-150 removed the two-second `.local` resolution and D-131 measured what
+remained. Opening a window is now 0.37–0.42 s, of which most is building
+a WebView2 *environment* — one per window, where Microsoft's own samples
+build one per process. D-099 noted it; D-131 named it as "what would
+actually make it faster, recorded rather than done". It is still the
+right next change to the window layer and it is still bigger than a
+bounded fix pass, so it is recorded again rather than attempted here.
