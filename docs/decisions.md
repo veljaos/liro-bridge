@@ -10119,3 +10119,369 @@ when that is what is asked for.
 - **Opening the card session before showing anything, and showing the
   progress screen when it returns.** That is the interval the screen
   exists to cover.
+
+---
+
+## D-153 — A test that writes to the machine puts back what it found, not the shape of what it found
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision.** `internal/platform`'s `keepAutostartValue` snapshots this
+project's own `Run` value **verbatim**, plus whether it was present at
+all, and restores exactly that — deleting the value again when there was
+none. `TestWindowsAutostartRoundTrip` uses it.
+`TestAutostartTestsPutBackWhatTheyFound` and
+`TestAutostartTestsDoNotInventAnEntry` observe what a `t.Cleanup`
+actually restores, through a nested `t.Run`, which is the only way to
+see it.
+
+**Why.** The round-trip test recorded a bool from `IsEnabled()` and
+restored it with `SetEnabled(before, testExePath)`, where `testExePath`
+is `C:\test\liro-bridge.exe` — a path deliberately chosen not to exist.
+On any machine where autostart was on, one `go test ./...` therefore
+rewrote the developer's real autostart entry to point at nothing, and the
+agent silently stopped starting with Windows. Measured on the owner's
+machine before and after the first suite run of this pass:
+
+```
+before:  LiroBridge = "C:\Users\Veljko\Desktop\liro-bridge\liro-bridge.exe"
+after:   LiroBridge = "C:\test\liro-bridge.exe"
+```
+
+[[D-134]] recorded this as a known defect in a package that pass did not
+touch, and left it. It is not a test-hygiene nicety: the value it
+destroys is the one that makes the product start.
+
+The general form, which is what this entry is for: **restoring the
+*shape* of what was there is not restoring what was there.** A boolean
+says whether an entry existed; it does not say what it pointed at, and
+the pointing-at is the whole content.
+
+**Rejected.**
+- **Skipping the round-trip test on a machine with a real Run key.** It
+  is the only test that exercises the real registry path the product
+  uses, and the fix costs twenty lines.
+- **Writing to a scratch key instead of the real one.** That is what the
+  other tests in the file already do, and it is why they were never the
+  problem — but the round-trip test exists specifically to prove
+  `NewAutostart()`'s own default key path works.
+
+---
+
+## D-154 — The renderer counts a substituted font and a guessed width, because a note it does not make is a property it silently does not have
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision.** `internal/pades/render` emits two notes it did not:
+`substituted the shapes of a font the document does not embed` and
+`advance widths guessed: the document declares none`. Both fire once per
+font per page, from `showText` rather than from `loadProgram`, so a font
+declared in `/Resources` and never drawn reports nothing and the
+guessed-width case — which only becomes known once a code has been
+looked up — is reported the same way as the substituted-shape one.
+
+**Why.** [[D-136]] states that everything the renderer cannot draw
+faithfully "increments a counted note on the result", and [[D-137]] that
+"every metric comes from the document". Measured over 380 documents and
+2 472 pages, exactly four notes fired in the whole sweep — the mesh
+shading, the tiling pattern, JBIG2 and JPEG 2000 — and **every document
+drawn entirely in substituted glyphs reported an empty `Notes` map**,
+including the ones whose advance widths the renderer had to invent. The
+existing font note fires only when a program is present and unreadable,
+which is the rarer half by a wide margin: the common case is a
+standard-14 font named with no `/FontDescriptor` at all, which PDF
+32000-1 §9.6.2.2 entitles a producer to write.
+
+The two are kept separate because they are different facts. Substituted
+shapes are harmless for the thing this renderer exists for — every word
+still begins and ends where the real one does. Guessed widths are the one
+case where [[D-137]]'s load-bearing property does not hold, and against
+PDFium the page it produced correlated at 0.896 where every other text
+page was at 0.96 or better.
+
+**Rejected.**
+- **One note covering both.** They call for different reactions: one is
+  cosmetic, the other means the positions on the page are approximate,
+  which is what a placement window is measuring.
+- **Noting at load time.** A font can be declared and never drawn, and
+  whether widths had to be guessed is not knowable until a code is
+  looked up.
+
+---
+
+## D-155 — The command line's own I/O and parse failures carry codes, like the window's
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision.** `internal/cli.signOneFile` wraps `os.ReadFile` as
+`INPUT_UNREADABLE` and `os.WriteFile` as `OUTPUT_WRITE_FAILED`; the seven
+structural failures in `internal/pades/pdf` and `internal/pades` —
+`/Root` not a dictionary, no `/Page` under a node, no `startxref` to
+chain from — are wrapped as `PDF_INVALID` at the point the fact is known.
+`sign.output_exists` is deliberately left as it is: it is already
+localised and it names `--force`, which is what a person needs
+([[D-104]]).
+
+**Why.** Driven against the shipped binary over a corpus of broken
+documents, `liro-bridge sign` printed the operating system's own English
+in a Serbian interface — `read C:\…: Incorrect function.`,
+`open C:\…: Access is denied.` — and the parser's own English for three
+structural failures. `INPUT_UNREADABLE` ([[D-118]]),
+`OUTPUT_WRITE_FAILED` ([[D-104]]) and `PDF_INVALID` all already existed,
+with a sentence in all three catalogues, and the window path already used
+them. Two front doors answering one question differently is what
+[[D-108]], [[D-124]] and [[D-138]] each had to remove once already.
+
+Wrapping in `internal/pades/pdf` rather than at the CLI boundary fixes
+both doors at once: the window path maps an unclassified error to
+`INTERNAL` — "an unexpected error occurred" — for a document that is
+simply broken, which is the same defect [[D-104]] fixed one case over.
+
+**Rejected.**
+- **Mapping unclassified errors to a code at the CLI boundary.** It
+  would fix the door that was measured and leave the other one, and it
+  would have to guess which code an error deserves at a point that has
+  lost the context to know.
+
+---
+
+## D-156 — A column's width comes from the catalogue, never from the format string
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision.** `internal/cli.certFieldFormatter` computes the certificate
+listing's value column from the widest of the seven labels *in the locale
+being rendered*, and pads with `%-*s`. The seven literal runs of spaces
+that used to do it are gone.
+
+**Why.** They were each the right length for the *English* label beside
+them. In English every value started at column 13; measured in `sr-Latn`
+the seven started at 12, 16, 16, 13, 12, 9 and 13 — on the one screen the
+command line actually shows a signer, in the two languages almost all of
+them read. Go's `fmt` pads `%s` by runes rather than bytes, so "Važi" and
+"Vazi" occupy the same column and no width arithmetic of our own is
+needed.
+
+`TestCertificateFieldsLineUpInEveryLocale` asserts the property rather
+than the numbers, in all three locales, so a catalogue change cannot
+reintroduce it.
+
+**The general form, which is why this is an entry rather than a
+one-line fix.** Any layout constant written next to a translated string
+is a layout constant that is right in one language. This project already
+learned it for windows — [[D-106]]'s "widening is not a fix, it is a
+delay" — and the command line had the same defect in the simplest
+possible shape.
+
+**Rejected.**
+- **Padding to a fixed width large enough for every catalogue.** It
+  makes the English listing needlessly wide to serve the longest Serbian
+  label, and the next catalogue change breaks it again.
+
+---
+
+## D-157 — A UTF-8 byte-order mark is stripped from `config.json`, and nothing else is
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision.** `config.Load` strips a leading `EF BB BF` before
+`json.Unmarshal`. Nothing else changes: plain text, UTF-16, a truncated
+file and a lone BOM are all still rejected and still fall back to
+defaults with a warning.
+
+**Why.** `encoding/json` rejects a BOM at offset 1, so a `config.json`
+carrying one was silently replaced by the defaults — the language, the
+signature level, the remembered stamp position, the output folder, all
+reverted, with only a line in a log file to say so. Every ordinary way of
+editing that file on Windows writes one: PowerShell's `Set-Content
+-Encoding utf8` does, and Notepad offers it in a dropdown. This was found
+by doing exactly that while checking the three locales, and it cost a
+confusing half-hour before the bytes were looked at.
+
+[[D-134]] ran into it once and recorded it as "worth knowing on its
+own". It is a defect against [[D-134]]'s own rule that the file is the
+single authority on the configuration, and this project already strips
+the same three bytes from the one other outside text file it reads (the
+Trusted List seed, [[D-018]]/[[D-107]]).
+
+**Rejected.**
+- **Accepting UTF-16 too.** A BOM is transfer encoding on a document
+  that is otherwise exactly what it claims to be; a UTF-16 file is a
+  different encoding of the whole thing, and silently accepting it would
+  be inventing a format nobody writes on purpose.
+
+---
+
+## D-158 — `errs.AllCodes` is proven complete by reading the source, because a list kept in step by hand is a check that quietly stops checking
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision.** `TestAllCodesListsEveryDeclaredCode` parses `errs.go`'s own
+syntax tree and requires every `X Code = "…"` constant to appear in
+`AllCodes()`, and nothing else to. `TestEveryCodeValueIsScreamingSnakeCase`
+pins SPEC §7's naming rule and that no two constants share a value.
+
+**Why.** `TestEveryErrorCodeHasAMessageInEveryCatalogue` — the check
+[[D-104]] added so that no code can reach a user as its own key
+("error.cert_revoked") — walks `AllCodes()`, and is exactly as strong as
+that list is complete. Nothing checked that. A constant declared and
+forgotten there compiles, passes every test in the repository, and
+reaches a user as its key. The list has already had to be kept in step by
+hand four times (`INPUT_UNREADABLE`, `OUTPUT_WRITE_FAILED` and the two
+TSA client-certificate codes), and this pass added none — it was already
+correct, which is exactly when a missing check is cheapest to add and
+hardest to notice you need.
+
+Reading the source rather than reflecting over values is [[D-025]]'s own
+method for the "no PIN field" check, for the same reason: the property is
+about what is *declared*, and a declaration nothing references is
+invisible to anything but the syntax tree.
+
+**Rejected.**
+- **Counting the constants and comparing the count.** It catches an
+  omission and not a substitution, and it says nothing about which one.
+
+---
+
+## D-159 — B-LT is a claim about what the document contains, not about what collection attempted
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision.** `dss.Apply` returns `Complete: false` whenever it writes no
+revision at all. `internal/pades.applyDSS` is unchanged and therefore
+leaves `AchievedLevel` at `LevelBT` with its existing note.
+
+**Why.** Measured through the shipped binary:
+
+```
+liro-bridge sign --level b-lt --tsa https://freetsa.org/tsr
+  Nivo: B-LT
+66714 bytes   /DSS=False  /OCSPs=False  /CRLs=False  /VRI=False
+```
+
+B-LT is B-T plus a `/DSS` carrying revocation evidence (SPEC §12.6), so a
+document with no `/DSS` has not reached it, and saying it has is the
+overclaim SPEC §18.11 and [[D-047]] forbid outright.
+
+`Apply`'s `case i+1 < len(certs)` only expects evidence for a certificate
+whose issuer is also in the list, so a chain of **exactly one
+certificate** expects none at all and comes out "complete" having
+collected nothing. [[D-079]] then correctly skips the revision while
+`applyDSS` raises the level on that same flag.
+
+One certificate is not a corner case. MUP embeds only the signer
+certificate in its CMS (SPEC §11.8), so a failed AIA fetch with nothing
+matching in the bundled trust store leaves exactly one — and that is the
+same outage that stops OCSP answering, so the two arrive together. It is
+also the soft token's own shape, which is why every `--level b-lt` run in
+this pass hit it.
+
+**Why the existing test did not catch it, which is the part worth
+keeping.** `TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence` asserts
+exactly this property and passes, because `chainedSession`'s chain is two
+certificates long — as is every other session in that package. The
+single-certificate path had never been signed at all. A test that asserts
+the right property against the wrong fixture is a test that will keep
+passing.
+
+**Rejected.**
+- **Checking it in `applyDSS` instead.** `Apply` is the one place that
+  already knows, from `ocspRefs`/`crlRefs`, whether there is anything to
+  embed — which is [[D-079]]'s own reasoning for putting the skip there.
+  Duplicating the condition one layer up is two places that must agree.
+
+---
+
+## D-160 — A batch that could not be recorded is said out loud; what the user is told about it is not decided here
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision.** `recordInteractiveAudit` logs, at error level, both a store
+that could not be opened and an append that failed, carrying the outcome
+and the document count and nothing else (SPEC §18.3). Refusing to append
+onto a chain whose last entry cannot be read is unchanged, and correct.
+
+**Why.** Both errors were discarded outright — a bare `return` and
+`_, _ = store.Append(...)`. Measured by breaking the log deliberately: a
+single unparseable line anywhere in it makes **every subsequent append
+fail forever**, because the chain's last entry cannot be read and so the
+next `PrevHash` cannot be computed. One truncated last line is exactly
+what a power cut leaves. From that moment the agent goes on signing and
+goes on not recording, with nothing anywhere — while SPEC §6.7 makes the
+audit log the record of every signature.
+
+**What is deliberately not decided here.** Whether the *person* should be
+told, and what should happen if they are, is a product decision with at
+least three defensible answers — refuse to sign until it is dealt with,
+warn on the report screen and continue, or start a new chain file beside
+the broken one and record the discontinuity. SPEC §6.7 does not say, so
+this pass does not either; it is in `docs/ftest-report.md` as J-9 for the
+owner. That the program should not lose the fact in silence needed no
+such call.
+
+**Rejected.**
+- **Recovering by starting a fresh chain automatically.** It is probably
+  the right answer and it is not this pass's to choose: a hash chain that
+  silently restarts is a hash chain whose gap nobody was told about,
+  which is the property the chain exists to prevent.
+
+---
+
+## D-161 — What this testing pass changed about what counts as evidence
+
+**Date:** 2026-09-06
+**Phase:** FTEST
+
+**Decision, recorded because the pass turned on it.** Nine defects were
+found. **Not one of them was found by a failing test.** Every one was
+found by running the shipped binary or the real pipeline over real input
+and then looking at what came out — and in four cases, by looking at
+something other than the thing the program said:
+
+| Found by | Defect |
+|---|---|
+| reading the registry before and after `go test ./...` | B-1, the autostart entry rewritten to a path that does not exist |
+| counting the notes on 2 472 rendered pages and finding four | B-2, a substituted font never counted |
+| reading the error messages, in Serbian, of 40 deliberately broken documents | B-3, the operating system's English in a Serbian interface |
+| looking at a certificate listing in three languages instead of one | B-4, columns aligned in English only |
+| writing `config.json` the ordinary Windows way | B-5, a byte-order mark silently discarding every setting |
+| asking what the catalogue check is as strong as | B-6, a list kept in step by hand |
+| noticing five files were all exactly 66 714 bytes | **B-7, B-LT claimed for a document with no `/DSS`** |
+| counting handles across a thousand enumerations | B-8, a leak and a 855 ms probe |
+| truncating an audit log's last line as a power cut would | B-9, every later signature unrecorded, in silence |
+
+B-7 is the one worth keeping. The program said `Nivo: B-LT`. The
+independent verifier said the signature was good. Every test in the
+repository passed, including one asserting *exactly the property that was
+broken* — it just used a two-certificate fixture, and the defect only
+exists with one. What gave it away was a file size: five outputs at five
+different levels, all exactly 66 714 bytes, when a `/DSS` revision has to
+add bytes.
+
+This is [[D-087]], [[D-122]] and [[D-128]] a fourth time, and the
+sharpest statement of it so far: **a test that asserts the right property
+against the wrong fixture will keep passing forever.** The fixture is
+part of the assertion.
+
+**What was done about it, beyond the nine fixes.** Every new test in this
+pass was confirmed to fail against the old code, in both directions where
+there are two. The layout tests now measure all three locales rather than
+the one assumed to be longest — the assumption does not survive checking,
+since "Sign, choosing where the signature goes" is longer than either
+Serbian spelling. And `errs.AllCodes` is now proven complete by reading
+the source ([[D-158]]), because that check was the one thing standing
+between a new code and a user seeing `error.cert_revoked`.
+
+**Rejected.**
+- **Reporting the nine as ordinary bugs without this entry.** The
+  pattern is the finding. Three previous phases recorded the same lesson
+  about windows, about fonts and about settings; this pass says it about
+  fixtures.

@@ -10,6 +10,58 @@ on this machine unless it says otherwise.
 
 ---
 
+## In one page
+
+**Ten defects, nine of them fixed with a test that fails against the old
+code.** Not one was found by a failing test — every one was found by
+running the shipped binary or the real pipeline over real input and
+looking at what came out.
+
+| | What it was | Fixed |
+|---|---|---|
+| **B-1** | `go test ./...` rewrote the owner's real autostart entry to a path that does not exist | yes |
+| **B-2** | The renderer never counted a substituted font or a guessed width — four notes in 2 472 pages | yes |
+| **B-3** | The command line showed the operating system's and the parser's English in a Serbian interface | yes |
+| **B-4** | The certificate listing's columns were aligned in English only | yes |
+| **B-5** | A `config.json` with a byte-order mark silently discarded every setting | yes |
+| **B-6** | The catalogue check was only as strong as a list kept in step by hand | yes |
+| **B-7** | **B-LT was claimed for a document with no `/DSS` at all** | yes |
+| **B-8** | Every presence probe leaks 2–4 Windows handles and costs 457–855 ms | measured, not fixed — J-7 |
+| **B-9** | A batch that could not be written to the audit log went unrecorded, in silence | yes |
+| **B-10** | `go test ./...` appended fabricated entries to the owner's real audit log | yes |
+
+**The one that matters most is B-7.** The program said `Nivo: B-LT`. The
+independent verifier said the signature was good. Every test in the
+repository passed — including one asserting *exactly the property that
+was broken*, which used a two-certificate fixture where the defect only
+exists with one. What gave it away was a file size: five outputs at five
+different levels, all exactly 66 714 bytes, when a `/DSS` revision has to
+add bytes.
+
+**Eleven judgement calls (J-1 … J-11)** are recorded rather than
+decided. The two with real consequences are **J-8** — a signed document
+can be observed half-written, and the obvious fix is not free on Windows
+— and **J-10** — revocation is fetched once per document, so a
+hundred-document batch against MUP's responder costs about 33 minutes of
+timeouts.
+
+**What held**, with numbers: 45 corpus documents and three real fixtures
+signed, 51 signature slots all verifying; a thousand signatures four
+different ways, 4 000 of 4 000 verified, byte-identical, memory flat;
+five-deep resigning on six documents with every signature at every depth
+still valid and the original bytes still a literal prefix; 125 of 125
+stamp placements verified and every corner landing in the right visual
+corner on all four rotations; 2 472 pages rendered with no panic and 73
+of 78 page comparisons against PDFium at 0.90 or better; 28 timestamp
+failure injections and 22 configuration ones with a clear message and a
+clean state every time; every window at every step in all three languages
+with nothing clipped and nothing scrolling that should not.
+
+**Group 3 was not run** — no fuzzing, no endurance. Said plainly above
+rather than done briefly and called done.
+
+---
+
 ## 0. The boundaries, and what was actually done about them
 
 | Boundary | What was done |
@@ -807,6 +859,61 @@ paths and the healthy one — it fails against the previous code with
 export and the audit window rely on and which nothing had asserted end to
 end.
 
+### B-10 — `go test ./...` appended fabricated entries to the owner's real audit log (fixed)
+
+**What it was.** Found by hashing the audit directory at the end of the
+session against its snapshot, which is the check FTEST §0.4 asks for.
+The file had grown from 101 320 to 106 560 bytes. Sixteen entries had
+been added, four per full suite run, at the exact times of this session's
+runs:
+
+```
+{"sequence":308,…,"documentCount":6,"outcome":"approved",…}
+{"sequence":309,…,"documentCount":2,"outcome":"approved",…}
+{"sequence":310,…,"documentCount":4,"outcome":"partial","failureCode":"PDF_INVALID",…}
+{"sequence":311,…,"documentCount":8,"outcome":"partial",…}
+```
+
+Those four counts are `batchrun_windows_test.go`'s four tests exactly:
+six documents, two documents, four with one bad among them, and eight
+with the run stopped part way. Those tests drive the real signing loop —
+which is the only way to test it — and that loop records its outcome
+through `newAuditStore()`, which is `%LOCALAPPDATA%\Liro\audit`.
+
+This is B-1 one file over, and worse in one specific way. The autostart
+value can be put back. **The audit log is append-only and hash-chained,
+so an entry a test adds cannot be taken out again without breaking the
+chain for everything after it** — and to anyone reading the log later, an
+entry with an empty thumbprint and a plausible document count is
+indistinguishable from a real signing session. SPEC §6.7 makes that file
+the record of what was actually signed.
+
+**The fix.** `mainWindow` gains an `auditStore` field, defaulted to
+`newAuditStore` by the product's own constructor and pointed at
+`t.TempDir()` by the test helper. `TestTheBatchLoopNeverRecordsIntoTheRealAuditLog`
+asserts both halves, so the seam cannot quietly disable recording in the
+shipped agent either. Confirmed by measurement: three consecutive full
+`go test ./... -tags softtoken` runs afterwards left the real log at
+exactly 101 320 bytes.
+
+**The sixteen entries were removed**, which took a decision. Truncating
+an append-only audit log is a serious act and the chain exists to detect
+exactly that. Two things made it right here: the entries were mine, and
+FTEST §0.4's instruction is to leave the machine as it was found,
+verified rather than assumed. They were the last sixteen lines, so
+cutting the file back to the byte-exact prefix its pre-session SHA-256
+was taken over restores it completely rather than leaving a hole. A copy
+of the polluted file was kept in the session's scratch directory first,
+and the restored file was then checked two ways:
+
+```
+hash matches the pre-session snapshot: True
+308 entries, chain OK=true BrokenAt=-1
+last entry: sequence 307, 2026-09-06 18:32:37Z, outcome approved
+```
+
+— 18:32, which is before this session's first suite run at 18:54.
+
 ### §8 — failure injection
 
 Every case is a real server or a real file this session controlled,
@@ -1129,3 +1236,139 @@ to 2030.
 Worth saying because the whole of §2, and every future real-hardware
 acceptance run, depends on there being a usable qualified certificate in
 the reader.
+
+---
+
+## What I could not test, honestly
+
+### Group 3 was not run at all
+
+**No fuzzing.** FTEST §6 asks for the parser's fuzz target for at least
+an hour, plus new targets for the renderer and for the CMS and timestamp
+parsers. **None of that was done.** An hour of fuzzing that finds nothing
+is a result; ten minutes of it is not, and a report claiming the second
+as the first would be worse than this sentence. The parser's existing
+target found three crashes in 12.6 M executions when D-039 ran it, so
+there is reason to think the renderer's — 4 600 lines that read foreign
+input and have never been fuzzed — would find something.
+
+**No endurance.** FTEST §7 asks for the tray running for hours, every
+window opened and closed a hundred times, a thousand documents in one
+session and the suite twenty times.
+
+What was done instead, and what it is worth:
+
+- **A thousand documents** were signed four ways, but in one process
+  through `SignDocument` rather than through a tray that has been open
+  for hours. Memory was flat and no output drifted. That is the pipeline,
+  not the agent.
+- **The suite was run nine times** end to end during this pass, all
+  green, the last three back to back after every change. That is not
+  twenty, and nine green runs do not establish the absence of a
+  one-in-twenty flake — which is
+  exactly the rate D-099 measured for the window layer before D-101 fixed
+  it.
+- **Windows were opened and closed** on the order of a hundred times
+  across the layout, screenshot and locale runs of this pass, with no
+  hang and no crash. That is a by-product, not the measurement §7 asks
+  for.
+
+**Why I stopped.** The instruction was to stop after Group 2 unless
+something made Group 3 urgent. B-8 is the closest candidate — a handle
+leak is exactly what §7's endurance run is for — and it does not qualify:
+the leak was measured precisely (2 handles per probe with the card
+present, 4 with it absent, ~10 per enumeration), it was shown not to
+escape the process (forty `certs` runs moved the Smart Card service's
+handle count by four), and running the tray for six hours would confirm
+arithmetic that is already on the page. The renderer fuzzing is the piece
+of Group 3 most likely to find something, and it is the piece that most
+needs the hour it was not given.
+
+### Things that need a hand at the machine
+
+Nobody was here, so none of these were attempted:
+
+- Removing the card while `certs` runs; inserting it during; inserting a
+  *different* card; unplugging and replugging the reader (FTEST §2).
+- Stopping the Windows Smart Card service. It needs elevation and it is a
+  machine-wide change on someone else's working computer; a failed
+  restart leaves their card unusable. `SMART_CARD_SERVICE_DOWN` exists,
+  is in `AllCodes` and has a message in all three catalogues (now proven
+  by B-6), but the path is unexercised.
+- Pressing OK in the folder chooser, so the audit export's last step —
+  two files on disk, the destination named on screen — is still the
+  owner's, exactly as D-097, D-133 and D-135 already record.
+
+### Things this machine could not produce
+
+- **A full disk.** The only volume has 254 GB free, and every way of
+  making a small one needs administrator rights. What the disk-full case
+  would expose was measured another way and is J-8.
+- **A validly-signed older Trusted List**, to exercise the rollback
+  guard end to end. The Ministry's signature covers the sequence number.
+- **A validly-signed oversized CRL**, to re-exercise D-076's 5 MB cap:
+  bytes that are not a CRL are rejected before the cap is reached. D-076
+  measured it against the real 30 136 214-byte MUP CRL.
+- **Pošta's client-certificate TSA endpoint** (`timestamp2`): the PFX
+  SPEC §12.7 names is not in `testdata/tsa/local/` and there is nothing
+  here to generate it from. The Basic-auth endpoint answered every
+  request.
+- **`CryptAcquireCertificatePrivateKey` without `CRYPT_ACQUIRE_SILENT_FLAG`**,
+  which is the obvious next question about B-8's leak. D-087 measured
+  that the same call without that flag can raise an interactive
+  credential prompt, and FTEST §0.1 makes causing one a stop-work
+  condition. It stays unmeasured rather than risked.
+
+---
+
+## What remains the owner's
+
+Listed so he knows what is waiting, per FTEST §12.
+
+1. **One batch with the real card and a real PIN.** The only thing that
+   proves one PIN covers a batch on this machine. Nothing in this session
+   opened a signing session against the card, and no PIN dialog appeared
+   at any point.
+2. **Removing the card mid-batch with a PIN entered**, and **cancelling a
+   real PIN dialog.**
+3. **Output through the eGovernment validator, and through PKS or
+   Inception.** SPEC §16.8 makes eUprava the one that decides legal
+   validity, and no substitute for it exists here. What this pass can
+   say is narrower and worth saying: every signature it produced verifies
+   under this project's own independent verifier, and every output opens
+   in pypdf and PDFium — 45 of 45 corpus documents, 6 of 6 five-deep
+   resigned ones, 125 of 125 stamp placements.
+4. **Adobe Acrobat**, which is not installed here. Four of this
+   project's nine recorded Acrobat defects (D-069, D-072, D-074, D-075)
+   were invisible to every other validator, so nothing in this report is
+   evidence about Acrobat.
+5. **Another machine entirely** — clean Windows, no middleware, no
+   WebView2 runtime, SmartScreen on first run. Deferred by his own
+   decision; noted and moved past.
+6. **The eleven judgement calls above (J-1 … J-11).** J-8 and J-10 are
+   the two with real consequences: a signed document that can be observed
+   half-written, and 33 minutes of OCSP timeouts on a hundred-document
+   batch.
+
+---
+
+## The machine, put back
+
+Everything below was checked, not assumed.
+
+| What | Before | After |
+|---|---|---|
+| `%LOCALAPPDATA%\Liro\config.json` | SHA-256 recorded | **identical** |
+| `HKCU\…\Run` → `LiroBridge` | `"C:\Users\Veljko\Desktop\liro-bridge\liro-bridge.exe"` | **identical** |
+| `HKCU\…\SystemFileAssociations\.pdf\shell\LiroBridgeSign` | verb, `MultiSelectModel`, `Icon`, `\command` | **identical** |
+| `%LOCALAPPDATA%\Liro\audit\` | one file, 101 320 bytes, SHA-256 recorded | **identical**, chain verifies (B-10) |
+| Processes started by this session | — | all stopped, by exact PID |
+| Scratch files | — | removed; the temporary Go harnesses deleted |
+
+The autostart value was corrupted once, by the very first baseline suite
+run, and restored by hand within the minute; that is B-1, and after its
+fix six further full suite runs left it untouched.
+
+Every configuration-injection case ran against a scratch profile
+directory rather than the real one, and the owner's `config.json` was
+hash-compared against its snapshot afterwards each time.
