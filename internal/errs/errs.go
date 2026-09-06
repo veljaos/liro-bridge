@@ -58,6 +58,24 @@ const (
 	// why this is not SIGN_FAILED (D-104).
 	CodeOutputWriteFailed Code = "OUTPUT_WRITE_FAILED"
 
+	// CodeOutputInUse means the signed document could not replace the
+	// file already at the output path because another program has that
+	// file open. It is distinct from OUTPUT_WRITE_FAILED, which is
+	// every other reason a write did not happen (a full disk, a
+	// read-only folder), because the two need different things from the
+	// person: this one needs a file closed, and nothing else will do.
+	//
+	// It exists because the signed document is now written to a
+	// temporary file in the destination's own directory and renamed over
+	// the target (J-8), so that the destination is never observed
+	// half-written and a failed write never destroys a previously good
+	// signed file. Measured: os.Rename over a destination any other
+	// program has open — even only for reading — fails on Windows with
+	// "Access is denied", where the old os.WriteFile succeeded. Refusing
+	// is the accepted trade; reporting the refusal as "access denied"
+	// would not be.
+	CodeOutputInUse Code = "OUTPUT_IN_USE"
+
 	// CodeTSAClientCertUnreadable means the configured TSA client
 	// certificate file could not be read at all — the path is wrong or
 	// unreadable. Distinct from CodeTSAClientCertInvalid below because
@@ -112,6 +130,7 @@ func AllCodes() []Code {
 		CodeVersionTooOld,
 		CodeOutputExists,
 		CodeOutputWriteFailed,
+		CodeOutputInUse,
 		CodeInputUnreadable,
 		CodeTSAClientCertUnreadable,
 		CodeTSAClientCertInvalid,

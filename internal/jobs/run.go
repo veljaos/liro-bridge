@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,22 @@ type Outcome struct {
 	// nothing says so.
 	StampAdjusted bool
 }
+
+// ErrSkipDocument is what a SignFunc returns for a document the caller
+// has decided not to sign at all — not one that failed.
+//
+// It exists for J-3's answer: a batch can contain documents whose names
+// already end in the configured output suffix, and the person is asked
+// once whether to skip them. A skipped document is not a failure (it did
+// not fail, and naming it in the report's failure list would be a lie),
+// and it is not "still waiting" either, so it takes the state the runner
+// already has for a document the batch did not sign: StateSkipped.
+//
+// A skip costs no signature and so contributes no timing sample: its
+// near-zero duration would otherwise drag the measured first-signature
+// and median times, which are what the ETA and the per-signature PIN
+// detection are built from (F2 §5.5/§5.6, SPEC §12.9).
+var ErrSkipDocument = errors.New("jobs: this document is deliberately not signed")
 
 // SignFunc signs one document and writes it out. Injected, so the
 // queue's own decisions — order, skip-and-continue, when to abort, what
@@ -233,7 +250,20 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 
 		start := time.Now()
 		outcome, err := sign(ctx, i, q.items[i])
-		durations = append(durations, time.Since(start))
+		elapsed := time.Since(start)
+
+		if errors.Is(err, ErrSkipDocument) {
+			// Deliberately not signed. No timing sample, no failure
+			// entry, and a state that says what happened.
+			q.items[i].State = StateSkipped
+			report.Skipped++
+			if hooks.OnItem != nil {
+				hooks.OnItem(i, q.items[i])
+			}
+			emitProgress(PhaseSigning, i+1)
+			continue
+		}
+		durations = append(durations, elapsed)
 
 		if err != nil {
 			code := signing.CodeOf(err)

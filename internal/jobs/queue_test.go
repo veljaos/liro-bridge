@@ -414,3 +414,52 @@ func TestItemCarriesItsFolder(t *testing.T) {
 		t.Fatalf("Item.DisplayName = %q", it.DisplayName)
 	}
 }
+
+// TestLooksLikeOutputRecognisesThisProgramsOwnOutput covers J-3's rule:
+// which inputs already carry the configured output suffix.
+func TestLooksLikeOutputRecognisesThisProgramsOwnOutput(t *testing.T) {
+	cases := []struct {
+		in     string
+		suffix string
+		want   bool
+	}{
+		{`C:\docs\ugovor-signed.pdf`, "-signed", true},
+		{`C:\docs\ugovor-signed-signed.pdf`, "-signed", true},
+		{`C:\docs\ugovor.pdf`, "-signed", false},
+		{`C:\docs\signed-ugovor.pdf`, "-signed", false},
+		// Windows file names are case-insensitive, so the comparison is.
+		{`C:\docs\UGOVOR-SIGNED.PDF`, "-signed", true},
+		// A configured suffix other than the default works the same way.
+		{`C:\docs\ugovor-potpisan.pdf`, "-potpisan", true},
+		{`C:\docs\ugovor-potpisan.pdf`, "-signed", false},
+		// An empty suffix would make every input look like an output;
+		// config.validate never produces one, and this is the floor.
+		{`C:\docs\ugovor.pdf`, "", false},
+		// The suffix is matched against the name, never the extension.
+		{`C:\docs\ugovor.signed`, "-signed", false},
+	}
+	for _, c := range cases {
+		if got := LooksLikeOutput(c.in, c.suffix); got != c.want {
+			t.Errorf("LooksLikeOutput(%q, %q) = %v, want %v", c.in, c.suffix, got, c.want)
+		}
+	}
+}
+
+// TestLooksLikeOutputAgreesWithOutputPathFor is the property that makes
+// the rule right rather than merely plausible: an input this says looks
+// like an output is exactly one that OutputPathFor would turn into a
+// doubly-suffixed name.
+func TestLooksLikeOutputAgreesWithOutputPathFor(t *testing.T) {
+	const suffix = "-signed"
+	in := filepath.Join(`C:\docs`, "ugovor.pdf")
+	out := OutputPathFor(in, "", suffix)
+	if LooksLikeOutput(in, suffix) {
+		t.Fatalf("%q was taken for an output", in)
+	}
+	if !LooksLikeOutput(out, suffix) {
+		t.Fatalf("%q, which this program just produced, was not taken for an output", out)
+	}
+	if again := OutputPathFor(out, "", suffix); !strings.Contains(filepath.Base(again), "-signed-signed") {
+		t.Fatalf("signing the output again produced %q, which is not the doubling this rule is about", again)
+	}
+}

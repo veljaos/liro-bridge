@@ -68,6 +68,15 @@ type Entry struct {
 	// one step further up.
 	AchievedLevel string
 
+	// Discontinuity is set on, and only on, the first entry of a chain
+	// that exists because an earlier one could not be continued. It
+	// names the file that broke, where, and why (see discontinuity.go).
+	//
+	// Nil on every other entry, which is what makes "tell the person
+	// once, not on every subsequent signature" a property of the data
+	// rather than a flag somebody has to remember to clear.
+	Discontinuity *Discontinuity
+
 	// PrevHash is the previous entry's Hash — zero-length for the
 	// first entry in the whole chain.
 	PrevHash []byte
@@ -104,8 +113,36 @@ func (e Entry) CanonicalBytes() []byte {
 	if e.AchievedLevel != "" {
 		buf = appendString(buf, e.AchievedLevel)
 	}
+	// The discontinuity is hashed like everything else: it is content,
+	// and content that must not be alterable without breaking the chain
+	// it starts. It is appended last and behind a one-byte presence
+	// marker, so an entry that has one cannot canonicalise to the same
+	// bytes as one that does not.
+	//
+	// Unambiguous by construction: after PrevHash the buffer either ends
+	// (no level, no discontinuity), or continues with a 4-byte
+	// big-endian length whose first byte is 0 for any level string worth
+	// the name, or continues with this marker, which is 1. Two entries
+	// differing in these fields cannot produce the same bytes, and an
+	// entry written before either field existed canonicalises to exactly
+	// what it always did — which is what lets both be added to a log
+	// that already has entries in it.
+	if e.Discontinuity != nil {
+		buf = append(buf, discontinuityMarker)
+		buf = appendUint64(buf, uint64(e.Discontinuity.PreviousChain))
+		buf = appendString(buf, e.Discontinuity.PreviousFile)
+		buf = appendUint64(buf, e.Discontinuity.LastSequence)
+		buf = appendBool(buf, e.Discontinuity.HasLastSequence)
+		buf = appendUint64(buf, uint64(e.Discontinuity.Line))
+		buf = appendString(buf, string(e.Discontinuity.Reason))
+	}
 	return buf
 }
+
+// discontinuityMarker introduces the optional trailing Discontinuity
+// fields in CanonicalBytes. 1 rather than 0 so it cannot be confused
+// with the leading byte of AchievedLevel's own length prefix.
+const discontinuityMarker byte = 1
 
 // ComputeHash returns SHA-256 of e.CanonicalBytes() — e's own Hash and
 // PrevHash fields are irrelevant to the input except that PrevHash is

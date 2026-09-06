@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -432,5 +433,75 @@ func TestDiskFillsAtDocumentSeventy(t *testing.T) {
 	}
 	if len(report.Failures) != 30 {
 		t.Fatalf("Failures listed %d, want 30", len(report.Failures))
+	}
+}
+
+// TestRunSkipsADocumentTheCallerDeclines covers J-3's mechanism: a
+// document the person has said not to sign is skipped, not failed, and
+// the rest of the batch runs.
+func TestRunSkipsADocumentTheCallerDeclines(t *testing.T) {
+	dir := t.TempDir()
+	q := &Queue{}
+	if added, _ := q.Add([]string{
+		writeFile(t, dir, "a.pdf", 1),
+		writeFile(t, dir, "b-signed.pdf", 1),
+		writeFile(t, dir, "c.pdf", 1),
+	}); added != 3 {
+		t.Fatalf("added = %d, want 3", added)
+	}
+
+	var signed []string
+	r := &Runner{}
+	report := r.Run(context.Background(), q, func(_ context.Context, _ int, item Item) (Outcome, error) {
+		if strings.Contains(item.Path, "b-signed") {
+			return Outcome{}, ErrSkipDocument
+		}
+		signed = append(signed, filepath.Base(item.Path))
+		return Outcome{OutputPath: item.Path + ".out", AchievedLevel: "B-T"}, nil
+	}, Hooks{})
+
+	if report.Succeeded != 2 || report.Skipped != 1 || report.Failed != 0 {
+		t.Fatalf("succeeded=%d skipped=%d failed=%d, want 2/1/0", report.Succeeded, report.Skipped, report.Failed)
+	}
+	if len(report.Failures) != 0 {
+		t.Fatalf("a skipped document was reported as a failure: %+v", report.Failures)
+	}
+	if len(signed) != 2 {
+		t.Fatalf("signed %v, want the two documents that were not declined", signed)
+	}
+	states := q.Items()
+	if states[1].State != StateSkipped {
+		t.Errorf("the declined document's state = %q, want %q", states[1].State, StateSkipped)
+	}
+	if states[1].FailureCode != "" {
+		t.Errorf("the declined document carries a failure code %q", states[1].FailureCode)
+	}
+}
+
+// TestASkippedDocumentContributesNoTiming keeps the ETA honest: a skip
+// takes no time at all, and letting it into the measured durations
+// would drag the first-signature and median figures the ETA and the
+// per-signature PIN detection are built from (SPEC §12.9).
+func TestASkippedDocumentContributesNoTiming(t *testing.T) {
+	dir := t.TempDir()
+	q := &Queue{}
+	if added, _ := q.Add([]string{
+		writeFile(t, dir, "skipped.pdf", 1),
+		writeFile(t, dir, "real.pdf", 1),
+	}); added != 2 {
+		t.Fatalf("added = %d, want 2", added)
+	}
+
+	r := &Runner{}
+	report := r.Run(context.Background(), q, func(_ context.Context, index int, _ Item) (Outcome, error) {
+		if index == 0 {
+			return Outcome{}, ErrSkipDocument
+		}
+		time.Sleep(20 * time.Millisecond)
+		return Outcome{OutputPath: "out", AchievedLevel: "B-T"}, nil
+	}, Hooks{})
+
+	if report.Timing.FirstSignature < 15*time.Millisecond {
+		t.Fatalf("FirstSignature = %s — the skipped document was counted as the first signature", report.Timing.FirstSignature)
 	}
 }

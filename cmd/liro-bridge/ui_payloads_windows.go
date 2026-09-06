@@ -140,6 +140,15 @@ type jsAsk struct {
 	OutputRenameText string `json:"outputRenameText"`
 	OutputRenamePath string `json:"outputRenamePath"`
 
+	// J-3: how many of the batch's documents already carry the output
+	// suffix, said in words, and the two proceeding actions' own labels
+	// — which are singular or plural depending on that count, because a
+	// button that says "Skip them" for one document reads as though the
+	// program has miscounted.
+	AlreadySignedText string `json:"alreadySignedText"`
+	AlreadySkipText   string `json:"alreadySkipText"`
+	AlreadySignText   string `json:"alreadySignText"`
+
 	FailedMessageText string `json:"failedMessageText"`
 	FailedDetails     string `json:"failedDetails"`
 }
@@ -206,6 +215,34 @@ func askOutputExistsPayload(existingPath, renamePath string, c *i18n.Catalogue) 
 		OutputExistsPath: existingPath,
 		OutputRenameText: fmt.Sprintf(c.T("consent.output_exists_rename"), filepath.Base(renamePath)),
 		OutputRenamePath: renamePath,
+	}}
+}
+
+// askAlreadySignedPayload puts the window into J-3's choice: skip the
+// documents whose names already end in the output suffix, sign them too,
+// or cancel.
+//
+// Skipping is the primary action because it is the one that matches what
+// a second run of the same folder almost always means. It is offered,
+// not applied: someone signing a "ugovor-signed.pdf" that arrived from
+// elsewhere is counter-signing, which is ordinary, and this program does
+// not know which of the two it is looking at. So it says how many and
+// what would happen, and lets the person decide — for the whole batch,
+// once, exactly as the output-file choice does.
+func askAlreadySignedPayload(n int, suffix string, c *i18n.Catalogue) map[string]any {
+	explain := fmt.Sprintf(c.T("consent.already_signed_explain_many"), n, suffix)
+	skip := c.T("consent.already_signed_skip_many")
+	sign := c.T("consent.already_signed_sign_many")
+	if n == 1 {
+		explain = fmt.Sprintf(c.T("consent.already_signed_explain_one"), suffix)
+		skip = c.T("consent.already_signed_skip_one")
+		sign = c.T("consent.already_signed_sign_one")
+	}
+	return map[string]any{"type": "ask", "ask": jsAsk{
+		State:             string(consent.StateAlreadySigned),
+		AlreadySignedText: explain,
+		AlreadySkipText:   skip,
+		AlreadySignText:   sign,
 	}}
 }
 

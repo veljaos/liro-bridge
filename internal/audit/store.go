@@ -7,7 +7,6 @@ package audit
 // in what Verify checks, since tampering with an earlier month's file
 // must still be detectable.
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,8 +34,27 @@ type jsonEntry struct {
 	FailureCode   string    `json:"failureCode,omitempty"`
 	IsTestKey     bool      `json:"isTestKey"`
 	AchievedLevel string    `json:"achievedLevel,omitempty"`
-	PrevHash      string    `json:"prevHash"`
-	Hash          string    `json:"hash"`
+
+	// Discontinuity is present only on a chain's first entry, and only
+	// when that chain exists because an earlier one could not be
+	// continued. omitempty keeps every other entry's line byte-identical
+	// to what it always was.
+	Discontinuity *jsonDiscontinuity `json:"discontinuity,omitempty"`
+
+	PrevHash string `json:"prevHash"`
+	Hash     string `json:"hash"`
+}
+
+// jsonDiscontinuity is Discontinuity's on-disk shape. Named fields
+// rather than a free-text note, for the reason Entry's own field set is
+// an allow-list: a note is where a file name eventually ends up.
+type jsonDiscontinuity struct {
+	PreviousChain   int         `json:"previousChain"`
+	PreviousFile    string      `json:"previousFile"`
+	LastSequence    uint64      `json:"lastSequence"`
+	HasLastSequence bool        `json:"hasLastSequence"`
+	Line            int         `json:"line"`
+	Reason          BreakReason `json:"reason"`
 }
 
 func toJSONEntry(e Entry) jsonEntry {
@@ -50,8 +68,37 @@ func toJSONEntry(e Entry) jsonEntry {
 		FailureCode:   string(e.FailureCode),
 		IsTestKey:     e.IsTestKey,
 		AchievedLevel: e.AchievedLevel,
+		Discontinuity: toJSONDiscontinuity(e.Discontinuity),
 		PrevHash:      hexEncode(e.PrevHash),
 		Hash:          hexEncode(e.Hash),
+	}
+}
+
+func toJSONDiscontinuity(d *Discontinuity) *jsonDiscontinuity {
+	if d == nil {
+		return nil
+	}
+	return &jsonDiscontinuity{
+		PreviousChain:   d.PreviousChain,
+		PreviousFile:    d.PreviousFile,
+		LastSequence:    d.LastSequence,
+		HasLastSequence: d.HasLastSequence,
+		Line:            d.Line,
+		Reason:          d.Reason,
+	}
+}
+
+func fromJSONDiscontinuity(d *jsonDiscontinuity) *Discontinuity {
+	if d == nil {
+		return nil
+	}
+	return &Discontinuity{
+		PreviousChain:   d.PreviousChain,
+		PreviousFile:    d.PreviousFile,
+		LastSequence:    d.LastSequence,
+		HasLastSequence: d.HasLastSequence,
+		Line:            d.Line,
+		Reason:          d.Reason,
 	}
 }
 
@@ -74,6 +121,7 @@ func fromJSONEntry(j jsonEntry) (Entry, error) {
 		FailureCode:   errCode(j.FailureCode),
 		IsTestKey:     j.IsTestKey,
 		AchievedLevel: j.AchievedLevel,
+		Discontinuity: fromJSONDiscontinuity(j.Discontinuity),
 		PrevHash:      prevHash,
 		Hash:          hash,
 	}, nil
@@ -96,128 +144,90 @@ func NewStore(dir string) (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
-// listFiles returns every *.jsonl file in the store's directory, in
-// chain order. The zero-padded rotation suffix (fileName) makes plain
-// lexicographic sort the correct order both within a month and across
-// months/years — see fileName's own doc comment.
-func (s *Store) listFiles() ([]string, error) {
-	matches, err := filepath.Glob(filepath.Join(s.dir, "*.jsonl"))
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(matches)
-	return matches, nil
-}
-
-// fileName returns the path for month t's file at the given rotation
-// (starting at 1). The rotation is zero-padded to 3 digits so that
-// "2026-09-002.jsonl" sorts before "2026-09-010.jsonl" — an unpadded
-// scheme would sort "10" before "2".
-func (s *Store) fileName(t time.Time, rotation int) string {
-	return filepath.Join(s.dir, fmt.Sprintf("%04d-%02d-%03d.jsonl", t.Year(), t.Month(), rotation))
-}
-
-// currentFile returns the file Append should write to for entries
-// timestamped at t: the highest-rotation file for t's month, or a new
-// rotation-1 file if none exists yet, or the next rotation if the
-// current one has reached MaxFileSize.
-func (s *Store) currentFile(t time.Time) (string, error) {
+// currentFile returns the file Append should write to for chain, for
+// entries timestamped at t: the highest-rotation file that chain has for
+// t's month, or a new rotation-1 file if it has none yet, or the next
+// rotation if the current one has reached MaxFileSize.
+func (s *Store) currentFile(chain int, t time.Time) (string, error) {
 	prefix := fmt.Sprintf("%04d-%02d-", t.Year(), t.Month())
-	files, err := s.listFiles()
+	matches, err := filepath.Glob(filepath.Join(s.dir, "*.jsonl"))
 	if err != nil {
 		return "", err
 	}
+	sort.Strings(matches)
 
 	rotation := 0
 	var latest string
-	for _, f := range files {
-		if strings.HasPrefix(filepath.Base(f), prefix) {
-			latest = f
-			rotation++
+	for _, f := range matches {
+		base := filepath.Base(f)
+		if chainNumberOf(base) != chain || !strings.HasPrefix(base, prefix) {
+			continue
 		}
+		latest = f
+		rotation++
 	}
 	if latest == "" {
-		return s.fileName(t, 1), nil
+		return s.chainFileName(chain, t.Year(), int(t.Month()), 1), nil
 	}
 	info, err := os.Stat(latest)
 	if err != nil {
 		return "", err
 	}
 	if info.Size() >= MaxFileSize {
-		return s.fileName(t, rotation+1), nil
+		return s.chainFileName(chain, t.Year(), int(t.Month()), rotation+1), nil
 	}
 	return latest, nil
 }
 
-// lastEntry reads the last line of the last file in chain order,
-// returning (Entry{}, false, nil) if the store is empty.
-func (s *Store) lastEntry() (Entry, bool, error) {
-	files, err := s.listFiles()
-	if err != nil {
-		return Entry{}, false, err
-	}
-	for i := len(files) - 1; i >= 0; i-- {
-		entries, err := readEntries(files[i])
-		if err != nil {
-			return Entry{}, false, err
-		}
-		if len(entries) > 0 {
-			return entries[len(entries)-1], true, nil
-		}
-	}
-	return Entry{}, false, nil
-}
-
-func readEntries(path string) ([]Entry, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-
-	var out []Entry
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		var j jsonEntry
-		if err := json.Unmarshal(line, &j); err != nil {
-			return nil, fmt.Errorf("audit: parsing %s: %w", path, err)
-		}
-		e, err := fromJSONEntry(j)
-		if err != nil {
-			return nil, fmt.Errorf("audit: parsing %s: %w", path, err)
-		}
-		out = append(out, e)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // Append computes next's Sequence/PrevHash/Hash against the last entry
-// currently in the store and writes it (F5 §8.1/§8.2). It never
+// of the store's current chain and writes it (F5 §8.1/§8.2). It never
 // modifies an existing file's earlier lines — one line is opened,
-// written and closed per call.
+// written and closed per call — and it never truncates, renames or
+// deletes anything.
+//
+// When the current chain cannot be continued — its last entry cannot be
+// read, because a line is not a whole entry or because a file cannot be
+// read at all — the old file is left exactly as it is and a new chain is
+// started beside it, whose first entry records the break: which file
+// preceded it, at which sequence and line it stopped, and why. The
+// returned Entry carries that record, and only that one does, so a
+// caller that tells the person tells them once.
+//
+// Refusing to continue a chain nobody can read stays right: a hash chain
+// continued by guessing is not a hash chain. What changes is that the
+// refusal is now recorded and recoverable rather than permanent and
+// silent — measured, one truncated last line used to make every
+// subsequent Append fail forever (FTEST B-9).
 func (s *Store) Append(next Entry) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	last, ok, err := s.lastEntry()
+	chains, err := s.chains()
 	if err != nil {
 		return Entry{}, err
 	}
+
+	chain := 1
 	var prev *Entry
-	if ok {
-		prev = &last
+	if len(chains) > 0 {
+		current := chains[len(chains)-1]
+		chain = current.Number
+		switch {
+		case current.Truncated():
+			// This chain's tail is unreadable. Leave it exactly where it
+			// is — it is evidence up to the point it broke — and start
+			// the next one beside it.
+			chain = current.Number + 1
+			next.Discontinuity = discontinuityFrom(current)
+		case len(current.Entries) > 0:
+			last := current.Entries[len(current.Entries)-1]
+			prev = &last
+		}
 	}
+
 	completed := AppendEntry(prev, next)
 
-	path, err := s.currentFile(completed.Timestamp)
+	path, err := s.currentFile(chain, completed.Timestamp)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -237,32 +247,83 @@ func (s *Store) Append(next Entry) (Entry, error) {
 	return completed, nil
 }
 
-// All reads every entry in the store, in chain order.
+// discontinuityFrom turns a chain that cannot be continued into the
+// record its successor's first entry carries.
+func discontinuityFrom(broken Chain) *Discontinuity {
+	d := &Discontinuity{
+		PreviousChain: broken.Number,
+		PreviousFile:  broken.TruncatedFile,
+		Line:          broken.TruncatedAtLine,
+		Reason:        broken.TruncatedReason,
+	}
+	if n := len(broken.Entries); n > 0 {
+		d.LastSequence = broken.Entries[n-1].Sequence
+		d.HasLastSequence = true
+	}
+	return d
+}
+
+// LatestChainFile is the file the next Append would write into, as a
+// base name. It is what a caller telling the person "the log continued
+// in a new file" names.
+func (s *Store) LatestChainFile() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	chains, err := s.chains()
+	if err != nil {
+		return "", err
+	}
+	if len(chains) == 0 {
+		return "", nil
+	}
+	last := chains[len(chains)-1]
+	if n := len(last.Files); n > 0 {
+		return last.Files[n-1], nil
+	}
+	return "", nil
+}
+
+// Dir is the directory this store lives in — where a caller telling the
+// person where the log continued points them.
+func (s *Store) Dir() string { return s.dir }
+
+// All reads every entry in every chain, in order.
+//
+// Tolerant of a chain that cannot be read to the end: what survives is
+// returned, and Chains/Verify are where the break itself is reported. A
+// log whose last line was truncated still holds everything written
+// before it, and refusing to show any of it — which is what this used to
+// do — loses the evidence as surely as deleting it would.
 func (s *Store) All() ([]Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	files, err := s.listFiles()
+	chains, err := s.chains()
 	if err != nil {
 		return nil, err
 	}
 	var all []Entry
-	for _, f := range files {
-		entries, err := readEntries(f)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, entries...)
+	for _, c := range chains {
+		all = append(all, c.Entries...)
 	}
 	return all, nil
 }
 
-// Verify reads the whole store and reports the first break, if any
-// (F5 §8.2).
-func (s *Store) Verify() (VerifyResult, error) {
-	entries, err := s.All()
+// Verify walks every chain in the store separately and reports each
+// one's own result, plus the discontinuities between them.
+//
+// Separately, because they are separate chains: a new chain's first
+// entry has no PrevHash by construction, so walking every entry in the
+// store as one sequence would report the very discontinuity this
+// mechanism records as though it were tampering.
+func (s *Store) Verify() (StoreVerification, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	chains, err := s.chains()
 	if err != nil {
-		return VerifyResult{}, err
+		return StoreVerification{}, err
 	}
-	return Verify(entries), nil
+	return VerifyChains(chains), nil
 }

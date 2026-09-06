@@ -250,3 +250,12 @@ body.drag-over #file-list {
 #report-level-note {
   margin: 0;
 }
+
+/* The audit-log notice on the report screen (Task 5): a whole sentence
+   naming two file names and a folder, so it wraps rather than widening
+   the window. It takes the caution colour but not .liro-outcome, whose
+   nowrap and right alignment are for a one-word badge. */
+.report-notice {
+  font-weight: var(--liro-font-weight-semibold);
+  overflow-wrap: anywhere;
+}

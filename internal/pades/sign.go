@@ -96,6 +96,19 @@ type Options struct {
 	// comment for the measurement (a real MUP CRL: 30,136,214 bytes)
 	// that motivates the default.
 	MaxRevocationArtefactSize int64
+
+	// RevocationMemory is one batch's memory of revocation endpoints
+	// that did not answer (J-10). It must be the *same* value for every
+	// document of one batch and a fresh one for the next batch: a
+	// responder that timed out for document 1 will time out for document
+	// 100 a second later, and asking again costs twenty seconds each
+	// time — measured at 3m20s for a ten-document batch against a
+	// responder that accepts the request and never answers.
+	//
+	// Nil means every endpoint is contacted for every document, which is
+	// the right behaviour for a single-document signature and is what
+	// every caller did before this field existed.
+	RevocationMemory *dss.EndpointMemory
 }
 
 // StampOptions configures the visual signature stamp (F4 §7's CLI
@@ -314,7 +327,7 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 	result.Bytes = ph.Bytes
 
 	if result.AchievedLevel == LevelBT && opts.RequestedLevel == LevelBLT {
-		applyDSS(ctx, result, cmsDER, signerCert, chain, opts.MaxRevocationArtefactSize)
+		applyDSS(ctx, result, cmsDER, signerCert, chain, opts.MaxRevocationArtefactSize, opts.RevocationMemory)
 	}
 
 	return result, nil
@@ -500,15 +513,16 @@ func classifyTSAError(err error) errs.Code {
 // DSS embedding is best-effort by design (F3 §7.3). maxArtefactSize is
 // Options.MaxRevocationArtefactSize, forwarded to
 // dss.CollectRevocation (Task 1b); zero or negative means
-// dss.DefaultMaxArtefactSize.
-func applyDSS(ctx context.Context, result *Result, cmsDER []byte, signerCert *x509.Certificate, chain []*x509.Certificate, maxArtefactSize int64) {
+// dss.DefaultMaxArtefactSize. mem is Options.RevocationMemory,
+// forwarded unchanged (J-10); nil means nothing is remembered.
+func applyDSS(ctx context.Context, result *Result, cmsDER []byte, signerCert *x509.Certificate, chain []*x509.Certificate, maxArtefactSize int64, mem *dss.EndpointMemory) {
 	doc, err := pdf.Parse(result.Bytes)
 	if err != nil {
 		result.Notes = append(result.Notes, fmt.Sprintf("B-LT requested; re-parsing for DSS failed: %v", err))
 		return
 	}
 	allCerts := append([]*x509.Certificate{signerCert}, chain...)
-	entries := dss.CollectRevocation(ctx, allCerts, maxArtefactSize)
+	entries := dss.CollectRevocation(ctx, allCerts, maxArtefactSize, mem)
 	dssResult, err := dss.Apply(doc, cmsDER, allCerts, entries)
 	if err != nil {
 		result.Notes = append(result.Notes, fmt.Sprintf("B-LT requested; embedding /DSS failed: %v", err))

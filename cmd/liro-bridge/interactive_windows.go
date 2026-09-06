@@ -28,6 +28,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/pades"
 	"github.com/veljaos/liro-bridge/internal/pades/appearance"
+	"github.com/veljaos/liro-bridge/internal/pades/dss"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
@@ -88,20 +89,22 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 // measured during FTEST, a single unparseable line anywhere in the log
 // — one truncated last line is what a power cut leaves — makes every
 // subsequent Append fail forever, because the chain's last entry cannot
-// be read and so the next PrevHash cannot be computed. Refusing to
-// append is the right answer to that (a hash chain nobody can continue
-// must not be continued by guessing), but doing it without a word means
-// the agent keeps signing and keeps not recording, and SPEC §6.7 makes
-// the log the record of every signature. What the *user* should be told
-// is a separate question and is left to the owner; that the program
-// should not lose the fact in silence is not.
-func recordInteractiveAudit(store *audit.Store, auditErr error, thumbprint string, documents int, outcome audit.Outcome, lastErr error, isTestKey bool, level string) {
+// be read and so the next PrevHash cannot be computed.
+//
+// That is now recovered from rather than merely reported: the store
+// leaves the broken file exactly as it is and starts a new chain beside
+// it, whose first entry records the break. The returned Discontinuity is
+// that record, and it is non-nil for exactly one batch — the one whose
+// entry opened the new chain — which is what makes "tell the person
+// once, not on every subsequent signature" true without a flag anybody
+// has to clear.
+func recordInteractiveAudit(store *audit.Store, auditErr error, thumbprint string, documents int, outcome audit.Outcome, lastErr error, isTestKey bool, level string) *audit.Discontinuity {
 	if auditErr != nil {
 		slog.Error("audit: the log could not be opened, so this batch is not recorded",
 			"error", auditErr, "outcome", outcome, "documents", documents)
-		return
+		return nil
 	}
-	if _, err := store.Append(audit.Entry{
+	entry, err := store.Append(audit.Entry{
 		Timestamp:     time.Now(),
 		Thumbprint:    thumbprint,
 		Application:   consent.ApplicationLocal,
@@ -110,13 +113,47 @@ func recordInteractiveAudit(store *audit.Store, auditErr error, thumbprint strin
 		FailureCode:   codeOfInteractive(lastErr),
 		IsTestKey:     isTestKey,
 		AchievedLevel: level,
-	}); err != nil {
+	})
+	if err != nil {
 		// No file name, no personal name, no document content: SPEC
 		// §18.3. The outcome and the count are already what the entry
 		// itself would have carried.
 		slog.Error("audit: this batch could not be appended to the log",
 			"error", err, "outcome", outcome, "documents", documents)
+		return nil
 	}
+	if entry.Discontinuity != nil {
+		// A fact about the log itself, not about this batch, and worth
+		// a line of its own: the previous chain could not be continued,
+		// so it was left where it was and this entry opened a new one.
+		// The previous file's name is this program's own generated name
+		// and carries nothing personal (SPEC §18.3).
+		slog.Warn("audit: the previous chain could not be continued, so a new one was started beside it",
+			"previousFile", entry.Discontinuity.PreviousFile,
+			"previousChain", entry.Discontinuity.PreviousChain,
+			"line", entry.Discontinuity.Line,
+			"reason", entry.Discontinuity.Reason)
+	}
+	return entry.Discontinuity
+}
+
+// auditChainNotice is what the person is told, once, when the log
+// continued in a new file: that it did, and where it is.
+//
+// A notice rather than an error. Nothing about their signature went
+// wrong, the batch is recorded, and the old file is still there — what
+// changed is which file the log is being written to, and that is the one
+// thing they cannot find out any other way.
+func auditChainNotice(c *i18n.Catalogue, store *audit.Store, d *audit.Discontinuity) string {
+	if d == nil || store == nil {
+		return ""
+	}
+	newFile, err := store.LatestChainFile()
+	if err != nil || newFile == "" {
+		slog.Warn("audit: could not name the new chain file", "error", err)
+		return fmt.Sprintf(c.T("audit.chain_continued_here"), d.PreviousFile, store.Dir())
+	}
+	return fmt.Sprintf(c.T("audit.chain_continued"), d.PreviousFile, newFile, store.Dir())
 }
 
 // levelRank orders the three PAdES levels so lowerLevel can pick the
@@ -448,6 +485,13 @@ type interactiveSignOptions struct {
 	// signature. Nil leaves SPEC §13.4's default path untouched, byte
 	// for byte.
 	stamp *pades.StampOptions
+
+	// revocationMemory is this batch's memory of revocation endpoints
+	// that did not answer (J-10). One value for the whole batch, a
+	// fresh one for the next: an OCSP responder that accepts a request
+	// and never answers costs 20 s per document, and MUP's real
+	// responder is measured as exactly that (D-076).
+	revocationMemory *dss.EndpointMemory
 }
 
 // signInteractiveOne reads one document, signs it, and writes the
@@ -480,16 +524,24 @@ func signInteractiveOne(ctx context.Context, inPath string, session keysource.Se
 		TrustStore:        opts.trustStore,
 		Now:               time.Now(),
 		Stamp:             opts.stamp,
+		RevocationMemory:  opts.revocationMemory,
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(opts.outPath, result.Bytes, 0o600); err != nil {
-		// The signature succeeded; only the write did not. SIGN_FAILED
-		// would send the user to check the card for a problem that is
-		// on the disk (Task 4).
-		return nil, errs.WithDetails(errs.CodeOutputWriteFailed, err,
-			map[string]any{"path": opts.outPath})
+	// Written beside the target and renamed over it, never straight
+	// onto it (J-8): a program watching the output folder must not be
+	// able to pick up an empty or partial signed document, and a write
+	// that fails partway must not destroy a previously good one.
+	//
+	// The signature succeeded; only the write can fail here, which is
+	// why neither outcome is SIGN_FAILED — that would send the user to
+	// check the card for a problem on the disk (D-104). WriteFileAtomic
+	// distinguishes the two cases that need different answers:
+	// OUTPUT_IN_USE (close the file that is open) and
+	// OUTPUT_WRITE_FAILED (everything else).
+	if err := platform.WriteFileAtomic(opts.outPath, result.Bytes, 0o600); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -610,6 +662,88 @@ func resolveOutputConflict(win ui.Window, messages chan ui.Message, c *i18n.Cata
 		// is written and nothing is overwritten.
 		slog.Warn("consent: output-exists screen sent approve with no choice")
 		return outPath, false, false
+	}
+}
+
+// alreadySignedAnswer is what the person said about the documents in
+// this batch whose names already end in the output suffix (J-3).
+type alreadySignedAnswer int
+
+const (
+	alreadySignedCancelled alreadySignedAnswer = iota
+	alreadySignedSkip
+	alreadySignedSignAnyway
+)
+
+// resolveAlreadySigned asks J-3's question once for the whole batch and
+// returns which documents are to be signed.
+//
+// It is asked here, beside the timestamp and output-file questions and
+// before the card session is opened, for the same reason those are: a
+// person who cancels must not have spent a PIN entry on a batch that
+// was never going to be written. The set it answers about is decided
+// from the input names and the configured suffix alone, so nothing has
+// to be read or signed to ask it.
+//
+// The whole batch gets one answer. A hundred identical questions is not
+// a hundred choices (SPEC §12.10's own reasoning, and D-104's for the
+// output-file question).
+func resolveAlreadySigned(win ui.Window, messages chan ui.Message, closed <-chan struct{}, c *i18n.Catalogue, inputs []interactiveInput, suffix string) (skip map[string]bool, proceed bool) {
+	var already []string
+	for _, in := range inputs {
+		if jobs.LooksLikeOutput(in.path, suffix) {
+			already = append(already, in.path)
+		}
+	}
+	if len(already) == 0 {
+		return nil, true
+	}
+
+	if err := win.PostJSON(askAlreadySignedPayload(len(already), suffix, c)); err != nil {
+		// A question that could not be put on screen must not be
+		// answered on the person's behalf. The safe answer is the one
+		// that signs nothing it was not clearly asked to.
+		slog.Error("consent: could not ask about already-signed documents", "error", err)
+		return nil, false
+	}
+
+	var msg ui.Message
+	select {
+	case msg = <-messages:
+	case <-closed:
+		// The window was closed while the question was on screen. That
+		// is a refusal, and it is not a state to wait in forever.
+		return nil, false
+	}
+	if msg.Type != ui.MessageTypeApprove {
+		return nil, false
+	}
+
+	switch readAlreadySignedChoice(win) {
+	case alreadySignedSkip:
+		skip = make(map[string]bool, len(already))
+		for _, p := range already {
+			skip[p] = true
+		}
+		return skip, true
+	case alreadySignedSignAnyway:
+		return nil, true
+	default:
+		slog.Warn("consent: already-signed screen sent approve with no choice")
+		return nil, false
+	}
+}
+
+// readAlreadySignedChoice reads back which of the two proceeding
+// actions the page recorded, exactly as readOutputChoice does.
+func readAlreadySignedChoice(win ui.Window) alreadySignedAnswer {
+	switch readWindowAction(win, "the already-signed choice") {
+	case "alreadySkip":
+		return alreadySignedSkip
+	case "alreadySign":
+		return alreadySignedSignAnyway
+	default:
+		return alreadySignedCancelled
 	}
 }
 

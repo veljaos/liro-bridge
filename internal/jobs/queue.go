@@ -287,6 +287,35 @@ func OutputPathFor(inPath, dir, suffix string) string {
 	return filepath.Join(dir, name)
 }
 
+// LooksLikeOutput reports whether inPath's own name already ends in
+// suffix before its extension — that is, whether it looks like a
+// document this program has already signed.
+//
+// It exists because running `sign --in "C:\docs\*.pdf"` a second time
+// refuses each original (its output is already there) and then signs
+// each "…-signed.pdf" from the first run, producing
+// "…-signed-signed.pdf"; a third run produces
+// "…-signed-signed-signed.pdf" (J-3). Nothing here decides what to do
+// about that: signing a "ugovor-signed.pdf" that arrived from somebody
+// else is a perfectly ordinary counter-signature, and guessing which of
+// the two a person meant is how a helpful rule becomes a wrong one. The
+// front doors ask (the window) or say so and require a flag (the
+// command line); this function only answers the question they ask.
+//
+// The comparison is case-insensitive because Windows file names are,
+// and the suffix must be non-empty: an empty one would make every input
+// look like an output. config.validate already replaces an empty
+// configured suffix with "-signed", so this guard is a floor, not a
+// path anything reaches.
+func LooksLikeOutput(inPath, suffix string) bool {
+	if suffix == "" {
+		return false
+	}
+	base := filepath.Base(inPath)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	return strings.HasSuffix(strings.ToLower(name), strings.ToLower(suffix))
+}
+
 // pdfsDirectlyIn lists the PDFs immediately inside dir, sorted by name,
 // never descending into subfolders (F6 §1). Sorting makes a dropped
 // folder produce the same order every time, which matters because the

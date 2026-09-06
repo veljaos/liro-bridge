@@ -54,7 +54,8 @@
   // they were on the consent window while that was a window of its own.
   var screens = [
     "state-files", "state-queue", "state-report",
-    "state-tsachoice", "state-outputexists", "state-failed"
+    "state-tsachoice", "state-outputexists", "state-alreadysigned",
+    "state-failed"
   ];
 
   function show(id) {
@@ -223,6 +224,14 @@
     adjusted.hidden = !payload.stampAdjusted;
     window.liroSetText(adjusted, payload.stampAdjusted || "");
 
+    var already = document.getElementById("report-already-signed");
+    already.hidden = !payload.alreadySigned;
+    window.liroSetText(already, payload.alreadySigned || "");
+
+    var auditNotice = document.getElementById("report-audit-notice");
+    auditNotice.hidden = !payload.auditNotice;
+    window.liroSetText(auditNotice, payload.auditNotice || "");
+
     var failures = payload.failures || [];
     document.getElementById("report-failures").hidden = failures.length === 0;
     var ul = document.getElementById("report-failure-list");
@@ -268,6 +277,15 @@
       show("state-outputexists");
       // Nothing that writes a file is focused first either.
       document.getElementById("output-cancel-btn").focus();
+      return;
+    }
+    if (ask.state === "alreadySigned") {
+      window.liroSetText(document.getElementById("already-signed-explain"), ask.alreadySignedText || "");
+      window.liroSetText(document.getElementById("already-skip-btn"), ask.alreadySkipText || "");
+      window.liroSetText(document.getElementById("already-sign-btn"), ask.alreadySignText || "");
+      show("state-alreadysigned");
+      // Nothing that signs anything is focused first.
+      document.getElementById("already-cancel-btn").focus();
       return;
     }
     if (ask.state === "failed") {
@@ -316,6 +334,8 @@
   on("step-back-btn", "back");
   on("tsa-without-btn", "tsaWithoutTimestamp");
   on("tsa-configure-btn", "tsaConfigure");
+  on("already-skip-btn", "alreadySkip");
+  on("already-sign-btn", "alreadySign");
   on("output-rename-btn", "outputRename");
   on("output-overwrite-btn", "outputOverwrite");
   on("output-change-btn", "chooseOutputFolder");
@@ -328,7 +348,7 @@
 
   // The three ways out of a question asked after the approval. Each is
   // a refusal of this batch, which is what cancel has always meant.
-  ["tsa-cancel-btn", "output-cancel-btn", "close-failed-btn"].forEach(function (id) {
+  ["tsa-cancel-btn", "output-cancel-btn", "already-cancel-btn", "close-failed-btn"].forEach(function (id) {
     document.getElementById(id).addEventListener("click", function () {
       window.liroSend("cancel");
     });

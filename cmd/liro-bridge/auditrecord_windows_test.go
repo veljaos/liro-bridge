@@ -73,8 +73,13 @@ func seedAuditLog(t *testing.T, n int) (dir, file string) {
 // exit code — while SPEC §6.7 makes the audit log the record of every
 // signature.
 //
-// Refusing to append onto a chain that cannot be read is correct and is
-// not changed here. Losing the fact in silence is what this fixes.
+// What that state does now is recorded rather than merely reported: the
+// broken file is left exactly as it is and a new chain is started beside
+// it (Task 5). So the truncated case below asserts a *successful*
+// append that says out loud what it had to do — not the permanent
+// refusal it used to assert, which is behaviour this task deliberately
+// replaced. Refusing to continue a chain nobody can read is unchanged;
+// it is no longer the end of the story.
 func TestAFailedAuditAppendIsSaidOutLoud(t *testing.T) {
 	t.Run("a log whose last line was truncated", func(t *testing.T) {
 		dir, file := seedAuditLog(t, 6)
@@ -86,6 +91,10 @@ func TestAFailedAuditAppendIsSaidOutLoud(t *testing.T) {
 		if err := os.WriteFile(file, raw[:len(raw)-30], 0o600); err != nil {
 			t.Fatal(err)
 		}
+		before, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		store, storeErr := audit.NewStore(dir)
 		if storeErr != nil {
@@ -93,20 +102,41 @@ func TestAFailedAuditAppendIsSaidOutLoud(t *testing.T) {
 		}
 
 		buf := captureLog(t)
-		recordInteractiveAudit(store, nil, "AB12AB12", 3, audit.OutcomeApproved, nil, false, "B-T")
+		d := recordInteractiveAudit(store, nil, "AB12AB12", 3, audit.OutcomeApproved, nil, false, "B-T")
+
+		if d == nil {
+			t.Fatal("the batch was recorded with no sign that the chain had to be restarted")
+		}
+		if d.PreviousFile != filepath.Base(file) {
+			t.Errorf("the record names %q, want %q", d.PreviousFile, filepath.Base(file))
+		}
 
 		got := buf.String()
-		if !strings.Contains(got, "could not be appended") {
-			t.Errorf("nothing was logged about the failed append.\nlog was: %q", got)
+		if !strings.Contains(got, "a new one was started beside it") {
+			t.Errorf("nothing was logged about the chain being restarted; log was: %q", got)
 		}
-		if !strings.Contains(got, "level=ERROR") {
-			t.Errorf("the failure was not logged at error level.\nlog was: %q", got)
+		// SPEC §18.3: no file name of a *document*, no personal name, no
+		// document content ever reaches a log line. The audit log's own
+		// generated file name is this program's, and naming it is the
+		// point.
+		if !strings.Contains(got, "reason=unparseable") {
+			t.Errorf("the log line does not say why the chain could not be continued; log was: %q", got)
 		}
-		// SPEC §18.3: no file name, no personal name, no document
-		// content ever reaches a log line. The outcome and the count are
-		// what the entry itself would have carried.
-		if !strings.Contains(got, "documents=3") || !strings.Contains(got, "outcome=approved") {
-			t.Errorf("the log line does not say what was not recorded.\nlog was: %q", got)
+
+		// The evidence is untouched, and the batch is recorded.
+		after, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Fatal("the broken log file was modified")
+		}
+		entries, err := store.All()
+		if err != nil {
+			t.Fatalf("All: %v", err)
+		}
+		if len(entries) != 6 {
+			t.Fatalf("the store holds %d entries, want 6 — five that survived plus the one just recorded", len(entries))
 		}
 	})
 

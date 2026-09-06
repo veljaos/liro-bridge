@@ -16,10 +16,13 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/pades"
 	"github.com/veljaos/liro-bridge/internal/pades/appearance"
+	"github.com/veljaos/liro-bridge/internal/pades/dss"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
+	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/signing"
 )
 
@@ -58,6 +61,7 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 	reserve := fs.Int("reserve", 0, "bytes reserved for /Contents (default 32768)")
 	maxRevocationSize := fs.Int64("max-revocation-size", 0, "largest CRL/OCSP response embedded into /DSS, in bytes (default 5242880 = 5 MB; Task 1b)")
 	force := fs.Bool("force", false, "overwrite an existing output file")
+	resign := fs.Bool("resign", false, "sign inputs whose names already end in the output suffix; they are skipped and counted by default")
 	stamp := fs.Bool("stamp", false, "add a visible signature stamp (F4); off by default")
 	stampPosition := fs.String("stamp-position", "", "bottom-right (default) | bottom-left | top-right | top-left")
 	stampXY := fs.String("stamp-xy", "", "explicit stamp position \"x,y\" in points; mutually exclusive with --stamp-position")
@@ -123,6 +127,23 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 		return 1
 	}
 
+	// J-3: run against the same folder twice, --in's glob picks up the
+	// first run's own output and signs it again — ugovor-signed.pdf
+	// becomes ugovor-signed-signed.pdf, and a third run makes it
+	// ugovor-signed-signed-signed.pdf. Which of the two a person meant
+	// is not something to guess at: counter-signing a document called
+	// ugovor-signed.pdf that arrived from somebody else is perfectly
+	// ordinary. So this says how many were found and what would happen,
+	// and does the safe thing unless told otherwise.
+	files, alreadySigned := partitionAlreadySigned(files, signOutputSuffix, *resign)
+	if alreadySigned > 0 {
+		fprintln(stderr, "liro-bridge: sign:", alreadySignedNotice(c, alreadySigned, signOutputSuffix, *resign))
+	}
+	if len(files) == 0 {
+		fprintln(stderr, "liro-bridge: sign:", fmt.Sprintf(c.T("sign.already_signed_nothing_left"), signOutputSuffix))
+		return 1
+	}
+
 	var client *tsa.Client
 	if *tsaURL != "" {
 		auth := tsa.Auth{BasicUsername: *tsaUser, BasicPassword: *tsaPassword}
@@ -158,13 +179,20 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 		*outPath = ""
 	}
 
+	// One memory for this batch, and a fresh one for the next (J-10).
+	// A revocation endpoint that does not answer for the first document
+	// is not asked again for the ninety-ninth: measured, an OCSP
+	// responder that accepts the request and never answers costs 20 s
+	// per document, which is 33 minutes on a hundred-document batch.
+	revocationMemory := dss.NewEndpointMemory()
+
 	failures := 0
 	for _, in := range files {
 		out := *outPath
 		if out == "" {
 			out = defaultOutputPath(in)
 		}
-		if err := signOneFile(ctx, in, out, *force, session, client, requestedLevel, abortOnTSAFailure, *reserve, *maxRevocationSize, deps.TrustStore, stampOpts, stdout, stderr, c); err != nil {
+		if err := signOneFile(ctx, in, out, *force, session, client, requestedLevel, abortOnTSAFailure, *reserve, *maxRevocationSize, revocationMemory, deps.TrustStore, stampOpts, stdout, stderr, c); err != nil {
 			failures++
 			fprintln(stderr, "liro-bridge: sign:", in+":", errMessage(err, c))
 			if len(files) == 1 {
@@ -185,7 +213,45 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 	return 0
 }
 
-func signOneFile(ctx context.Context, in, out string, force bool, session keysource.Session, client *tsa.Client, level pades.Level, abortOnTSAFailure bool, reserve int, maxRevocationSize int64, trustStore []*x509.Certificate, stamp *pades.StampOptions, stdout, stderr io.Writer, c *i18n.Catalogue) error {
+// partitionAlreadySigned splits files into the ones to sign and a count
+// of the ones whose names already end in suffix. With resign true
+// nothing is removed — the count is still returned, because naming what
+// is about to happen is the point of it.
+func partitionAlreadySigned(files []string, suffix string, resign bool) (toSign []string, alreadySigned int) {
+	toSign = make([]string, 0, len(files))
+	for _, f := range files {
+		if !jobs.LooksLikeOutput(f, suffix) {
+			toSign = append(toSign, f)
+			continue
+		}
+		alreadySigned++
+		if resign {
+			toSign = append(toSign, f)
+		}
+	}
+	return toSign, alreadySigned
+}
+
+// alreadySignedNotice says how many inputs already carry the output
+// suffix and what is being done about them — skipped, with the flag
+// that would sign them, or signed because that flag was given.
+func alreadySignedNotice(c *i18n.Catalogue, n int, suffix string, resign bool) string {
+	key := "sign.already_signed_skipped_many"
+	switch {
+	case resign && n == 1:
+		key = "sign.already_signed_resigning_one"
+	case resign:
+		key = "sign.already_signed_resigning_many"
+	case n == 1:
+		key = "sign.already_signed_skipped_one"
+	}
+	if n == 1 {
+		return fmt.Sprintf(c.T(key), suffix)
+	}
+	return fmt.Sprintf(c.T(key), n, suffix)
+}
+
+func signOneFile(ctx context.Context, in, out string, force bool, session keysource.Session, client *tsa.Client, level pades.Level, abortOnTSAFailure bool, reserve int, maxRevocationSize int64, revocationMemory *dss.EndpointMemory, trustStore []*x509.Certificate, stamp *pades.StampOptions, stdout, stderr io.Writer, c *i18n.Catalogue) error {
 	if !force {
 		if _, err := os.Stat(out); err == nil {
 			return errors.New(c.T("sign.output_exists"))
@@ -213,13 +279,21 @@ func signOneFile(ctx context.Context, in, out string, force bool, session keysou
 		Now:                       time.Now(),
 		Stamp:                     stamp,
 		MaxRevocationArtefactSize: maxRevocationSize,
+		RevocationMemory:          revocationMemory,
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(out, result.Bytes, 0o600); err != nil {
-		return errs.New(errs.CodeOutputWriteFailed, err)
+	// Not os.WriteFile: that opens with O_CREATE|O_TRUNC and then
+	// writes, so the destination exists at the wrong length in between
+	// and a write that fails partway destroys whatever was there
+	// (J-8). WriteFileAtomic writes beside the target and renames over
+	// it, and already carries its own errs.Code — OUTPUT_IN_USE when
+	// the destination is held open by another program, which is the one
+	// case with an answer a person can act on.
+	if err := platform.WriteFileAtomic(out, result.Bytes, 0o600); err != nil {
+		return err
 	}
 
 	fprintln(stdout, c.T("sign.signed_label"), out)

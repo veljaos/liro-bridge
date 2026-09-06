@@ -119,7 +119,7 @@ func TestCollectRevocationPrefersOCSP(t *testing.T) {
 	defer os.Close()
 	leaf.OCSPServer = []string{os.URL}
 
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0, nil)
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2 (one per certificate, ca's left empty since it is the excluded root)", len(entries))
 	}
@@ -151,7 +151,7 @@ func TestCollectRevocationFallsBackToCRL(t *testing.T) {
 	defer cs.Close()
 	leaf.CRLDistributionPoints = []string{cs.URL}
 
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0, nil)
 	if len(entries) != 2 || len(entries[0].CRL) == 0 {
 		t.Fatalf("entries = %#v, want a CRL for the one non-root certificate", entries)
 	}
@@ -162,7 +162,7 @@ func TestCollectRevocationFallsBackToCRL(t *testing.T) {
 
 func TestCollectRevocationNoEndpointsYieldsEmptyEntry(t *testing.T) {
 	ca, _, leaf := buildTestChain(t, "", "")
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0, nil)
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2", len(entries))
 	}
@@ -192,7 +192,7 @@ func TestApplyEmbedsDSSAndVRI(t *testing.T) {
 	leaf.OCSPServer = []string{os.URL}
 
 	doc, _ := buildPlaceholderDoc(t)
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0, nil)
 	fakeCMS := []byte("fake cms bytes for VRI keying")
 
 	result, err := Apply(doc, fakeCMS, []*x509.Certificate{leaf, ca}, entries)
@@ -257,13 +257,13 @@ func TestCollectRevocationSkipsCRLLargerThanCap(t *testing.T) {
 	leaf.CRLDistributionPoints = []string{cs.URL}
 
 	// Fetch once with no cap to learn the real size of this test's CRL.
-	uncapped := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
+	uncapped := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0, nil)
 	if len(uncapped[0].CRL) == 0 {
 		t.Fatal("setup: expected a CRL to be embeddable with no cap")
 	}
 	realSize := int64(len(uncapped[0].CRL))
 
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, realSize-1)
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, realSize-1, nil)
 	if len(entries[0].CRL) != 0 {
 		t.Fatal("CRL returned despite exceeding the cap")
 	}
@@ -309,7 +309,7 @@ func TestApplyReportsTooLargeReason(t *testing.T) {
 func TestApplyIncompleteWhenCollectionFails(t *testing.T) {
 	ca, _, leaf := buildTestChain(t, "", "") // no OCSP/CRL configured
 	doc, src := buildPlaceholderDoc(t)
-	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0)
+	entries := CollectRevocation(context.Background(), []*x509.Certificate{leaf, ca}, 0, nil)
 
 	result, err := Apply(doc, []byte("cms"), []*x509.Certificate{leaf, ca}, entries)
 	if err != nil {

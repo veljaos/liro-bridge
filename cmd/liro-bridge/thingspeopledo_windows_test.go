@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
 	"github.com/veljaos/liro-bridge/internal/errs"
@@ -227,11 +228,17 @@ func TestMissingFileIsNamedAndSkipped(t *testing.T) {
 	assertNothingWritten(t, out)
 }
 
-// TestReadOnlyOutputIsNamedAndTheOriginalSurvives is F6 §7's read-only
-// case and its "output file opened in Acrobat while being written"
-// sibling: on Windows the write fails, and what was already there must
-// be exactly as it was.
-func TestReadOnlyOutputIsNamedAndTheOriginalSurvives(t *testing.T) {
+// TestOutputHeldOpenIsNamedAndTheOriginalSurvives is F6 §7's "output
+// file opened in Acrobat while being written": the write fails, and
+// what was already there must be exactly as it was.
+//
+// It says OUTPUT_IN_USE now rather than the generic OUTPUT_WRITE_FAILED
+// it said while the signed bytes went straight onto the destination
+// with os.WriteFile (J-8). That is not a relabelling: the two situations
+// need different things from the person — close a file, versus look at
+// the disk — and this one has a specific, actionable answer, which is
+// the whole reason the code exists.
+func TestOutputHeldOpenIsNamedAndTheOriginalSurvives(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join("..", "..", "testdata", "pdfs", "blank.pdf")
 	if _, err := os.Stat(in); err != nil {
@@ -256,9 +263,54 @@ func TestReadOnlyOutputIsNamedAndTheOriginalSurvives(t *testing.T) {
 		allowBB:   true,
 		overwrite: true,
 	})
-	assertNamedNotInternal(t, err, errs.CodeOutputWriteFailed)
+	assertNamedNotInternal(t, err, errs.CodeOutputInUse)
+	if msg := cli.ErrorMessage(err, i18n.Load("sr-Latn")); !strings.Contains(strings.ToLower(msg), "zatvorite") {
+		t.Errorf("the message does not say to close the file: %q", msg)
+	}
 
 	_ = windows.CloseHandle(h)
+	got, readErr := os.ReadFile(out)
+	if readErr != nil {
+		t.Fatalf("the existing output is gone: %v", readErr)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("the existing output was changed: %q", string(got))
+	}
+}
+
+// TestReadOnlyOutputIsNamedAndTheOriginalSurvives is F6 §7's read-only
+// case, kept separate from the held-open one above because Windows
+// returns the same status for both and they need opposite answers:
+// clear an attribute, or close a file.
+func TestReadOnlyOutputIsNamedAndTheOriginalSurvives(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join("..", "..", "testdata", "pdfs", "blank.pdf")
+	if _, err := os.Stat(in); err != nil {
+		t.Skipf("the blank fixture is not available: %v", err)
+	}
+	out := filepath.Join(dir, "blank-potpisan.pdf")
+
+	original := []byte("prethodna verzija koja mora da preživi")
+	if err := os.WriteFile(out, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := windows.UTF16PtrFromString(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetFileAttributes(p, windows.FILE_ATTRIBUTE_READONLY); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = windows.SetFileAttributes(p, windows.FILE_ATTRIBUTE_NORMAL) }()
+
+	_, signErr := signInteractiveOne(t.Context(), in, newStampSession(t), interactiveSignOptions{
+		level:     pades.LevelBB,
+		outPath:   out,
+		allowBB:   true,
+		overwrite: true,
+	})
+	assertNamedNotInternal(t, signErr, errs.CodeOutputWriteFailed)
+
 	got, readErr := os.ReadFile(out)
 	if readErr != nil {
 		t.Fatalf("the existing output is gone: %v", readErr)

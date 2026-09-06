@@ -89,6 +89,17 @@
     <!-- F6b §3: which documents a saved stamp position had to be moved
          to fit. Absent when none of them did. -->
     <p id="report-stamp-adjusted" class="liro-text-small liro-text-secondary" hidden></p>
+    <!-- J-3: how many documents were left alone because they were
+         already signed. "Skipped" in the counts above does not say
+         why, and why is the whole of what the person needs here. -->
+    <p id="report-already-signed" class="liro-text-small liro-text-secondary" hidden></p>
+    <!-- Task 5: the audit log continued in a new file, because the
+         previous chain could not be continued. A notice in the caution
+         family, not an error box: the batch is recorded, the old file
+         is untouched, and the one thing the person cannot find out any
+         other way is where the log is now. Said once — the entry that
+         carries the record is the only one there will ever be. -->
+    <p id="report-audit-notice" class="liro-text-small liro-outcome-caution report-notice" hidden></p>
   </div>
 
   <section id="report-body" class="liro-scroll-region">
@@ -164,6 +175,23 @@
     <button id="output-rename-btn" class="liro-btn liro-btn-primary"></button>
     <button id="output-overwrite-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.output_exists_overwrite"></button>
     <button id="output-cancel-btn" class="liro-btn liro-btn-quiet" data-i18n="consent.cancel"></button>
+  </div>
+</main>
+
+<!-- Some of the documents in this batch already carry the output
+     suffix, which means this program has very probably signed them
+     before. Skipping is the primary action because that is what a
+     second run of the same folder almost always means; signing them
+     again is the neutral one beside it, because counter-signing a
+     document that arrived already signed is ordinary and this program
+     does not know which of the two it is looking at (J-3). -->
+<main id="state-alreadysigned" hidden>
+  <p class="liro-display" data-i18n="consent.already_signed_title"></p>
+  <p id="already-signed-explain" class="liro-text-secondary"></p>
+  <div class="stacked-actions">
+    <button id="already-skip-btn" class="liro-btn liro-btn-primary"></button>
+    <button id="already-sign-btn" class="liro-btn liro-btn-secondary"></button>
+    <button id="already-cancel-btn" class="liro-btn liro-btn-quiet" data-i18n="consent.cancel"></button>
   </div>
 </main>
 

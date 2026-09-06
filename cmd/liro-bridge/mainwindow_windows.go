@@ -32,6 +32,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/pades"
+	"github.com/veljaos/liro-bridge/internal/pades/dss"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
 	"github.com/veljaos/liro-bridge/internal/signing"
 	"github.com/veljaos/liro-bridge/internal/trust/classify"
@@ -101,6 +102,18 @@ type mainWindow struct {
 	// what decides whether there is a position step after the method
 	// step.
 	method string
+
+	// auditNotice is the one-time sentence saying the audit log
+	// continued in a new file because the previous chain could not be
+	// continued. Empty on every batch but the one that started the new
+	// chain.
+	auditNotice string
+
+	// skipAlreadySigned holds the paths the person chose not to sign
+	// because their names already end in the output suffix (J-3), keyed
+	// by path. Nil when the question was not asked or was answered
+	// "sign them too".
+	skipAlreadySigned map[string]bool
 
 	// exit is the process exit code for a run started from the command
 	// line. Zero unless something failed.
@@ -415,6 +428,8 @@ func (m *mainWindow) handleAction(ctx context.Context) bool {
 		m.notices = nil
 		m.report = nil
 		m.selected = ""
+		m.skipAlreadySigned = nil
+		m.auditNotice = ""
 		m.show(stepDocuments)
 	case "finish":
 		// The expected end of a batch, and the report screen's primary
@@ -712,6 +727,17 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 		}
 	}
 
+	// J-3, asked before the card session for the same reason the two
+	// questions around it are: a person who cancels must not have spent
+	// a PIN entry on a batch that was never going to be written.
+	skipAlreadySigned, proceed := resolveAlreadySigned(m.win, m.messages, m.closed, m.c, m.inputs, m.cfg.OutputSuffix)
+	if !proceed {
+		m.deny()
+		m.backToStart()
+		return false
+	}
+	m.skipAlreadySigned = skipAlreadySigned
+
 	outputs, settled := resolveOutputsIn(m.win, m.messages, m.c, m.inputs, m.cfg.OutputFolder, m.cfg.OutputSuffix, m.force)
 	if !settled {
 		m.deny()
@@ -789,6 +815,12 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	wrapped := signing.WrapSession(d.session)
 	trustStore := interactiveTrustStore(ctx)
 	stampOpts := stampOptionsFor(m.c, m.cfg)
+	// One memory for this batch and no longer (J-10): a revocation
+	// endpoint that did not answer for the first document is not asked
+	// again for the hundredth, and the next batch starts with no
+	// assumptions because a responder that was down five minutes ago
+	// may be up now.
+	revocationMemory := dss.NewEndpointMemory()
 
 	// SPEC §12.8: a timestamp authority that stops answering mid-batch
 	// presents the choice, it does not end the batch. The question has
@@ -797,6 +829,7 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	// channel across and waits for the answer.
 	tsaAsk := make(chan chan tsaAnswer)
 	tsaClient, allowBB := d.tsaClient, d.allowBB
+	skipAlreadySigned := m.skipAlreadySigned
 
 	// The run is on its own goroutine so the message loop keeps
 	// answering — Stop must reach the runner while it is signing, and a
@@ -805,6 +838,12 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	reportCh := make(chan jobs.Report, 1)
 	go func() {
 		reportCh <- runner.Run(ctx, &m.queue, func(rctx context.Context, i int, item jobs.Item) (jobs.Outcome, error) {
+			if skipAlreadySigned[item.Path] {
+				// The person was asked once, before the card was
+				// touched, and said to leave these alone (J-3). Not a
+				// failure and not a document still waiting: skipped.
+				return jobs.Outcome{}, jobs.ErrSkipDocument
+			}
 			out := d.outputs[i]
 			opts := interactiveSignOptions{
 				level:      d.level,
@@ -814,6 +853,8 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 				overwrite:  out.overwrite,
 				allowBB:    allowBB,
 				stamp:      stampOpts,
+
+				revocationMemory: revocationMemory,
 			}
 			var result *pades.Result
 			var err error
@@ -949,8 +990,13 @@ func (m *mainWindow) recordAudit(d consentDecision, report jobs.Report) {
 	if len(report.Failures) > 0 {
 		lastErr = errs.New(report.Failures[len(report.Failures)-1].Code, nil)
 	}
-	recordInteractiveAudit(store, err, d.thumbprint, m.queue.Len(), outcome, lastErr,
+	discontinuity := recordInteractiveAudit(store, err, d.thumbprint, m.queue.Len(), outcome, lastErr,
 		d.session.Certificate().IsTestKey, report.AchievedLevel)
+	// Told once, on the report screen, as a notice rather than an
+	// error: nothing about this batch went wrong, and the entry that
+	// carries the record is the only one that ever will, so the next
+	// signature says nothing.
+	m.auditNotice = auditChainNotice(m.c, store, discontinuity)
 }
 
 // ---- queue and report payloads -------------------------------------
@@ -1113,6 +1159,17 @@ func (m *mainWindow) postReport(r jobs.Report) {
 		// differently shaped documents is adjusted to fit some of them,
 		// and the person is told how many rather than left to notice.
 		"stampAdjusted": stampAdjustedText(m.c, r.StampAdjusted),
+		// J-3: how many documents the person chose to leave alone
+		// because they were already signed. Said here as well as on the
+		// screen that asked, because the report is what is looked at
+		// afterwards and "skipped" on its own does not say why.
+		"alreadySigned": alreadySignedReportText(m.c, len(m.skipAlreadySigned)),
+		// The audit log continued in a new file because the previous
+		// chain could not be continued (Task 5). A notice, not an
+		// error: the batch is recorded, the old file is untouched, and
+		// what the person cannot find out any other way is where the
+		// log is now.
+		"auditNotice": m.auditNotice,
 		// SPEC §18.11: the level a batch actually reached is stated,
 		// and B-B — a signature with no proof of when it was made —
 		// says so in words rather than being left to read as just
@@ -1126,6 +1183,20 @@ func (m *mainWindow) postReport(r jobs.Report) {
 	m.showingReport = true
 	if err := m.win.PostJSON(payload); err != nil {
 		slog.Warn("signing window: posting the report failed", "error", err)
+	}
+}
+
+// alreadySignedReportText says how many documents were left alone
+// because their names already ended in the output suffix. Empty when
+// none were, which is the ordinary case and deserves no line.
+func alreadySignedReportText(c *i18n.Catalogue, n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n == 1:
+		return c.T("main.report_already_signed_one")
+	default:
+		return fmt.Sprintf(c.T("main.report_already_signed_many"), n)
 	}
 }
 

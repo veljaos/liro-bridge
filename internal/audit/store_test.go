@@ -116,7 +116,7 @@ func TestStoreVerifyDetectsTamperingAcrossFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Force a second file for the same month by writing directly.
-	path2 := s.fileName(now, 2)
+	path2 := s.chainFileName(1, now.Year(), int(now.Month()), 2)
 	e1 := AppendEntry(&e0, Entry{Timestamp: now, Thumbprint: "BB", Application: ApplicationLocalForTest, DocumentCount: 1, Outcome: OutcomeApproved})
 	b, err := json.Marshal(toJSONEntry(e1))
 	if err != nil {
@@ -132,7 +132,7 @@ func TestStoreVerifyDetectsTamperingAcrossFiles(t *testing.T) {
 	}
 
 	// Tamper with the first (earlier) file.
-	path1 := s.fileName(now, 1)
+	path1 := s.chainFileName(1, now.Year(), int(now.Month()), 1)
 	raw, err := os.ReadFile(path1)
 	if err != nil {
 		t.Fatal(err)

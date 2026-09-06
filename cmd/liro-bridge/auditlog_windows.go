@@ -87,6 +87,38 @@ type jsAuditEntry struct {
 	TestKeyLabel      string `json:"testKeyLabel"`
 	LevelText         string `json:"levelText"`
 	LevelIntent       string `json:"levelIntent"`
+
+	// ChainBreakText is set on the one entry that opened a new chain,
+	// and says which file could not be continued and why (Task 5). The
+	// break is a fact about the log, and this window is where a person
+	// looks at the log.
+	ChainBreakText string `json:"chainBreakText"`
+}
+
+// chainBreakText turns an entry's discontinuity record into the sentence
+// shown beside it. Empty for every entry that does not carry one, which
+// is all but one per chain.
+func chainBreakText(c *i18n.Catalogue, d *audit.Discontinuity) string {
+	if d == nil {
+		return ""
+	}
+	return fmt.Sprintf(c.T("auditwindow.chain_break"), d.PreviousFile, auditBreakReasonText(c, d.Reason))
+}
+
+// auditBreakReasonText is breakReasonText's twin for this window; the
+// two share the catalogue keys rather than the function, because
+// tray_windows.go's copy belongs to the export and this one to the
+// list, and neither window should have to import the other's file to
+// render a sentence.
+func auditBreakReasonText(c *i18n.Catalogue, r audit.BreakReason) string {
+	switch r {
+	case audit.BreakUnparseable:
+		return c.T("settings.export_break_unparseable")
+	case audit.BreakUnreachable:
+		return c.T("settings.export_break_unreachable")
+	default:
+		return string(r)
+	}
 }
 
 // outcomeIntent maps an audit.Outcome to its Task 6 colour family:
@@ -186,6 +218,7 @@ func buildAuditLogInit(c *i18n.Catalogue, entries []audit.Entry) map[string]any 
 			TestKeyLabel:      c.T("certs.test_key_marker"),
 			LevelText:         auditLevelText(c, src.AchievedLevel),
 			LevelIntent:       auditLevelIntent(src.AchievedLevel),
+			ChainBreakText:    chainBreakText(c, src.Discontinuity),
 		}
 	}
 

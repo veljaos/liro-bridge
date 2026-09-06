@@ -385,7 +385,12 @@ func (m *mainWindow) deny() {
 		open = newAuditStore
 	}
 	store, err := open()
-	recordInteractiveAudit(store, err, m.selected, m.queue.Len(), audit.OutcomeDenied, nil, false, "")
+	// A refusal can be the entry that opens a new chain just as a
+	// signature can. It is carried the same way and shown the same way —
+	// on the next screen that has somewhere to put it.
+	if d := recordInteractiveAudit(store, err, m.selected, m.queue.Len(), audit.OutcomeDenied, nil, false, ""); d != nil {
+		m.auditNotice = auditChainNotice(m.c, store, d)
+	}
 }
 
 // cancelFlow is what Cancel and Escape mean. Refusing is a decision and

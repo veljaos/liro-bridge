@@ -48,3 +48,27 @@ main {
   font-size: var(--liro-font-size-small);
   font-weight: var(--liro-font-weight-semibold);
 }
+
+/* The line saying a new chain starts at this entry (Task 5). Its own
+   line rather than folded into the meta row: it is about the log, not
+   about the batch.
+   It takes its colour from the caution family but deliberately not the
+   .liro-outcome class that usually carries it: that class is for the
+   one-word badge on the right of a row and sets white-space: nowrap and
+   text-align: right, which turned this sentence into a single line the
+   list had to scroll sideways to show. Seen in the shipped binary, not
+   in a test — D-096's rule again, that a value with no length bound
+   wraps rather than widening its container. */
+.audit-chain-break {
+  margin-top: var(--liro-space-1);
+  font-size: var(--liro-font-size-small);
+  font-weight: var(--liro-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* A flex item will not shrink below its content's min-content width
+   unless told to, which is the other half of the same defect. */
+.audit-entry,
+#entry-list {
+  min-width: 0;
+}

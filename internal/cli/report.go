@@ -121,13 +121,24 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 		return Report{}, fmt.Errorf("reading trusted list: %w", err)
 	}
 
+	// One memory of probe answers for this listing and no longer (J-7).
+	// A certificate does not appear and disappear while a single list is
+	// being enumerated, so asking about the same one twice is waste — and
+	// it is expensive waste: the probe measured 457 ms for a certificate
+	// whose card is present and 855 ms for one whose card is not, per
+	// call. It is deliberately not carried across listings: a card really
+	// can be inserted between one `certs` and the next, and SPEC §11.10
+	// exists because reporting a certificate as available when it is not
+	// produces the worst outcome in this product.
+	probes := newPresenceMemo()
+
 	rows := make([]CertRow, 0, len(certs))
 	for _, c := range certs {
 		x, err := x509.ParseCertificate(c.DER)
 		if err != nil {
 			continue // not this phase's concern to explain a malformed store entry
 		}
-		info := classify.Classify(x, list, c.OnHardware, certPresence(ctx, deps, c), now)
+		info := classify.Classify(x, list, c.OnHardware, probes.presence(ctx, deps, c), now)
 		info.Thumbprint = c.Thumbprint // identical to classify's own computation; use the source value
 		rows = append(rows, CertRow{Info: info, OnHardware: c.OnHardware, DER: c.DER})
 	}
@@ -156,29 +167,63 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 	return Report{Readers: readers, Certificates: rows, TSL: provenance}, nil
 }
 
-// certPresence answers Task 2's per-certificate presence question: for a
+// presenceMemo is one listing's answers to the presence question, keyed
+// by thumbprint (J-7).
+//
+// It is created inside Gather and thrown away with it, which is the
+// whole of its scope. Two separate listings ask twice, on purpose: a
+// card can be inserted or removed between them, and a stale "present"
+// is the failure SPEC §11.10 is written to prevent — the agent offers
+// to sign, the user clicks, enters a PIN, and fails five seconds later.
+//
+// Probing is never done concurrently. D-027 rejected concurrent
+// smart-card access for signing, on the grounds that the card is a
+// single serial device whose driver queues requests anyway and that
+// concurrent access is a known source of driver-level failures; a probe
+// goes through the same middleware and the same card, so the same
+// reasoning applies. This memo removes repeated work; it does not
+// overlap the work that remains.
+type presenceMemo struct {
+	answers map[string]bool
+}
+
+func newPresenceMemo() *presenceMemo {
+	return &presenceMemo{answers: make(map[string]bool)}
+}
+
+// presence answers Task 2's per-certificate presence question: for a
 // hardware-backed certificate, it calls deps.PresenceCheck for that
 // certificate alone, rather than reusing one machine-wide answer for
-// every certificate (the bug this task fixes — one card inserted used to
+// every certificate (the bug D-077 fixes — one card inserted used to
 // mark every hardware-backed certificate as available). A software-backed
 // certificate is never checked: computeUsable ignores this value
 // entirely when onHardware is false, so probing it would be pure waste.
+//
+// The answer is remembered for the rest of this listing, so a store
+// holding the same certificate under more than one entry costs one
+// probe rather than one per entry.
 //
 // A PresenceCheck failure (as opposed to a clean "false" result) is
 // treated conservatively as "not present" rather than propagated as a
 // fatal Gather error — a single certificate's probe failing (e.g. the
 // certificate having vanished from the store between enumeration and the
 // probe) must not make the whole `certs` command fail; it is logged so
-// the cause is not silently lost.
-func certPresence(ctx context.Context, deps Deps, c windowscng.Certificate) bool {
+// the cause is not silently lost. That answer is remembered too: a probe
+// that failed once in this listing will fail again in it, and asking
+// twice only pays the cost twice.
+func (m *presenceMemo) presence(ctx context.Context, deps Deps, c windowscng.Certificate) bool {
 	if !c.OnHardware {
 		return false
+	}
+	if answer, ok := m.answers[c.Thumbprint]; ok {
+		return answer
 	}
 	present, err := deps.PresenceCheck(ctx, keysource.Thumbprint(c.Thumbprint))
 	if err != nil {
 		slog.Warn("cli: per-certificate presence check failed, treating as not present",
 			"thumbprint", c.Thumbprint, "error", err)
-		return false
+		present = false
 	}
+	m.answers[c.Thumbprint] = present
 	return present
 }

@@ -535,3 +535,113 @@ func TestSignCommandSaysTheSameThingInEveryLanguage(t *testing.T) {
 		})
 	}
 }
+
+// TestRunSignSkipsInputsThatAreAlreadySignedDocuments is J-3's own
+// scenario: the same glob run a second time picks up the first run's
+// output. Without --resign those inputs are skipped and counted, so a
+// second run does not silently produce "-signed-signed.pdf".
+func TestRunSignSkipsInputsThatAreAlreadySignedDocuments(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalPDF(t, filepath.Join(dir, "ugovor.pdf"))
+	writeMinimalPDF(t, filepath.Join(dir, "racun.pdf"))
+	// What a first run left behind.
+	writeMinimalPDF(t, filepath.Join(dir, "prethodni-signed.pdf"))
+
+	sess := newFakeSignPDFSession(t)
+	var stdout, stderr bytes.Buffer
+	code := RunSign(context.Background(), []string{
+		"--in", filepath.Join(dir, "*.pdf"), "--thumbprint", "SIGNPDFTEST",
+		"--level", "b-t", "--on-tsa-failure", "b-b",
+	}, &stdout, &stderr, "en", signPDFDeps(sess))
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr: %s", code, stderr.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "prethodni-signed-signed.pdf")); err == nil {
+		t.Fatal("an already-signed input was signed again without --resign: prethodni-signed-signed.pdf exists")
+	}
+	for _, want := range []string{"ugovor-signed.pdf", "racun-signed.pdf"} {
+		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
+			t.Errorf("expected %s to be signed: %v", want, err)
+		}
+	}
+	if !strings.Contains(stderr.String(), "1 input is already a signed document") {
+		t.Errorf("stderr does not say how many were skipped:\n%s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--resign") {
+		t.Errorf("stderr does not name the flag that would sign them:\n%s", stderr.String())
+	}
+}
+
+// TestRunSignResignsWhenAskedTo is the other half: the person is not
+// second-guessed. Counter-signing a document that arrived already
+// signed is an ordinary thing to want, and --resign is how it is said.
+func TestRunSignResignsWhenAskedTo(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalPDF(t, filepath.Join(dir, "prethodni-signed.pdf"))
+
+	sess := newFakeSignPDFSession(t)
+	var stdout, stderr bytes.Buffer
+	code := RunSign(context.Background(), []string{
+		"--in", filepath.Join(dir, "*.pdf"), "--thumbprint", "SIGNPDFTEST",
+		"--level", "b-t", "--on-tsa-failure", "b-b", "--resign",
+	}, &stdout, &stderr, "en", signPDFDeps(sess))
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr: %s", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "prethodni-signed-signed.pdf")); err != nil {
+		t.Fatalf("--resign did not sign the already-signed input: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "is being signed again") {
+		t.Errorf("stderr does not say what --resign is doing:\n%s", stderr.String())
+	}
+}
+
+// TestRunSignSaysSoWhenEveryInputIsAlreadySigned covers the case where
+// skipping leaves nothing: signing produced no document, so the exit
+// code says so and the message names the flag.
+func TestRunSignSaysSoWhenEveryInputIsAlreadySigned(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalPDF(t, filepath.Join(dir, "a-signed.pdf"))
+	writeMinimalPDF(t, filepath.Join(dir, "b-signed.pdf"))
+
+	sess := newFakeSignPDFSession(t)
+	var stdout, stderr bytes.Buffer
+	code := RunSign(context.Background(), []string{
+		"--in", filepath.Join(dir, "*.pdf"), "--thumbprint", "SIGNPDFTEST",
+		"--level", "b-t", "--on-tsa-failure", "b-b",
+	}, &stdout, &stderr, "en", signPDFDeps(sess))
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 — nothing was signed", code)
+	}
+	if !strings.Contains(stderr.String(), "Every input is already a signed document") {
+		t.Errorf("stderr does not explain that nothing was signed:\n%s", stderr.String())
+	}
+	for _, name := range []string{"a-signed-signed.pdf", "b-signed-signed.pdf"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("%s was written", name)
+		}
+	}
+}
+
+// TestAlreadySignedNoticeIsALocalisedSentenceInEveryLanguage keeps the
+// count message out of the "renders a raw key" class of defect, in all
+// three catalogues (SPEC §9.2: CLI output a non-developer reads is
+// localised).
+func TestAlreadySignedNoticeIsALocalisedSentenceInEveryLanguage(t *testing.T) {
+	for _, locale := range []string{"en", "sr-Latn", "sr-Cyrl"} {
+		c := i18n.Load(locale)
+		for _, tc := range []struct {
+			n      int
+			resign bool
+		}{{1, false}, {4, false}, {1, true}, {4, true}} {
+			got := alreadySignedNotice(c, tc.n, "-signed", tc.resign)
+			if strings.Contains(got, "already_signed") || strings.Contains(got, "%!") || strings.Contains(got, "%d") {
+				t.Errorf("%s n=%d resign=%v: %q is not a finished sentence", locale, tc.n, tc.resign, got)
+			}
+			if !strings.Contains(got, "-signed") {
+				t.Errorf("%s n=%d resign=%v: %q does not name the suffix", locale, tc.n, tc.resign, got)
+			}
+		}
+	}
+}

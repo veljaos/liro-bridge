@@ -256,3 +256,147 @@ func TestHiddenKeepsASigningCertificateThatCannotBeUsedNow(t *testing.T) {
 		t.Fatal("a signing certificate whose card is absent must stay visible, disabled with its reason")
 	}
 }
+
+// TestGatherProbesEachCertificateOnce is J-7's own change: within one
+// listing, the same certificate is asked about once, however many times
+// it is enumerated.
+//
+// The probe is not cheap — measured on real hardware at 457 ms for a
+// certificate whose card is present and 855 ms for one whose card is
+// not — so a store that lists a certificate twice used to pay for it
+// twice, for a question whose answer cannot change while a single list
+// is being built.
+func TestGatherProbesEachCertificateOnce(t *testing.T) {
+	der := loadDER(t, "mup_signing.der")
+	store := &fakeStore{list: bundledTSLList(t), prov: tsl.Provenance{Source: tsl.SourceEmbedded, Sequence: 36, IssuedAt: referenceTime}}
+
+	probes := map[string]int{}
+	deps := Deps{
+		Readers: func(context.Context) ([]platform.ReaderState, error) {
+			return []platform.ReaderState{{Name: "Test Reader", CardPresent: true}}, nil
+		},
+		PresenceCheck: func(_ context.Context, tp keysource.Thumbprint) (bool, error) {
+			probes[string(tp)]++
+			return string(tp) == "AAAA", nil
+		},
+		Enumerate: func(context.Context) ([]windowscng.Certificate, error) {
+			return []windowscng.Certificate{
+				{Thumbprint: "AAAA", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+				{Thumbprint: "BBBB", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+				{Thumbprint: "AAAA", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+				{Thumbprint: "BBBB", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+			}, nil
+		},
+		Store: store,
+	}
+
+	report, err := Gather(context.Background(), deps, referenceTime)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	if len(report.Certificates) != 4 {
+		t.Fatalf("len(Certificates) = %d, want 4 — the memo must not drop rows", len(report.Certificates))
+	}
+	for tp, n := range probes {
+		if n != 1 {
+			t.Errorf("%s was probed %d times in one listing, want 1", tp, n)
+		}
+	}
+	// The remembered answer must be the right one, not merely one
+	// answer: the two thumbprints disagree, and both rows of each must
+	// carry that thumbprint's own result.
+	for i, row := range report.Certificates {
+		want := row.Info.Thumbprint == "AAAA"
+		if row.Info.Usable != want {
+			t.Errorf("row %d (%s): Usable = %v, want %v", i, row.Info.Thumbprint, row.Info.Usable, want)
+		}
+	}
+}
+
+// TestGatherAsksAgainOnTheNextListing is the other half, and the one
+// that matters for SPEC §11.10: the memo lives inside one Gather. A card
+// can be inserted between one listing and the next, and reporting a
+// certificate as available when it is not is the worst outcome this
+// product has.
+func TestGatherAsksAgainOnTheNextListing(t *testing.T) {
+	der := loadDER(t, "mup_signing.der")
+	store := &fakeStore{list: bundledTSLList(t), prov: tsl.Provenance{Source: tsl.SourceEmbedded, Sequence: 36, IssuedAt: referenceTime}}
+
+	present := false
+	calls := 0
+	deps := Deps{
+		Readers: func(context.Context) ([]platform.ReaderState, error) {
+			return []platform.ReaderState{{Name: "Test Reader", CardPresent: present}}, nil
+		},
+		PresenceCheck: func(context.Context, keysource.Thumbprint) (bool, error) {
+			calls++
+			return present, nil
+		},
+		Enumerate: func(context.Context) ([]windowscng.Certificate, error) {
+			return []windowscng.Certificate{
+				{Thumbprint: "AAAA", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+			}, nil
+		},
+		Store: store,
+	}
+
+	first, err := Gather(context.Background(), deps, referenceTime)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	if first.Certificates[0].Info.Usable {
+		t.Fatal("with no card present the certificate must not be usable")
+	}
+
+	present = true // the card was inserted between the two listings
+	second, err := Gather(context.Background(), deps, referenceTime)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	if !second.Certificates[0].Info.Usable {
+		t.Fatal("the second listing did not ask again: a card inserted between two listings must be seen")
+	}
+	if calls != 2 {
+		t.Fatalf("PresenceCheck called %d times across two listings, want 2", calls)
+	}
+}
+
+// TestGatherRemembersAFailedProbeToo pins the cost of the conservative
+// answer: a probe that errors is treated as "not present" and that
+// answer is remembered, so a certificate that fails to probe does not
+// pay for the failure once per enumeration entry.
+func TestGatherRemembersAFailedProbeToo(t *testing.T) {
+	der := loadDER(t, "mup_signing.der")
+	store := &fakeStore{list: bundledTSLList(t), prov: tsl.Provenance{Source: tsl.SourceEmbedded, Sequence: 36, IssuedAt: referenceTime}}
+
+	calls := 0
+	deps := Deps{
+		Readers: func(context.Context) ([]platform.ReaderState, error) {
+			return []platform.ReaderState{{Name: "Test Reader", CardPresent: true}}, nil
+		},
+		PresenceCheck: func(context.Context, keysource.Thumbprint) (bool, error) {
+			calls++
+			return false, errors.New("probe failed")
+		},
+		Enumerate: func(context.Context) ([]windowscng.Certificate, error) {
+			return []windowscng.Certificate{
+				{Thumbprint: "AAAA", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+				{Thumbprint: "AAAA", DER: der, Provider: "Microsoft Smart Card Key Storage Provider", OnHardware: true},
+			}, nil
+		},
+		Store: store,
+	}
+
+	report, err := Gather(context.Background(), deps, referenceTime)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("a failing probe was retried within one listing (%d calls), want 1", calls)
+	}
+	for i, row := range report.Certificates {
+		if row.Info.Usable {
+			t.Errorf("row %d: Usable = true after a failed probe, want false (conservative)", i)
+		}
+	}
+}

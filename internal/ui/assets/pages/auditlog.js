@@ -69,6 +69,17 @@
         row.appendChild(level);
       }
 
+      // Task 5: this entry opened a new chain, because the previous
+      // one could not be continued. Said here as well as once on the
+      // report screen, because this window is where a person looks at
+      // the log and a gap between two chains has to be legible in it.
+      if (entry.chainBreakText) {
+        var brk = document.createElement("div");
+        brk.className = "audit-chain-break liro-outcome-caution";
+        window.liroSetText(brk, entry.chainBreakText);
+        row.appendChild(brk);
+      }
+
       list.appendChild(row);
     });
   }

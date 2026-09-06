@@ -40,6 +40,21 @@ const (
 	// the refusal as "an unexpected error occurred", which reads as a
 	// defect rather than as the protection it is.
 	StateOutputExists State = "outputExists"
+	// StateAlreadySigned is the choice offered when the batch contains
+	// documents whose own names already end in the configured output
+	// suffix — that is, documents this program has very probably
+	// produced already (J-3). Signing one produces a second signature on
+	// top of the first, and its output picks up a second suffix:
+	// ugovor-signed-signed.pdf.
+	//
+	// It is a choice rather than a rule because both answers are
+	// legitimate: counter-signing a "ugovor-signed.pdf" that arrived
+	// from somebody else is an ordinary thing to want, and guessing
+	// which of the two was meant is how a helpful rule becomes a wrong
+	// one. The screen says how many there are and offers to skip them;
+	// the answer applies to the whole batch, like the output-file
+	// choice above.
+	StateAlreadySigned State = "alreadySigned"
 )
 
 // TSAReason says why the timestamp step cannot complete — the two

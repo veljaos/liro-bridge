@@ -421,12 +421,94 @@ func exportedFileLines(c *i18n.Catalogue, entriesName, reportName string, report
 		entries = c.T("settings.export_entries_one")
 	}
 	check := c.T("settings.export_check_ok")
-	if !report.Result.OK {
+	switch {
+	case !report.Result.OK && report.Result.BrokenAt >= 0:
 		check = fmt.Sprintf(c.T("settings.export_check_broken"), report.Result.BrokenAt+1)
+	case !report.Result.OK:
+		// Not tampered with — nothing failed its own chain's walk — but
+		// a chain could not be read to its end, which is a different
+		// finding and needs a different sentence. Saying "passed" here
+		// and then "not all intact" in the same line, which is what a
+		// two-way OK/broken split produced, is a contradiction on the
+		// one screen that must not have one.
+		check = c.T("settings.export_check_incomplete")
+	}
+	if chains := chainsSummary(c, report); chains != "" {
+		// A log that has survived a break holds more than one chain, and
+		// saying only "OK" or "not OK" about the whole of it would hide
+		// both which chain broke and that the others are intact. Named
+		// only when there is more than one: an ordinary log has one, and
+		// saying so every time is noise.
+		check += " — " + chains
 	}
 	return []exportedFile{
 		{Name: entriesName, Detail: entries},
 		{Name: reportName, Detail: check},
+	}
+}
+
+// chainsSummary says how many chains the exported log holds and where
+// they broke — "three chains, each intact, breaks: 12.03. (an entry
+// could not be read), 04.09. (the file could not be read)".
+//
+// Empty for a log with one chain, which is every log that has never
+// been interrupted.
+func chainsSummary(c *i18n.Catalogue, report audit.ExportReport) string {
+	if len(report.Chains) < 2 {
+		return ""
+	}
+	intact := c.T("settings.export_chains_all_intact")
+	for _, ch := range report.Chains {
+		if !ch.Result.OK || ch.TruncatedReason != "" {
+			intact = c.T("settings.export_chains_not_all_intact")
+			break
+		}
+	}
+	line := fmt.Sprintf(c.T(chainCountKey(len(report.Chains))), len(report.Chains), intact)
+
+	var breaks []string
+	for _, ch := range report.Discontinuities() {
+		when := ""
+		if !ch.FirstAt.IsZero() {
+			when = ch.FirstAt.Local().Format("02.01.2006.")
+		}
+		breaks = append(breaks, fmt.Sprintf(c.T("settings.export_break_at"),
+			when, breakReasonText(c, ch.Discontinuity.Reason)))
+	}
+	if len(breaks) > 0 {
+		line += ", " + fmt.Sprintf(c.T("settings.export_breaks"), strings.Join(breaks, ", "))
+	}
+	return line
+}
+
+// chainCountKey picks the plural form for a number of chains.
+//
+// Serbian has two plural stems where English has one: 2, 3 and 4 take
+// "lanca" and everything else "lanaca", with the usual exception that
+// 12-14 behave like the larger group and a number ending in 2-4 above
+// that takes the smaller one again. Getting it wrong reads as a machine
+// wrote it, which on the one screen that reports the integrity of an
+// audit log is not the impression to give.
+func chainCountKey(n int) string {
+	last, lastTwo := n%10, n%100
+	if last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14) {
+		return "settings.export_chains_few"
+	}
+	return "settings.export_chains_many"
+}
+
+// breakReasonText turns an audit.BreakReason into words. The reason is
+// an enumerated value on purpose (SPEC §7 — codes, never prose, and
+// audit.Entry's field set is an allow-list); this is the one place it
+// becomes a sentence, in the reader's own language.
+func breakReasonText(c *i18n.Catalogue, r audit.BreakReason) string {
+	switch r {
+	case audit.BreakUnparseable:
+		return c.T("settings.export_break_unparseable")
+	case audit.BreakUnreachable:
+		return c.T("settings.export_break_unreachable")
+	default:
+		return string(r)
 	}
 }
 
