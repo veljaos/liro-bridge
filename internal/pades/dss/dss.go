@@ -58,7 +58,9 @@ func VRIKey(cms []byte) string {
 // evidence missing, too large, or simply never fetched — no revision is
 // written: Result.Bytes is doc's own unmodified bytes (D-079). A /DSS
 // whose /Certs is its only content asserts nothing a CMS signature does
-// not already carry, so it is not worth a revision.
+// not already carry, so it is not worth a revision. Result.Complete is
+// false in that case, because B-LT is B-T plus a /DSS carrying
+// revocation evidence and a document with no /DSS has not reached it.
 func Apply(doc *pdf.Document, cmsBytes []byte, certs []*x509.Certificate, entries []Entry) (*Result, error) {
 	if len(certs) == 0 {
 		return nil, fmt.Errorf("dss: no certificates to embed")
@@ -103,7 +105,26 @@ func Apply(doc *pdf.Document, cmsBytes []byte, certs []*x509.Certificate, entrie
 		// untouched (Document.Data's own contract: "the same slice, never
 		// a copy"), so the caller's result stays exactly the B-T bytes it
 		// already had.
-		return &Result{Bytes: doc.Data(), Complete: complete, TooLarge: tooLarge, LargestSkippedBytes: largestSkipped}, nil
+		//
+		// Complete is false here whatever the loop above concluded, and
+		// that is the whole of the level claim: B-LT *is* B-T plus a
+		// /DSS carrying revocation evidence (SPEC §12.6), so a document
+		// with no /DSS in it has not reached B-LT and must never be
+		// reported as having done so (SPEC §18.11, D-047).
+		//
+		// The loop can reach here with complete still true, and it is
+		// not a corner case: its `case i+1 < len(certs)` only expects
+		// evidence for a certificate whose issuer is also in the list,
+		// so a chain of exactly *one* certificate expects none at all
+		// and comes out "complete" having collected nothing. That
+		// happens whenever the chain could not be completed — MUP
+		// embeds only the signer certificate (SPEC §11.8), so a failed
+		// AIA fetch with nothing matching in the bundled trust store
+		// leaves exactly one — which is the same outage that stops OCSP
+		// answering. Measured through the shipped binary: `sign --level
+		// b-lt` reported "Nivo: B-LT" for output containing no /DSS,
+		// no /OCSPs, no /CRLs and no /VRI.
+		return &Result{Bytes: doc.Data(), Complete: false, TooLarge: tooLarge, LargestSkippedBytes: largestSkipped}, nil
 	}
 
 	dssDict := pdf.Dict{Name("Certs"): certRefs}

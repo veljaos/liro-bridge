@@ -665,3 +665,108 @@ func TestSignDocumentAlreadySignedDocumentBothVerify(t *testing.T) {
 		}
 	}
 }
+
+// unchainedSession is a signer whose Chain() is empty: the certificate
+// is all there is. That is not a contrivance — MUP embeds only the
+// signer certificate in its CMS (SPEC §11.8), so this is what the
+// pipeline holds whenever chain completion fails, which is the same
+// network outage that stops OCSP answering. It is also exactly the
+// soft token's own shape.
+type unchainedSession struct {
+	cert *x509.Certificate
+	key  *rsa.PrivateKey
+}
+
+func (s *unchainedSession) SignDigest(_ context.Context, alg keysource.DigestAlgorithm, digest []byte) ([]byte, error) {
+	if alg != keysource.DigestSHA256 || len(digest) != 32 {
+		return nil, fmt.Errorf("unexpected digest")
+	}
+	return rsa.SignPKCS1v15(rand.Reader, s.key, crypto.SHA256, digest)
+}
+
+func (s *unchainedSession) Certificate() keysource.Certificate {
+	return keysource.Certificate{Thumbprint: "TESTNOCHAIN", DER: s.cert.Raw}
+}
+
+func (s *unchainedSession) Chain() [][]byte { return nil }
+func (s *unchainedSession) Close() error    { return nil }
+
+func newUnchainedSession(t *testing.T) *unchainedSession {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(3),
+		Subject:               pkix.Name{CommonName: "pades.SignDocument unchained signer"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageContentCommitment,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("CreateCertificate: %v", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	return &unchainedSession{cert: cert, key: key}
+}
+
+// TestBLTIsNeverClaimedForADocumentWithNoDSS is the regression test for
+// what FTEST found by signing at every level through the shipped binary
+// and then looking at the bytes rather than at the reported level.
+//
+// Measured, `liro-bridge sign --level b-lt` against the soft token:
+//
+//	Nivo: B-LT
+//	66714 bytes  /DSS=False /OCSPs=False /CRLs=False /VRI=False
+//
+// B-LT is B-T plus a /DSS carrying revocation evidence (SPEC §12.6), so
+// a document with no /DSS at all has not reached it, and reporting that
+// it has is the level overclaim SPEC §18.11 and D-047 forbid outright.
+//
+// The reason the existing no-evidence test (above) did not catch it is
+// worth stating: dss.Apply's `case i+1 < len(certs)` only expects
+// evidence for a certificate whose issuer is also in the list, so a
+// chain of exactly one certificate expects none and comes out
+// "complete" having collected nothing. Every other test in this package
+// uses chainedSession, whose chain is two certificates long.
+func TestBLTIsNeverClaimedForADocumentWithNoDSS(t *testing.T) {
+	sess := newUnchainedSession(t)
+	input := buildMinimalPDF(t)
+
+	result, err := SignDocument(context.Background(), input, sess, Options{
+		RequestedLevel: LevelBLT,
+		TSA:            fakeTSAClientAt(t, time.Now()),
+	})
+	if err != nil {
+		t.Fatalf("SignDocument: %v", err)
+	}
+
+	hasDSS := bytes.Contains(result.Bytes, []byte("/DSS"))
+	if hasDSS {
+		t.Fatal("a /DSS was written for a signer with no OCSP and no CRL, which D-079 rules out")
+	}
+	if result.AchievedLevel == LevelBLT {
+		t.Errorf("AchievedLevel = %s for output containing no /DSS, no /OCSPs and no /CRLs; "+
+			"B-LT is B-T plus revocation evidence (SPEC §12.6) and claiming it here is the "+
+			"overclaim SPEC §18.11 forbids", result.AchievedLevel)
+	}
+	if result.AchievedLevel != LevelBT {
+		t.Errorf("AchievedLevel = %s, want B-T: the signature and its timestamp both succeeded", result.AchievedLevel)
+	}
+	if len(result.Notes) == 0 {
+		t.Error("no note explains why B-LT was requested and not reached")
+	}
+
+	// The signature itself is untouched by any of this.
+	r := verifyResult(t, result.Bytes)
+	if len(r.Errors) > 0 || !r.SignatureOK || !r.HasTimestamp || !r.TimestampOK {
+		t.Fatalf("independent verification failed: %+v errors=%v", r, r.Errors)
+	}
+}
