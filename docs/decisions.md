@@ -10990,3 +10990,223 @@ one-word label.
 - **Truncating the sentence with an ellipsis.** [[D-096]] rejected it
   for the fingerprint and [[D-106]] for a settings label; a sentence
   about the integrity of the audit log is not one to cut short.
+
+## D-168 — A BER length is accumulated in a `uint64` and refused if it cannot be a positive `int`; both independent readers had the same defect
+
+**Date:** 2026-09-07
+**Phase:** FTEST Group 3 — fuzzing
+
+**Decision.** `internal/pades/tsa.readTagAndLength` and
+`internal/pades/verify.readDER` accumulate a long-form BER length into a
+`uint64` and return an error when it exceeds `math.MaxInt`, instead of
+shifting it into an `int` and comparing the result against a buffer
+length.
+
+**Why.** `FuzzParseResponse` found this in its second minute:
+
+```
+30 88 30 30 30 30 30 30 30 30
+panic: runtime error: slice bounds out of range [:-8633347502144212944]
+```
+
+BER permits up to eight length octets and eight octets set the sign bit
+of an `int`. Every check below the length compares it against a buffer
+size — `if length > len(body)` — which a negative value passes, and the
+slice that follows panics. The reader is fed by two things neither this
+agent nor its user controls: an HTTP response from a timestamp
+authority, and the unsigned attribute inside the CMS of a document
+somebody else signed.
+
+**The part worth keeping.** The identical defect was in
+`internal/pades/verify`'s reader, which [[D-044]] made a second,
+from-scratch implementation *specifically* so that "a bug in a shared
+helper passes in both directions and the test proves nothing." Nothing
+was shared and nothing was copied; two readings of the same RFC both
+reached for `int` and neither thought about eight octets.
+
+Independence protects against a bug being *propagated*. It does nothing
+against a bug being *reinvented*, and a length field that overflows a
+machine word is exactly the kind of thing two careful people get wrong
+the same way. So the rule this adds is not architectural, it is a habit:
+**when one of a pair of deliberately independent implementations falls
+over, go and look at the other one before doing anything else.** That is
+what found the second one, in about a minute, and no amount of
+independence would have.
+
+**Rejected.**
+- **Fixing only the reader the fuzzer found.** The other one is reached
+  from `VerifySignature` on every document this project verifies,
+  including in CI, and it had the same panic waiting behind the same
+  ten bytes.
+- **Rejecting a length larger than the input rather than larger than an
+  `int`.** Tighter, and it would have worked — but it changes which
+  error message a merely-too-large length produces, for no gain: the
+  existing "declared length exceeds available bytes" check already
+  rejects those, correctly, one line later. Only the impossible needed a
+  new answer.
+- **Capping the octet count at four instead of eight.** It would make
+  the overflow unreachable on any machine, and it would also refuse
+  encodings BER permits. Refusing what the standard allows, to avoid
+  thinking about a conversion, is the kind of narrowing that comes back
+  as a real document this project cannot read.
+
+---
+
+## D-169 — A window owns the two icons it sets, and destroys them after the window is gone
+
+**Date:** 2026-09-07
+**Phase:** FTEST Group 3 — window lifetime
+
+**Decision.** `setWindowIcons` returns the two `HICON`s it loaded; the
+`window` struct keeps them; `wndProc`'s `WM_CLOSE` case destroys them
+with `DestroyIcon` **after** `DestroyWindow` has returned.
+
+**Why.** Measured, by opening each of the seven windows a hundred times
+and reading the process's own GDI counter: **6.00 GDI objects and 2.10
+USER objects per window, monotonically, never returned.**
+
+`LoadImageW` with `LR_LOADFROMFILE` and without `LR_SHARED` creates a
+new icon on every call and the caller owns it. `WM_SETICON` does not
+take ownership — the window stores the handle and paints from it — and
+`DestroyWindow` does not free it either. Measured directly, outside the
+agent: one icon is 3 GDI objects and 1 USER object, two icons per
+window, and `DestroyIcon` gives all of them back (600 of 604, 200 of
+201).
+
+A process's default GDI quota is 10 000, so this is roughly 1 600
+windows before a window cannot be drawn — a long afternoon rather than
+an immediate failure, which is why nothing noticed. The failure it
+eventually produces is a window that will not open, with nothing in any
+log to say why.
+
+**After `DestroyWindow`, not before.** Until the window is destroyed it
+is still using both icons to paint its own title bar and its Alt+Tab
+entry; destroying an icon a live window holds is a window drawing from
+freed memory. The teardown order is therefore: re-enable the owner,
+close the WebView2 controller, revoke the drop targets, `DestroyWindow`,
+*then* the icons.
+
+**Why no test saw it.** Every test in `cmd/liro-bridge` borrows one
+shared window per page and closes it once, at the end — which
+[[D-098]]'s own note explains is necessary, because thirteen WebView2
+environments in one process stopped completing at all. One window that
+leaks is indistinguishable from one that does not. It takes a second
+window to see a slope, and the suite was built to have exactly one.
+
+This is [[D-161]]'s lesson on a different axis. There the fixture was
+the wrong shape (a two-certificate chain for a one-certificate defect);
+here the fixture is the right shape and there is only ever one of it.
+**A per-instance cost is invisible to a test that makes one instance**,
+however carefully that test asserts.
+
+**Two tests, because the property has two halves.**
+`internal/ui.TestAnIconLoadedForAWindowIsGivenBack` proves the primitive
+frees what it allocates — fifty icon pairs, no window, milliseconds.
+`cmd/liro-bridge.TestOpeningAndClosingWindowsDoesNotLeakGDIObjects`
+opens ten real windows and proves one calls it: 6.00 GDI per window
+against the old code, 0.00 against this one. Ten rather than a hundred
+because the property is linear, and ten is four seconds — a price worth
+paying on every run for a defect whose entire symptom is that nothing
+ever noticed it.
+
+`TestEveryWindowSurvivesAHundredOpenAndCloseCycles` is the measurement
+that found it, kept behind `LIRO_WINDOW_CYCLES` because seven hundred
+window creations is six minutes and does not belong in every
+`go test ./...`.
+
+**The tray's own icon is deliberately not changed.** It is loaded once
+per process rather than once per window, so it is not a per-cycle cost,
+and its fallback is `IDI_APPLICATION` — a shared system icon that must
+never be destroyed. Adding a `DestroyIcon` there would replace a
+non-existent leak with a real bug.
+
+**Rejected.**
+- **`LR_SHARED` instead of destroying.** It applies only to images
+  loaded from a module's own resources, not from a file, so it would
+  silently do nothing here — the worst kind of fix, one that looks
+  right and changes nothing.
+- **Setting the icons on the window class instead.** [[D-098]] already
+  rejected that, and its reason is unchanged: the class is registered
+  once per process before any window's DPI is known, so both sizes
+  would be resolved at whatever the first monitor's scaling happened to
+  be.
+- **Destroying the icons in `closeWebView`.** It runs before
+  `DestroyWindow`, which is exactly the window of time in which the
+  window is still painting from them.
+
+---
+
+## D-170 — The window layer's remaining leak is a process handle per WebView2 environment; recorded against J-6 rather than fixed
+
+**Date:** 2026-09-07
+**Phase:** FTEST Group 3 — window lifetime
+
+**Decision.** Recorded, measured, not fixed. `ui.NewWindow` leaks
+**about one kernel handle per window**, two thirds of them handles to
+`msedgewebview2.exe` processes that have already exited. The change that
+closes it is the one J-6 already names — one WebView2 environment per
+process rather than one per window — and that is a change to this
+layer's lifetime model, not a bounded fix.
+
+**Why it is a leak and not a lag, measured.** A hundred windows, then
+two minutes of doing nothing at all, sampled every five seconds: +127
+handles over baseline immediately, +126 at thirty seconds, +126 at
+sixty, +128 at a hundred and twenty. Nothing comes back.
+
+**What kind of handle, measured.** This process's own handle table
+snapshotted before and after forty windows, via
+`NtQuerySystemInformation` with `SystemExtendedHandleInformation` — so
+nothing has to call `NtQueryObject` and risk hanging on a synchronous
+pipe — with each object type index resolved by creating one object of
+that kind and reading the index it got, rather than from a table that
+would be wrong on the next Windows build:
+
+```
+40 windows: 280 -> 319 handles (+39, 0.97 per window)
+
+Process        27 appeared,  0 of the old ones closed,  net +27  (0.68/window)
+Event          15 appeared,  9 closed,                  net  +6  (0.15/window)
+type index 26  12 appeared,  8 closed,                  net  +4  (0.10/window)
+Thread          5 appeared,  5 closed,                  net   0
+```
+
+This project never calls `CreateProcess` or `OpenProcess`. The handles
+are created inside WebView2, in this process's address space, and
+releasing `ICoreWebView2Environment` does not close them. A handle to a
+dead process keeps its process object alive; the processes themselves
+do exit, which was checked separately — after roughly nine hundred
+window creations the machine held thirteen `msedgewebview2.exe`
+processes, every one of them started an hour before this work began.
+
+**Why it is not fixed here.** Each `ui.NewWindow` builds its own
+WebView2 environment, and an environment is what starts a browser
+process group. [[D-099]] noted one-environment-per-process as the likely
+shape of a fix and was wrong about what it would fix; [[D-131]] named it
+as "what would actually make it faster, recorded rather than done"; J-6
+records it as still the right next change and still bigger than a
+bounded pass. Three passes have declined it for the same reason, and an
+unattended pass with nobody to accept a rewrite of this layer's
+concurrency is the worst of the four moments to attempt it.
+
+What this entry adds is a second reason to do it. It is not only the
+0.37–0.42 s a window costs; it is a kernel handle per window that never
+comes back. Whoever takes J-6 should know it closes two things.
+
+**The exposure, stated so it is not overstated.** It is bounded by the
+process's own life, and this agent's process is short-lived by the
+owner's own account — people start it when they want to sign. A thousand
+windows is a thousand handles, which is nowhere near any limit. This is
+a thing to fix when the layer is next opened, not a thing to open the
+layer for.
+
+**Rejected.**
+- **Closing the process handles directly.** They are not this project's
+  handles to close. Guessing which of a foreign library's handles are
+  safe to close, from the outside, is how a process crashes at teardown
+  for a reason nobody can reconstruct.
+- **Reusing one environment across windows as a narrow change, without
+  the rest of J-6.** The environment is created on the window's own
+  thread and this package's model is a thread per window ([[D-101]]'s
+  ownership rule: exactly one thread may touch a controller). Sharing an
+  environment across threads is precisely the part of J-6 that makes it
+  a lifetime-model change rather than a smaller one.
