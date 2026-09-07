@@ -32,6 +32,8 @@ package main
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,14 +139,66 @@ func boolText(b bool) string {
 // open after the window has closed, which t.TempDir()'s own cleanup
 // then reports as a failure of a test that passed. The window is the
 // thing under test here, so the directory has to tolerate it.
+//
+// The cleanup below retries, and sweepStaleConfigHomes picks up what it
+// still could not take. Both are needed and neither is enough alone —
+// see FTEST Group 3, C-6: the browser process group holding these files
+// was measured still running two hours after its test binary exited,
+// and 196 suite runs had left 1.26 GB in %TEMP%. The failure was
+// already being discarded here; discarding it is what made it
+// invisible.
 func tempConfigHome(t *testing.T) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "liro-config-")
+	dir, err := os.MkdirTemp("", configHomePrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("LOCALAPPDATA", dir)
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Cleanup(func() { removeWithRetry(dir) })
+}
+
+// configHomePrefix names the temporary directories tempConfigHome makes,
+// so the sweep below can recognise its own leftovers and nothing else.
+const configHomePrefix = "liro-config-"
+
+// removeWithRetry deletes dir, giving WebView2's browser process group a
+// few seconds to let go of the user-data folder underneath it first. It
+// gives up quietly: a directory it cannot take is one sweepStaleConfigHomes
+// will find on a later run, and failing a test that otherwise passed
+// because a browser is slow to exit would be worse than either.
+func removeWithRetry(dir string) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if err := os.RemoveAll(dir); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// sweepStaleConfigHomes removes config homes an earlier run could not,
+// which is how this stops accumulating rather than merely accumulating
+// more slowly. Only directories older than an hour are touched, so a
+// suite running in parallel with another one cannot delete the other's.
+func sweepStaleConfigHomes() {
+	entries, err := os.ReadDir(os.TempDir())
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-time.Hour)
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), configHomePrefix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(os.TempDir(), e.Name()))
+	}
 }
 
 // keepThisMachinesAutostartAndMenu snapshots the two registry
