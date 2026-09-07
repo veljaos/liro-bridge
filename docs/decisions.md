@@ -11210,3 +11210,145 @@ layer for.
   ownership rule: exactly one thread may touch a controller). Sharing an
   environment across threads is precisely the part of J-6 that makes it
   a lifetime-model change rather than a smaller one.
+
+## D-171 — The rename retries for a second; "held open" means held, not glanced at
+
+**Date:** 2026-09-07
+**Phase:** FTEST Group 3 — flake runs
+
+**Decision.** `platform.WriteFileAtomic`'s rename is wrapped in
+`renameWithRetry`: up to one second, in doubling waits from 20 ms, for
+as long as the only thing refusing it is another program having the
+destination open. Everything else about [[D-165]] is unchanged — write
+to a temporary file beside the destination, flush, close, rename over
+it, and refuse with `OUTPUT_IN_USE` when the destination is genuinely
+held. A read-only destination, and a directory in the destination's
+place, are still refused at once: neither can ever succeed, and
+retrying them would spend the whole budget proving it.
+
+**Why.** Found as a flake — one of twenty suite runs failed in
+[[D-165]]'s own `TestWriteFileAtomicNeverTruncatesTheDestination`, whose
+watcher goroutine polls the destination with `os.Stat` while the write
+runs. It was tempting to call that a test racing itself and move on. It
+is that, and the mechanism it exposes is a product defect: **`os.Rename`
+over a destination that anything at all has open fails, including
+something that opened it for thirty microseconds to read its size.**
+Measured: 30 failures in 200 runs, 15 per cent.
+
+[[D-165]] weighed one kind of held-open destination — a person has the
+previous signed document open in a PDF reader — and chose refusing over
+destroying, which was right. It did not weigh the other kind, and on
+Windows the other kind is everywhere: an antivirus scanner reading a
+file that has just appeared in a folder, a search indexer, a backup
+agent, Explorer's preview pane, a folder-watching sync client. Against
+those, giving up at the first refusal turns a passing glance into a
+refused signature — and one nobody can act on, because by the time the
+person reads "close it and try again" the file is already closed.
+
+**This is not a softening of [[D-165]].** Write-then-rename is
+untouched, the code and the message are the same, and a destination
+somebody is really holding is still refused. What changes is only how
+long "held open" has to last before it counts: a second rather than an
+instant.
+
+**Why a second.** Long enough to outlast anything that opened a file to
+look at it, short enough that a person waiting on a signature does not
+notice, and far shorter than the several seconds it takes a human to
+close a document in another program — so a genuinely held file still
+reaches the message that tells them to.
+
+**A second decision, about the test.** The first version of the
+regression test span two unthrottled `os.Stat` loops, which is how the
+defect was originally measured. It then failed once in a twenty-run
+suite pass, on a machine with six fuzzers on it — and that failure was
+*correct while the test was wrong*. Two saturating stat loops on a busy
+machine do not model something glancing at a file; they model a file
+that is open essentially all the time, which no bounded retry can or
+should survive.
+
+A test whose verdict depends on how busy the machine is measures the
+machine, which is [[D-112]]'s finding exactly, arriving from the other
+direction: D-112's test asserted that N things fit in a fixed window,
+and this one asserted that a race would go a particular way. The
+rewrite says how long the destination is held — 300 ms, released while
+the write is under way — and asserts against the stated budget instead
+of racing for it. It also checks the write did *not* finish before the
+reader let go, so it cannot pass for the wrong reason on a fast machine.
+
+**Rejected.**
+- **Calling it a test problem and leaving the product alone.** The test
+  is a stand-in for a scanner, and the 15 per cent was measured against
+  the shipped function.
+- **Falling back to `os.WriteFile` when the rename keeps failing.**
+  That is the destruction [[D-165]] exists to prevent, restored under a
+  condition nobody would notice.
+- **A longer budget — five seconds, or until it works.** Every second
+  spent retrying is a second before a person who really does have the
+  file open is told so, and a batch of a hundred documents against a
+  folder somebody has open would spend eight minutes finding that out
+  one document at a time.
+- **Retrying on any rename failure rather than only a sharing
+  violation.** A read-only destination reports the same Windows status
+  ([[D-165]] measured that), and retrying it is a second of certain
+  failure for every document in a batch.
+
+---
+
+## D-172 — What Group 3 changed about where defects are looked for
+
+**Date:** 2026-09-07
+**Phase:** FTEST Group 3
+
+**Decision, recorded because the pass turned on it.** Five defects were
+found. **None of them was found by a failing test, and none of them was
+found by looking at what the program showed.** Group 1/2 recorded that
+its nine were found by running the shipped binary and looking at the
+output ([[D-161]]). This pass found nothing that way — the output was
+right every time. What found these was **counting something across
+repetitions**:
+
+| Found by | Defect |
+|---|---|
+| feeding a parser ten bytes it had never seen | C-1, a length that went negative in both independent readers |
+| opening one window a hundred times instead of once | C-2, six GDI objects per window, never returned |
+| opening one window a hundred times and then waiting | C-3, a process handle per window, and it is not a lag |
+| running the suite twenty times instead of once | C-4, a signature refused because something glanced at the file |
+| running the suite twenty times instead of once | C-5, one window in a few hundred that does not open |
+
+Every one is a **rate**. Not one of them is visible in a single
+instance, and every earlier pass in this project looked at single
+instances: a screenshot, a signed document, a green run. A signed
+document is right or wrong; six GDI objects are neither until you have
+a hundred of them to divide by.
+
+This is [[D-161]]'s lesson one step further out. There the finding was
+that a test asserting the right property against the wrong fixture keeps
+passing. Here it is that **a test asserting the right property against
+one instance of the fixture cannot see a per-instance cost at all** —
+`cmd/liro-bridge`'s suite makes exactly one of each window, deliberately
+and for a good reason ([[D-098]]), and that is precisely why six GDI
+objects per window survived four phases of window work.
+
+**What was done about it, beyond the five fixes.** Three of the
+measurements are now things anyone can run rather than things this
+session did:
+
+- `TestEveryWindowSurvivesAHundredOpenAndCloseCycles`, behind
+  `LIRO_WINDOW_CYCLES`, which is what found C-2 and C-3.
+- `TestOpeningAndClosingWindowsDoesNotLeakGDIObjects`, which runs in the
+  ordinary suite because ten windows is four seconds and this class of
+  defect is invisible below two.
+- Seven fuzz targets, six of them new, which is what found C-1 and is
+  what will find the next one.
+
+`scripts/gencorpus` is committed for the same reason: the corpus this
+pass needed had to be rebuilt from a prose description because the pass
+that built it deleted it, and a measurement nobody can repeat is a
+number rather than a check.
+
+**Rejected.**
+- **Reporting the five as ordinary bugs without this entry.** The
+  pattern is the finding, and it is a different pattern from the four
+  entries before it ([[D-087]], [[D-122]], [[D-128]], [[D-161]]), which
+  were all about *looking* at one thing properly. This one is about
+  counting many.
