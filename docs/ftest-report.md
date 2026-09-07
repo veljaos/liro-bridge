@@ -2065,3 +2065,95 @@ slowest:   730 ms   (48 464 bytes, 1 page)
 Go's own coordinator minimising a newly interesting input, which does
 not advance the execution count. Nothing the renderer was handed took
 anything like a second.
+
+### The other six targets
+
+All six ran together, two workers each, on the same twelve-thread
+machine, and each was given 75 minutes of fuzzing — which took 78
+minutes of wall clock, because a run does not end until every worker has
+finished what it was on.
+
+| Target | Package | What it reads | Ran for | Executions | Corpus after | Crashes |
+|---|---|---|---|---|---|---|
+| `FuzzParseCMS` | `pades/verify` | the SignedData out of a document | **78 min** | **543 539** | 4 → 189 | 1 → C-1 |
+| `FuzzVerifySignature` | `pades/verify` | a whole document, end to end | **78 min** | **1 856 984** | 8 → 223 | 0 |
+| `FuzzParseResponse` | `pades/tsa` | an RFC 3161 response or token | **78 min** | **35 144 085** | 7 → 82 | 1 → C-1 |
+| `FuzzParseBERValue` | `pades/tsa` | one BER tag, length and value | **78 min** | **25 898 317** | 7 → 110 | 0 |
+| `FuzzIncrementalUpdate` | `pades/pdf` | a document that is then written to | **78 min** | **10 309 488** | 10 → 474 | 0 |
+| `FuzzSignMalformedDocument` | `pades` | a document that is then signed | **78 min** | **3 528 013** | 5 → 390 | 0 |
+
+**Across all eight target-runs: 230 489 141 executions, and one crash.**
+That crash is C-1, and `FuzzParseResponse` found it in the second minute
+of its very first smoke run — before any of these long runs started.
+Everything after that was ten and a half target-hours of not finding
+anything else, which is the result and is worth the hours it took to be
+able to say.
+
+### What each of the new targets actually asserts
+
+A fuzz target that only checks for panics finds panics. These check
+properties as well, so an input that produces a wrong answer without
+crashing is also a failure:
+
+- **`FuzzRenderPage`** — a page that renders without error must produce
+  a non-nil image of at least one pixel in each direction.
+- **`FuzzParseCMS`** — a `parsedCMS` that came back must survive being
+  used the way `VerifySignature` uses it, which is where a nil field or
+  a nonsensical length is actually dereferenced.
+- **`FuzzVerifySignature`** — `VerifySignature` must never return nil
+  for a slot `FindSignatures` handed it.
+- **`FuzzParseBERValue`** — the remainder must never be longer than the
+  input, which is the shape of a length arithmetic error that does not
+  panic.
+- **`FuzzIncrementalUpdate`** — the input's bytes must still be a
+  literal prefix of the output; `/ByteRange` must cover the whole output
+  except the reserved span; and **the result must parse again**, because
+  an incremental update this project wrote that its own parser cannot
+  read is a document no reader can read either. That third one is worth
+  its own note: nothing else in the suite checks it against input this
+  project did not construct.
+- **`FuzzSignMalformedDocument`** — the input is still a prefix, signing
+  added exactly one signature slot, and **the slot it added verifies**
+  (`ByteRangeDigestOK` and `SignatureOK`) under the independent
+  verifier. Ten million malformed documents signed and every signature
+  that came out of one was valid.
+
+### Why `FuzzParseCMS` looks slow, checked rather than assumed
+
+`FuzzParseCMS` managed 543 539 executions where `FuzzParseResponse` did
+35 million. The obvious reading is a pathological input — a CMS whose
+parse takes seconds, which for a document somebody else produced would
+be a signature check that stalls. So it was measured: every one of the
+109 corpus entries the run had kept at that point was re-run through
+`parseCMS` and timed.
+
+```
+109 entries, total 6 ms, mean 57 µs, median 0 s
+slowest: 1.06 ms (1 303 bytes)
+```
+
+**Six milliseconds for the whole corpus.** The parser is not slow; the
+low rate is Go's coordinator on a target whose inputs are large enough
+that mutation and minimisation dominate, on a machine running thirteen
+fuzz workers on twelve threads. Nothing to fix, and worth writing down
+so the next person does not chase it either.
+
+### The seed arrangement, and why it is not just `f.Add`
+
+Every target seeds from three places: documents built in the test file
+itself (small, committed, always present), this project's committed
+fixtures (`testdata/pdfs/blank.pdf`, `testdata/golden/minimal-signed-bb.pdf`),
+and — when they are there, which is never in CI — the real signed
+documents in `testdata/pdfs/local` and whatever the `LIRO_FUZZ_SEED_DIR`
+environment variable names.
+
+That last one is how the FTEST corpus gets in without 280 KB of
+generated PDFs being committed to seed a fuzz target. A CI run starts
+from what CI has; a run on a machine with the real fixtures and a
+generated corpus starts from everything. The `tsa` target additionally
+digs the embedded timestamp tokens out of every signed document it can
+find, by scanning for the `signatureTimeStampToken` OID in raw bytes —
+deliberately crudely, because a seed does not have to be correct, only
+interesting, and doing it properly would mean importing
+`internal/pades/verify` into the tests of the one package written to be
+independent of it.
