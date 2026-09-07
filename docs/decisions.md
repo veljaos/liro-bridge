@@ -11299,7 +11299,7 @@ reader let go, so it cannot pass for the wrong reason on a fast machine.
 **Date:** 2026-09-07
 **Phase:** FTEST Group 3
 
-**Decision, recorded because the pass turned on it.** Five defects were
+**Decision, recorded because the pass turned on it.** Six defects were
 found. **None of them was found by a failing test, and none of them was
 found by looking at what the program showed.** Group 1/2 recorded that
 its nine were found by running the shipped binary and looking at the
@@ -11314,8 +11314,9 @@ repetitions**:
 | opening one window a hundred times and then waiting | C-3, a process handle per window, and it is not a lag |
 | running the suite twenty times instead of once | C-4, a signature refused because something glanced at the file |
 | running the suite twenty times instead of once | C-5, one window in a few hundred that does not open |
+| counting what was left on the machine at the end | C-6, 1.26 GB of temporary directories the suite could not delete |
 
-Every one is a **rate**. Not one of them is visible in a single
+Every one is a **rate**, or the sum of one. Not one of them is visible in a single
 instance, and every earlier pass in this project looked at single
 instances: a screenshot, a signed document, a green run. A signed
 document is right or wrong; six GDI objects are neither until you have
@@ -11329,7 +11330,7 @@ one instance of the fixture cannot see a per-instance cost at all** —
 and for a good reason ([[D-098]]), and that is precisely why six GDI
 objects per window survived four phases of window work.
 
-**What was done about it, beyond the five fixes.** Three of the
+**What was done about it, beyond the six fixes.** Three of the
 measurements are now things anyone can run rather than things this
 session did:
 
