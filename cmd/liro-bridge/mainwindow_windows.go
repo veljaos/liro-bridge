@@ -54,6 +54,13 @@ type mainWindow struct {
 	queue   jobs.Queue
 	notices []jobs.Notice
 
+	// remoteItems is the batch a protocol request brought, in place of
+	// the queue: its documents are digests or bytes, not files, and a
+	// jobs.Queue is about files from end to end (Add, folder expansion,
+	// duplicate paths, output paths). The run itself is the same either
+	// way — jobs.Runner.RunItems is what both go through.
+	remoteItems []jobs.Item
+
 	// runner is non-nil only while a batch is running; Stop reaches it
 	// from the message loop while the run is on its own goroutine.
 	runner *jobs.Runner
@@ -85,6 +92,31 @@ type mainWindow struct {
 	// force skips the output-file question, matching the command line's
 	// --force.
 	force bool
+
+	// remote is the protocol request this run is serving, or nil for a
+	// batch a person started here (F7 §5, §6). It is what makes the
+	// difference between a run that writes files and one that hands its
+	// signatures back to the program that asked — and nothing else: the
+	// window, the certificate step and the approval are the same, which
+	// is the whole of SPEC §6.5's "a request from a paired application
+	// is not more trusted than a person dropping files".
+	remote *remoteBatch
+
+	// hashesOnly is a batch of bare digests (F7 §5): the caller built
+	// the PDF and the CMS itself, so there is no document here to draw
+	// a stamp on and no method to ask about.
+	hashesOnly bool
+
+	// signedAnything is true once the run has begun, which is what
+	// separates "the person did not approve" from "the batch happened
+	// and this is what came of it". Set at the moment the card session
+	// is opened, not when the first signature completes: from there on
+	// the outcome is the run's to report, whatever it is.
+	signedAnything bool
+
+	// denied is set by deny, so a refusal is recorded once however many
+	// ways out of the flow it took.
+	denied bool
 
 	// inputs is the batch as the flow sees it: one entry per document,
 	// with the digest the batch fingerprint is built from.
@@ -276,8 +308,64 @@ func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep
 		go watchInbox(inbox, m.dropped, stop)
 	}
 
+	if m.remote != nil {
+		// The clock starts when the window is actually up, not when the
+		// request was accepted and not when this function was entered:
+		// a job that waited behind another one's window gets its own
+		// hundred and twenty seconds, and none of them is spent on
+		// enumerating a smart card or creating a WebView2 instance
+		// (F7 §7.4).
+		m.remote.deadline = time.Now().Add(ConsentTimeout)
+		defer m.remote.endCountdown()
+		go m.watchConsentDeadline()
+	}
+
 	m.loop(ctx)
+	m.finishRemote()
 	return m.exit
+}
+
+// finishRemote settles what a protocol request is told when its window
+// has closed without a signature.
+//
+// Every way out of the flow before signing means the same thing to the
+// caller — the person did not approve this — so there is one place
+// that says so rather than a branch in each of Cancel, Escape, the
+// title bar's close box and the window being closed from Go. Nothing
+// here overwrites a code the flow already set: an expired window has
+// already said CONSENT_TIMEOUT, which is a different answer from a
+// refusal and the one a caller may act on by asking again.
+func (m *mainWindow) finishRemote() {
+	if m.remote == nil {
+		return
+	}
+	m.remote.endCountdown()
+	if m.remote.code != "" || m.signedAnything {
+		return
+	}
+	m.remote.code = errs.CodeConsentDenied
+	// SPEC §6.7 wants the refusals as much as the approvals, and
+	// closing the window is a refusal however it was closed.
+	m.deny()
+}
+
+// batchItems is the documents this run is signing, whichever front
+// door brought them. The queue's copy for a local batch; the protocol
+// request's own slice for a remote one, which the runner updates in
+// place so the queue screen shows each document's state as it changes.
+func (m *mainWindow) batchItems() []jobs.Item {
+	if m.remote != nil {
+		return m.remoteItems
+	}
+	return m.queue.Items()
+}
+
+// documentCount is how many documents this run covers.
+func (m *mainWindow) documentCount() int {
+	if m.remote != nil {
+		return len(m.remoteItems)
+	}
+	return m.queue.Len()
 }
 
 // inboxPollInterval is how often an open window looks for stragglers.
@@ -317,9 +405,23 @@ func watchInbox(box *jobs.Inbox, dropped chan<- []string, stop <-chan struct{}) 
 // driven from here on one goroutine, so nothing touches the queue
 // concurrently.
 func (m *mainWindow) loop(ctx context.Context) {
+	// A protocol request expires if nobody answers (F7 §7.4). Nil for
+	// a local batch, where a person opened the window themselves and
+	// nothing is waiting on them.
+	var expired <-chan struct{}
+	if m.remote != nil {
+		expired = m.remote.expired
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-expired:
+			// Nobody answered. The window closes, the refusal is
+			// recorded, and the caller is told CONSENT_TIMEOUT and can
+			// submit again.
+			m.consentExpired()
 			return
 		case <-m.closed:
 			// The user closed the window. A run in flight is asked to
@@ -697,8 +799,15 @@ func (m *mainWindow) staticStrings() map[string]string {
 // what it showed was step 1: the flow appeared to jump back to where it
 // started.
 func (m *mainWindow) startSigning(ctx context.Context) bool {
-	if m.queue.Len() == 0 || m.selected == "" {
+	if m.documentCount() == 0 || m.selected == "" {
 		return false
+	}
+	if m.remote != nil {
+		// The person has answered, so the clock stops. From here the
+		// caller is told what the run is doing rather than how long the
+		// window has left.
+		m.remote.endCountdown()
+		m.remote.job.Publish(jobs.Update{State: jobs.JobAwaitingPIN})
 	}
 	if !m.gotoPage(pageMain) {
 		return false
@@ -709,7 +818,14 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 	level := interactiveLevel(m.cfg)
 	var tsaClient *tsa.Client
 	allowBB := level == pades.LevelBB
-	if level != pades.LevelBB {
+	if m.hashesOnly {
+		// The caller built the CMS itself and timestamps it itself: this
+		// agent signs a hash and never touches a timestamp authority on
+		// this path. Asking about one would be asking about something
+		// that is not going to happen.
+		level = pades.LevelBB
+		allowBB = true
+	} else if level != pades.LevelBB {
 		client, err := buildTSAClient(m.cfg)
 		if err != nil {
 			m.fail(err)
@@ -727,22 +843,34 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 		}
 	}
 
-	// J-3, asked before the card session for the same reason the two
-	// questions around it are: a person who cancels must not have spent
-	// a PIN entry on a batch that was never going to be written.
-	skipAlreadySigned, proceed := resolveAlreadySigned(m.win, m.messages, m.closed, m.c, m.inputs, m.cfg.OutputSuffix)
-	if !proceed {
-		m.deny()
-		m.backToStart()
-		return false
-	}
-	m.skipAlreadySigned = skipAlreadySigned
+	// The two questions about files, asked before the card session for
+	// the same reason the timestamp one is: a person who cancels must
+	// not have spent a PIN entry on a batch that was never going to be
+	// written.
+	//
+	// A protocol batch skips both, because neither has anything to be
+	// about: its documents are not files this agent chose or can name,
+	// and its output is a response rather than something written beside
+	// an input. Asking whether to overwrite a file that does not exist
+	// would be a question with no answer.
+	var outputs []interactiveOutput
+	if m.remote == nil {
+		// J-3.
+		skipAlreadySigned, proceed := resolveAlreadySigned(m.win, m.messages, m.closed, m.c, m.inputs, m.cfg.OutputSuffix)
+		if !proceed {
+			m.deny()
+			m.backToStart()
+			return false
+		}
+		m.skipAlreadySigned = skipAlreadySigned
 
-	outputs, settled := resolveOutputsIn(m.win, m.messages, m.c, m.inputs, m.cfg.OutputFolder, m.cfg.OutputSuffix, m.force)
-	if !settled {
-		m.deny()
-		m.backToStart()
-		return false
+		settled := false
+		outputs, settled = resolveOutputsIn(m.win, m.messages, m.c, m.inputs, m.cfg.OutputFolder, m.cfg.OutputSuffix, m.force)
+		if !settled {
+			m.deny()
+			m.backToStart()
+			return false
+		}
 	}
 
 	// Either question above puts its own screen up. Whichever way they
@@ -753,10 +881,17 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 
 	session, err := openInteractiveSession(ctx, keysource.Thumbprint(m.selected), m.win.Handle())
 	if err != nil {
+		m.failRemote(err)
 		m.fail(err)
 		return false
 	}
 	defer func() { _ = session.Close() }()
+
+	// From here the run is what reports the outcome, whatever it turns
+	// out to be: the person has approved and the card is open, so a
+	// failure after this point is a failure to sign rather than a
+	// refusal to.
+	m.signedAnything = true
 
 	m.runBatch(ctx, consentDecision{
 		approved:   true,
@@ -837,14 +972,17 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	// to avoid.
 	reportCh := make(chan jobs.Report, 1)
 	go func() {
-		reportCh <- runner.Run(ctx, &m.queue, func(rctx context.Context, i int, item jobs.Item) (jobs.Outcome, error) {
+		sign := func(rctx context.Context, i int, item jobs.Item) (jobs.Outcome, error) {
 			if skipAlreadySigned[item.Path] {
 				// The person was asked once, before the card was
 				// touched, and said to leave these alone (J-3). Not a
 				// failure and not a document still waiting: skipped.
 				return jobs.Outcome{}, jobs.ErrSkipDocument
 			}
-			out := d.outputs[i]
+			var out interactiveOutput
+			if i < len(d.outputs) {
+				out = d.outputs[i]
+			}
 			opts := interactiveSignOptions{
 				level:      d.level,
 				trustStore: trustStore,
@@ -855,6 +993,18 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 				stamp:      stampOpts,
 
 				revocationMemory: revocationMemory,
+			}
+			if m.remote != nil {
+				// A protocol batch signs the same way, through the same
+				// session the person approved, and hands its result back
+				// rather than writing it. It is exempt from the TSA
+				// retry loop below for the same reason it was exempt
+				// from the question before signing: on the hash path
+				// there is no timestamp step at all, and on the document
+				// path a failure is reported to the caller rather than
+				// asked about — there is nobody watching the window by
+				// the time a batch it approved is running.
+				return m.signRemoteOne(rctx, i, wrapped, opts)
 			}
 			var result *pades.Result
 			var err error
@@ -889,9 +1039,23 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 				// as it stood is reported, not hidden (F6b §3).
 				StampAdjusted: result.StampMoved || result.StampPageFellBack,
 			}, nil
-		}, jobs.Hooks{
-			OnProgress: func(p jobs.Progress) { m.postQueue(p, runner.Stopped()) },
-		})
+		}
+		hooks := jobs.Hooks{
+			OnProgress: func(p jobs.Progress) {
+				m.postQueue(p, runner.Stopped())
+				m.publishProgress(p)
+			},
+			OnItem: func(index int, item jobs.Item) {
+				if item.State == jobs.StateFailed {
+					m.recordRemoteFailure(index, item.FailureCode)
+				}
+			},
+		}
+		if m.remote != nil {
+			reportCh <- runner.RunItems(ctx, m.remoteItems, sign, hooks)
+			return
+		}
+		reportCh <- runner.Run(ctx, &m.queue, sign, hooks)
 	}()
 
 	// Pump the window's own events while the run proceeds. Stop and
@@ -913,7 +1077,7 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 			if msg.Type == ui.MessageTypeApprove {
 				if a := m.readAction(); a.Action == "stop" {
 					runner.Stop()
-					m.postQueue(jobs.Progress{Phase: jobs.PhaseSigning, Total: m.queue.Len()}, true)
+					m.postQueue(jobs.Progress{Phase: jobs.PhaseSigning, Total: m.documentCount()}, true)
 				}
 			}
 		case reply := <-tsaAsk:
@@ -926,7 +1090,7 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 			if proceed {
 				// The window is showing the question; put the queue
 				// back before the next document finishes.
-				m.postQueue(jobs.Progress{Phase: jobs.PhaseSigning, Total: m.queue.Len()}, runner.Stopped())
+				m.postQueue(jobs.Progress{Phase: jobs.PhaseSigning, Total: m.documentCount()}, runner.Stopped())
 			}
 		case paths := <-m.dropped:
 			// Files dropped mid-batch are not silently lost, and not
@@ -937,6 +1101,7 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	}
 
 	m.report = &report
+	m.settleRemoteOutcomes(report)
 	m.recordAudit(d, report)
 	m.postReport(report)
 }
@@ -990,8 +1155,16 @@ func (m *mainWindow) recordAudit(d consentDecision, report jobs.Report) {
 	if len(report.Failures) > 0 {
 		lastErr = errs.New(report.Failures[len(report.Failures)-1].Code, nil)
 	}
-	discontinuity := recordInteractiveAudit(store, err, d.thumbprint, m.queue.Len(), outcome, lastErr,
-		d.session.Certificate().IsTestKey, report.AchievedLevel)
+	discontinuity := recordInteractiveAudit(store, err, auditRecord{
+		thumbprint:  d.thumbprint,
+		application: m.applicationName(),
+		channel:     m.auditChannel(),
+		documents:   m.documentCount(),
+		outcome:     outcome,
+		lastErr:     lastErr,
+		isTestKey:   d.session.Certificate().IsTestKey,
+		level:       report.AchievedLevel,
+	})
 	// Told once, on the report screen, as a notice rather than an
 	// error: nothing about this batch went wrong, and the entry that
 	// carries the record is the only one that ever will, so the next
@@ -1010,12 +1183,12 @@ func (m *mainWindow) recordAudit(d consentDecision, report jobs.Report) {
 // It is the same screen jobs.Runner's own first progress hook posts, in
 // the same phase, so nothing changes on screen when the run begins.
 func (m *mainWindow) postPreparingCard() {
-	m.postQueue(jobs.Progress{Phase: jobs.PhasePreparingCard, Total: m.queue.Len()}, false)
+	m.postQueue(jobs.Progress{Phase: jobs.PhasePreparingCard, Total: m.documentCount()}, false)
 }
 
 func (m *mainWindow) postQueue(p jobs.Progress, stopping bool) {
 	m.showingReport = false
-	if err := m.win.PostJSON(m.queuePayload(m.queue.Items(), p, stopping)); err != nil {
+	if err := m.win.PostJSON(m.queuePayload(m.batchItems(), p, stopping)); err != nil {
 		slog.Warn("signing window: posting progress failed", "error", err)
 	}
 }
@@ -1140,6 +1313,13 @@ func (m *mainWindow) postReport(r jobs.Report) {
 	outputText := m.c.T("main.report_output_various")
 	if r.OutputDir != "" {
 		outputText = r.OutputDir
+	}
+	if m.remote != nil {
+		// A protocol batch wrote nothing anywhere: its output is the
+		// answer to the program that asked. Saying "each document's own
+		// folder" would send the person looking for files that do not
+		// exist.
+		outputText = m.c.T("main.report_output_returned")
 	}
 	levelText := r.AchievedLevel
 	if levelText == "" {

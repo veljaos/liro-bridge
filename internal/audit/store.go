@@ -35,6 +35,11 @@ type jsonEntry struct {
 	IsTestKey     bool      `json:"isTestKey"`
 	AchievedLevel string    `json:"achievedLevel,omitempty"`
 
+	// Channel is which front door the batch arrived through (F7 §6).
+	// omitempty, so a local batch's line is byte-identical to what it
+	// always was — the empty channel is what "local" is.
+	Channel Channel `json:"channel,omitempty"`
+
 	// Discontinuity is present only on a chain's first entry, and only
 	// when that chain exists because an earlier one could not be
 	// continued. omitempty keeps every other entry's line byte-identical
@@ -68,6 +73,7 @@ func toJSONEntry(e Entry) jsonEntry {
 		FailureCode:   string(e.FailureCode),
 		IsTestKey:     e.IsTestKey,
 		AchievedLevel: e.AchievedLevel,
+		Channel:       e.Channel,
 		Discontinuity: toJSONDiscontinuity(e.Discontinuity),
 		PrevHash:      hexEncode(e.PrevHash),
 		Hash:          hexEncode(e.Hash),
@@ -121,6 +127,7 @@ func fromJSONEntry(j jsonEntry) (Entry, error) {
 		FailureCode:   errCode(j.FailureCode),
 		IsTestKey:     j.IsTestKey,
 		AchievedLevel: j.AchievedLevel,
+		Channel:       j.Channel,
 		Discontinuity: fromJSONDiscontinuity(j.Discontinuity),
 		PrevHash:      prevHash,
 		Hash:          hash,

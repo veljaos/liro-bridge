@@ -12051,3 +12051,792 @@ discover. The listener the client talked to was the harness's own.
   now rather than after three more groups were built on it.
 - **Reporting the first run's green table.** It was green for the wrong
   reason and the log said so.
+
+---
+
+## D-185 — Loopback is a constant, not a parameter; the port range is configurable and the address is not
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 2
+
+**Decision.** `api.Listen(start, end)` takes a port range and nothing
+else. The host it binds is `loopbackHost`, a package constant
+(`127.0.0.1`), and there is no parameter, configuration field,
+environment variable or flag anywhere in this project that can change
+it. A range that is zero or out of order falls back to SPEC §14's own
+17580–17590 rather than refusing.
+
+**Why.** SPEC §6.1 does not say the agent listens on loopback by
+default; it says binding to a non-loopback interface must be
+*impossible*, not merely off by default. The way to make something
+impossible is to leave no way to ask for it — so the address is not an
+input, and the one function that binds a socket builds it from the
+constant.
+
+That is a property of the source rather than of one call, so a test
+that checks what `Listen` returns cannot see it: it would say nothing
+about a second `net.Listen` somebody adds next year.
+`TestNothingInThisPackageBindsAnywhereButLoopback` walks the package's
+own syntax tree instead and requires exactly one socket-binding call
+site, in `listen.go`, whose arguments reach `loopbackHost`. That is
+[[D-025]]'s method for "no PIN field anywhere" and [[D-158]]'s for
+"AllCodes is complete", applied to the one line SPEC §6.1 is about.
+
+**Why the range falls back rather than refusing.** `PortRangeStart` and
+`PortRangeEnd` come from `config.json`, where [[D-006]] validates each
+field independently and deliberately does not check one against the
+other. So a nonsensical pair can reach here, and an agent that will not
+listen at all is a worse answer than one that listens where the
+specification says it should.
+
+**Rejected.**
+- **A configurable bind address, defaulting to loopback.** This is the
+  exact shape SPEC §6.1 rules out. A default is something somebody can
+  change; the specification asks for something nobody can.
+- **Testing the property by connecting from a non-loopback address.**
+  It proves one listener at one moment, and needs a second interface to
+  connect from. The syntax tree proves it for every listener this
+  package will ever have.
+
+---
+
+## D-186 — The discovery file carries three fields; the minimum client version is health's answer and not the file's
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 2
+
+**Decision.** `bridge.json` is `{port, agentVersion, protocolVersion}`
+and nothing else. It is written atomically
+(`platform.WriteFileAtomic`, [[D-165]]) when the agent starts and
+removed when it stops. `GET /v2/health` answers `{agentVersion,
+protocolVersion, minimumClientVersion}` and needs no authentication.
+
+**Why the minimum client version is not in the file.** An SDK wants it
+early, which is an argument for putting it there — and the argument
+against is the one this project has recorded three times: a fact stated
+in two places is a fact that can disagree with itself ([[D-108]] for a
+rule, [[D-124]] for a question, [[D-138]] for a margin). The file's job
+is to say *where the agent is*; everything else is one request away
+once you know. If the two ever disagreed, an SDK reading the file would
+refuse to talk to an agent that would happily have served it.
+
+**Why the file is atomic.** An SDK polling for the agent must never
+read a half-written file and conclude the port is `1758`. It costs
+nothing: `WriteFileAtomic` already exists for the signed documents.
+
+**Why a stale file is not a problem worth solving.** An agent that
+crashed leaves one behind, pointing at a port nothing is listening on.
+The SDK's connection is refused, which means exactly what no file at
+all means: the agent is not running. A PID in the file, or a lock, or a
+heartbeat would each be machinery for a case the existing failure
+already answers correctly.
+
+**Rejected.**
+- **A `pid` field**, so a stale file can be recognised. Above: the
+  refused connection already says so, and a PID is one more thing an
+  unauthenticated reader learns about the machine.
+- **Keeping the file when the agent stops**, so an SDK can report "the
+  agent was here". It cannot tell that from "the agent is here and
+  busy", which is worse than nothing.
+
+---
+
+## D-187 — The job registry lives in `internal/jobs`, beside the queue and the runner; `Runner` gains `RunItems`
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 3
+
+**Decision.** `internal/jobs` gains `Registry`, `Job`, `JobState` and
+`Update` — the whole of F7 §7's job lifecycle, with no HTTP in it. It
+also gains `Runner.RunItems(ctx, []Item, SignFunc, Hooks)`; `Run`
+becomes one line that calls it with the queue's own items.
+`internal/api` turns a `Job` into a 202, an event stream and a 404, and
+`cmd/liro-bridge` drives the run.
+
+**Why here and not in `internal/api`.** A job is one batch being
+signed, seen by a caller who is not sitting at the window — which is
+the same thing the queue and the runner are about. Everything the
+registry needs is already in this package's vocabulary: `Progress`,
+`Phase`, `Report`, the ETA from measurement. Putting it in
+`internal/api` would have meant a second progress vocabulary beside the
+first and a second place that knows what a batch is.
+
+**Why `RunItems` rather than a second runner.** A batch that arrived
+over the protocol has no queue: its documents are digests a caller
+computed or bytes it sent, and a `Queue` is about files from end to end
+— `Add`, folder expansion, duplicate paths, output paths. But
+everything a *run* decides is identical for both: one document at a
+time in order, skip-and-continue (SPEC §12.10), the two codes that end
+a batch, Stop between documents and never during one, and an ETA from
+the measured first signature. That is one function, and both front
+doors go through it rather than each having their own — which is what
+the instruction to build on `internal/jobs` rather than beside it
+actually asks for.
+
+The change to F6's code is one line: `Run` delegates. Every existing
+test passes unchanged, which is the point.
+
+**Rejected.**
+- **A second runner for the protocol.** Two implementations of
+  skip-and-continue is how the window and the command line come to
+  disagree about what a batch did — the failure this project has
+  removed for a rule ([[D-108]]), a question ([[D-124]]) and a margin
+  ([[D-138]]).
+- **Making `Queue` able to hold documents that are not files.** It
+  would put `Add`, folder scanning and output paths in front of a
+  caller that has no files, and would give `Item` a meaning that
+  depends on where it came from.
+
+---
+
+## D-188 — A follower always sees the newest state and the terminal one; the states in between may be coalesced
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 3
+
+**Decision.** `Job.Follow` reads the job's state, calls the follower
+with it, and then waits on a channel that `Publish` closes and
+replaces. A follower therefore always lands on the *newest* state
+rather than working through a backlog, always sees the state as it
+stands when it connects, and always sees the terminal one.
+
+**Why not a queue of updates.** A hundred-document batch publishes a
+hundred `signing` updates. A follower that has fallen behind wants to
+know where the batch *is*, not to be walked through where it was; and a
+buffered channel that fills has to choose between blocking the run and
+dropping something — and the something it drops could be the terminal
+state, which is the one update a caller cannot do without.
+
+The close-and-replace broadcast has neither problem: nothing is
+buffered, so nothing can be dropped, and the terminal state is
+delivered because it is what the follower reads next whatever else it
+missed. It is also what makes reconnecting mid-batch correct with no
+extra machinery — F7 §12 asks for exactly that case, and a reconnected
+stream simply starts from where the job is now.
+
+**What this cost, and the test that had to change because of it.** The
+first version of the event-stream test published every state and then
+read them, and failed: the fake signer published six states in
+microseconds and the reader saw two. That test was asserting something
+the design deliberately does not promise. It now hands off — the signer
+publishes a state and waits until the stream has reported it before
+publishing the next — which is both the honest property (a stream
+connected throughout sees every state a run passes through) and a test
+that measures behaviour rather than how fast this machine is
+([[D-112]]).
+
+**Rejected.**
+- **A buffered channel per follower.** Above: it can drop the one
+  update that matters, and only under load, which is when a caller most
+  needs it.
+- **Blocking the run until every follower has read.** A caller that
+  stops reading would then stop the signing.
+
+---
+
+## D-189 — The result is handed over once; the "one job" slot frees when the job finishes, not when its result is collected
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 3
+
+**Decision.** `Job.TakeResult` returns the result once and never again
+— and returns nothing for a job that finished with nothing to give, so
+a refused batch and an already-collected one are the same answer.
+`GET /v2/jobs/{id}/result` forgets the job before it writes the body.
+The owner's one-job slot is released the moment the job reaches a
+terminal state, whether or not anybody came for the result. A finished
+job nobody collected is discarded after ten minutes.
+
+**Why the slot frees on finish rather than on collection.** F7 §10 says
+"a paired application may have one job at a time" and §7.3 says an
+uncollected result is discarded after ten minutes. Holding the slot for
+those ten minutes would lock a caller out of signing over a batch that
+is already done — a caller that crashed between the 202 and the result
+would be unable to sign anything for ten minutes. "One at a time" is
+about what the agent is doing, not about what the caller has read.
+
+**Why the job is forgotten before the body is written.** A caller that
+reads the response and immediately asks again must find nothing, and a
+write that fails halfway does not entitle anyone to a second copy of a
+qualified signature.
+
+**Two defects the tests found, both real.** `Submit` refused a second
+job while the first was merely still *known* rather than still
+*running*, so an application could not submit again until its previous
+result had been collected or had expired — the ten-minute lockout
+above, present in the first implementation. And `TakeResult` reported
+success for a job that finished with no result at all, which would have
+handed a caller an empty success where a refusal belonged. Both were
+found by tests written from the rule rather than from the code.
+
+**Rejected.**
+- **Keeping the result for a second collection "in case the first was
+  lost".** F7 §7.3 is explicit, and the reason is not caution about
+  memory: signatures are the output of a qualified signing operation
+  and do not linger waiting to be collected twice.
+- **Discarding unfinished jobs on the same deadline.** A job that has
+  not finished is bounded by its own consent timeout and by the run it
+  is in; forgetting it from under a signature in flight would leave the
+  caller with no way to learn what happened to a batch that is still
+  happening.
+
+---
+
+## D-190 — What the seven states are, in this agent's own terms
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 3
+
+**Decision.** F7 §7.2's seven states map onto this agent's own moments
+like this, and the mapping lives in exactly one place
+(`mainWindow.publishProgress` and the two calls around it):
+
+| State | The moment |
+|---|---|
+| `queued` | The request is accepted. Nothing is on screen — another job's window may be open (D-193). |
+| `awaiting_consent` | The agent's own window is up and nobody has answered. Carries the remaining time, republished every second. |
+| `awaiting_pin` | Approve was pressed; the card session is being opened, which is where the operating system's own PIN dialog appears if the card asks for one. |
+| `preparing_card` | `jobs.PhasePreparingCard` — the first signature is in flight. |
+| `signing` | `jobs.PhaseSigning` — every signature after the first. |
+| `completed` / `failed` | What `internal/api` publishes from the result. |
+
+**Why `awaiting_pin` is the card session and not the first signature.**
+The PIN never enters this process ([[D-025]]): the operating system's
+smart card provider shows its own dialog, and this agent only knows
+that it asked the card for something. Opening the session is the first
+moment such a dialog can appear, and `preparing_card` already has a
+meaning of its own — SPEC §12.9's measured first-signature cost, which
+is card initialisation rather than a person typing.
+
+**Why `jobs.PhaseFinished` publishes nothing.** The run being over is
+not a state a caller should see: what it produced is the answer, and
+`internal/api` is what turns that into `completed` or `failed`. A
+`signing` event published after the last signature would be the last
+thing the stream carried before it ended, saying the batch was still
+going.
+
+**Rejected.**
+- **Publishing `awaiting_pin` for the whole of the first signature.**
+  It would make `preparing_card` unreachable, and SPEC §12.9 is
+  specific that the ~4.9 s is card initialisation a caller needs to be
+  told is expected.
+
+---
+
+## D-191 — The certificate a caller names is binding on the hash path and a suggestion nowhere
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 4
+
+**Decision.** `POST /v2/sign` requires `certificateThumbprint`, and the
+consent window then offers that certificate and no other. `POST
+/v2/sign/pdf` accepts it and does not require it; without one the
+person is offered every certificate they would be offered locally. A
+named certificate that is not on the machine fails the job
+`CERT_NOT_FOUND` **before any window opens**.
+
+**Why the hash path's thumbprint is load-bearing.** On that path the
+caller has already built the PDF and the CMS, around one particular
+signer certificate. A signature made with a different key produces a
+document that verifies against nothing — so letting the person choose a
+different one would be letting them produce an invalid signature by
+making an ordinary-looking choice.
+
+**Why this does not weaken SPEC §6.5 or §18.15.** The person still sees
+the window, still selects the row, and still presses Approve; Approve
+is still not the initially focused control and is still disabled until
+they have chosen. Nothing is remembered across sessions. What has
+changed is only the length of the list — and F7 §9's "certificate
+selection is explicit" is about the person choosing deliberately rather
+than about how many things they choose between.
+
+**Why a window is not opened when the certificate is absent.** Asking a
+person to approve a batch that nothing on this machine can sign is
+asking a question with no useful answer, and the failure is the same
+either way. Measured in the real-client run: a request naming a
+thumbprint no certificate has fails in about half a second, with the
+enumeration in the log and no window on screen.
+
+**Rejected.**
+- **Treating the thumbprint as a hint on both paths.** It makes the
+  hash path able to produce an invalid signature through the person's
+  own correct-looking choice.
+- **Requiring it on both paths.** On the document path the agent builds
+  the CMS, so any usable certificate produces a valid document — and
+  requiring one would mean a caller had to learn a thumbprint from
+  somewhere, which this protocol deliberately gives it no way to do.
+
+---
+
+## D-192 — A protocol batch is the same window, the same step and the same audit entry; it is not a second consent screen
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 4
+
+**Decision.** A request from a paired application runs through
+`mainWindow` — the same type, the same certificate step, the same
+Approve button, the same audit log — with one field set: `remote`, the
+protocol request it is serving. What that field changes is only what
+the batch is made of and where its output goes.
+
+- The documents are digests or bytes in memory rather than files, so
+  the run uses `jobs.Runner.RunItems` over a slice this flow owns
+  ([[D-187]]) rather than a `Queue`.
+- The two questions about files — J-3's already-signed question and
+  [[D-104]]'s output-file question — are not asked, because neither has
+  anything to be about: a protocol batch writes nothing.
+- On the hash path there is no timestamp step either, so SPEC §12.8's
+  question is not asked: the caller built the CMS and timestamps it
+  itself.
+- The signatures go back to the caller instead of onto the disk.
+
+**Why not a second flow.** [[D-116]] and [[D-148]] both turned on this:
+the consent screen is the product's only real gate (SPEC §6.5), and a
+second implementation of it is a second thing that has to stay right
+about certificate choice, about never preselecting one, about what the
+audit log records, and about Approve not being focused. They would
+drift, and the direction they drift in is the one that matters. F7 §9
+says the same thing from the other side — "a request from a paired
+application is not more trusted than a person dropping files. It is the
+same window."
+
+**What this cost.** Four small conditionals in `mainWindow` and one new
+file. The window's own layout tests, its step logic, its audit
+recording and its progress screen were not touched.
+
+**The application's name comes from the pairing.** `applicationName()`
+returns `remote.req.Application` — bound at pairing, sanitised there
+([[D-178]]) — or `"local"`. There is no path by which a name in a
+signing request reaches a screen (SPEC §6.6, F7 §2.2), and
+`TestTheApplicationNameComesFromPairing` sends `applicationName` in the
+request body to prove it is ignored.
+
+**Rejected.**
+- **A separate protocol consent window sharing only the page.** The
+  page is not the gate; the code around it is — which is what F5's own
+  measured defects were about ([[D-087]]).
+- **Making `jobs.Queue` able to hold in-memory documents.** [[D-187]].
+
+---
+
+## D-193 — One consent window at a time; a job waits in `queued` and its 120 seconds start when its window opens
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 4
+
+**Decision.** `protocolSigner` holds a mutex for the whole of one job's
+window. A second job — from a different application, since one
+application may only have one job (F7 §10) — stays in `queued` until
+the first window is answered, and its own 120 seconds begin at the
+moment its window is actually on screen: not when the request was
+accepted, and not when the flow was entered.
+
+**Why one at a time.** Two consent windows stacked on top of each other
+is the maze F6b spent a whole pass removing ([[D-148]]), and the second
+one would take the foreground from a person mid-decision on the first.
+`queued` exists in F7 §7.2's own list of states, and this is what it is
+for.
+
+**Why the clock starts at the window and not at acceptance.** A job
+that waited two minutes behind another one's window would otherwise
+expire without anybody ever having been asked. The deadline is set in
+`mainWindow.open`, after `ui.NewWindow` has returned — so it excludes
+enumerating the smart card (measured at 0.2–0.9 s) and creating the
+WebView2 instance (0.37–0.42 s since [[D-150]]) as well.
+
+**Rejected.**
+- **Refusing a second job outright while a window is open.** F7 §10
+  bounds a caller to one job and says nothing about the agent; two
+  applications each having one is ordinary, and a refusal would make
+  the second one's success depend on the first one's timing.
+- **Queueing with no bound.** There is one: each application may have
+  one job, and each job expires in 120 seconds if nobody answers.
+
+---
+
+## D-194 — The consent countdown is drawn from Go, once a second, in the last thirty; the page owns no clock
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 4
+
+**Decision.** `ConsentTimeout` is 120 seconds and
+`ConsentCountdownFrom` is 30. One goroutine per protocol window ticks
+once a second: it republishes `awaiting_consent` with the remaining
+time — which is what a caller's own countdown is built from — and, once
+under thirty seconds, posts `{"type":"countdown","seconds":N,"text":…}`
+to the page. The page renders what it is given and computes nothing.
+
+**Why 120.** F7 §7.4 gives both the number and the reason, and the
+reason is the one that matters: F2 §4.1 already established a
+120-second approval-to-first-signature window
+(`signing.ApprovalWindow`), and inventing a second number for the same
+human decision would be two answers to one question — the pattern
+[[D-108]], [[D-124]] and [[D-138]] each had to remove once.
+
+**Why the page holds no clock.** [[D-120]] and [[D-121]] are both
+defects of the same shape: page state that is not a function of what Go
+last told it. A `setInterval` in the page would be a second clock,
+drifting from the one that actually decides when the job expires, and
+would keep counting after a payload that says something else arrived.
+
+**Why the last thirty seconds and not the whole time.** A number on
+screen from the first second would make every ordinary signature look
+like a race. Someone answering normally never sees a clock at all.
+
+**Verified by looking at it**, in the real binary, with a real request
+from a real client: photographed with `PrintWindow` so taking the
+picture does not take the foreground from whoever is using the machine
+([[D-122]]). At 117 seconds remaining the window shows the application
+name bound at pairing (`Knjigovodstvo doo`), the document count, the
+certificate list and no clock; at one second it shows *"Ovaj zahtev
+ističe za 1 s."* in the warning family above the actions, with the
+window the same size and nothing overflowing. The caller's own stream,
+over the same two minutes, carried 119 events counting from 117 999 ms
+to 999 ms.
+
+**One defect this found.** `consentExpired` published a final
+`awaiting_consent` with no remaining time, so the last thing a caller
+saw before `failed` was a countdown with no number in it. It publishes
+nothing now: the terminal state is the next thing, and it is
+`internal/api`'s to publish.
+
+**Rejected.**
+- **A countdown from the first second.** Above.
+- **Letting the page run its own timer from a single "expires at"
+  payload.** One clock, in Go, is what makes the number on screen and
+  the moment the job actually expires the same fact.
+
+---
+
+## D-195 — The whole-document path is a setting, and switching it off is its own code
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 4
+
+**Decision.** `config.Config.DocumentSigningEnabled` (on by default) is
+read on **every** request rather than captured when the listener
+started; Settings has a checkbox for it with one line of explanation.
+`POST /v2/sign/pdf` answers `DOCUMENT_SIGNING_DISABLED` (403) when it
+is off — after authentication, deliberately. `POST /v2/sign` has no
+such switch.
+
+**Why a setting and not an install option.** F7 §6 calls the
+whole-document path "optional at install time", and the installer that
+would offer to leave it out is F10's. Until then the setting is the
+whole of that choice, and it is the more useful half anyway: a
+deployment can change its mind without reinstalling.
+
+**Why it is read per request.** [[D-134]]'s rule — the configuration
+file is the authority, and a copy taken at startup is how a value saved
+a moment ago comes back as the old one. A setting that needed the agent
+restarted to take effect would be a setting that silently did nothing
+until the next reboot.
+
+**Why the check is after authentication.** Whether this machine offers
+the path is a fact about how it is set up, and an unpaired caller has
+no business learning it.
+
+**Why the hash path has no switch.** It is SPEC §4.3's most secure
+arrangement — the agent never possesses the document — and there is
+nothing to turn off about an endpoint that cannot see a document in the
+first place.
+
+**Three new codes, and why each is its own situation** (SPEC §7, and
+this project's own reading of it in [[D-066]], [[D-104]], [[D-118]],
+[[D-165]] — two conditions are one situation when they need the same
+thing from whoever receives them):
+
+| Code | What the caller must do next |
+|---|---|
+| `DOCUMENT_SIGNING_DISABLED` | Use the hash path, or ask the person to turn it on |
+| `JOB_IN_PROGRESS` | Wait for its own previous job |
+| `JOB_NOT_FOUND` | Submit again |
+
+**Rejected.**
+- **Folding `JOB_NOT_FOUND` into `REQUEST_INVALID`.** The request is
+  not invalid; the job is gone, which is a different thing and needs a
+  different reaction.
+- **Answering `NOT_PAIRED` when the document path is off.** It is
+  paired. Saying otherwise would send an integrator to re-pair, which
+  changes nothing.
+
+---
+
+## D-196 — The audit entry records which front door a batch came through, as a fourth optional canonical field
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 4
+
+**Decision.** `audit.Entry` gains `Channel`: empty for a batch a person
+started here (`ChannelLocal`), `api-digests` for `POST /v2/sign`,
+`api-documents` for `POST /v2/sign/pdf`. It is part of
+`CanonicalBytes`, behind its own marker byte (2), appended after the
+discontinuity's (1).
+
+**Why it is recorded at all.** F7 §6 requires the whole-document path
+to be recorded distinctly from the hash path, and the reason is a real
+difference rather than bookkeeping: on the hash path the agent never
+possessed the document (SPEC §4.3), which is a different fact about a
+signature from the other two.
+
+**Why the local channel is the empty string.** So that every entry any
+existing audit log holds canonicalises to exactly the bytes it always
+did, and every hash in every log already on disk still verifies. That
+is the same property [[D-095]] built for `AchievedLevel` and [[D-166]]
+for the discontinuity, and it is why `Channel` is emitted only when it
+is not `ChannelLocal`.
+
+**Why a marker byte rather than another bare field.** After `PrevHash`
+the buffer either ends, or continues with a 4-byte length whose first
+byte is 0 (the level), or with 1 (a discontinuity), or with 2 (a
+channel), each after the last. Two entries differing in any of them
+cannot produce the same bytes, and the next optional field is one more
+marker and nothing else.
+`TestAChannelIsPartOfWhatIsHashedAndCostsNothingWhenAbsent` pins all
+three properties.
+
+**Rejected.**
+- **Recording the channel in `Application`** — "My ERP (documents)".
+  It would put a computed suffix inside a value that is otherwise
+  exactly what a person approved at pairing, and would make the two
+  paths indistinguishable for a batch whose application name happens to
+  end the same way.
+- **A boolean "came over the protocol".** It would lose the
+  hash/document distinction, which is the one F7 §6 actually asks for.
+
+---
+
+## D-197 — A request with no body does not declare a content type; what keeps a browser out is the preflight and the absence of any CORS header
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 2, corrected by the real-client run
+
+**Decision.** `Content-Type: application/json` is required of every
+request that has a body, and of no request that does not. `GET
+/v2/health`, `GET /v2/jobs/{id}/events` and `GET /v2/jobs/{id}/result`
+require none.
+
+**What was built first, and what refused it.** The first version
+required the JSON content type on every endpoint including the GETs, on
+the reasoning that a request declaring `application/json` is never a
+"simple request", so a page must preflight it, and the preflight is
+refused — closing the last door a page could knock on. That reasoning
+is correct about browsers and wrong about clients: **.NET's
+`HttpClient` puts `Content-Type` on the *content*, so a `GET` with no
+body has nowhere to put it at all.** Measured directly, with a client
+written from `docs/PROTOCOL.md` against the built binary: every GET
+came back `REQUEST_INVALID`, including `/v2/health`, which is the first
+call any SDK makes. F9's own .NET SDK could not have made a single
+request.
+
+That is precisely the failure F7's own rules name — "a protocol that
+passes its tests and refuses a real request from a real program is this
+project's recurring failure mode" — and it would have passed every test
+in this repository, because Go's `http.Request` lets a caller set the
+header on a GET and this project's tests did.
+
+**What actually keeps a browser out, stated exactly.** The
+authenticated endpoints require the four `X-Liro-*` headers of F7 §3; a
+request carrying those is never a simple request, so a page must
+preflight it, and the preflight is answered `403` with no
+`Access-Control-*` header of any kind. That covers every endpoint that
+does anything. `GET /v2/health` is the one call a page can make, and it
+cannot read a word of the answer, because no CORS header is ever sent —
+what it could learn is that something is listening on a loopback port,
+which it can learn from the connection succeeding.
+
+`TestAPageCannotReadWhatHealthSays` and
+`TestAPageStillCannotReachTheJobEndpoints` pin both halves;
+`TestHealthAnswersAGETWithNoContentTypeAtAll` and
+`TestTheJobEndpointsWorkWithNoContentTypeAtAll` pin the shape a real
+client sends.
+
+**Rejected.**
+- **Keeping the rule and telling integrators to work around it.** For
+  many clients there is no workaround: the header cannot be attached to
+  a request with no content.
+- **Requiring it only on `/v2/health`**, since that is the one endpoint
+  a page can reach. It is also the one endpoint an SDK calls before it
+  has anything else, so it is the worst possible one to make hard.
+
+---
+
+## D-198 — A request is authenticated before its body is parsed
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 3
+
+**Decision.** The two signing endpoints read the raw body (content
+type, declared length, bytes), authenticate against it, and parse it
+only afterwards. `readJSONBody` — read and decode in one step — is kept
+for the two pairing endpoints, which have no secret to authenticate
+against yet.
+
+**Why.** The body has to be *read* before authentication either way:
+the signature covers the hash of the bytes as received (F7 §3). Parsing
+is a different step, and doing it first meant an unauthenticated caller
+sending nonsense got `REQUEST_INVALID` where it should have got
+`AUTH_FAILED` — a second thing to work from, in a protocol whose
+refusals deliberately say nothing ([[D-175]]).
+
+Found by the real-client run: a case meant to send an empty body signed
+as if it had content came back `REQUEST_INVALID` rather than
+`AUTH_FAILED`, because the empty body was not JSON and the parser said
+so first.
+
+**Rejected.**
+- **Parsing first and calling the difference harmless.** It is a small
+  leak and it costs nothing to close: the split is four lines.
+
+---
+
+## D-199 — `INTERNAL` is the only 5xx; everything else is a refusal or a 422
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 3, corrected by the real-client run
+
+**Decision.** `statusFor`'s default is `422 Unprocessable Content`, not
+500. `INTERNAL` maps to 500 explicitly and nothing else does.
+`CONSENT_DENIED` and `CONSENT_TIMEOUT` join `PAIRING_DENIED` on 403.
+
+**Why.** The real-client run collected a job the person had simply not
+answered and got **HTTP 500** with `CONSENT_TIMEOUT`. Nothing failed:
+a window opened, nobody was there, and it expired — which is the
+behaviour F7 §7.4 asks for. Answering 500 tells an integrator the agent
+is broken and tells their monitoring the same, and it is the sort of
+thing that produces a support ticket about the wrong component.
+
+Almost every code in this protocol means "understood, and it did not
+happen": the card was not there, the person said no, the document was
+not a PDF, the timestamp authority did not answer. 422 is what that is.
+500 belongs to `INTERNAL`, which is what `INTERNAL` means (SPEC §7:
+"anything unclassified — always accompanied by a local log entry").
+
+Making 422 the *default* rather than enumerating the codes that get it
+is deliberate: a code added later lands there unless somebody thinks
+about it, and that is the right way round. A new condition nobody has
+classified is far more likely to be one of these than to be this agent
+failing.
+`TestOnlyINTERNALIsAServerError` walks `errs.AllCodes()` and holds the
+whole vocabulary to it ([[D-158]]'s method), so this cannot regress one
+code at a time.
+
+**Rejected.**
+- **200 with a failure body for a failed job.** An SDK's natural shape
+  is "2xx means I have a result"; a failed job under 200 makes every
+  caller check twice.
+- **Enumerating the 422 codes and leaving the default at 500.** It is
+  the same list kept by hand that [[D-158]] exists to stop, and it
+  fails in the direction that hurts.
+
+---
+
+## D-200 — Group 4 was driven by a client written from the specification, against the built binary; it found two defects in the product and one in itself
+
+**Date:** 2026-09-07
+**Phase:** F7 — groups 2, 3 and 4
+
+**Decision, recorded because the phase turned on it.** Everything these
+three groups claim was checked twice: by Go tests inside the packages,
+and by a PowerShell client sharing no code with the agent — .NET's own
+`SHA256` and `HMACSHA256`, its own canonical string, its own nonces —
+talking to `liro-bridge.exe tray` over a real loopback socket, with a
+real pairing store, the real DPAPI secret store, and the real consent
+window on screen.
+
+**What it found in the product.** Two defects, neither of which any
+test in this repository could have caught:
+
+1. **Every GET was refused.** The JSON content type was required on
+   endpoints with no body, which .NET's `HttpClient` cannot send at all
+   ([[D-197]]). Go's own client can, and this project's tests used Go's.
+2. **A job the person did not answer was HTTP 500** ([[D-199]]).
+
+Both are the shape F7's own rules name and this project has recorded
+five times ([[D-087]], [[D-122]], [[D-128]], [[D-161]], [[D-172]]): a
+green suite beside a product that refuses a real request.
+
+**What it found in itself, which is the more useful half.** The
+client's first run produced a table of fifteen authentication failures
+that was entirely green — and was green for the wrong reason.
+PowerShell gives an unbound `[string]` parameter `""` rather than
+`$null`, so `if ($null -eq $SignedBody) { $SignedBody = $Body }` never
+fired and **every request with a body was signed as if the body were
+empty**. Every case in the table failed, including the ones that were
+supposed to fail for some other reason, and `AUTH_FAILED` looks the
+same either way by design ([[D-175]]).
+
+What said otherwise was the agent's own log ([[D-176]]): fourteen lines
+of `reason=signature_mismatch` where four of them should have said
+`clock_skew`, `nonce_too_long` and `origin_mismatch`. That is the
+second time in this phase a uniform answer has been correct for a
+caller and useless to debug against, and the second time the log has
+been what made the difference.
+
+This is [[D-184]] happening again, in the same language, to a different
+line of it. The lesson stands and is now twice measured: **a harness is
+code too, and a green result from a harness nobody has checked is worth
+what a green test against the wrong fixture is worth.**
+
+**What is verified this way, and what is not.** Verified against the
+built binary: the discovery file and the port it names; `/v2/health`;
+the preflight refusal and the absence of every CORS header; fifteen
+ways authentication can fail and what each returns; a replayed request;
+submission answering 202 with a fingerprint the client recomputed for
+itself; one job per application; a job belonging to another application
+being invisible; the event stream over a real socket for 117.6 seconds
+and 119 events; the consent window opening, showing the name bound at
+pairing, and counting down in its last thirty seconds; expiry as
+`CONSENT_TIMEOUT`; the result delivered once and 404 after; three
+malformed requests with the field named. And, with two agents each in
+its own per-user home: two ports, two discovery files, and each one's
+application refused by the other as `NOT_PAIRED`.
+
+**Not verified, and not claimed.** A signature. This machine has no
+card reader attached — measured, in the agent's own log:
+`CryptAcquireCertificatePrivateKey: Cannot find a smart card reader`
+for all three enumerated certificates — so no protocol request could
+reach a card, and pressing Approve would need a hand at the machine
+that [[D-094]] does not allow to be simulated. What stands in for it:
+the flow's own tests sign a hundred documents through the real
+`runBatch`, the real PAdES engine and a real RSA key, and check the
+signatures against the signer's public key. The last step — a person
+approving and a card signing — is the owner's, exactly as [[D-097]],
+[[D-133]], [[D-146]] and [[D-148]] already record.
+
+**Two sessions were two per-user homes, not two logged-in users, and
+that is stated rather than glossed.** A second Windows session cannot
+be created from here. What was run is two agents, each with its own
+`%LOCALAPPDATA%` — which is the whole of what two signed-in users
+differ by as far as this agent is concerned, since the discovery file,
+the pairing store and the DPAPI secret store are all under it. What
+that does not exercise is anything about session isolation Windows
+itself provides.
+
+**The machine was put back.** `config.json` hashes identically to its
+snapshot, the audit directory is byte-for-byte unchanged, the autostart
+value was never touched, and the Explorer verb — which the agent
+re-registers at every start, and which two runs under a temporary home
+therefore pointed at the temporary binary — was restored from a `reg
+export` taken before any of this began and verified against it
+afterwards. Every process started for verification was stopped by its
+own exact PID, never by image name.
+
+**Two more, found by the linter and by asking what a screen would show.**
+`golangci-lint`'s `unused` reported `batchItems` as dead, which it was —
+the progress screen was still rendering `m.queue.Items()`, empty for a
+protocol batch, so a person would have watched a hundred documents sign
+with nothing on the list. And the report screen said the signatures went
+to "each document's own folder", for a batch that wrote nothing anywhere;
+it now says they were returned to the application that asked. Both are
+[[D-087]]'s class again — a payload that is right about the data and
+wrong about what the person sees — and both are now pinned by tests that
+read the rendered payload rather than the value behind it.
+
+**Rejected.**
+- **Reporting the first run's green table.** It was green for the wrong
+  reason and the log said so.
+- **Driving the client from Go, sharing this package's own
+  `CanonicalString`.** It would have been green for a third wrong
+  reason — the one [[D-044]] names for verifiers: a bug in a shared
+  helper passes both ways.

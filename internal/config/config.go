@@ -141,6 +141,22 @@ type Config struct {
 	// HKCU so it needs no administrator rights, and removed cleanly
 	// when switched off.
 	ExplorerMenuEnabled bool `json:"explorerMenuEnabled"`
+
+	// DocumentSigningEnabled controls whether POST /v2/sign/pdf — the
+	// path where a program sends a whole document rather than a hash —
+	// is served (F7 §6). On by default, because an ERP that cannot
+	// build CMS is exactly who the protocol is for.
+	//
+	// F7 §6 calls it "optional at install time", and the installer that
+	// would offer to leave it out is F10's. Until then this setting is
+	// the whole of that choice: a deployment that only serves Liro's
+	// own applications, which use the hash path, can switch it off and
+	// the agent then never receives a document at all.
+	//
+	// The hash path has no such switch and never will: it is SPEC
+	// §4.3's most secure arrangement, and there is nothing to turn off
+	// about an endpoint that cannot see a document in the first place.
+	DocumentSigningEnabled bool `json:"documentSigningEnabled"`
 }
 
 const (
@@ -164,6 +180,12 @@ const (
 	// entry to be registered by default, and a signing agent nobody can
 	// reach by right-clicking a document is one people forget they have.
 	defaultExplorerMenuEnabled = true
+
+	// defaultDocumentSigningEnabled is on: F7 §6's whole-document path
+	// is what an ERP that cannot build CMS needs, which is most of the
+	// integrators the protocol exists for. Switching it off is a
+	// deliberate narrowing, not a default.
+	defaultDocumentSigningEnabled = true
 )
 
 // StampPageFirst and StampPageLast are the two symbolic values
@@ -214,8 +236,9 @@ func Default() Config {
 		VisibleStamp:       defaultVisibleStamp,
 		StampPosition:      defaultStampPosition,
 
-		StampPage:           defaultStampPage,
-		ExplorerMenuEnabled: defaultExplorerMenuEnabled,
+		StampPage:              defaultStampPage,
+		ExplorerMenuEnabled:    defaultExplorerMenuEnabled,
+		DocumentSigningEnabled: defaultDocumentSigningEnabled,
 	}
 }
 

@@ -102,7 +102,7 @@ func TestAFailedAuditAppendIsSaidOutLoud(t *testing.T) {
 		}
 
 		buf := captureLog(t)
-		d := recordInteractiveAudit(store, nil, "AB12AB12", 3, audit.OutcomeApproved, nil, false, "B-T")
+		d := recordInteractiveAudit(store, nil, auditRecord{thumbprint: "AB12AB12", documents: 3, outcome: audit.OutcomeApproved, level: "B-T"})
 
 		if d == nil {
 			t.Fatal("the batch was recorded with no sign that the chain had to be restarted")
@@ -142,7 +142,7 @@ func TestAFailedAuditAppendIsSaidOutLoud(t *testing.T) {
 
 	t.Run("a store that could not be opened at all", func(t *testing.T) {
 		buf := captureLog(t)
-		recordInteractiveAudit(nil, context.DeadlineExceeded, "AB12AB12", 7, audit.OutcomeFailed, nil, false, "B-B")
+		recordInteractiveAudit(nil, context.DeadlineExceeded, auditRecord{thumbprint: "AB12AB12", documents: 7, outcome: audit.OutcomeFailed, level: "B-B"})
 
 		got := buf.String()
 		if !strings.Contains(got, "could not be opened") {
@@ -160,7 +160,7 @@ func TestAFailedAuditAppendIsSaidOutLoud(t *testing.T) {
 			t.Fatal(err)
 		}
 		buf := captureLog(t)
-		recordInteractiveAudit(store, nil, "AB12AB12", 4, audit.OutcomeApproved, nil, false, "B-LT")
+		recordInteractiveAudit(store, nil, auditRecord{thumbprint: "AB12AB12", documents: 4, outcome: audit.OutcomeApproved, level: "B-LT"})
 		if strings.Contains(buf.String(), "level=ERROR") {
 			t.Errorf("a successful append logged an error: %q", buf.String())
 		}

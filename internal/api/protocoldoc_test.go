@@ -3,8 +3,11 @@ package api
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/veljaos/liro-bridge/internal/errs"
 )
 
 // docs/PROTOCOL.md is what an integrator implements against, and its
@@ -86,3 +89,62 @@ func readProtocolDoc(t *testing.T) string {
 		dir = parent
 	}
 }
+
+// TestTheProtocolDocumentsLimitsAreThisPackagesOwn extends the same
+// discipline to the numbers an integrator will size their code around.
+//
+// A document that says 500 digests while the agent accepts 200 sends
+// somebody hunting for a bug in their own client that is not there —
+// which is exactly what the worked example above exists to prevent, one
+// section further on.
+func TestTheProtocolDocumentsLimitsAreThisPackagesOwn(t *testing.T) {
+	doc := readProtocolDoc(t)
+
+	for _, want := range []struct {
+		what  string
+		value string
+	}{
+		{"the digest limit", itoaForDoc(MaxDigests)},
+		{"the document limit", itoaForDoc(MaxDocuments)},
+		{"the port range", itoaForDoc(DefaultPortRangeStart) + "–" + itoaForDoc(DefaultPortRangeEnd)},
+		{"the protocol version", itoaForDoc(ProtocolVersion)},
+		{"the minimum client version", MinimumClientVersion},
+		{"the nonce length", itoaForDoc(MaxNonceLength)},
+	} {
+		if !strings.Contains(doc, want.value) {
+			t.Errorf("docs/PROTOCOL.md does not carry %s (%s)", want.what, want.value)
+		}
+	}
+
+	// The two byte limits are written in megabytes, which is how a
+	// person reads them and how the document states them.
+	for _, want := range []struct {
+		what  string
+		bytes int64
+	}{
+		{"the per-document limit", MaxDocumentBytes},
+		{"the per-request limit", MaxRequestDocumentBytes},
+	} {
+		mb := itoaForDoc(int(want.bytes>>20)) + " MB"
+		if !strings.Contains(doc, mb) {
+			t.Errorf("docs/PROTOCOL.md does not carry %s (%s)", want.what, mb)
+		}
+	}
+
+	// Every code this package can return is in the document's table.
+	// F7 §8 asks for exactly that: "document every code a caller can
+	// receive."
+	for _, code := range documentedCodes() {
+		if !strings.Contains(doc, "`"+string(code)+"`") {
+			t.Errorf("docs/PROTOCOL.md does not document the code %s", code)
+		}
+	}
+}
+
+// documentedCodes is every code the protocol can put in a response
+// body. It is errs.AllCodes minus nothing: every one of them is
+// reachable, either from an endpoint directly or as the reason a job
+// failed, so the document's own table lists all of them.
+func documentedCodes() []errs.Code { return errs.AllCodes() }
+
+func itoaForDoc(n int) string { return strconv.Itoa(n) }

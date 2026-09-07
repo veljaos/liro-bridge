@@ -25,6 +25,30 @@ const (
 	OutcomePartial  Outcome = "partial"
 )
 
+// Channel is which front door a batch arrived through. F7 §6 requires
+// the whole-document path to be recorded distinctly from the hash path,
+// and the reason is a real difference rather than bookkeeping: on the
+// hash path the agent never possessed the document at all (SPEC §4.3),
+// which is a different fact about a signature from the other two.
+type Channel string
+
+const (
+	// ChannelLocal is a batch a person started at this machine — the
+	// window or the command line. It is the empty string so that an
+	// entry written before this field existed canonicalises to exactly
+	// the bytes it always did, and every audit log already on disk
+	// still verifies.
+	ChannelLocal Channel = ""
+
+	// ChannelAPIDigests is POST /v2/sign: a paired application sent
+	// hashes and the agent never saw a document.
+	ChannelAPIDigests Channel = "api-digests"
+
+	// ChannelAPIDocuments is POST /v2/sign/pdf: a paired application
+	// sent whole documents.
+	ChannelAPIDocuments Channel = "api-documents"
+)
+
 // Entry is one audit log record (F5 §8.1). Its field set is a
 // deliberate allow-list: nothing that is not here can ever be written,
 // which is what makes SPEC §6.7's "never JMBG, email, file names,
@@ -67,6 +91,11 @@ type Entry struct {
 	// distinction between B-T and B-LT, which is the same question asked
 	// one step further up.
 	AchievedLevel string
+
+	// Channel is which front door this batch arrived through (F7 §6).
+	// Empty — ChannelLocal — for a batch a person started here, which
+	// is every entry written before the protocol existed.
+	Channel Channel
 
 	// Discontinuity is set on, and only on, the first entry of a chain
 	// that exists because an earlier one could not be continued. It
@@ -127,6 +156,18 @@ func (e Entry) CanonicalBytes() []byte {
 	// entry written before either field existed canonicalises to exactly
 	// what it always did — which is what lets both be added to a log
 	// that already has entries in it.
+	// The channel is appended behind its own marker, after the
+	// discontinuity's, for the same reason the discontinuity is behind
+	// one: an entry that has a channel must not be able to
+	// canonicalise to the same bytes as one that does not, and an entry
+	// written before this field existed must canonicalise to exactly
+	// what it always did. ChannelLocal is the empty string precisely so
+	// that every local batch — which is every entry any existing log
+	// holds — is unchanged by this field's arrival.
+	//
+	// Markers are numbered in the order the fields were added rather
+	// than by any meaning, and each is emitted after the last, so the
+	// next optional field is one more marker and nothing else.
 	if e.Discontinuity != nil {
 		buf = append(buf, discontinuityMarker)
 		buf = appendUint64(buf, uint64(e.Discontinuity.PreviousChain))
@@ -136,6 +177,10 @@ func (e Entry) CanonicalBytes() []byte {
 		buf = appendUint64(buf, uint64(e.Discontinuity.Line))
 		buf = appendString(buf, string(e.Discontinuity.Reason))
 	}
+	if e.Channel != ChannelLocal {
+		buf = append(buf, channelMarker)
+		buf = appendString(buf, string(e.Channel))
+	}
 	return buf
 }
 
@@ -143,6 +188,9 @@ func (e Entry) CanonicalBytes() []byte {
 // fields in CanonicalBytes. 1 rather than 0 so it cannot be confused
 // with the leading byte of AchievedLevel's own length prefix.
 const discontinuityMarker byte = 1
+
+// channelMarker introduces the optional trailing Channel field.
+const channelMarker byte = 2
 
 // ComputeHash returns SHA-256 of e.CanonicalBytes() — e's own Hash and
 // PrevHash fields are irrelevant to the input except that PrevHash is

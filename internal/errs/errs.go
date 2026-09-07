@@ -152,6 +152,32 @@ const (
 	// retrying, a refused one is an answer.
 	CodePairingDenied Code = "PAIRING_DENIED"
 
+	// CodeJobInProgress means the application already has a signing job
+	// that has not finished, and the agent serves one at a time per
+	// application (F7 §10). Nothing is wrong with the request; it is
+	// too early. Distinct from RATE_LIMITED, which is about how often
+	// the caller asked rather than about what it is already doing, and
+	// from PAIRING_IN_PROGRESS, which is about somebody else's window.
+	CodeJobInProgress Code = "JOB_IN_PROGRESS"
+
+	// CodeJobNotFound means there is no job with that identifier: it
+	// never existed, its result has already been collected — the result
+	// is delivered exactly once (F7 §7.3) — or it finished and nobody
+	// came back for it inside the ten minutes. All three need the same
+	// thing from the caller, which is to submit again, and folding them
+	// together means guessing identifiers reveals nothing about which
+	// jobs exist.
+	CodeJobNotFound Code = "JOB_NOT_FOUND"
+
+	// CodeDocumentSigningDisabled means POST /v2/sign/pdf is switched
+	// off on this machine (F7 §6: the whole-document path is optional,
+	// and a deployment that only serves Liro's own applications does not
+	// need it). It is its own code rather than NOT_PAIRED or
+	// REQUEST_INVALID because neither of those is true and neither
+	// suggests the one thing that would help: asking the person at the
+	// machine to turn it on.
+	CodeDocumentSigningDisabled Code = "DOCUMENT_SIGNING_DISABLED"
+
 	CodeInternal Code = "INTERNAL"
 )
 
@@ -196,6 +222,9 @@ func AllCodes() []Code {
 		CodePairingCodeIncorrect,
 		CodePairingOriginMismatch,
 		CodePairingDenied,
+		CodeJobInProgress,
+		CodeJobNotFound,
+		CodeDocumentSigningDisabled,
 		CodeInternal,
 	}
 }

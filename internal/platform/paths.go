@@ -70,3 +70,32 @@ func DefaultConfigFile() string {
 func DefaultLogDir() string {
 	return LogDir(runtime.GOOS, OSEnv)
 }
+
+// BridgeFile returns the full path to the agent's discovery file,
+// bridge.json (SPEC §14, F7 §4.1). An SDK reads it to find the port the
+// agent bound; it must never scan ports, because scanning finds another
+// user's agent on a shared machine, which is exactly what the per-user
+// location prevents (SPEC §14.1).
+//
+// Windows and macOS put it beside config.json, in the same per-user
+// directory. Linux prefers $XDG_RUNTIME_DIR, which is per user, per
+// session and cleared at logout — the right home for a file whose whole
+// content is "this process is listening here" — and falls back to
+// ~/.local/state/liro when that is not set.
+func BridgeFile(goos string, env Env) string {
+	switch goos {
+	case "windows", "darwin":
+		return filepath.Join(ConfigDir(goos, env), "bridge.json")
+	default:
+		if runtimeDir := env("XDG_RUNTIME_DIR"); runtimeDir != "" {
+			return filepath.Join(runtimeDir, "liro", "bridge.json")
+		}
+		return filepath.Join(env("HOME"), ".local", "state", "liro", "bridge.json")
+	}
+}
+
+// DefaultBridgeFile returns the discovery file path for the running
+// platform and environment.
+func DefaultBridgeFile() string {
+	return BridgeFile(runtime.GOOS, OSEnv)
+}

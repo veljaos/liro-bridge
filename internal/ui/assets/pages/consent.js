@@ -94,6 +94,10 @@
     // leave the wrong one still chosen.
     selectedThumbprint = null;
     document.getElementById("approve-btn").disabled = true;
+    // A new batch starts with no clock on it. One left over from the
+    // last one would be counting down to something that has already
+    // happened.
+    document.getElementById("countdown").hidden = true;
 
     window.liroSetText(document.getElementById("document-count"), model.documentCountText);
     window.liroSetText(document.getElementById("application-name"), model.applicationName);
@@ -125,7 +129,21 @@
     document.getElementById("cancel-btn").focus();
   }
 
+  // F7 §7.4's countdown. The page owns no clock: Go says how many
+  // seconds are left and in what words, once a second, and this draws
+  // it — the same rule every other screen here follows, that a page
+  // holds no state beyond what Go last told it (D-120, D-121).
+  function renderCountdown(payload) {
+    var el = document.getElementById("countdown");
+    window.liroSetText(el, payload.text);
+    el.hidden = !payload.text;
+  }
+
   window.__liroOnMessage = function (payload) {
+    if (payload.type === "countdown") {
+      renderCountdown(payload);
+      return;
+    }
     if (payload.type !== "init") return;
     model = payload.model;
     window.liroApplyStaticStrings();

@@ -65,6 +65,20 @@ func runTray(cfg config.Config, version string) int {
 		slog.Warn("tray: could not apply the Explorer context menu setting", "error", err)
 	}
 
+	// F7 §4: the loopback listener, the discovery file and the
+	// protocol's own routes. It lives here because the tray is the
+	// agent — the process that is running when nobody is looking at a
+	// window — and because one machine's user session must have exactly
+	// one of it (SPEC §14.1).
+	protocol, protocolErr := startProtocol(cfg, version, pairings)
+	if protocolErr != nil {
+		// Not fatal. An agent that cannot serve the protocol can still
+		// sign for the person sitting at it, and saying so in the log is
+		// more use than refusing to start.
+		slog.Error("tray: the protocol could not be started", "error", protocolErr)
+	}
+	defer protocol.stop()
+
 	t, err := ui.NewTray(ui.TrayOptions{
 		Version: version,
 		Labels: func() ui.TrayLabels {
@@ -136,6 +150,7 @@ type settingsFormState struct {
 	OutputSuffix          string `json:"outputSuffix"`
 	OutputFolder          string `json:"outputFolder"`
 	ExplorerMenu          bool   `json:"explorerMenu"`
+	DocumentSigning       bool   `json:"documentSigning"`
 	SignatureLevel        string `json:"signatureLevel"`
 	CheckUpdatesDaily     bool   `json:"checkUpdatesDaily"`
 }
@@ -265,6 +280,7 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		newCfg.OutputSuffix = state.OutputSuffix
 		newCfg.OutputFolder = strings.TrimSpace(state.OutputFolder)
 		newCfg.ExplorerMenuEnabled = state.ExplorerMenu
+		newCfg.DocumentSigningEnabled = state.DocumentSigning
 		newCfg.SignatureLevel = state.SignatureLevel
 		newCfg.UpdateCheckEnabled = state.CheckUpdatesDaily
 		if err := config.Save(config.DefaultPath(), newCfg); err != nil {
@@ -563,6 +579,8 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.output_folder_label":            c.T("settings.output_folder_label"),
 			"settings.output_folder_default":          c.T("settings.output_folder_default"),
 			"settings.explorer_menu":                  c.T("settings.explorer_menu"),
+			"settings.document_signing":               c.T("settings.document_signing"),
+			"settings.document_signing_hint":          c.T("settings.document_signing_hint"),
 			"settings.stamp_settings":                 c.T("settings.stamp_settings"),
 			"settings.signature_level_label":          c.T("settings.signature_level_label"),
 			"settings.level_bb":                       c.T("settings.level_bb"),
@@ -591,6 +609,7 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"outputSuffix":          cfg.OutputSuffix,
 			"outputFolder":          cfg.OutputFolder,
 			"explorerMenu":          cfg.ExplorerMenuEnabled,
+			"documentSigning":       cfg.DocumentSigningEnabled,
 			"signatureLevel":        cfg.SignatureLevel,
 			"checkUpdatesDaily":     cfg.UpdateCheckEnabled,
 			"version":               version,

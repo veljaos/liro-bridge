@@ -55,6 +55,12 @@
       </div>
     </details>
 
+    <!-- F7 §7.4: a request that arrived over the protocol expires if
+         nobody answers, and the last thirty seconds say so — so the
+         person sees it is about to go rather than finding it gone. A
+         batch a person started here has no clock and no line. -->
+    <div id="countdown" class="liro-text-small liro-outcome-warning" role="status" hidden></div>
+
     <div class="actions">
       <button id="cancel-btn" class="liro-btn liro-btn-secondary" data-i18n="consent.cancel"></button>
       <button id="approve-btn" class="liro-btn liro-btn-primary" data-i18n="consent.approve" disabled></button>

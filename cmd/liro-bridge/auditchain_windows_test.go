@@ -42,7 +42,7 @@ func brokenAndContinuedStore(t *testing.T) (store *audit.Store, brokenFile strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := recordInteractiveAudit(store, nil, "AB12AB12", 2, audit.OutcomeApproved, nil, false, "B-T"); d == nil {
+	if d := recordInteractiveAudit(store, nil, auditRecord{thumbprint: "AB12AB12", documents: 2, outcome: audit.OutcomeApproved, level: "B-T"}); d == nil {
 		t.Fatal("the seeded break did not start a new chain")
 	}
 	return store, file, brokenBytes
@@ -236,7 +236,7 @@ func TestTheBrokenFileIsNeverTouchedByAnythingTheWindowDoes(t *testing.T) {
 	}
 	out := t.TempDir()
 	_, _ = store.Export(filepath.Join(out, "e.jsonl"), filepath.Join(out, "r.json"))
-	recordInteractiveAudit(store, nil, "AB12AB12", 1, audit.OutcomeApproved, nil, false, "B-T")
+	recordInteractiveAudit(store, nil, auditRecord{thumbprint: "AB12AB12", documents: 1, outcome: audit.OutcomeApproved, level: "B-T"})
 
 	after, err := os.ReadFile(brokenFile)
 	if err != nil {

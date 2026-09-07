@@ -105,6 +105,17 @@
       <span data-i18n="settings.explorer_menu"></span>
     </label>
 
+    <!-- F7 §6: the whole-document path other programs use. On by
+         default; switching it off means the agent never receives a
+         document over the protocol at all. The hash path has no
+         switch — there is nothing to turn off about an endpoint that
+         cannot see a document in the first place. -->
+    <label class="liro-check">
+      <input type="checkbox" id="document-signing" />
+      <span data-i18n="settings.document_signing"></span>
+    </label>
+    <span class="liro-text-small liro-text-secondary" data-i18n="settings.document_signing_hint"></span>
+
     <!-- F6 §6: the stamp has its own window; this is the way in from
          Settings, the other being the main window's summary line. -->
     <div class="actions-row">

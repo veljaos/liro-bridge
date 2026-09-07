@@ -101,6 +101,7 @@
     document.getElementById("output-suffix").value = m.outputSuffix || "";
     document.getElementById("output-folder").value = m.outputFolder || "";
     document.getElementById("explorer-menu").checked = !!m.explorerMenu;
+    document.getElementById("document-signing").checked = !!m.documentSigning;
     document.getElementById("check-updates-daily").checked = !!m.checkUpdatesDaily;
     window.liroSetText(document.getElementById("version"), m.version);
     renderPairings(m.pairings);
@@ -133,6 +134,7 @@
       outputSuffix: document.getElementById("output-suffix").value,
       outputFolder: document.getElementById("output-folder").value,
       explorerMenu: document.getElementById("explorer-menu").checked,
+      documentSigning: document.getElementById("document-signing").checked,
       signatureLevel: level,
       checkUpdatesDaily: document.getElementById("check-updates-daily").checked,
     });

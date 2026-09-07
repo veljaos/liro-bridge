@@ -8,12 +8,6 @@ integrator implements against.
 This document is written in English, like everything else developer-facing
 in this project (SPEC §9.2).
 
-> **What is here so far.** F7 is being built in four groups. This document
-> currently covers **pairing and request authentication**. Discovery
-> (`bridge.json`, the port range, `/v2/health`), jobs and the two signing
-> endpoints are added as those groups land, and are marked below where a
-> forward reference is unavoidable.
-
 ---
 
 ## 1. What this is
@@ -26,9 +20,10 @@ Three things follow from that and shape everything below.
 
 **The agent listens on loopback and nowhere else.** It is not a web API.
 It sends no CORS headers, it refuses preflight requests outright, and
-every endpoint requires `Content-Type: application/json` — which together
-mean a page in a browser cannot call it at all, even from the same
-machine. That is deliberate: see §2.5.
+every endpoint that carries a body requires
+`Content-Type: application/json` — which together mean a page in a browser
+cannot call it at all, even from the same machine. That is deliberate: see
+§2.5.
 
 **Every request is signed.** Not with a bearer token in a header, but
 with an HMAC over a canonical string that covers the method, the path,
@@ -139,13 +134,27 @@ the encrypted blob to another machine or another account is not enough
 
 Two things together:
 
-- Every endpoint requires `Content-Type: application/json`. A form-shaped
-  POST — the only kind a browser can send without asking permission first
-  — is refused with `REQUEST_INVALID`.
-- Anything else needs a CORS preflight, and the agent answers preflight
+- Every endpoint that carries a body requires
+  `Content-Type: application/json`. A form-shaped POST — the only kind a
+  browser can send without asking permission first — is refused with
+  `REQUEST_INVALID`. Every authenticated endpoint additionally requires the
+  four `X-Liro-*` headers of §3, which a page cannot set without asking
+  permission either.
+- Asking permission means a CORS preflight, and the agent answers preflight
   with `403` and no `Access-Control-*` headers at all.
 
+`GET /v2/health` is the one call a page can actually make, because it has
+no body and needs no authentication. It cannot read a word of the answer:
+no `Access-Control-Allow-Origin` header is ever sent, by any endpoint, for
+any origin.
+
 So the rule in §2.4 is enforced rather than merely written down.
+
+A note on content types, because it costs an afternoon otherwise: a request
+with no body must **not** send `Content-Type`. Several HTTP clients cannot
+attach one to a request with no content at all — .NET's `HttpClient` puts
+the header on the content, so a `GET` simply has nowhere to put it — and
+the agent does not ask for one.
 
 ### 2.6 Managing pairings
 
@@ -272,7 +281,289 @@ where the device secret belongs.
 
 ---
 
-## 4. Errors
+## 4. Finding the agent
+
+The agent binds **loopback only** (`127.0.0.1`), on the first free port in
+**17580–17590**, and writes what it chose to a per-user file:
+
+```
+Windows   %LOCALAPPDATA%\Liro\bridge.json
+```
+
+```json
+{ "port": 17580, "agentVersion": "1.4.0", "protocolVersion": 2 }
+```
+
+**Read that file. Never scan ports.** Several people can be signed in to
+one machine at once — an accounting firm over RDP is the ordinary case, not
+an edge one — and each of them has their own agent on its own port.
+Scanning finds somebody else's, which is exactly what the per-user file
+prevents.
+
+The file is written when the agent starts and removed when it stops. A file
+left behind by a crash points at a port nothing is listening on; your
+connection is refused, which means the same thing as no file at all: the
+agent is not running.
+
+### 4.1 Health
+
+```
+GET /v2/health
+```
+
+```json
+{ "agentVersion": "1.4.0", "protocolVersion": 2, "minimumClientVersion": "0.0.0" }
+```
+
+No authentication, no body, and no `Content-Type` (§2.5). It reveals
+nothing else — not certificates, not pairings, not the name of the person
+at the machine.
+
+`minimumClientVersion` is the oldest SDK this agent will serve. If your
+version is below it, tell the person to update the agent rather than
+failing at them later.
+
+### 4.2 Several people on one machine
+
+One agent per user session, not per machine. Sessions do not see each
+other's certificates, pairings, jobs or audit entries: the discovery file
+is per user, and so is the store the device secret is kept in. An `appId`
+paired in one session is answered `NOT_PAIRED` in another, and a job
+created in one is `JOB_NOT_FOUND` in another.
+
+---
+
+## 5. Asking for a signature
+
+There are two ways to ask, and which one you use is about who builds the
+document.
+
+| | `POST /v2/sign` | `POST /v2/sign/pdf` |
+|---|---|---|
+| You send | digests | whole documents |
+| The agent sees your document | **never** | yes |
+| You build PAdES/CMS yourself | yes | no |
+| Can be switched off on a machine | no | yes (§5.4) |
+
+Both answer `202 Accepted` with a job (§6), and both put the same window in
+front of the same person.
+
+### 5.1 Digests — `POST /v2/sign`
+
+```json
+{
+  "certificateThumbprint": "7758D4D4B8973EA619B3225185EDE740B3D1ECCE",
+  "digestAlgorithm": "SHA256",
+  "digests": ["<base64>", "..."],
+  "labels": ["ugovor.pdf", "..."]
+}
+```
+
+| Rule | Value |
+|---|---|
+| Digests per request | at most 500 |
+| Digest length | exactly 32 bytes, base64-encoded |
+| `digestAlgorithm` | `SHA256` (or `SHA-256`) |
+| `labels` | optional; if present, exactly one per digest |
+
+- **SHA-1 is refused outright**, named as such: `REQUEST_INVALID` with
+  `details.field = "digestAlgorithm"`. Nothing in this project produces or
+  accepts it.
+- **`certificateThumbprint` is required here**, and it is not a hint. You
+  have already built a CMS around one signer certificate, so a signature
+  made with any other key produces a document that verifies against
+  nothing. The agent offers that certificate to the person and no other;
+  they still choose it and still press Approve. If it is not on the
+  machine, the job fails `CERT_NOT_FOUND` and no window is opened.
+- `labels` are display strings for the window. They are treated as
+  untrusted text: control characters and Unicode direction overrides are
+  stripped, long ones are truncated with the middle elided, and none of
+  them is ever treated as a path or written to a log.
+
+The result, once collected:
+
+```json
+{
+  "signatures": ["<base64>", null, "<base64>"],
+  "failures": [ { "index": 1, "code": "SIGN_FAILED" } ],
+  "counts": { "total": 3, "succeeded": 2, "failed": 1 }
+}
+```
+
+`signatures` has one entry per digest you sent, in the same order. A
+document that did not sign is `null` there and has an entry in `failures`
+naming its position — the array never closes up over a failure, because
+that is how a signature ends up attached to the wrong document.
+
+### 5.2 Whole documents — `POST /v2/sign/pdf`
+
+```json
+{
+  "certificateThumbprint": "7758D4...",
+  "documents": [ { "name": "ugovor.pdf", "content": "<base64>" } ],
+  "level": "b-t",
+  "stamp": { "visible": true, "position": "bottom-right" }
+}
+```
+
+| Rule | Value |
+|---|---|
+| Documents per request | at most 200 |
+| One document | at most 100 MB |
+| All documents together | at most 500 MB |
+
+The limits are enforced from the declared `Content-Length` before the body
+is read, so an oversized request is refused without the agent holding it in
+memory: `REQUEST_INVALID` with `details.maxBytes`.
+
+- `certificateThumbprint` is **optional** here. The agent builds the CMS,
+  so any usable certificate produces a valid document; leaving it out means
+  the person chooses, exactly as they do when they sign something
+  themselves.
+- `level` is `b-b`, `b-t` or `b-lt`. Leaving it out means "whatever this
+  agent is configured to produce", which is the person's own standing
+  answer to the same question.
+- `stamp` is your answer to how the signature should look: `visible` (a
+  boolean, required if `stamp` is present at all) and `position`
+  (`bottom-right`, `bottom-left`, `top-right`, `top-left`). Supplying it in
+  full means the person is not asked — they see the approval and nothing
+  else, which is the one-window, one-click case. Leaving `stamp` out means
+  they choose.
+
+The result:
+
+```json
+{
+  "documents": [
+    { "name": "ugovor.pdf", "content": "<base64>", "achievedLevel": "B-T" }
+  ],
+  "failures": [],
+  "counts": { "total": 1, "succeeded": 1, "failed": 0 }
+}
+```
+
+`achievedLevel` is the level the document **actually reached**, never the
+one you asked for. A timestamp authority that did not answer produces a
+B-B signature and says so; nothing in this project ever claims a level it
+did not reach.
+
+### 5.3 The batch fingerprint
+
+Both endpoints answer with `batchFingerprint`: SHA-256, hex, over the
+concatenation of the digests, in order. For `/v2/sign/pdf` the digests are
+SHA-256 over each document exactly as you sent it.
+
+It is the same value the person sees on the consent window, so a technical
+user can compare what was approved against what you say you sent. Compute
+it yourself and compare it to the one in the `202`.
+
+### 5.4 The whole-document path can be switched off
+
+A machine can be set up to serve only `/v2/sign` — a deployment where every
+caller builds its own CMS does not need the other one. `/v2/sign/pdf` then
+answers `DOCUMENT_SIGNING_DISABLED`, and the person at the machine can turn
+it back on in the agent's Settings window without restarting anything.
+
+`/v2/sign` has no such switch and never will. There is nothing to turn off
+about an endpoint that cannot see a document in the first place.
+
+---
+
+## 6. Jobs
+
+### 6.1 Why
+
+A hundred documents takes about 46 seconds after the PIN, plus however long
+the person takes to approve them. No HTTP request is held open for that.
+
+Submission answers in milliseconds:
+
+```
+202 Accepted
+{
+  "jobId": "decc3b5bf368d545b2f5c414597b9756",
+  "batchFingerprint": "037c78a7...",
+  "total": 100,
+  "eventsUrl": "/v2/jobs/decc3b5b.../events",
+  "resultUrl": "/v2/jobs/decc3b5b.../result"
+}
+```
+
+**One job per application at a time.** A second submission while one is
+running is answered `JOB_IN_PROGRESS` (409). A job belongs to the
+application that created it; another application asking about it is
+answered `JOB_NOT_FOUND`, exactly as if it did not exist.
+
+### 6.2 Progress — `GET /v2/jobs/{id}/events`
+
+Server-sent events, one per state change, until the job ends and the stream
+closes.
+
+```
+data: {"state":"signing","completed":37,"total":100,"failed":0,"etaMs":26000}
+```
+
+| State | What is happening |
+|---|---|
+| `queued` | Accepted. Nothing is on screen yet — another job's window may be open. |
+| `awaiting_consent` | The agent's window is up and the person has not answered. Carries `consentRemainingMs`. |
+| `awaiting_pin` | They approved. The agent is opening the card, where the operating system may ask for a PIN. |
+| `preparing_card` | The first signature is in flight. Measured at about 4.0 s on a MUP card and 12.7 s on a Pošta one — expected, not stalled. |
+| `signing` | Every signature after the first. |
+| `completed` | Finished, with a result waiting to be collected. |
+| `failed` | Nothing was signed. Carries `code`. |
+
+`etaMs` appears only once a first signature has actually been measured;
+there is nothing honest to put there before then, and it is never computed
+from a constant.
+
+Every event carries the whole picture rather than a change to it, so a
+client that reconnects mid-batch gets the state as it stands. A client that
+falls behind lands on the newest state rather than working through a
+backlog — a hundred `signing` events you have not read are worth less than
+the one that says where the batch actually is. The terminal state is always
+delivered.
+
+**A browser cannot use `EventSource` here**, because `EventSource` cannot
+set headers and this endpoint needs the four from §3. Use `fetch` with a
+`ReadableStream`, or your language's ordinary HTTP client — which is where
+the device secret belongs anyway (§2.4).
+
+### 6.3 The result — `GET /v2/jobs/{id}/result`
+
+| While | Answer |
+|---|---|
+| the job is running | `202` with the same body an event carries |
+| it finished with signatures | `200` with the result of §5.1 or §5.2 |
+| it finished with none | the failure's own code — `403` for a refusal, `422` for the card |
+| any time after that | `404 JOB_NOT_FOUND` |
+
+**The result is delivered once and the job is then forgotten.** Signatures
+are the output of a qualified signing operation; they do not linger in a
+process's memory waiting to be collected twice. Read the response, and if
+you drop it, submit again.
+
+A job whose result is never collected is discarded after **ten minutes**.
+
+### 6.4 The consent window
+
+The person has **120 seconds** to answer. The window shows a countdown in
+the last thirty, and every `awaiting_consent` event carries
+`consentRemainingMs` so you can show your own.
+
+The request is not refused because nobody is at the machine: the window
+opens and waits. On expiry the job fails `CONSENT_TIMEOUT` (403) and you
+may submit again.
+
+The window is the agent's own. It shows the application name **bound at
+pairing**, the document count, the file list and the batch fingerprint
+behind Details, and the certificate list. Approve is not the initially
+focused control and is not pressable until a certificate has been chosen.
+There is no flag, header or configuration that skips it.
+
+---
+
+## 7. Errors
 
 Every error body is:
 
@@ -287,60 +578,131 @@ and may be absent.
 Codes are stable. They are never removed or repurposed; new situations get
 new codes.
 
-### 4.1 Codes this part of the protocol can return
+### 7.1 Every code a caller can receive
+
+`INTERNAL` is the only one that is a `5xx`. Everything else means either
+"fix your request" or "understood, and it did not happen" — a card that is
+not there is not the agent failing, and answering `500` for one would say
+it was.
+
+**Pairing and authentication**
 
 | Code | HTTP | What it means | What to do |
 |---|---|---|---|
-| `REQUEST_INVALID` | 400 | Wrong method, body that is not JSON, a missing or unacceptable field. `details.field` names it where there is one. | Fix the request. |
+| `REQUEST_INVALID` | 400 | Wrong method, a body that is not JSON, a missing or unacceptable field, a body over the limit. `details.field` or `details.maxBytes` says which. | Fix the request. |
 | `NOT_PAIRED` | 401 | No live pairing for this `appId`. | Pair again. |
 | `AUTH_FAILED` | 401 | The request did not authenticate. | See §3.3. |
-| `PAIRING_CODE_INCORRECT` | 401 | Wrong six-digit code; the request is still live. `details.attemptsRemaining` says how many tries are left. | Ask the person to read the code again. |
+| `PAIRING_CODE_INCORRECT` | 401 | Wrong six-digit code; the request is still live. `details.attemptsRemaining`. | Ask the person to read the code again. |
 | `PAIRING_DENIED` | 403 | The person refused the pairing, or closed the window. | Stop. This is an answer. |
 | `PAIRING_ORIGIN_MISMATCH` | 403 | Confirm came from a different origin than the request. | Send the same origin in both calls. |
-| `PAIRING_EXPIRED` | 410 | The pairing request is gone: five minutes passed, five wrong codes voided it, it was already confirmed, or there is no such request. | Start a new pairing request. |
 | `PAIRING_IN_PROGRESS` | 409 | Another application's pairing window is open. | Wait and try again. |
+| `PAIRING_EXPIRED` | 410 | The pairing request is gone: five minutes passed, five wrong codes voided it, it was already confirmed, or there is no such request. | Start a new pairing request. |
 | `RATE_LIMITED` | 429 | Too many pairing requests from this origin. `details.retryAfterSeconds`. | Wait that long. |
+
+**Jobs**
+
+| Code | HTTP | What it means | What to do |
+|---|---|---|---|
+| `DOCUMENT_SIGNING_DISABLED` | 403 | `/v2/sign/pdf` is switched off on this machine (§5.4). | Use `/v2/sign`, or ask the person to turn it on. |
+| `JOB_IN_PROGRESS` | 409 | This application already has a job running. | Wait for it. |
+| `JOB_NOT_FOUND` | 404 | No such job: it never existed, it belongs to another application, its result has been collected, or it expired. | Submit again. |
+
+**Signing**
+
+| Code | HTTP | What it means | What to do |
+|---|---|---|---|
+| `CONSENT_DENIED` | 403 | The person pressed Cancel, closed the window, or stopped the batch. | Stop. This is an answer. |
+| `CONSENT_TIMEOUT` | 403 | Nobody answered within 120 seconds. | Submit again when somebody is there. |
+| `NO_READER` | 422 | No card reader is attached. | Ask the person to connect one. |
+| `SMART_CARD_SERVICE_DOWN` | 422 | The operating system's smart card service is not running. | A service to start, not hardware to plug in. |
+| `CARD_NOT_PRESENT` | 422 | The certificate's card is not in a reader. | Ask the person to insert it. |
+| `PIN_REQUIRED` | 422 | The card needs its PIN and none was given. | The operating system asks; there is nothing to send. |
+| `PIN_INCORRECT` | 422 | Wrong PIN. | **Never retry automatically.** See §7.2. |
+| `PIN_LOCKED` | 422 | The card is blocked and needs its PUK. | Stop. |
+| `CERT_NOT_FOUND` | 422 | No certificate with that thumbprint is available here. | Check the thumbprint, or leave it out on `/v2/sign/pdf`. |
+| `CERT_EXPIRED` | 422 | The certificate is outside its validity period. | Nothing you can do from here. |
+| `CERT_NOT_USABLE` | 422 | It exists but cannot sign. | Choose another. |
+| `CERT_REVOKED` | 422 | Revocation says revoked. | Stop. |
+| `PDF_INVALID` | 422 | A document is not a readable PDF. | Check what you sent. |
+| `PDF_ENCRYPTED` | 422 | A document is password-protected. | Decrypt it first; the agent never will. |
+| `TSA_UNAVAILABLE` | 422 | The timestamp authority did not answer after three attempts. | Retry later, or ask for `b-b`. |
+| `TSA_REJECTED` | 422 | It refused the request. | Check the agent's timestamp settings. |
+| `TSA_CLIENT_CERT_UNREADABLE` | 422 | The configured TSA client certificate could not be read. | The person's Settings, not your request. |
+| `TSA_CLIENT_CERT_INVALID` | 422 | It was read and would not open — almost always a wrong password. | The person's Settings. |
+| `STAMP_GLYPH_MISSING` | 422 | The visible stamp needs a character the embedded font does not have. `details.character`, `details.codePoint`. | Change the text. |
+| `SIGN_FAILED` | 422 | The card refused or failed to sign. | Retry once; then stop. |
+| `INPUT_UNREADABLE` | 422 | A document could not be read. Local batches only; you cannot cause this. | — |
+| `OUTPUT_EXISTS`, `OUTPUT_WRITE_FAILED`, `OUTPUT_IN_USE` | 422 | About writing a file. Local batches only — a protocol batch writes nothing. | — |
+| `VERSION_TOO_OLD` | 426 | This client is older than `minimumClientVersion`. | Update. |
 | `INTERNAL` | 500 | Unclassified. The agent has logged it locally. | Report it. |
 
-Signing adds its own codes (`CARD_NOT_PRESENT`, `PIN_INCORRECT`,
-`CONSENT_DENIED`, …); they are documented with the signing endpoints.
+### 7.2 `PIN_INCORRECT` is never retried
 
-### 4.2 `PIN_INCORRECT` is never retried
-
-When a signing call is added and it answers `PIN_INCORRECT`, **do not
-retry it automatically. Ever.** Three wrong PIN entries block the card, and
+When a signing call answers `PIN_INCORRECT`, **do not retry it
+automatically. Ever.** Three wrong PIN entries block the card, and
 for a national identity card unblocking means a visit to the Ministry. Show
 the person what happened and let them decide.
 
 ---
 
-## 5. Rate limits
+## 8. Limits
 
 | Limit | Value |
 |---|---|
 | Pairing requests open at one time | 1 |
 | Pairing requests per minute, per origin | 3 |
+| Jobs per application at one time | 1 |
+| Digests per `/v2/sign` request | 500 |
+| Documents per `/v2/sign/pdf` request | 200 |
+| One document | 100 MB |
+| All documents in one request | 500 MB |
+| Timestamp skew | ±60 seconds |
+| A nonce is remembered for | 5 minutes |
+| Nonce length | 128 characters |
+| Consent | 120 seconds |
+| An uncollected result is kept for | 10 minutes |
 
 A refused pairing request is counted too: a limiter that only counts the
 requests it allowed does not limit a caller in a loop.
 
 ---
 
-## 6. A worked pairing, start to finish
+## 9. A whole integration, start to finish
 
 ```
-1. POST /v2/pair/request  {"applicationName":"My ERP","origin":"https://erp.example.com"}
+1. Read %LOCALAPPDATA%\Liro\bridge.json for the port. Never scan.
+
+2. GET /v2/health
+   -> 200 {"agentVersion":"...","protocolVersion":2,"minimumClientVersion":"0.0.0"}
+
+Once, on the first run:
+
+3. POST /v2/pair/request  {"applicationName":"My ERP","origin":"https://erp.example.com"}
    -> 200 {"requestId":"4f4f...","expiresInSeconds":300}
 
-2. The agent opens a window on the person's screen showing six digits.
+4. The agent opens a window on the person's screen showing six digits.
    You cannot see them. That is the point.
 
-3. The person reads them to you. Your application submits them:
+5. The person reads them to you. Your application submits them:
 
    POST /v2/pair/confirm  {"requestId":"4f4f...","code":"681956","origin":"https://erp.example.com"}
    -> 200 {"appId":"e1a2...","deviceSecret":"...","applicationName":"My ERP","origin":"..."}
 
-4. Store appId and deviceSecret on your server, and never anywhere else.
+6. Store appId and deviceSecret on your server, and never anywhere else.
 
-5. Every later request carries the four headers from §3.
+Every time after that:
+
+7. POST /v2/sign  (or /v2/sign/pdf), with the four headers from §3
+   -> 202 {"jobId":"...","batchFingerprint":"...","total":100,
+           "eventsUrl":"...","resultUrl":"..."}
+
+8. Compare batchFingerprint against the one you computed. It is what the
+   person is looking at.
+
+9. GET the eventsUrl and read the stream, or poll the resultUrl. The
+   person approves in the agent's own window; you cannot skip that and
+   there is no header that does.
+
+10. GET the resultUrl once the job has finished, and keep what it gives
+    you. It is delivered once.
 ```

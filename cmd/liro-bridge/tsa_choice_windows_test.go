@@ -98,8 +98,8 @@ func TestAuditEntryRecordsTheAchievedLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
-	recordInteractiveAudit(store, nil, "AABB", 2, audit.OutcomeApproved, nil, false, string(pades.LevelBB))
-	recordInteractiveAudit(store, nil, "AABB", 1, audit.OutcomeDenied, nil, false, "")
+	recordInteractiveAudit(store, nil, auditRecord{thumbprint: "AABB", documents: 2, outcome: audit.OutcomeApproved, level: string(pades.LevelBB)})
+	recordInteractiveAudit(store, nil, auditRecord{thumbprint: "AABB", documents: 1, outcome: audit.OutcomeDenied})
 
 	entries, err := store.All()
 	if err != nil {

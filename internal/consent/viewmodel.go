@@ -74,7 +74,7 @@ func ShortFingerprint(fingerprint string) string {
 // un-sanitised name (F5 §5.3).
 func BuildViewModel(applicationName string, digests [][]byte, fileNames []string, certs []classify.Info) ViewModel {
 	files, overflow := CapFileNames(fileNames)
-	full := hex.EncodeToString(fingerprint(digests))
+	full := Fingerprint(digests)
 	return ViewModel{
 		DocumentCount:    len(digests),
 		ApplicationName:  applicationName,
@@ -101,4 +101,25 @@ func fingerprint(digests [][]byte) []byte {
 		h.Write(d)
 	}
 	return h.Sum(nil)
+}
+
+// Fingerprint is the batch fingerprint as a lowercase hex string —
+// what the consent window shows, and what a signing request over the
+// protocol is answered with at submission (F7 §7.1), so a caller can
+// compare what it sent against what the person was shown.
+//
+// Exported so those two are the same computation rather than two that
+// have to agree: a value stated in two places is a value that can
+// disagree with itself, which this project has recorded for a rule
+// (D-108), a question (D-124) and a margin (D-138).
+func Fingerprint(digests [][]byte) string {
+	return hex.EncodeToString(fingerprint(digests))
+}
+
+// DigestOf is SHA-256 over one document's bytes — what a caller that
+// sends whole documents has its batch fingerprint built from, so the
+// value it can compute itself is the value it is shown.
+func DigestOf(content []byte) []byte {
+	sum := sha256.Sum256(content)
+	return sum[:]
 }

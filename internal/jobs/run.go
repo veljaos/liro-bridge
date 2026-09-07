@@ -208,6 +208,25 @@ func (r *Runner) Stopped() bool { return r.stopped.Load() }
 // q's items are updated in place as the run proceeds, so the caller's
 // snapshot after Run reflects what happened to each one.
 func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) Report {
+	return r.RunItems(ctx, q.items, sign, hooks)
+}
+
+// RunItems is Run over a plain slice rather than a Queue.
+//
+// It exists because a batch that arrived over the protocol has no
+// queue: its documents are digests a caller computed, or PDF bytes it
+// sent, and neither is a file on disk that a Queue could be built from
+// (a Queue's whole surface — Add, folder expansion, duplicate paths,
+// output paths — is about files). Everything a run actually decides,
+// though, is identical for both: one document at a time in order,
+// skip-and-continue, the two codes that end a batch, Stop between
+// documents and never during one, and an ETA from measurement. That is
+// this function, and both front doors use it rather than each having
+// their own.
+//
+// items is updated in place, so the caller's own slice reflects what
+// happened to each document.
+func (r *Runner) RunItems(ctx context.Context, items []Item, sign SignFunc, hooks Hooks) Report {
 	report := Report{}
 	var durations []time.Duration
 	outputDirs := map[string]bool{}
@@ -219,7 +238,7 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 		p := Progress{
 			Phase:     phase,
 			Current:   current,
-			Total:     len(q.items),
+			Total:     len(items),
 			Succeeded: report.Succeeded,
 			Failed:    report.Failed,
 			Skipped:   report.Skipped,
@@ -229,7 +248,7 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 			if len(durations) > 1 {
 				median = signing.MedianOf(durations[1:])
 			}
-			p.ETA, p.ETAKnown = signing.EstimatedTotal(durations[0], len(q.items)-current, median)
+			p.ETA, p.ETAKnown = signing.EstimatedTotal(durations[0], len(items)-current, median)
 		}
 		p.PerSignaturePIN = signing.DetectPINPolicy(durations) == signing.PINPolicyPerSignature
 		hooks.OnProgress(p)
@@ -237,28 +256,28 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 
 	emitProgress(PhasePreparingCard, 0)
 
-	for i := range q.items {
+	for i := range items {
 		if r.stopped.Load() || ctx.Err() != nil {
 			report.Stopped = true
 			break
 		}
 
-		q.items[i].State = StateSigning
+		items[i].State = StateSigning
 		if hooks.OnItem != nil {
-			hooks.OnItem(i, q.items[i])
+			hooks.OnItem(i, items[i])
 		}
 
 		start := time.Now()
-		outcome, err := sign(ctx, i, q.items[i])
+		outcome, err := sign(ctx, i, items[i])
 		elapsed := time.Since(start)
 
 		if errors.Is(err, ErrSkipDocument) {
 			// Deliberately not signed. No timing sample, no failure
 			// entry, and a state that says what happened.
-			q.items[i].State = StateSkipped
+			items[i].State = StateSkipped
 			report.Skipped++
 			if hooks.OnItem != nil {
-				hooks.OnItem(i, q.items[i])
+				hooks.OnItem(i, items[i])
 			}
 			emitProgress(PhaseSigning, i+1)
 			continue
@@ -267,12 +286,12 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 
 		if err != nil {
 			code := signing.CodeOf(err)
-			q.items[i].State = StateFailed
-			q.items[i].FailureCode = code
+			items[i].State = StateFailed
+			items[i].FailureCode = code
 			report.Failed++
-			report.Failures = append(report.Failures, Failure{Name: q.items[i].DisplayName, Code: code})
+			report.Failures = append(report.Failures, Failure{Name: items[i].DisplayName, Code: code})
 			if hooks.OnItem != nil {
-				hooks.OnItem(i, q.items[i])
+				hooks.OnItem(i, items[i])
 			}
 			if signing.AbortsBatch(code) {
 				report.Aborted = true
@@ -280,9 +299,9 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 				break
 			}
 		} else {
-			q.items[i].State = StateDone
-			q.items[i].OutputPath = outcome.OutputPath
-			q.items[i].AchievedLevel = outcome.AchievedLevel
+			items[i].State = StateDone
+			items[i].OutputPath = outcome.OutputPath
+			items[i].AchievedLevel = outcome.AchievedLevel
 			report.Succeeded++
 			report.AchievedLevel = weakestLevel(report.AchievedLevel, outcome.AchievedLevel)
 			if outcome.StampAdjusted {
@@ -292,7 +311,7 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 				outputDirs[dir] = true
 			}
 			if hooks.OnItem != nil {
-				hooks.OnItem(i, q.items[i])
+				hooks.OnItem(i, items[i])
 			}
 		}
 
@@ -306,12 +325,12 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 	// Anything the run never reached is skipped, not still waiting. A
 	// row left saying "waiting" after the run has ended is a row that
 	// looks like the program forgot about it.
-	for i := range q.items {
-		if q.items[i].State == StateWaiting {
-			q.items[i].State = StateSkipped
+	for i := range items {
+		if items[i].State == StateWaiting {
+			items[i].State = StateSkipped
 			report.Skipped++
 			if hooks.OnItem != nil {
-				hooks.OnItem(i, q.items[i])
+				hooks.OnItem(i, items[i])
 			}
 		}
 	}
@@ -322,7 +341,7 @@ func (r *Runner) Run(ctx context.Context, q *Queue, sign SignFunc, hooks Hooks) 
 		}
 	}
 	report.Timing = signing.BuildTimingReport(durations)
-	emitProgress(PhaseFinished, len(q.items))
+	emitProgress(PhaseFinished, len(items))
 	return report
 }
 

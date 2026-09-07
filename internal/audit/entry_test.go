@@ -114,3 +114,42 @@ func TestComputeHashChangesWithEveryField(t *testing.T) {
 		}
 	}
 }
+
+// TestAChannelIsPartOfWhatIsHashedAndCostsNothingWhenAbsent is the
+// same three properties the discontinuity has, for the field F7 §6
+// adds: a channel cannot be altered without breaking the chain it is
+// in, an entry with one cannot canonicalise to the same bytes as one
+// without, and an entry written before the field existed still
+// verifies.
+func TestAChannelIsPartOfWhatIsHashedAndCostsNothingWhenAbsent(t *testing.T) {
+	base := Entry{
+		Sequence:      7,
+		Timestamp:     time.Unix(1757260800, 0).UTC(),
+		Thumbprint:    "AABBCC",
+		Application:   "My ERP",
+		DocumentCount: 3,
+		Outcome:       OutcomeApproved,
+		AchievedLevel: "B-LT",
+	}
+
+	local := base
+	local.Channel = ChannelLocal
+	if !bytes.Equal(local.CanonicalBytes(), base.CanonicalBytes()) {
+		t.Fatal("a local batch's canonical bytes changed when the channel field arrived")
+	}
+
+	digests := base
+	digests.Channel = ChannelAPIDigests
+	documents := base
+	documents.Channel = ChannelAPIDocuments
+
+	if bytes.Equal(digests.CanonicalBytes(), base.CanonicalBytes()) {
+		t.Fatal("the hash path canonicalises identically to a local batch")
+	}
+	if bytes.Equal(digests.CanonicalBytes(), documents.CanonicalBytes()) {
+		t.Fatal("the two protocol paths canonicalise identically")
+	}
+	if bytes.Equal(digests.ComputeHash(), documents.ComputeHash()) {
+		t.Fatal("the two protocol paths hash identically")
+	}
+}

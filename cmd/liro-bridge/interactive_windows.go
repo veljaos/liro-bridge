@@ -98,28 +98,58 @@ func runSignInteractive(ctx context.Context, args []string, out io.Writer, local
 // entry opened the new chain — which is what makes "tell the person
 // once, not on every subsequent signature" true without a flag anybody
 // has to clear.
-func recordInteractiveAudit(store *audit.Store, auditErr error, thumbprint string, documents int, outcome audit.Outcome, lastErr error, isTestKey bool, level string) *audit.Discontinuity {
+// auditRecord is one batch's worth of what the log records, gathered
+// into a value because the argument list had grown past the point where
+// a reader could tell which of eight positional arguments was which —
+// and because F7 adds two more: who asked, and which front door they
+// asked through.
+type auditRecord struct {
+	thumbprint string
+
+	// application is the name bound at pairing, or "local" for a batch
+	// a person started here. Never a name supplied in a request (SPEC
+	// §6.6).
+	application string
+
+	// channel is which front door the batch came through (F7 §6): the
+	// hash path never let the agent see a document, and that is a
+	// different fact about a signature from the other two.
+	channel audit.Channel
+
+	documents int
+	outcome   audit.Outcome
+	lastErr   error
+	isTestKey bool
+	level     string
+}
+
+func recordInteractiveAudit(store *audit.Store, auditErr error, rec auditRecord) *audit.Discontinuity {
+	application := rec.application
+	if application == "" {
+		application = consent.ApplicationLocal
+	}
 	if auditErr != nil {
 		slog.Error("audit: the log could not be opened, so this batch is not recorded",
-			"error", auditErr, "outcome", outcome, "documents", documents)
+			"error", auditErr, "outcome", rec.outcome, "documents", rec.documents)
 		return nil
 	}
 	entry, err := store.Append(audit.Entry{
 		Timestamp:     time.Now(),
-		Thumbprint:    thumbprint,
-		Application:   consent.ApplicationLocal,
-		DocumentCount: documents,
-		Outcome:       outcome,
-		FailureCode:   codeOfInteractive(lastErr),
-		IsTestKey:     isTestKey,
-		AchievedLevel: level,
+		Thumbprint:    rec.thumbprint,
+		Application:   application,
+		DocumentCount: rec.documents,
+		Outcome:       rec.outcome,
+		FailureCode:   codeOfInteractive(rec.lastErr),
+		IsTestKey:     rec.isTestKey,
+		AchievedLevel: rec.level,
+		Channel:       rec.channel,
 	})
 	if err != nil {
 		// No file name, no personal name, no document content: SPEC
 		// §18.3. The outcome and the count are already what the entry
 		// itself would have carried.
 		slog.Error("audit: this batch could not be appended to the log",
-			"error", err, "outcome", outcome, "documents", documents)
+			"error", err, "outcome", rec.outcome, "documents", rec.documents)
 		return nil
 	}
 	if entry.Discontinuity != nil {
@@ -308,6 +338,13 @@ func readWindowAction(win ui.Window, what string) string {
 type interactiveInput struct {
 	path   string
 	digest []byte
+
+	// label is the name the consent window shows, for a batch whose
+	// documents have no path — one that arrived over the protocol,
+	// where the caller supplied display names and the agent may never
+	// see a file at all (F7 §5). Empty for a local batch, where the
+	// name comes from the path, which is the only place it can.
+	label string
 }
 
 // newInteractiveInput computes one document's digest by streaming it,

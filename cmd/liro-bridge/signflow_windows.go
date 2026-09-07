@@ -169,10 +169,22 @@ func (m *mainWindow) stepsFor() []flowStep {
 		out = append(out, stepDocuments)
 	}
 	out = append(out, stepCertificate)
-	if m.suppliedStamp == nil {
+	if m.asksHowToSign() {
 		out = append(out, stepMethod)
 	}
 	return out
+}
+
+// asksHowToSign reports whether this run has a method question at all.
+//
+// Two things remove it. A caller that supplied its own answer has
+// answered it (D-124), and a batch of bare digests has nothing to ask
+// about: on the hash path the caller built the PDF and the CMS itself
+// (SPEC §4.3), so there is no page for this agent to draw a stamp on
+// and no document it could draw one into. Asking anyway would be a
+// screen whose every answer does the same thing.
+func (m *mainWindow) asksHowToSign() bool {
+	return m.suppliedStamp == nil && !m.hashesOnly
 }
 
 // headerFor is the step header for one step, or nil when this run has
@@ -321,7 +333,7 @@ func (m *mainWindow) advance(ctx context.Context) bool {
 // step, because it is the only slow thing in the flow and it must not
 // be done twice for one batch.
 func (m *mainWindow) postCertificateStep() {
-	vm := consent.BuildViewModel(consent.ApplicationLocal, m.digests(), m.fileNames(), m.certInfos)
+	vm := consent.BuildViewModel(m.applicationName(), m.digests(), m.fileNames(), m.certInfos)
 	payload := buildConsentInit(m.c, vm)
 	payload["step"] = m.headerFor(stepCertificate)
 	if err := m.win.PostJSON(payload); err != nil {
@@ -380,6 +392,13 @@ func (m *mainWindow) approveCertificate(ctx context.Context) bool {
 // after the certificate step has been reached goes through it: SPEC
 // §6.7 wants the refusals as much as the approvals.
 func (m *mainWindow) deny() {
+	if m.denied {
+		// One refusal, however many ways out of the flow it took. A
+		// person who presses Cancel and then closes the window has
+		// refused once.
+		return
+	}
+	m.denied = true
 	open := m.auditStore
 	if open == nil {
 		open = newAuditStore
@@ -388,7 +407,14 @@ func (m *mainWindow) deny() {
 	// A refusal can be the entry that opens a new chain just as a
 	// signature can. It is carried the same way and shown the same way —
 	// on the next screen that has somewhere to put it.
-	if d := recordInteractiveAudit(store, err, m.selected, m.queue.Len(), audit.OutcomeDenied, nil, false, ""); d != nil {
+	entry := auditRecord{
+		thumbprint:  m.selected,
+		application: m.applicationName(),
+		channel:     m.auditChannel(),
+		documents:   m.documentCount(),
+		outcome:     audit.OutcomeDenied,
+	}
+	if d := recordInteractiveAudit(store, err, entry); d != nil {
 		m.auditNotice = auditChainNotice(m.c, store, d)
 	}
 }
@@ -420,6 +446,20 @@ func (m *mainWindow) cancelFlow() bool {
 // single document could be signed — the card, the timestamp authority,
 // the certificate. The report screen is for a batch that ran; this is
 // for one that never did.
+// failRemote tells a protocol caller why its batch never started —
+// the card, the certificate, the timestamp authority — with the same
+// code the person is shown a sentence for.
+//
+// Separate from fail because fail is about a screen: it exists so that
+// a caller is never left with CONSENT_DENIED for something the person
+// never got the chance to deny.
+func (m *mainWindow) failRemote(err error) {
+	if m.remote == nil || m.remote.code != "" {
+		return
+	}
+	m.remote.code = codeOfInteractive(err)
+}
+
 func (m *mainWindow) fail(err error) {
 	m.failed = true
 	m.exit = 1
@@ -566,9 +606,26 @@ func (m *mainWindow) digests() [][]byte {
 func (m *mainWindow) fileNames() []string {
 	out := make([]string, 0, len(m.inputs))
 	for _, in := range m.inputs {
+		if in.label != "" {
+			out = append(out, in.label)
+			continue
+		}
 		out = append(out, filepath.Base(in.path))
 	}
 	return out
+}
+
+// applicationName is who is asking, as the consent window shows it.
+//
+// For a request that arrived over the protocol it is the name bound at
+// pairing and never one supplied in the request — SPEC §6.6's reason,
+// unchanged: otherwise an application pairs as "Test" and presents
+// itself as "Liro". For anything else it is "local".
+func (m *mainWindow) applicationName() string {
+	if m.remote != nil {
+		return m.remote.req.Application
+	}
+	return consent.ApplicationLocal
 }
 
 // applySuppliedStamp folds a caller's supplied answer into the

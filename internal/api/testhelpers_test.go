@@ -2,7 +2,12 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/veljaos/liro-bridge/internal/consent"
+	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
 
@@ -148,8 +155,13 @@ type harness struct {
 	flow     *PairingFlow
 	nonces   *NonceCache
 	auth     *Authenticator
+	registry *jobs.Registry
+	signer   *fakeSigner
 	server   *Server
 	http     *httptest.Server
+
+	mu              sync.Mutex
+	documentSigning bool
 
 	// expire is fed by the test to make a pairing request's watcher
 	// believe its five minutes are up, without waiting five minutes.
@@ -175,10 +187,110 @@ func newHarness(t *testing.T) *harness {
 	}
 	h.flow = NewPairingFlow(pairings, h.ui, clock.Now, func(time.Duration) <-chan time.Time { return h.expire })
 	h.auth = NewAuthenticator(pairings, h.nonces, clock.Now)
-	h.server = NewServer(pairings, h.flow, h.auth)
+	h.registry = jobs.NewRegistry(clock.Now)
+	h.signer = newFakeSigner()
+	h.documentSigning = true
+	h.server = NewServer(Options{
+		Pairings:     pairings,
+		Flow:         h.flow,
+		Auth:         h.auth,
+		Jobs:         h.registry,
+		Signer:       h.signer,
+		AgentVersion: testAgentVersion,
+		DocumentSigningEnabled: func() bool {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return h.documentSigning
+		},
+		Now: clock.Now,
+	})
 	h.http = httptest.NewServer(h.server.Handler())
 	t.Cleanup(h.http.Close)
 	return h
+}
+
+// testAgentVersion is what the harness's agent reports as its own
+// version. A value that is obviously not a real release, so a test
+// asserting on it cannot pass by accident against a hard-coded "dev".
+const testAgentVersion = "9.9.9-test"
+
+// setDocumentSigning turns the whole-document endpoint on or off while
+// the agent is running, which is what the real setting does.
+func (h *harness) setDocumentSigning(on bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.documentSigning = on
+}
+
+// fakeSigner stands in for the agent's own consent window and card. It
+// records what it was asked, publishes whatever states the test told it
+// to, and answers with whatever the test told it to answer.
+//
+// It exists so the whole protocol — submission, events, result,
+// one-job-at-a-time, collect-once — is exercised with no window, no
+// card and no PDF engine, on any platform.
+type fakeSigner struct {
+	mu sync.Mutex
+
+	// requests records every SignRequest that reached the signer.
+	requests []SignRequest
+
+	// respond is what to do with a request. The default signs every
+	// digest with a stand-in signature.
+	respond func(req SignRequest, job *jobs.Job) (SignResult, error)
+}
+
+func newFakeSigner() *fakeSigner {
+	return &fakeSigner{respond: signEverything}
+}
+
+// signEverything is the default: publish the states a real run passes
+// through, then hand back one stand-in signature per document.
+func signEverything(req SignRequest, job *jobs.Job) (SignResult, error) {
+	job.Publish(jobs.Update{State: jobs.JobAwaitingConsent, RemainingConsent: 90 * time.Second})
+	job.Publish(jobs.Update{State: jobs.JobAwaitingPIN})
+	job.Publish(jobs.Update{State: jobs.JobPreparingCard})
+	out := make([]SignOutcome, 0, len(req.Digests))
+	for i := range req.Digests {
+		job.Publish(jobs.Update{State: jobs.JobSigning, Completed: i + 1})
+		o := SignOutcome{Signature: []byte{byte(i), 0xAA}}
+		if req.Kind == SignDocuments {
+			o = SignOutcome{Document: []byte("%PDF-signed-" + string(rune('A'+i))), AchievedLevel: "B-T"}
+		}
+		out = append(out, o)
+	}
+	return SignResult{Outcomes: out}, nil
+}
+
+func (f *fakeSigner) Sign(ctx context.Context, req SignRequest, job *jobs.Job) (SignResult, error) {
+	f.mu.Lock()
+	f.requests = append(f.requests, req)
+	respond := f.respond
+	f.mu.Unlock()
+	return respond(req, job)
+}
+
+// answer replaces what the signer does with the next request.
+func (f *fakeSigner) answer(fn func(req SignRequest, job *jobs.Job) (SignResult, error)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.respond = fn
+}
+
+// lastRequest is the most recent SignRequest the signer was handed.
+func (f *fakeSigner) lastRequest() (SignRequest, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.requests) == 0 {
+		return SignRequest{}, false
+	}
+	return f.requests[len(f.requests)-1], true
+}
+
+func (f *fakeSigner) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.requests)
 }
 
 // pair runs a whole pairing — request, read the code off the window,
@@ -289,3 +401,140 @@ func formatUnix(t time.Time) string { return itoa(int(t.Unix())) }
 // errSetFailed is the failure a test injects to prove Add leaves
 // nothing behind when the secret cannot be stored.
 var errSetFailed = errors.New("secret store is unwritable")
+
+// client is a paired application talking to the harness's agent over a
+// real socket, signing every request the way docs/PROTOCOL.md tells an
+// integrator to.
+//
+// It goes through the real handler over real HTTP rather than calling
+// the handler directly, because what these tests are about is what a
+// program on this machine actually receives — and because a streaming
+// endpoint has no meaning at all without a socket to stream down.
+type client struct {
+	h       *harness
+	pairing Pairing
+	secret  []byte
+}
+
+// client pairs an application and returns it ready to make requests.
+func (h *harness) client(name, origin string) *client {
+	h.t.Helper()
+	pairing, secret := h.pair(name, origin)
+	return &client{h: h, pairing: pairing, secret: secret}
+}
+
+// request builds one signed request. It is separate from do so a test
+// can alter exactly one header before sending it.
+func (c *client) request(method, path string, body []byte) *http.Request {
+	c.h.t.Helper()
+	req, err := http.NewRequest(method, c.h.http.URL+path, bytes.NewReader(body))
+	if err != nil {
+		c.h.t.Fatalf("building the request: %v", err)
+	}
+	timestamp := formatUnix(c.h.clock.Now())
+	nonce := newTestNonce()
+	canonical := CanonicalString(method, path, timestamp, nonce, body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(HeaderAppID, c.pairing.AppID)
+	req.Header.Set(HeaderTimestamp, timestamp)
+	req.Header.Set(HeaderNonce, nonce)
+	req.Header.Set(HeaderSignature, Sign(c.secret, canonical))
+	return req
+}
+
+// do sends a signed request and returns the status and the decoded
+// JSON body.
+func (c *client) do(method, path string, body any) (int, map[string]any) {
+	c.h.t.Helper()
+	raw := marshalForTest(c.h, body)
+	resp, err := c.h.http.Client().Do(c.request(method, path, raw))
+	if err != nil {
+		c.h.t.Fatalf("sending the request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.h.t.Fatalf("reading the response: %v", err)
+	}
+	var decoded map[string]any
+	if len(out) > 0 {
+		if err := json.Unmarshal(out, &decoded); err != nil {
+			c.h.t.Fatalf("the response is not JSON: %v\n%s", err, out)
+		}
+	}
+	return resp.StatusCode, decoded
+}
+
+func marshalForTest(h *harness, body any) []byte {
+	h.t.Helper()
+	switch v := body.(type) {
+	case nil:
+		return nil
+	case []byte:
+		return v
+	case string:
+		return []byte(v)
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			h.t.Fatalf("marshalling the request body: %v", err)
+		}
+		return b
+	}
+}
+
+// digestsRequest is a valid /v2/sign body for n documents, with the
+// digests a caller would have computed itself.
+func digestsRequest(n int, thumbprint string) map[string]any {
+	digests := make([]string, 0, n)
+	labels := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		sum := sha256.Sum256([]byte{byte(i)})
+		digests = append(digests, base64.StdEncoding.EncodeToString(sum[:]))
+		labels = append(labels, "document-"+itoa(i+1)+".pdf")
+	}
+	return map[string]any{
+		"certificateThumbprint": thumbprint,
+		"digestAlgorithm":       "SHA256",
+		"digests":               digests,
+		"labels":                labels,
+	}
+}
+
+// documentsRequest is a valid /v2/sign/pdf body for n documents.
+func documentsRequest(n int) map[string]any {
+	docs := make([]map[string]any, 0, n)
+	for i := 0; i < n; i++ {
+		docs = append(docs, map[string]any{
+			"name":    "ugovor-" + itoa(i+1) + ".pdf",
+			"content": base64.StdEncoding.EncodeToString([]byte("%PDF-1.7 document " + itoa(i))),
+		})
+	}
+	return map[string]any{"documents": docs}
+}
+
+// statusAndBody reads a response into a status, a decoded body and the
+// raw bytes — and checks, on the way, the two things every response in
+// this protocol must have: a JSON content type and no CORS header.
+func statusAndBody(h *harness, resp *http.Response) (int, map[string]any, []byte) {
+	h.t.Helper()
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		h.t.Fatalf("reading the response: %v", err)
+	}
+	var decoded map[string]any
+	if len(out) > 0 {
+		if err := json.Unmarshal(out, &decoded); err != nil {
+			h.t.Fatalf("the response is not JSON: %v\n%s", err, out)
+		}
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		h.t.Fatalf("the response carries Access-Control-Allow-Origin: %q", got)
+	}
+	return resp.StatusCode, decoded, out
+}
+
+// consentFingerprint is consent.Fingerprint, named here so a test can
+// state the property ("the 202's fingerprint is the one the window
+// shows") without the reader having to know which package computes it.
+func consentFingerprint(digests [][]byte) string { return consent.Fingerprint(digests) }
