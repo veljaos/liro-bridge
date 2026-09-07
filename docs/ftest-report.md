@@ -2231,3 +2231,203 @@ answering "there is no running instance of the task" while
 `Get-Process` returned it. A process that has exited but whose object is
 still held open by somebody's handle is exactly what C-3 measures from
 the inside.
+
+---
+
+## Flakes — the suite, twenty times, in each configuration
+
+Run three times over. The first batch is what found C-4 and C-5; the
+second and third are the answer, the third being on the tree as it is
+pushed.
+
+### The first batch, on the tree as it stood
+
+Forty runs — twenty with `-tags softtoken`, twenty without — with the
+fuzzing above running at the same time, so each took 84–99 seconds
+rather than the 60–70 it takes on a quiet machine.
+
+```
+softtoken   18 green, 2 red, of 20
+notags      18 green, 2 red, of 20
+```
+
+**Four failures, two causes, and each cause appeared once in each
+configuration** — which is itself the useful signal, because a defect
+showing up in both build configurations at the same rate is a real
+intermittent rather than something about a build tag.
+
+| Cause | softtoken | notags | What it is |
+|---|---|---|---|
+| `TestWriteFileAtomicNeverTruncatesTheDestination` refused with `OUTPUT_IN_USE` | run 09 | run 02 | **C-4**, fixed |
+| `CreateCoreWebView2Controller` returned `HRESULT 0x800700AA` | run 16 | run 11 | **C-5**, measured, J-6's to fix |
+
+Neither was re-run until it passed. C-4 was measured — 30 failures in
+200 runs — and fixed; C-5 was traced to the same root cause as C-3 and
+recorded against J-6 with its rate.
+
+### A third finding the batches produced, which was mine
+
+The regression test written for C-4 then failed in the next batch — and
+the failure was right while the test was wrong. It span two unthrottled
+`os.Stat` loops against the destination, which is how the defect was
+originally measured, and on a machine with six fuzzers on it that is not
+a file being glanced at; it is a file open essentially all the time. No
+bounded retry can or should survive that.
+
+**A test whose verdict depends on how busy the machine is measures the
+machine.** That is D-112's finding arriving from the other direction: it
+asserted that N things fit in a fixed window, this one asserted that a
+race would go a particular way. Rewritten to say how long the
+destination is held — 300 ms, released while the write is under way —
+and to assert against the stated budget rather than racing for it, plus
+a check that the write did not finish *before* the reader let go, so it
+cannot pass for the wrong reason on a fast machine. Recorded as D-171.
+
+The same trap was then avoided deliberately once more, in C-6's own
+test — see there.
+
+### The second and third batches
+
+Quiet machine, no fuzzing, harnesses removed, so the tree under test is
+exactly the tree in the commits.
+
+| Batch | When | softtoken | notags | per run |
+|---|---|---|---|---|
+| second | after C-1..C-5 | **20 green, 0 red** | **20 green, 0 red** | min 60 s, median 61 s, max 65 s |
+| third | after C-6, the tree that is pushed | **20 green, 0 red** | **20 green, 0 red** | min 65 s, median 70 s, max 73 s |
+
+**Eighty runs of the whole suite, forty of them on the final tree, all
+green.** Every one is `go test ./... -count=1`, so nothing was cached
+and every test in the repository ran forty times on the final tree,
+twenty in each configuration.
+
+The third batch is five to eight seconds slower per run than the second,
+which is C-6's five-second retry and the sweep — a fair price, and the
+sweep also took the machine's leftover count *down* across those forty
+runs (80 directories before, 77 after) rather than up by forty.
+
+**Against 84–99 seconds under the fuzzing load, and 60–73 quiet**, which
+is a fair picture of what six fuzzers were doing to the suite while the
+first batch ran. No test failed for being on a busy machine except the
+one I wrote, and that one is fixed.
+
+---
+
+## The machine, put back
+
+Checked, not assumed.
+
+| What | Before | After |
+|---|---|---|
+| `%LOCALAPPDATA%\Liro\config.json` | `c488e32b…`, 367 bytes | **identical** |
+| `%LOCALAPPDATA%\Liro\audit\2026-09-001.jsonl` | `76f55382…`, 4 951 bytes | **identical** |
+| `HKCU\…\Run` → `LiroBridge` | absent | **still absent** |
+| `HKCU\…\SystemFileAssociations\.pdf` | absent | **still absent** |
+| `%TEMP%\liro-config-*` | 0 at the start of the session | 77, all younger than the sweep's cutoff, and shrinking rather than growing — C-6 |
+| Processes started by this session | — | all stopped, by exact PID, matched on command line, never by image name |
+| Throwaway harnesses | — | deleted; `local/` is gone and `.gitignore` now forbids it |
+
+The audit log was checked twice — once mid-session after about thirty
+suite runs, and once at the end. Byte-identical both times: B-1's and
+B-10's fixes are holding, and nothing this pass added writes to the
+owner's own profile.
+
+The fifty realistic sessions ran against a scratch profile directory
+rather than the real one, so their output could be enumerated and the
+owner's `%LOCALAPPDATA%\Liro` was never a question.
+
+**A number that needs its caveat.** `msedgewebview2.exe` on the machine
+went 13 → 15 → 26 across the session, and almost none of that is this
+project: reading the command lines, the growth is Acrobat (11) and
+WhatsApp (6) starting their own WebView2 instances while this ran. Of
+the ones that were ours, two survived their test binaries and were
+stopped by exact PID after being matched on `--webview-exe-name=
+liro-bridge.test.exe`; the last of them had already exited and only its
+process object remained, which is C-3 seen from outside.
+
+No PIN dialog appeared at any point. Nothing in this session opened a
+signing session against the card; every signature came from the soft
+token. No `SetCursorPos`, `mouse_event`, `SendInput` or `keybd_event`
+anywhere.
+
+---
+
+## What Group 3 did not do
+
+**The window flow was not driven end to end.** The fifty sessions are
+the command line. Reaching past the certificate step in the window needs
+a hand on a mouse, and D-094 forbids simulating one. What is covered
+instead is the window layer's *lifetime* — a hundred open-and-close
+cycles for each of the seven windows, which is what all four recorded
+defects in that layer were about.
+
+**C-3 and C-5 are not fixed.** Both are the same change and it is J-6's:
+one WebView2 environment per process. Three earlier passes declined it
+as bigger than a bounded fix, and an unattended pass with nobody to
+accept a rewrite of that layer's concurrency is the worst of the four
+moments to attempt it. What this pass adds is two more reasons to do it,
+and the numbers for both.
+
+**The fuzz targets ran for an hour and a quarter each, not for days.**
+`FuzzParse` was still finding new coverage when it stopped and every
+target's corpus was still growing. Nothing here says the parsers are
+correct; it says that a quarter of a billion executions found one
+defect, and that defect is fixed.
+
+**No SPEC rule was amended.** Nothing found here contradicts the
+specification — C-1 through C-6 are implementations failing to do what
+SPEC already says, not SPEC saying the wrong thing.
+
+**Nothing was run against real hardware.** The card stayed in the reader
+and was never asked to sign, per the boundaries. Everything in the
+volume, session and fuzzing numbers is the soft token.
+
+---
+
+## Group 3 in one page
+
+**Six defects, five of them fixed with a test that fails against the old
+code.** Not one was found by a failing test, and — unlike the previous
+pass — not one was found by looking at what the program showed either.
+Every one was found by **counting something across repetitions**.
+
+| | What it was | Fixed |
+|---|---|---|
+| **C-1** | A BER long-form length of eight octets went negative and panicked — **in both of the two deliberately independent readers** | yes |
+| **C-2** | Every window leaked 6 GDI and 2 USER objects; a process's quota is 10 000 | yes |
+| **C-3** | The window layer leaks ~1 kernel handle per window, mostly to exited WebView2 processes | measured, J-6's |
+| **C-4** | A signature was refused because something glanced at the output file — 15 % under a reader | yes |
+| **C-5** | One window in a few hundred does not open at all, with `ERROR_BUSY` | measured, J-6's |
+| **C-6** | The suite left ~6 MB in `%TEMP%` on every run — 1.26 GB by the end of the day | yes |
+
+**The one that matters most is C-1**, because of where it was: the
+project has two ASN.1 readers on purpose, written from scratch and
+sharing nothing, so that a bug in one cannot pass in the other (D-044).
+Both had the same bug. Independence stops a defect propagating; it does
+nothing about one being reinvented, and a length field that overflows a
+machine word is exactly what two careful readings of the same RFC get
+wrong the same way.
+
+**The one that says most about the suite is C-2.** Six GDI objects per
+window, perfectly linear, through four phases of window work and four
+recorded window-lifetime defects — invisible because `cmd/liro-bridge`
+deliberately makes exactly one of each window (D-098, for a good
+reason). A per-instance cost cannot be seen from one instance.
+
+**The numbers.**
+
+- **230 489 141 fuzz executions** across eight target-runs, 10.5
+  target-hours, seven targets (six of them new). One crash.
+- **4 000 documents signed and 4 000 verified** in four thousand-document
+  runs, no drift, memory flat, handles converging at document 3 500 and
+  staying there for the next 1 500.
+- **700 window open-and-close cycles**, a hundred for each of seven
+  windows, with GDI, USER, threads and goroutines all flat afterwards
+  and handles the one thing that was not (C-3).
+- **50 realistic sessions**, 150 documents, all verified, exit 0 every
+  time, nothing left behind but the log.
+- **80 full suite runs**, forty of them on the final tree, **all green**.
+
+**What is left for the owner** is J-6, which now closes three things
+rather than one: the 0.37–0.42 s a window costs, the handle it leaks
+(C-3), and the one-in-a-few-hundred window that does not open (C-5).
