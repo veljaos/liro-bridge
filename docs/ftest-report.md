@@ -1638,3 +1638,314 @@ generator. Said rather than rounded.
 the reason D-071 gives for `testdata/pdfs/blank.pdf`: a fixture nobody
 can regenerate is a fixture that drifts. This is the second pass to need
 it and the first to be able to run it.
+
+---
+
+## C-1 — a BER long-form length of eight octets went negative, in both readers (fixed)
+
+**Found by `FuzzParseResponse` in its second minute**, at about 70 000
+executions.
+
+```
+30 88 30 30 30 30 30 30 30 30
+```
+
+A SEQUENCE whose length is eight ASCII zeros. BER permits up to eight
+length octets, and eight octets are enough to set the sign bit of an
+`int`. Every check downstream of the length compares it against a buffer
+size, which a negative value passes, and the next thing that happens is
+a slice bound:
+
+```
+panic: runtime error: slice bounds out of range [:-8633347502144212944]
+  internal/pades/tsa.parseBERValue    ber.go:53
+  internal/pades/tsa.parseResponse    response.go:74
+```
+
+**The identical defect was in `internal/pades/verify`'s reader.** That
+package is deliberately a second, from-scratch implementation that
+shares nothing with the signer — D-044 exists precisely so that "a bug
+in a shared helper passes both ways" cannot happen. It did not help
+here, because the same mistake was made twice independently. Nobody
+copied anything; two readings of the same RFC both reached for `int` and
+neither thought about eight octets.
+
+That is the lesson worth keeping: **two implementations do not catch a
+mistake both of them make.** What found the second one was going to look
+at the sibling the moment the first fell over, which is a habit rather
+than an architecture.
+
+**The fix.** Accumulate into a `uint64` and refuse a value that does not
+fit in a positive `int`, in both readers. A length that genuinely fits is
+still read; only the impossible is rejected, so nothing legitimate
+narrowed.
+
+**The tests.** `TestALengthTooLargeForAnIntIsRefusedRatherThanSliced` in
+both packages, four cases each: the fuzzer's own input, the sign bit
+alone, all ones, and the largest value that is still a positive `int`
+(which the existing "declared length exceeds available bytes" check
+rejects, and must not panic either). Plus
+`TestALengthThatFitsIsStillRead`. Confirmed both ways: with the guard
+disabled, both fail with the exact panic above; with it, both pass. The
+crashing input is committed under
+`internal/pades/{tsa,verify}/testdata/fuzz/`.
+
+`.gitattributes` gained `internal/**/testdata/fuzz/** -text`, because
+Go's corpus format is a Go string literal per line, read literally, and a
+CRLF checkout would make every entry a parse error at the one moment a
+crashing input has to replay — D-107's own lesson applied to a different
+byte-exact artefact.
+
+---
+
+## C-2 — every window leaked six GDI objects and two USER objects (fixed)
+
+**Found by opening each of the seven windows a hundred times** and
+reading the process's own counters. GDI grew at **exactly 6.00 per
+window**, USER at 2.10, monotonically, and neither ever came back:
+
+```
+main (documents step)   3 cycles   gdi  15 ->  35   (+6.67/cycle)
+consent                 3 cycles   gdi  35 ->  53   (+6.00/cycle)
+method                  3 cycles   gdi  53 ->  71   (+6.00/cycle)
+stamp picker            3 cycles   gdi  71 ->  89   (+6.00/cycle)
+settings                3 cycles   gdi  89 -> 107   (+6.00/cycle)
+certificates            3 cycles   gdi 107 -> 125   (+6.00/cycle)
+audit log               3 cycles   gdi 125 -> 143   (+6.00/cycle)
+```
+
+**The cause is one line.** `setWindowIcons` loads the title-bar
+(`ICON_SMALL`) and Alt+Tab (`ICON_BIG`) icons with `LoadImageW` and
+`LR_LOADFROMFILE`. Without `LR_SHARED` that creates a *new* icon on every
+call and the caller owns it; `WM_SETICON` does not take ownership, and
+`DestroyWindow` does not free it. Measured directly, outside the agent:
+
+```
+200 icons loaded    gdi 0 -> 604   user 1 -> 202   (3.02 GDI, 1.00 USER each)
+after DestroyIcon   gdi 604 -> 4   user 202 -> 2   (600 of 604 back, 200 of 201)
+```
+
+Three GDI objects and one USER object per icon, two icons per window, and
+`DestroyIcon` gives every one of them back.
+
+**What it costs.** A process's default GDI quota is 10 000, so roughly
+1 600 windows before a window cannot be drawn at all. That is a long
+afternoon rather than an immediate failure, which is exactly why it went
+unnoticed — and it is the shape of bug that produces "the agent stopped
+opening windows and I had to restart it" with nothing in any log.
+
+**The fix.** The window keeps both handles and destroys them in
+`wndProc`'s `WM_CLOSE` case, **after** `DestroyWindow` — not before:
+until the window is gone it is still painting its own title bar from
+them.
+
+**Why no test saw it.** Every test in `cmd/liro-bridge` borrows one
+shared window per page and closes it once, at the end
+(`sharedwindow_windows_test.go`, which exists for D-098's serialisation
+reason). **One window that leaks is indistinguishable from one that does
+not** — it takes a second window to see a slope. That is D-161's lesson
+about fixtures pointed at a different axis: the fixture was the right
+shape, and there was only ever one of it.
+
+**Two tests, both confirmed against the old code.** `internal/ui`'s
+`TestAnIconLoadedForAWindowIsGivenBack` proves the primitive frees what
+it allocates (it costs milliseconds and no window). `cmd/liro-bridge`'s
+`TestOpeningAndClosingWindowsDoesNotLeakGDIObjects` opens ten real
+windows and proves one calls it:
+
+```
+before the fix   10 windows: GDI 15 -> 75 (+60, 6.00 per window), USER +21 (2.10)
+after the fix    10 windows: GDI  9 ->  9 ( +0, 0.00 per window), USER  +1 (0.10)
+```
+
+**The tray's own icon is deliberately left alone.** It is loaded once per
+process rather than once per window, so it is not a per-cycle cost, and
+its fallback is `IDI_APPLICATION` — a shared system icon that must never
+be destroyed. Freeing that one would be a new bug in place of a
+non-existent one.
+
+---
+
+## C-3 — the window layer leaks about one process handle per window (measured, not fixed)
+
+With C-2 fixed, the hundred-cycle run has GDI, USER, threads and
+goroutines all flat and **handles still climbing, linearly, on every one
+of the seven windows**:
+
+| Window | handles before | after 100 cycles | per cycle |
+|---|---|---|---|
+| main (documents step) | 272 | 380 | **1.08** |
+| consent (certificate step) | 382 | 483 | **1.01** |
+| method (stamp step) | 483 | 584 | **1.01** |
+| stamp picker (placement) | 592 | 674 | **0.82** |
+| settings | 682 | 778 | **0.96** |
+| certificates | 784 | 880 | **0.96** |
+| audit log | 888 | 978 | **0.90** |
+
+GDI stayed at 9 throughout, USER between 5 and 8, threads between 12 and
+17, goroutines at 3, heap between 0.62 and 0.72 MB. Mean 330–354 ms per
+open-and-close; worst single cycle 1.081 s.
+
+**It is a leak, not a lag.** A closed window's WebView2 browser process
+group takes a moment to exit, so the first question is whether the
+handles come back if nothing else happens. They do not: 100 windows, then
+two minutes of doing nothing at all, sampled every five seconds —
+
+```
+after 100 windows   +127 over baseline
+t+ 30s              +126
+t+ 60s              +126
+t+120s              +128
+```
+
+**What kind of handle.** Snapshotting this process's handle table
+(`NtQuerySystemInformation`, `SystemExtendedHandleInformation`, so
+nothing has to call `NtQueryObject` and risk hanging on a pipe) before
+and after 40 windows, with the type indices resolved by creating one
+object of each kind and reading its own index rather than from a table
+that would be wrong on the next Windows build:
+
+```
+40 windows: 280 -> 319 handles (+39, 0.97 per window)
+
+Process        27 appeared,  0 of the old ones closed,  net +27  (0.68 per window)
+Event          15 appeared,  9 closed,                  net  +6  (0.15 per window)
+type index 26  12 appeared,  8 closed,                  net  +4  (0.10 per window)
+Thread          5 appeared,  5 closed,                  net   0
+```
+
+**Process handles, two thirds of it.** Handles to `msedgewebview2.exe`
+browser processes that have already exited — a handle to a dead process
+keeps its process object alive. This project never calls `CreateProcess`
+or `OpenProcess`; they are created inside WebView2 in our address space,
+and releasing `ICoreWebView2Environment` does not close them.
+
+**The browser processes themselves do exit.** Counted on the machine
+after roughly 900 window creations: 13 `msedgewebview2.exe` processes,
+every one of them 63–64 minutes old, i.e. every one started before this
+work began. Nothing accumulated outside this process.
+
+**Not fixed here, and why.** Each `ui.NewWindow` builds its own WebView2
+*environment*, and an environment is what starts a browser process group.
+**J-6 already records that one environment per process — what Microsoft's
+own samples do — is the right next change to this layer**, and D-099 and
+D-131 each declined it as bigger than a bounded fix. This is new evidence
+for the same change: it is not only the 0.37–0.42 s a window costs, it is
+a kernel handle per window that never comes back.
+
+The exposure is bounded by the process's own life, and this agent's
+process is short-lived by the owner's own account. A thousand windows is
+a thousand handles, which is not near any limit. Recorded with numbers so
+that whoever takes J-6 knows it closes two things rather than one.
+
+---
+
+## Volume — a thousand documents, four ways
+
+One process, one `signing.Session` opened once and closed at the end, one
+document at a time, soft token. Every output independently verified with
+`internal/pades/verify`.
+
+**4 000 signed, 4 000 verified, no drift, in four runs.**
+
+| Run | signed | verified | wall clock | distinct outputs |
+|---|---|---|---|---|
+| `blank.pdf` x 1000 | 1000 | **1000** | 2.51 s | 1 of 1 input |
+| the 42-document corpus, cycled to 1000 | 1000 | **1000** | 2.73 s | 42 of 42 inputs |
+| `mup.pdf` x 1000 — 582 KB, two existing signatures | 1000 | **1000** | 6.96 s | 1 of 1 |
+| the 500-page document x 1000 | 1000 | **1000** | 7.28 s | 1 of 1 |
+
+With a fixed key and a fixed `Now`, every input produced one
+byte-identical output every single time.
+
+### The timing instrument had to be replaced first
+
+The first run of all four reported `min 0s` and **48 of 1000 signatures
+at exactly 0 ns**. That is not a fast signature; it is the clock. Go's
+monotonic clock on Windows is the system interrupt time, which ticks at
+the timer interval — coarse enough that a signature shorter than one tick
+measures as nothing. A per-document distribution taken with it is a
+picture of the clock, so the harness was changed to
+`QueryPerformanceCounter` and every run repeated. **Every number below is
+QPC.**
+
+### The distribution, not just the median
+
+| Run | min | p50 | p90 | p95 | p99 | max | mean |
+|---|---|---|---|---|---|---|---|
+| `blank.pdf` | 1.1 ms | **1.1 ms** | 1.9 ms | 2.3 ms | 2.8 ms | 3.2 ms | 1.3 ms |
+| mixed corpus | 1.1 ms | **1.2 ms** | 2.4 ms | 2.7 ms | 4.8 ms | 5.4 ms | 1.5 ms |
+| `mup.pdf` | 3.2 ms | **4.4 ms** | 5.4 ms | 5.8 ms | 6.5 ms | 18.6 ms | 4.5 ms |
+| 500 pages | 3.7 ms | **5.1 ms** | 5.9 ms | 6.2 ms | 7.2 ms | 18.9 ms | 5.2 ms |
+
+The tail is short and it is the garbage collector: p99 is within 1.5x of
+the median everywhere, and the single worst document in each run is
+within 4x. Nothing accumulates — the last hundred documents are as fast
+as the first hundred in all four runs.
+
+### Resources across the run
+
+| Run | handles start to end | GDI | USER | threads | heap after | working set |
+|---|---|---|---|---|---|---|
+| `blank.pdf` | 110 to 175 | 0 to 0 | 1 to 10 | 8 to 14 | 0.46 MB after GC | 8.70 to 15.96 MB |
+| mixed corpus | 104 to 181 | 0 to 0 | 1 to 10 | 7 to 15 | 0.49 MB | 9.48 to 16.32 MB |
+| `mup.pdf` | 110 to 183 | 0 to 0 | 1 to 11 | 8 to 15 | 0.48 MB | 9.30 to 17.00 MB |
+| 500 pages | 110 to 189 | 0 to 0 | 1 to 11 | 8 to 16 | 0.48 MB | 9.22 to 16.68 MB |
+
+The handle figure looked like a leak — +65 to +79 across a thousand
+documents — so it was measured properly rather than reported as one.
+**Five thousand documents, sampled every 250:**
+
+```
+doc     0   handles 110      doc  2500   handles 177
+doc   250   handles 157      doc  3000   handles 179
+doc   500   handles 159      doc  3500   handles 181
+doc  1000   handles 167      doc  4000   handles 181
+doc  1500   handles 171      doc  4500   handles 181
+doc  2000   handles 175      doc  5000   handles 181
+```
+
+**It converges.** Flat at 181 from document 3 500 onward, for the last
+1 500 documents. USER objects plateau at 10, threads at 15, the heap
+never passes 3.6 MB and `Sys` never passes 25 MB. This is the Go runtime
+reaching a steady state — Ms, timers, GC workers — not a per-document
+cost. The signing pipeline leaks nothing.
+
+---
+
+## Fifty realistic sessions
+
+Start the real binary, sign a small batch, quit. Fifty times, each a
+fresh process signing three documents of different shapes (a two-page
+text document, a standard-font Latin one, a JPEG scan) with the soft
+token.
+
+The profile directory is a scratch one for these runs, so "leaves nothing
+behind" is a question that can actually be answered — every file the
+agent writes lands somewhere the harness owns, and the owner's own
+`%LOCALAPPDATA%\Liro` is untouched by construction. That is B-10's lesson
+applied before rather than after.
+
+```
+50 sessions, 0 failures
+per session: min 0.14s  mean 0.14s  max 0.16s
+msedgewebview2.exe on the machine: 13 before, 13 after
+no agent process outlived its session
+stray preview- directories in TEMP: 0
+
+what the profile directory holds after 50 sessions:
+  \Liro\logs    1 file    6 047 bytes
+```
+
+**150 signed documents, 150 signature slots, 150 fully verified**
+(`ByteRangeDigestOK`, `SignatureOK` and `SigningCertificateOK` all true)
+by the independent verifier afterwards.
+
+Exit code 0 on every one of the fifty. The only thing any session left
+behind is the agent's own log file, which is the product working.
+
+**What this is and is not.** It is the command-line front door: process
+start, configuration load, Trusted List, soft token, the signing loop,
+exit. It is not the window flow, which needs a hand on a mouse to reach
+past the certificate step, and D-094 forbids simulating one. The window
+flow's own lifetime is measured above, a hundred cycles per window.
