@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
 )
@@ -91,7 +92,7 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 		return errs.New(errs.CodeOutputWriteFailed, fmt.Errorf("closing the temporary file for %s: %w", path, err))
 	}
 
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := renameWithRetry(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
 		if destinationHeldOpen(path, err) {
 			return errs.WithDetails(errs.CodeOutputInUse,
@@ -101,6 +102,62 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 		return errs.New(errs.CodeOutputWriteFailed, fmt.Errorf("replacing %s: %w", path, err))
 	}
 	return nil
+}
+
+// renameRetryBudget is how long renameWithRetry keeps trying a rename a
+// sharing violation refused, and how long it waits between attempts.
+//
+// A second, in doubling steps from 20 ms: long enough to outlast
+// anything that opened the file to look at it, short enough that a
+// person waiting on a signature does not notice, and far short of the
+// several seconds a human takes to close a document in another program.
+const (
+	renameRetryBudget = time.Second
+	renameRetryFirst  = 20 * time.Millisecond
+)
+
+// renameWithRetry renames tmp over path, retrying for renameRetryBudget
+// while the only thing standing in the way is another program having
+// the destination open.
+//
+// Why this exists (FTEST Group 3, C-4). J-8 weighed one kind of
+// held-open destination: a person has the previous signed document open
+// in a PDF reader, which is a state that persists until they close it
+// and which the OUTPUT_IN_USE message tells them to do something about.
+// It did not weigh the other kind, which is far more common on Windows:
+// something opens the file for a moment and lets go — an antivirus
+// scanner reading a file that has just appeared, a search indexer, a
+// backup agent, Explorer's own preview pane, a folder-watching sync
+// client. Measured: with a tight os.Stat loop running against the
+// destination, the rename failed 30 times in 200 — 15 per cent — and
+// every one of those would have been a refused signature for a file
+// nobody was really using. Worse, it is not actionable: by the time the
+// person reads "close it and try again" the file is already closed.
+//
+// This does not soften J-8's decision. Write-then-rename is unchanged
+// and a destination genuinely held open is still refused, with the same
+// code and the same message. What changes is only how long "held open"
+// has to last before it counts — a second rather than an instant.
+//
+// A rename refused for any other reason is returned at once. In
+// particular a read-only destination reports the same Windows status as
+// a held-open one (J-8 measured that too), and retrying it would spend
+// the whole budget on something that can never succeed;
+// isSharingViolation is what tells the two apart.
+func renameWithRetry(tmp, path string) error {
+	deadline := time.Now().Add(renameRetryBudget)
+	wait := renameRetryFirst
+	for {
+		err := os.Rename(tmp, path)
+		if err == nil {
+			return nil
+		}
+		if !destinationHeldOpen(path, err) || !time.Now().Add(wait).Before(deadline) {
+			return err
+		}
+		time.Sleep(wait)
+		wait *= 2
+	}
 }
 
 // destinationHeldOpen decides whether a failed rename means "another
@@ -115,8 +172,16 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 // case where the operating system reports the same status for both (see
 // its Windows implementation).
 func destinationHeldOpen(path string, err error) bool {
-	if _, statErr := os.Stat(path); statErr != nil {
+	info, statErr := os.Stat(path)
+	if statErr != nil {
 		return false // nothing there to be held open
+	}
+	// A directory in the destination's place is not a file somebody has
+	// open; it is a rename that can never succeed. Saying so here keeps
+	// renameWithRetry from spending its whole budget on it, for the same
+	// reason a read-only destination is excluded below.
+	if info.IsDir() {
+		return false
 	}
 	return isSharingViolation(path, err)
 }
