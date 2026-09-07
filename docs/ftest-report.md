@@ -2157,3 +2157,77 @@ deliberately crudely, because a seed does not have to be correct, only
 interesting, and doing it properly would mean importing
 `internal/pades/verify` into the tests of the one package written to be
 independent of it.
+
+---
+
+## C-6 — the suite left six megabytes in `%TEMP%` on every run (fixed)
+
+**Found by counting what was on the machine at the end**, which is FTEST
+§0.4's own instruction and is how B-10 was found in the previous pass.
+
+```
+196 liro-config-* directories in %TEMP%
+3 365 files
+1 255 MB
+```
+
+One per suite run, all of them from this morning. Roughly six megabytes
+a run, kept for ever.
+
+**The cleanup was there and did not work.** `tempConfigHome`
+(`settingspersist_windows_test.go`) points `LOCALAPPDATA` at a temporary
+directory and removes it in a `t.Cleanup`. Its own comment already knew
+why `t.TempDir()` would not do:
+
+> a WebView2 window created while LOCALAPPDATA points here puts its
+> user-data folder underneath it and keeps files in it open after the
+> window has closed
+
+— and then the cleanup wrote `_ = os.RemoveAll(dir)`, discarding the
+failure. So the directory was never deleted and nothing ever said so.
+
+**How long "after the window has closed" turns out to be.** One of those
+browser process groups was found still running **two hours and five
+minutes** after the test binary that started it had exited. Its command
+line names it unambiguously:
+
+```
+msedgewebview2.exe --embedded-browser-webview=1
+  --webview-exe-name=liro-bridge.test.exe
+  --user-data-dir="…\Temp\liro-config-3736827698\Liro…"
+```
+
+**The fix is both halves, and neither is enough alone.** The cleanup now
+retries for five seconds, which handles the ordinary case where the
+browser is merely slow. `TestMain` sweeps `liro-config-*` directories
+older than an hour, before and after the run — which is what makes this
+*stop accumulating* rather than accumulate more slowly, because a
+directory the retry could not take is one a later run finds free. An
+hour, so a suite running beside another cannot delete the other's.
+
+Running the sweep once took the machine from **196 directories to 81**,
+the remainder being younger than the cutoff and due on the next run.
+
+**The test asserts the mechanism, not what is in `%TEMP%` right now.**
+The first version asserted the latter and went red — correctly — for one
+directory an earlier run had left genuinely stuck. That is a verdict
+about history rather than about this run, which is the same trap D-112
+records and which this pass had already walked into once (D-171). What
+is asserted instead: a directory older than the cutoff is swept, a
+younger one is not, a directory that is not a config home is not, and a
+directory nothing is holding is deleted on the first attempt rather than
+after the retry budget.
+
+This is the same family as B-1 and B-10 — a test that changes the
+machine and does not put it back — and it is the third of them. The
+common thread across all three is not carelessness; it is that **the
+cleanup's failure was discarded in every case**, so the only way to find
+out was to go and count.
+
+**One thing this made visible, which is C-3 on the machine rather than
+in a counter.** After stopping that leftover browser process by its
+exact PID, Windows still listed it: `HasExited: True`, and `taskkill`
+answering "there is no running instance of the task" while
+`Get-Process` returned it. A process that has exited but whose object is
+still held open by somebody's handle is exactly what C-3 measures from
+the inside.
