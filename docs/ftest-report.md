@@ -1949,3 +1949,119 @@ start, configuration load, Trusted List, soft token, the signing loop,
 exit. It is not the window flow, which needs a hand on a mouse to reach
 past the certificate step, and D-094 forbids simulating one. The window
 flow's own lifetime is measured above, a hundred cycles per window.
+
+---
+
+## C-5 — one window in a few hundred does not open, with ERROR_BUSY (measured, not fixed)
+
+**Found by the flake runs**, twice in forty: once with `-tags softtoken`
+and once without, which is the shape of a real intermittent rather than
+a tag-specific one.
+
+```
+alreadysigned_windows_test.go:51: NewWindow(main):
+  ui: creating WebView2 controller:
+  CreateCoreWebView2Controller completed with HRESULT 0x800700AA
+```
+
+`0x800700AA` is `HRESULT_FROM_WIN32(ERROR_BUSY)` — "the requested
+resource is in use." It is what WebView2 returns when the user data
+folder is already in use by another environment, and this project builds
+**one environment per window** while every window in a process shares one
+user data folder. A window closing and another opening a moment later
+can therefore race the first one's browser process group letting go of
+the folder.
+
+**The same root cause as C-3, and the same fix.** J-6 records one
+environment per process as the right next change to this layer; D-170
+adds the process-handle leak to its account; this adds a third item: it
+is also why a window occasionally does not open at all.
+
+**Rate.** Twice in forty suite runs. Each run creates roughly thirteen
+windows, so on the order of one in two hundred and fifty — and the
+hundred-cycle window measurement above created seven hundred windows
+back to back with none. It is a race against a closing window, so it
+wants windows in quick succession rather than many windows.
+
+**What it looks like to a person.** `ui.NewWindow` returns the error, so
+the caller reports it rather than hanging: this is not D-099's silent
+wait. It is a window that says it could not open, once in a few hundred
+tries, for a reason nobody can act on.
+
+**Why it is not retried here.** [[D-080]] explicitly rejected retrying
+`CreateCoreWebView2Controller` on an HRESULT rather than finding the
+cause, and it was right to. The cause here *is* found and recorded — one
+environment per window — so wrapping the call in a retry would be
+papering over J-6 while making the paper look like a fix. Reported
+instead, with the rate.
+
+**What it does to the suite, which is worth its own sentence.** The
+seventy tests that failed in each of those two runs are one failure.
+`sharedwindow_windows_test.go` builds each shared window under a
+`sync.Once` that records the error, so every later borrower fails
+instantly with the same message. That is the right design for its own
+reason (D-098: thirteen environments in one process stopped completing
+at all), and it means a red run of this kind should be read as "the
+shared main window did not open", not as seventy problems.
+
+---
+
+## Fuzzing
+
+Seven targets. One existed; six are new. Every one was run against a
+seed corpus of this project's committed fixtures, the real signed
+documents in `testdata/pdfs/local` where a target can use them, and the
+regenerated FTEST corpus through `LIRO_FUZZ_SEED_DIR` — so a CI run
+starts from what CI has, and a run here starts from everything.
+
+**One crash, found in the second minute, in two places at once.** That
+is C-1 above.
+
+### What ran, for how long, and how many executions
+
+| Target | Package | Ran for | Executions | Corpus after | Crashes |
+|---|---|---|---|---|---|
+| `FuzzParse` (existing) | `pades/pdf` | **90 min** | **139 442 293** | 602 → 1 009 | 0 |
+| `FuzzRenderPage` (new) | `pades/render` | **90 min** | **13 766 422** | 9 → 567 | 0 |
+
+The two ran together, four workers each on a twelve-thread machine, so
+the machine was two thirds committed to fuzzing and a third to the
+window and volume measurements happening at the same time. A dedicated
+run would report higher rates; nothing about coverage changes.
+
+`FuzzParse` was still finding new coverage at ninety minutes — 414 new
+interesting inputs over the run, the last of them in the final minutes —
+so "longer if it is still finding things" is still true of it. What it
+was not finding is crashes: D-039's three, found in 12.6 M executions
+when this target was written, remain the only ones it has ever produced,
+and the bounds added then held through 139 million more.
+
+`FuzzRenderPage` is the one there was reason to expect something from:
+4 600 lines that read foreign input, never fuzzed, with a content-stream
+interpreter, a scanline rasteriser, colour spaces, PDF functions, image
+XObjects and their masks, a TrueType glyph reader and a hand-written
+CCITT decoder underneath it. **Thirteen point eight million executions,
+no panic, no hang, no unbounded allocation.** That is a result and it is
+worth saying plainly rather than burying: the newest and least-exercised
+code in the project did not fall over.
+
+### The stalls in the render log were the coordinator, not slow inputs
+
+`FuzzRenderPage`'s progress line reports zero executions per second for
+stretches of up to forty-two seconds. The obvious reading is an input
+that takes forty seconds to draw, which for a placement window is a
+frozen window, so it was checked rather than assumed: every one of the
+517 corpus entries the run kept was re-run and timed.
+
+```
+517 corpus entries, 276 of them a document the renderer opens
+total 21.03s, mean 76 ms, median 51 ms
+slowest:   730 ms   (48 464 bytes, 1 page)
+           356 ms   (28 562 bytes, 48 pages)
+           329 ms   (1 271 bytes, 1 page)
+```
+
+**The slowest input the fuzzer found renders in 0.73 s.** The stalls are
+Go's own coordinator minimising a newly interesting input, which does
+not advance the execution count. Nothing the renderer was handed took
+anything like a second.
