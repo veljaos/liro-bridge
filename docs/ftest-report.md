@@ -2323,7 +2323,7 @@ Checked, not assumed.
 | `%LOCALAPPDATA%\Liro\audit\2026-09-001.jsonl` | `76f55382…`, 4 951 bytes | **identical** |
 | `HKCU\…\Run` → `LiroBridge` | absent | **still absent** |
 | `HKCU\…\SystemFileAssociations\.pdf` | absent | **still absent** |
-| `%TEMP%\liro-config-*` | 0 at the start of the session | 77, all younger than the sweep's cutoff, and shrinking rather than growing — C-6 |
+| `%TEMP%\liro-config-*` | not counted before the session began — the 196 found at the end were all timestamped after it started | 77, all younger than the sweep's cutoff, and shrinking rather than growing across the last forty runs — C-6 |
 | Processes started by this session | — | all stopped, by exact PID, matched on command line, never by image name |
 | Throwaway harnesses | — | deleted; `local/` is gone and `.gitignore` now forbids it |
 
