@@ -1560,3 +1560,81 @@ ef1cf6a        report: the summary and the closing sections; D-153..D-161
 
 `git ls-files | Select-String "local/"` lists only the four
 `README.md` files, as it must.
+---
+
+# Group 3 — fuzzing, volume, window lifetime, flakes
+
+**Date:** 2026-09-07
+**Base commit:** `92df354` (FTEST decisions: SPEC §6.7 amended, D-162..D-167)
+**Machine:** the same one — Windows 11 Pro 10.0.26200, AMD Ryzen 5 4500
+(6 cores, 12 threads), **Go 1.26.5** (the Group 1/2 report says 1.27.1;
+`go version` on this machine says `go1.26.5 windows/amd64`, and this
+report's numbers are that toolchain's).
+**Run:** unattended. Nobody was at the machine.
+
+Group 3 is what the previous pass wrote down plainly that it had not
+done: "no fuzzing, no endurance." This is that work.
+
+## Before anything ran
+
+Snapshot taken and kept in this session's scratch directory:
+
+```
+config.json   %LOCALAPPDATA%\Liro\config.json, 367 bytes
+              SHA-256 c488e32bd325279a334e5c3e0feffeb47dfb8286f044da3f003c9fbcee2a4be9
+audit log     %LOCALAPPDATA%\Liro\audit\2026-09-001.jsonl, 4 951 bytes
+              SHA-256 76f55382ac60cc374ba7dc2e31cb2d899b95d540f70c15f352b3d6c5efd1d2ad
+HKCU\...\Run  LiroBridge:  ABSENT
+HKCU\Software\Classes\SystemFileAssociations\.pdf   ABSENT entirely
+```
+
+Both registrations differ from the Group 1/2 snapshot, which had a
+`LiroBridge` Run value and a registered Explorer verb. The owner has
+removed both since. **The restore target is therefore "absent", not the
+value the earlier report recorded** — putting back what the earlier
+report says would be inventing an entry, which is exactly the mistake
+D-153 was written about.
+
+The boundaries were kept the same way Group 1/2 kept them: nothing in
+this session opened a signing session against the card, no PIN dialog
+appeared, no synthetic mouse or keyboard input was used anywhere, and
+every process this session started was stopped by its own exact PID.
+
+## The corpus had to be rebuilt
+
+The Group 1/2 report describes a 45-document corpus. It is not in the
+repository and it is not on disk: that pass built it in a scratch
+directory and its own closing section records deleting the scratch. So
+it was rebuilt from the report's own §4 description — page counts 1, 2,
+5, 17, 50, 200, 500; A4, A5, A3, US Letter, 200×900, 120×120, 2000×3000;
+all four rotations plus a mixed one; five producers; Cyrillic, Latin and
+mixed text with an embedded TrueType font and with the standard
+fourteen; classic tables, a cross-reference stream carrying an object
+stream, and a hand-built reproduction of D-075's hybrid `/XRefStm`
+history; JPEG, CCITT Group 3 and Group 4 encoded by Pillow, a Flate RGB
+image with an `/SMask`, and JBIG2 and JPX streams that exist to be
+declined; an axial shading, a tiling pattern, an inline image, a type-4
+mesh shading, a standard font with no `/Widths`, and a page whose boxes
+and `/Rotate` are inherited from the `Pages` node.
+
+**42 documents, 813 pages, all 42 parsed and all 813 rendered** by this
+project's own code before anything was measured against them. The notes
+that fired are the ones that should:
+
+```
+substituted the shapes of a font the document does not embed   812
+advance widths guessed: the document declares none             812
+tiling pattern approximated as flat colour                      20
+image codec JBIG2Decode not supported                            1
+image codec JPXDecode not supported                              1
+shading type approximated as flat colour                         1
+```
+
+Three fewer documents than the 45 the earlier report counted, because
+this is a reconstruction from a description rather than the same
+generator. Said rather than rounded.
+
+**The generator is committed this time**, as `scripts/gencorpus`, for
+the reason D-071 gives for `testdata/pdfs/blank.pdf`: a fixture nobody
+can regenerate is a fixture that drifts. This is the second pass to need
+it and the first to be able to run it.
