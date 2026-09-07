@@ -223,7 +223,10 @@ func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue
 			// B-B.
 			return cfg, nil, true, true
 		case "configure":
-			if err := runSettingsWindow(cfg, win.Handle()); err != nil {
+			// Its own pairing store: this is a `sign --interactive`
+			// process, not the tray, so nothing else in it holds one
+			// and there is no second copy to disagree with.
+			if err := runSettingsWindow(cfg, win.Handle(), openPairingsOrNil()); err != nil {
 				slog.Warn("consent: settings window failed", "error", err)
 			}
 			newCfg, cfgErr := config.Load(platform.DefaultConfigFile())

@@ -1,20 +1,79 @@
+/* The pairing window. Fixed height, one column, nothing scrolls: it
+   holds a name, an origin, six digits and one button, and every one of
+   them has to be on screen at once — a code half below the fold is a
+   code nobody can read out. */
 body {
   padding: var(--liro-space-4);
 }
 
 main {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: var(--liro-space-4);
+}
+
+main > div > p {
+  margin: 0;
+}
+
+/* The origin is caller-supplied and unbounded in length, so it wraps
+   rather than widening the window — the rule the batch fingerprint and
+   the audit log's chain-break line each had to learn once (D-096,
+   D-167).
+
+   Wrapping alone is not enough here, because this window has no list to
+   give the leftover height back to: a 255-character origin wrapped to
+   six lines pushed Deny off the bottom, measured in a real window at
+   the size this window was first built at. So the origin card is the
+   one region on the page that scrolls (D-106's shape), and everything
+   else — the name, the code, the button — is fixed. It shrinks rather
+   than grows: an ordinary one-line origin leaves the code where it
+   would have been anyway. */
+.origin-row {
+  align-items: baseline;
   gap: var(--liro-space-3);
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 76px;
 }
 
 #app-origin {
-  word-break: break-all;
+  font-family: var(--liro-font-family-mono);
+  color: var(--liro-color-text-secondary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.code-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--liro-space-1);
+  text-align: center;
+}
+
+.code-block > p {
+  margin: 0;
+}
+
+/* Six digits, spaced apart, in the one place in this program where
+   type is meant to be read across a desk. */
+.pairing-code {
+  font-family: var(--liro-font-family-mono);
+  font-size: var(--liro-font-size-code);
+  font-weight: var(--liro-font-weight-bold);
+  letter-spacing: var(--liro-letter-spacing-code);
+  color: var(--liro-color-text-primary);
+  /* letter-spacing adds its gap after the last character too, which
+     visually shifts a centred string to the left by that much. */
+  text-indent: var(--liro-letter-spacing-code);
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--liro-space-2);
-  margin-top: var(--liro-space-2);
+  margin-top: auto;
 }

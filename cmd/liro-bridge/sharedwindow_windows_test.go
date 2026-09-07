@@ -29,6 +29,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/veljaos/liro-bridge/internal/api"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/ui"
@@ -48,6 +49,7 @@ var (
 	auditLogShared     sharedWindow
 	mainShared         sharedWindow
 	stampShared        sharedWindow
+	pairingShared      sharedWindow
 )
 
 // drain empties any messages left over from an earlier test, so a
@@ -108,7 +110,7 @@ func sharedSettingsWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config) (u
 		t.Fatalf("NewWindow(settings): %v", settingsShared.err)
 	}
 	drain(settingsShared.messages)
-	if err := settingsShared.win.PostJSON(buildSettingsInit(c, cfg)); err != nil {
+	if err := settingsShared.win.PostJSON(buildSettingsInit(c, cfg, nil)); err != nil {
 		t.Fatalf("PostJSON(settings init): %v", err)
 	}
 	return settingsShared.win, settingsShared.messages
@@ -225,10 +227,38 @@ func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config, role 
 	return stampShared.win, stampShared.messages
 }
 
+// sharedPairingWindow returns the package's one pairing window, with
+// prompt's init payload freshly posted for locale c — the same payload
+// pairingUI.ShowPairing posts in production.
+func sharedPairingWindow(t *testing.T, c *i18n.Catalogue, prompt api.PairingPrompt) (ui.Window, chan ui.Message) {
+	t.Helper()
+	pairingShared.once.Do(func() {
+		pairingShared.messages = make(chan ui.Message, 16)
+		pairingShared.win, pairingShared.err = ui.NewWindow(ui.Options{
+			Title:       i18n.Load("sr-Latn").T("pairing.window_title"),
+			Width:       pairingWindowWidth,
+			Height:      pairingWindowHeight,
+			Assets:      assetsFS,
+			VirtualHost: liroVirtualHost,
+			StartPage:   "/pages/pairing.html",
+			OnMessage:   func(m ui.Message) { pairingShared.messages <- m },
+			OnClosed:    func() { pairingShared.messages <- ui.Message{Type: ui.MessageTypeCancel} },
+		})
+	})
+	if pairingShared.err != nil {
+		t.Fatalf("NewWindow(pairing): %v", pairingShared.err)
+	}
+	drain(pairingShared.messages)
+	if err := pairingShared.win.PostJSON(buildPairingInit(c, prompt)); err != nil {
+		t.Fatalf("PostJSON(pairing init): %v", err)
+	}
+	return pairingShared.win, pairingShared.messages
+}
+
 // closeSharedWindows is called once, from TestMain, after every test
 // has finished with them.
 func closeSharedWindows() {
-	for _, w := range []*sharedWindow{&consentShared, &settingsShared, &certificatesShared, &auditLogShared, &mainShared, &stampShared} {
+	for _, w := range []*sharedWindow{&consentShared, &settingsShared, &certificatesShared, &auditLogShared, &mainShared, &stampShared, &pairingShared} {
 		if w.win != nil {
 			_ = w.win.Close()
 		}

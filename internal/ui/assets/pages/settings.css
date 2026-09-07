@@ -98,3 +98,51 @@ legend {
      overflow container would otherwise clip. */
   padding: var(--liro-space-1);
 }
+
+/* The paired applications (F7 §2.4). One row per application: what it
+   is on the left, the one action that takes it away on the right.
+   Nothing here has a length bound — a display name and an origin are
+   both caller-supplied — so both wrap rather than widening the window,
+   which is the rule the batch fingerprint and the audit log's
+   chain-break line each had to learn once. */
+.pairings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+}
+
+.pairing-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--liro-space-3);
+  padding: var(--liro-space-2) var(--liro-space-3);
+  background: var(--liro-color-surface);
+  border-radius: var(--liro-radius-sm);
+}
+
+.pairing-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-1);
+  min-width: 0;
+}
+
+.pairing-name {
+  overflow-wrap: anywhere;
+}
+
+.pairing-origin {
+  font-family: var(--liro-font-family-mono);
+  font-size: var(--liro-font-size-small);
+  color: var(--liro-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.pairing-when {
+  overflow-wrap: anywhere;
+}
+
+.pairing-revoke {
+  flex: 0 0 auto;
+}

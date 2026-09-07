@@ -132,6 +132,17 @@
       </label>
     </fieldset>
 
+    <!-- The applications that may ask this agent to sign (F7 §2.4).
+         Each row is what was bound at pairing time and cannot be
+         changed by a later request: the name, the origin verbatim, when
+         it was paired and when it last asked for anything — and the one
+         action that matters, which takes it away again. -->
+    <section class="pairings-section">
+      <span class="liro-field-label" data-i18n="settings.pairings_label"></span>
+      <p id="pairings-empty" class="liro-text-small liro-text-secondary" data-i18n="settings.pairings_empty" hidden></p>
+      <div id="pairings"></div>
+    </section>
+
     <div class="actions-row">
       <button id="export-audit-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.export_audit_log"></button>
     </div>

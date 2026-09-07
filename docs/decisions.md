@@ -11353,3 +11353,701 @@ number rather than a check.
   entries before it ([[D-087]], [[D-122]], [[D-128]], [[D-161]]), which
   were all about *looking* at one thing properly. This one is about
   counting many.
+
+---
+
+## D-173 — The canonical string is carried forward unchanged, and its worked example is pinned in three places at once
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** `api.CanonicalString` is
+
+```
+METHOD \n PATH \n TIMESTAMP \n NONCE \n sha256hex(BODY)
+```
+
+with a single `\n` between the parts, no trailing newline, the method
+upper-cased and everything else used exactly as it arrived. `PATH` is
+`r.URL.EscapedPath()` — the path as it appeared in the request line,
+without the query string. `TIMESTAMP` and `NONCE` are the header
+strings themselves rather than re-formattings of what they parse to.
+
+`api.EmptyBodySHA256` is a named constant for sha256 of no bytes, and
+`docs/PROTOCOL.md`'s worked example is checked against this package by
+`TestTheProtocolDocumentsWorkedExampleIsTrue`, which reads the document
+and compares the secret, the timestamp, the nonce, the body, the body
+hash, the signature and the escaped canonical string against what the
+code produces.
+
+**Why.** The previous implementation of this protocol got this right and
+F7 §1 says to carry it forward, so there is nothing to weigh about the
+shape. What there is to decide is how it is kept honest, and this
+project already knows the answer to that: a fact written down twice is
+a fact that can disagree with itself. Three places state this one —
+`CanonicalString`, the worked example, and whatever an integrator
+writes — and only the first two are ours, so the two that are ours are
+pinned to each other by a test.
+
+The three details that are easy to get wrong and are asserted
+individually: the timestamp is the *string* that was sent
+(`TestCanonicalStringUsesTheHeaderValuesVerbatim` — "1757260800" and
+"01757260800" are the same instant and different canonical strings),
+only the method is upper-cased
+(`TestCanonicalStringUpperCasesTheMethodAndNothingElse`), and an empty
+body hashes to something rather than to nothing
+(`TestEmptyBodyHashIsTheDocumentedConstant`, which recomputes the
+constant rather than trusting the literal).
+
+**The comparison is constant time.** `hmac.Equal` over the decoded
+bytes. An ordinary string comparison leaks how much of a forged
+signature was correct, which turns one search of 2^256 into 64 searches
+of 16. A presented value that is not hexadecimal, or is the wrong
+length, is simply wrong rather than an error worth distinguishing:
+[[D-175]] is why the caller's answer is the same either way. Uppercase
+hexadecimal is accepted even though this project only ever produces
+lowercase — leniency in what is read costs nothing, and rejecting the
+other spelling would be a rejection nobody could diagnose from the
+response.
+
+**Rejected.**
+- **Comparing the hex strings rather than the decoded bytes.** Works,
+  and makes the comparison case-sensitive for no reason; decoding first
+  is both more lenient about the spelling and the same amount of
+  constant-time code.
+- **`r.URL.Path` rather than `EscapedPath()`.** `Path` is the
+  percent-decoded form, and a client signs what it sent. Every path this
+  protocol defines is ASCII with nothing to escape, so the two are
+  identical today — but a client that percent-encodes something anyway
+  should still be able to authenticate.
+
+---
+
+## D-174 — A nonce is spent only after the signature verifies, is scoped to the application that sent it, and the cache sweeps as it goes
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** `api.NonceCache.Use` both checks and records, in one call
+under one lock, and `Authenticate` calls it **last** — after the
+pairing has been found, the timestamp accepted and the signature
+verified. Entries are keyed on `(appID, nonce)`. Every use sweeps
+whatever has aged out, under the same lock. The cache has a hard cap
+(`maxNonceEntries`, 100 000); reaching it is reported as `RATE_LIMITED`
+rather than by evicting anything.
+
+**Why the ordering.** Consuming the nonce first lets an unauthenticated
+caller fill the replay cache with fabricated values — and, worse, lock a
+real application out of a nonce it is about to use. F7 §1 names this
+among the things the previous implementation got right. Verify, then
+spend. `TestAFailedSignatureDoesNotSpendTheNonce` is the test that
+would fail if the two were ever swapped: it sends a forged signature
+carrying the nonce the real application is about to use, asserts the
+cache is still empty afterwards, and then asserts the real request with
+that same nonce goes through.
+
+**Why check and record are one method.** Splitting them invites a
+caller to check early, which is the ordering above undone. There is no
+`Seen()` on this type.
+
+**Why per application.** Two applications independently choosing the
+same random nonce is otherwise a refused request for one of them, for a
+reason neither could ever diagnose from a response that deliberately
+says nothing (D-175). Scoping cannot weaken replay protection: a replay
+carries the original signature, which verifies only under the original
+application's secret, so it only ever reaches its own scope.
+
+**Why the sweep walks the whole map.** That is what the previous
+implementation did and it is the right shape here: the map holds only
+the nonces of authenticated requests made in the last five minutes,
+which for a hundred-document batch is a few hundred entries. A sweep on
+a schedule instead needs a goroutine, a shutdown path and a test for
+both. The cap bounds the worst case at a walk of a hundred thousand
+entries — about a millisecond — and only a caller flooding the agent can
+put it there.
+
+**Why the cap reports rather than evicts.** Evicting the oldest entry
+would silently re-open exactly the replay window the cache exists to
+close. `TestNonceCacheReportsWhenItIsFull` asserts both halves: past the
+cap a new nonce is refused, and the oldest one is still remembered.
+
+**A test that had to be made cheap rather than slow.** The first version
+of that test built `maxNonceEntries` real entries, which with a full
+sweep on every use is quadratic: the package's tests went from under a
+second to 77. `newNonceCacheWithLimit` takes the cap as a parameter so
+the test reaches it in thirty-two entries. The production constant is
+unchanged; what changed is that the test measures the behaviour rather
+than the machine ([[D-112]]'s rule).
+
+**Rejected.**
+- **A global nonce scope.** Above: a false rejection with no diagnosis
+  available, for no gain.
+- **Evicting the oldest entry at the cap.** Above.
+- **A background sweeper.** More machinery than the problem has.
+
+---
+
+## D-175 — Every authentication rejection is `AUTH_FAILED` with no details; `NONCE_REUSED` and `TIMESTAMP_SKEW` are deliberately not added
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** `Authenticate` returns exactly two codes:
+
+- `NOT_PAIRED` when there is no live pairing for the `appId` — it was
+  never paired, or it has been revoked.
+- `AUTH_FAILED`, with no `Details` at all, for every other refusal: a
+  missing header, an over-long nonce, an unparseable timestamp, a
+  timestamp outside the skew window, a wrong signature, a reused nonce,
+  an `Origin` header that does not match the bound one.
+
+F7 §8 lists `NONCE_REUSED` and `TIMESTAMP_SKEW` among the codes to add.
+**They are not added.** This is the one place in F7 this phase declines
+to do what the phase document asks, and it is recorded here rather than
+done quietly.
+
+**Why.** F7 §3 states the rule and its reason — "A rejection returns
+`401` and a code. **It never says which check failed** — that is a hint
+to whoever is probing" — and the exit checklist repeats it as a
+checkable item: "Rejections say `401` and a code, never which check
+failed." A code that means "your nonce was reused" says that the
+timestamp and the signature were both fine, which is precisely the
+information §3 exists to withhold: it tells someone working through a
+forgery how far they got.
+
+The two instructions cannot both be honoured. Of the two, §3 states a
+property with a reason attached and the checklist makes it a test; §8's
+list is a sentence naming codes to add. So the property wins, and the
+two codes are not added — because a code that can never be returned is
+dead surface, and this project's own rule ([[D-132]], [[D-146]],
+[[D-151]]) is to delete a catalogue key or constant nothing reads
+rather than leave it as a trap for the next person to wire back in.
+
+**What the caller loses, and what replaces it.** An integrator whose
+machine clock is three minutes out gets `AUTH_FAILED` and, from the
+response alone, cannot tell that from a wrong secret. That is a real
+cost. It is paid for in the agent's own log instead: see [[D-176]].
+
+**Why `NOT_PAIRED` is exempt.** It is not one of §3's three checks; it
+is the precondition to all of them, and it is the only distinction a
+caller can act on — re-pair. Folding it into `AUTH_FAILED` would leave
+an application whose pairing a person revoked in Settings with no way to
+tell "you were disconnected" from "your signing code is wrong", which is
+the one question it most needs answered. What it reveals is which
+`appId` values the agent knows, and an `appId` is an identifier the
+agent issued to that caller, not a secret.
+
+**Rejected.**
+- **Adding the two codes and returning them.** Breaks §3 and the exit
+  checklist, for the benefit of whoever is probing.
+- **Adding them and never returning them.** Satisfies §8's letter and
+  leaves two constants nothing can produce, in a vocabulary SPEC §7 says
+  is permanent once written.
+- **Returning `AUTH_FAILED` with `details: {"reason": ...}`.** The same
+  leak wearing a different field name, and a second vocabulary beside
+  the first, which §8's own first sentence exists to prevent.
+
+---
+
+## D-176 — Which check refused a request goes to the agent's own log and no further
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** `Authenticate` logs one line per refusal carrying an
+`authReason` — `missing_header`, `nonce_too_long`,
+`unparseable_timestamp`, `clock_skew`, `signature_mismatch`,
+`nonce_reused`, `origin_mismatch` — alongside the code and the `appId`.
+The `authReason` type is unexported and is never serialised.
+`docs/PROTOCOL.md` §3.3 tells integrators the log is there and what it
+says.
+
+**Why.** [[D-175]] makes every authentication refusal look identical
+from the outside, which is right and which leaves an integrator with
+nothing to work from. The agent's own log is the one place where saying
+costs nothing: it is on the machine the person is already sitting at,
+it is read by developers, and it is already English by SPEC §9.2's own
+rule for log files. An `appId` is an identifier, not a secret, and no
+secret, nonce, body or file name goes near this line (SPEC §18.3).
+
+**It paid for itself in the same session it was written.** The
+PowerShell client used to drive this group against a real socket
+computed its Unix timestamp with `[double]::Parse((Get-Date -UFormat
+%s))`, which on this machine's Serbian locale reads `.` as a group
+separator: the timestamp went out as `175726123412345`. Every
+authenticated request was refused, correctly, as `AUTH_FAILED` with no
+details — and the *table of failure modes the client printed looked
+entirely right*, because "a stale timestamp" and "a wrong signature"
+both produce `AUTH_FAILED`. What said otherwise was one glance at the
+agent's log: fourteen lines of `reason=clock_skew`, including for the
+cases that were supposed to be testing something else.
+
+That is the point worth keeping. A uniform answer is the correct thing
+to give a caller and a useless thing to debug against, and the log is
+what makes the second half survivable. Without it this verification run
+would have reported a passing table for a client that was wrong in a way
+the table could not show.
+
+**Rejected.**
+- **Not logging the reason at all.** The uniform answer would then be
+  the only thing anyone ever sees, including the person who has to fix
+  the integration.
+- **Logging the canonical string the agent computed.** Tempting, and it
+  would make the commonest mistake obvious — but the canonical string
+  carries the body hash and the path of a signing request, and a log
+  line is not the place to start accumulating those. Naming the check is
+  enough to find every mistake this session actually hit.
+
+---
+
+## D-177 — The pairing window has no Allow button: the code is the approval
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** The pairing window shows the application's name, its
+origin, and six digits, and its only button is **Deny**. There is no
+Allow. `pairing.allow` is deleted from all three catalogues.
+
+Once the application supplies the right code, the window switches to a
+second screen — the name, "Connected", and one sentence: *the
+application can now ask to sign; you still approve every signature
+yourself* — with a Close button, and shrinks from 420×330 to 420×210 to
+fit it. The spent code is cleared from the page rather than merely
+hidden behind the new screen.
+
+**Why there is no Allow.** SPEC §6.2 sketches a window with Approve and
+Deny; F7 §2.1 says the older design is better and replaces it, and the
+replacement is not "a code as well as a button" — the code *is* the
+approval, and a button beside it would be a second, weaker one. A click
+proves somebody was at the machine. The code proves somebody was at the
+machine **and** is talking to the application that asked, which is the
+thing actually worth proving, and the reason the code is not in the
+response. Keeping an Allow button would mean a person could approve a
+pairing without ever reading the code out, which is the mechanism not
+happening.
+
+Deny stays, because refusing has to be one press and not a hunt for the
+close box.
+
+**Why the window says something when it succeeds.** The alternative is
+that the window a person is reading a code out of vanishes at the moment
+they finish reading it. This project has now fixed the same shape of
+thing four times ([[D-089]], [[D-097]], [[D-133]], [[D-146]]): a window
+or a button that produces no visible response reads as a broken program,
+and the fix is always to say what happened. The sentence chosen says the
+one thing a person needs to know about what they just did — that it did
+not buy the application a signature, only the right to ask.
+
+**Why it resizes.** Photographed at the full height, the connected
+screen was half empty under one sentence. The window keeps its own
+centre while it shrinks ([[D-148]]'s rule for the signing flow's steps),
+so it does not walk across the screen at the moment somebody is looking
+at it.
+
+**Verified by looking at it**, in the real window opened by the real
+adapter, driven by a real HTTP client, photographed with `PrintWindow`
+so taking the picture does not take the foreground from whoever is using
+the machine ([[D-122]]). Both screens, in `sr-Latn`. The code on screen
+was checked against the code the agent said it had generated.
+
+**Rejected.**
+- **Keeping Allow alongside the code.** Above: it is the mechanism not
+  happening, available in one click.
+- **A Copy button for the code.** The fingerprint has one ([[D-096]])
+  because sixty-four hex characters are not readable by eye and six
+  digits are. Nothing here needs it.
+- **Closing the window the instant the code is confirmed.** Above.
+- **A countdown to expiry on the window.** Not asked for anywhere, and
+  it would be the page holding state of its own — the thing [[D-120]]
+  and [[D-121]] each had to remove once. The window closes when the code
+  expires, which says the same thing at the only moment it matters.
+
+---
+
+## D-178 — An application's name is sanitised and the sanitised form is bound; its origin is refused rather than sanitised
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** `validatePairingRequest` puts `applicationName` through
+the same pipeline every other piece of untrusted display text in this
+project goes through — `consent.SanitizeDisplayText` then
+`consent.TruncateMiddle` at `consent.MaxDisplayLength` — and **binds the
+sanitised form**. An `origin` is not altered at all: one carrying a
+control character, whitespace or a Unicode direction override, or longer
+than 255 bytes, is answered `REQUEST_INVALID` with
+`details.field = "origin"`.
+
+**Why the name is sanitised and the sanitised form is what is stored.**
+SPEC §6.6 requires the display name shown above a signature to be the
+one bound at pairing, so that an application cannot pair as "Test" and
+later present itself as "Liro". If pairing bound the raw name and each
+screen sanitised it separately, the two screens would agree only for as
+long as two call sites stayed in step. Binding the sanitised form makes
+them the same bytes by construction.
+
+**Why the origin is refused instead.** SPEC §6.2 and F7 §2.1 both
+require it to be shown **verbatim** — "no prettifying, no stripping of
+the scheme... A user who sees `http://` instead of `https://` must be
+able to notice." A value that has been altered on its way to the screen
+is not verbatim. So the only two honest options are to display exactly
+what arrived or to decline it, and an origin with a right-to-left
+override in it is not an origin. Refusing also means the bound value,
+the compared value and the displayed value are one string with no
+transformation anywhere between them, which is what makes the check on
+confirm mean something.
+
+**What the origin binding actually buys, stated rather than implied.** A
+program on this machine declares its own origin and can declare
+anything; the value is that a person sees it at pairing time and that it
+is fixed thereafter. The case where it cannot be forged is a browser,
+which sets `Origin` itself — so where the header is present it is
+authoritative and must match, at pairing and on every later request.
+That defence is real but secondary to [[D-179]]'s, which is that a
+browser cannot make one of these calls at all.
+
+**Rejected.**
+- **Sanitising the origin the way the name is sanitised.** It would
+  silently turn a hostile origin into an innocuous-looking one, which is
+  the opposite of letting a person notice.
+- **Requiring the origin to parse as a URL.** F7 §0 says any program on
+  the machine may pair, and a local program's own idea of its origin is
+  not necessarily a URL. Inventing that requirement would refuse honest
+  callers to no benefit.
+- **Binding the raw name and sanitising at each screen.** Two call sites
+  that have to agree forever, where one value would do.
+
+---
+
+## D-179 — The protocol is unreachable from a browser, by construction rather than by instruction
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** Two rules, applied to every endpoint before any handler
+sees a request:
+
+- No `Access-Control-*` header is ever sent, and an `OPTIONS` request is
+  answered `403` with `REQUEST_INVALID` rather than being treated as a
+  preflight.
+- Every endpoint requires `Content-Type: application/json`; anything
+  else is `REQUEST_INVALID` with
+  `details.expectedContentType`.
+
+Every response also carries `Cache-Control: no-store`.
+
+**Why.** F7 §2.3 says the device secret belongs on the integrator's
+server and never in a browser — "a secret in a browser is a secret every
+visitor has" — and asks for that to be documented prominently. It is,
+in `docs/PROTOCOL.md` §2.4. Documenting it is not the same as enforcing
+it, and enforcing it here costs two rules:
+
+A request carrying `X-Liro-*` headers, or `application/json`, is not a
+"simple request", so a browser must preflight it — and the preflight is
+refused. The only thing a browser can send without asking permission
+first is a form-shaped POST, and the content-type rule refuses that. The
+two together mean page JavaScript cannot make any call in this protocol,
+which is a stronger statement than "please do not put the secret in a
+page."
+
+`TestTheProtocolIsNotReachableFromABrowser` drives a real preflight
+through a real socket and asserts both the status and the absence of
+each of the four `Access-Control-*` headers; the real-client run made
+the same two calls and got `403` and `400`.
+
+**Rejected.**
+- **Answering preflight with a narrow allow-list of origins.** It would
+  make the protocol reachable from a page, which is the thing being
+  prevented, in exchange for a convenience nobody asked for.
+- **Accepting any content type and relying on the signature.** Pairing
+  is not signed — it cannot be, there is no secret yet — so the content
+  type is the only thing standing between `/v2/pair/request` and a form
+  post from a page a person happens to have open.
+
+---
+
+## D-180 — The device secret is base64 in the one response that carries it, and DPAPI-encrypted beside its own entropy on disk
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** `platform.SecretStore` is SPEC §6.4's interface: `Get`,
+`Set`, `Delete`, and nothing above it knows what DPAPI is. On Windows it
+is a file of `CryptProtectData` blobs (`secrets.json`) beside a file of
+32 random bytes (`secrets.entropy`) that every blob is bound to through
+`pOptionalEntropy`. On every other platform `NewSecretStore` returns
+`ErrSecretStoreUnsupported` — macOS is phase 12 and Linux phase 13 — and
+does not fall back to an unencrypted file.
+
+A pairing's metadata (name, origin, timestamps) lives in a plain
+`pairings.json`; its device secret lives only in the secret store, under
+`pairing.<appId>`. `api.Pairing` has no field a secret could go in.
+
+Over the wire the secret is base64, in the response to
+`/v2/pair/confirm` and nowhere else, ever.
+
+**Why base64 and not hex.** The signature and the body hash are hex
+because they are text in a text format that an integrator compares by
+eye; a 32-byte key is not, and every other binary value this protocol
+carries (a digest, a document's content) is base64. `EncodeDeviceSecret`
+and `DecodeDeviceSecret` are exported so that a future SDK written in Go
+uses this package's own idea of the encoding rather than its own.
+
+**Why the metadata and the secret are stored apart.** The metadata is
+exactly what Settings shows and what a person is entitled to look at;
+the secret is the one thing that must be encrypted at rest. Keeping them
+in different files means no code path that reads a pairing in order to
+display it can carry a secret by accident, and
+`TestThePairingFileHoldsNoSecret` asserts the metadata file contains
+neither the raw bytes nor their base64.
+
+**Why the store refuses on macOS and Linux instead of falling back.** A
+device secret in plain JSON is the exact outcome §6.4 exists to prevent,
+and a fallback nobody notices is how it would get there.
+
+**What this does not defend against, stated plainly because it would
+otherwise look like an oversight.** Another process running as the same
+user can read both files and can call DPAPI with the same entropy.
+Nothing on the machine stops that and nothing is meant to: SPEC §6.5 is
+explicit that the human at the consent window is the only boundary that
+holds, precisely because the card caches its own PIN independently of
+which process is talking to it. What the encryption buys is what §6.4
+claims for it and no more — the blob alone, copied to another machine or
+another account, is worth nothing.
+`TestSecretStoreBlobAloneDoesNotDecryptWithDifferentEntropy` and
+`TestDPAPIRefusesTheWrongEntropy` are what say so, the second against
+the real API rather than a stand-in.
+
+**How the file store is tested on a platform that has no protector.**
+The encrypting half is one small interface; everything else — the
+format, the entropy file's lifecycle, the atomic write, the not-found
+behaviour — is shared and is exercised on every platform with a
+stand-in. Two tests use the real DPAPI, and they are the ones that would
+notice if `CryptProtectData` were never called at all.
+
+**Rejected.**
+- **Putting the encrypted secret in `pairings.json` alongside the
+  metadata.** One file is simpler and removes the property above: every
+  reader of a pairing would then be holding a secret it does not need.
+- **An unencrypted fallback on macOS and Linux until phases 12 and 13.**
+  Above.
+- **Hex for the device secret.** Above.
+
+---
+
+## D-181 — Six new codes for pairing, and one for a malformed request
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** `internal/errs` gains `REQUEST_INVALID`, `RATE_LIMITED`,
+`PAIRING_IN_PROGRESS`, `PAIRING_EXPIRED`, `PAIRING_CODE_INCORRECT`,
+`PAIRING_ORIGIN_MISMATCH` and `PAIRING_DENIED`, each with a message in
+all three catalogues.
+
+**Why each is its own situation and not a `Details` field on one code.**
+SPEC §7's rule is that new *situations* get new codes, and this
+project's own reading of it ([[D-066]], [[D-104]], [[D-118]],
+[[D-165]]) is that two conditions are one situation when they need the
+same thing from whoever receives them. These need six different things:
+
+| Code | What the caller must do next |
+|---|---|
+| `REQUEST_INVALID` | fix the request |
+| `RATE_LIMITED` | wait the stated number of seconds |
+| `PAIRING_IN_PROGRESS` | wait; somebody else's window is open |
+| `PAIRING_EXPIRED` | start a new pairing request |
+| `PAIRING_CODE_INCORRECT` | ask the person to read the code again |
+| `PAIRING_ORIGIN_MISMATCH` | fix the integration; the two calls disagree |
+| `PAIRING_DENIED` | stop asking; this is an answer |
+
+**Why `REQUEST_INVALID` is one code and not one per field.** The
+opposite of the above: every malformed field needs the same thing, which
+is for the caller to fix its request, and a code per field is a second
+vocabulary growing without limit beside the first. `details.field`
+carries which one — a structured fact, which is what `Details` is for.
+
+**Why an unknown request identifier is `PAIRING_EXPIRED` and not its own
+code.** Expired, voided by wrong codes, already confirmed and never
+existing all need the same thing — start again — and folding them
+together means guessing identifiers tells a caller nothing about which
+ones exist.
+
+**Why `PAIRING_ORIGIN_MISMATCH` is separate even though it looks like a
+security answer.** It is almost always an integrator declaring two
+different origins in the two calls, and it reveals nothing: whoever
+receives it supplied the request identifier it is about. Folding it into
+`PAIRING_EXPIRED` would cost a real person an afternoon to save an
+attacker nothing.
+
+**Rejected.**
+- **Reusing `CONSENT_DENIED` for a refused pairing.** Its catalogue
+  message is about an operation being cancelled, and a person reading it
+  after a refused *connection* is being told about the wrong thing —
+  [[D-066]]'s finding, which is what `STAMP_GLYPH_MISSING` exists for.
+- **A single `PAIRING_FAILED` with a `reason` in `Details`.** A second
+  vocabulary beside `errs.Code`, which is what F7 §8's first sentence
+  rules out.
+
+---
+
+## D-182 — One pairing store per process, because revoking has to be immediate
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision.** `openPairings` is called once per process, in `runTray`,
+and the resulting `*api.Pairings` is passed to the settings window. The
+settings window revokes through it; the protocol will authenticate
+against the same one. `sign --interactive` opens its own, because it is
+a different process with nothing else in it holding one.
+
+The settings window shows every pairing — name, origin verbatim, when it
+was paired, when it last asked for anything — and one **Disconnect**
+button per row. Revoking deletes the device secret first and the
+metadata second.
+
+**Why one.** F7 §2.4 says revoking is immediate. Two stores over one
+file would each hold their own idea of what is paired: a pairing revoked
+in Settings would go on authenticating until whichever store served the
+request happened to be reopened. That is the same "one fact stored
+twice" failure this project has recorded for a rule ([[D-108]]), for a
+question asked in two places ([[D-124]]) and for a margin ([[D-138]]).
+
+**Why the secret is deleted before the metadata.** Of the two possible
+half-finished states, a secret that outlives its pairing authenticates
+nothing and is invisible; a pairing that outlives its secret also
+authenticates nothing but leaves a row a person can see and wonder
+about. `Pairings.Secret` additionally reports "no" for a pairing whose
+secret has gone, so a half-written state can never be authenticated
+against — `TestAPairingWithNoStoredSecretIsNotUsable`.
+
+**Why "last used" is written to disk at most once a minute.** Every
+authenticated request updates it, and a hundred-document batch is a
+hundred requests; persisting each would be a hundred rewrites of a file
+whose only reader is a settings window nobody has open. In memory it is
+always current, so a window opened now shows the truth.
+`TestLastUsedIsPersistedNoMoreThanOncePerMinute` pins both halves.
+
+**Why revoking re-renders only the list.** Re-posting the whole init
+payload would put every unsaved edit in the settings form back to what
+is on disk, which is not what disconnecting an application asked for.
+`TestRevokingDoesNotDiscardUnsavedSettings` is the guard.
+
+**Rejected.**
+- **Opening a store per window.** Above.
+- **Passing the pairing list to Settings as data and letting it revoke
+  through a callback.** The same thing with more indirection; the store
+  is already the thing that knows how.
+
+---
+
+## D-183 — `scripts/synctokens` had drifted from the CSS it generates, and running it would have deleted a live stylesheet
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1 (found while adding a token)
+
+**Decision.** The `.liro-steps*` block — the step header every screen of
+the signing flow carries — is folded back into
+`scripts/synctokens/intents.go`, and
+`TestGeneratedFilesMatchWhatIsCommitted` now reads
+`internal/ui/assets/tokens.css` and `intents.css` off disk and requires
+them to be byte-identical to what the generator produces.
+
+**What was wrong.** Adding two typography tokens for the pairing code
+meant running `go run ./scripts/synctokens` for the first time since the
+one-window signing flow was built. It rewrote `intents.css` **1 507
+bytes shorter**: the step header's five classes had been written
+directly into the generated file and never into the generator. Running
+the generator — which its own header tells you to do, and which nothing
+had done in between — would have taken the step indicator off every
+screen of the signing flow, silently, in a commit about a font size.
+
+**Why this is worth an entry rather than a one-line fix.** A generated
+artefact nobody regenerates is a generated artefact in name only, and
+the failure mode is not "the generator is stale" — it is "the generator
+is a loaded gun". The file says "Do not edit by hand"; that is the rule,
+and there was no check that the rule had been followed. There is now,
+and it is confirmed to fire in both directions: run against the
+generator as it stood before this phase it reports `committed: 14520
+bytes, generated: 13013 bytes`, and passes after.
+
+This is [[D-161]]'s and [[D-172]]'s lesson at one remove. Those are
+about a test asserting the right property against the wrong fixture, and
+about a per-instance cost being invisible to a single instance. This one
+is about a check that did not exist at all for a file two things claim
+to own.
+
+**Rejected.**
+- **Deleting the hand-written block and accepting the loss.** It is live
+  CSS that four screens depend on.
+- **Dropping the "generated" header from `intents.css` and treating it
+  as hand-maintained.** It is genuinely generated in part — the outcome
+  colour rules come from `IntentFamilyColor` ([[D-093]]) — so it would
+  then be half-generated with nothing saying which half.
+
+---
+
+## D-184 — Group 1 was driven by a client written from the specification, over a real socket, before anything claimed to work
+
+**Date:** 2026-09-07
+**Phase:** F7 — group 1
+
+**Decision, recorded because the group turned on it.** Every property
+this group claims was checked twice: once by Go tests inside the
+package, and once by a PowerShell script that shares no code with the
+agent — .NET's own `SHA256` and `HMACSHA256`, its own canonical string,
+its own nonce — talking to the real `internal/api` handler over a real
+loopback socket, with the real pairing store, the real DPAPI secret
+store and the real pairing window on screen.
+
+It is the check F7's own rules ask for: "a protocol that passes its
+tests and refuses a real request from a real program is this project's
+recurring failure mode." The client was written from
+`docs/PROTOCOL.md`, which is the same document an integrator gets.
+
+**What it found.** Nothing wrong with the agent — and one thing wrong
+with the *client*, which is the more useful result. Its first version
+computed the Unix timestamp with `[double]::Parse((Get-Date -UFormat
+%s))`, and on this machine's Serbian locale `.` is a group separator, so
+every request went out with a timestamp of `175726123412345`. Every one
+was refused. The table the script printed of "every way authentication
+can fail" was entirely green, because a stale timestamp and a wrong
+signature are the same answer by design ([[D-175]]) — a passing table
+for a client that was wrong in a way the table could not show.
+
+The agent's own log said `reason=clock_skew` fourteen times, which is
+what [[D-176]] is for and what turned a plausible-looking result into a
+found bug in about ten seconds.
+
+**The second thing the harness got wrong, also worth keeping.** The
+script read error bodies from the response stream and got empty strings,
+so every error code printed blank — PowerShell had already read the body
+by the time it threw, and the body is in `ErrorDetails.Message`. The
+first run therefore showed a table of eleven refusals with no codes in
+it, and it would have been easy to read that as "the codes work" rather
+than "the client cannot see them."
+
+Both are the same lesson pointed at the verification instead of the
+product: **a harness is code too, and a green result from a harness
+nobody has checked is worth what a green test against the wrong fixture
+is worth** ([[D-161]]).
+
+**What is verified this way, and what is not.** Verified: pairing end to
+end over HTTP, the code not being in any response, the "one at a time"
+rule, wrong codes with their remaining count, origin mismatch, confirm
+twice, an authenticated request that the agent accepts, eleven ways
+authentication can fail and what each returns, a replayed request, the
+preflight refusal and the content-type refusal. Not verified here, and
+not claimed: the agent binding its own port and writing `bridge.json` —
+that is group 2, and until it exists there is nothing for a client to
+discover. The listener the client talked to was the harness's own.
+
+**Rejected.**
+- **Waiting until group 2 to drive anything with a real client.** The
+  canonical string is the thing most likely to be subtly wrong and most
+  expensive to find wrong later, and it needed a second implementation
+  now rather than after three more groups were built on it.
+- **Reporting the first run's green table.** It was green for the wrong
+  reason and the log said so.

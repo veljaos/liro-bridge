@@ -289,7 +289,7 @@ func TestSettingsSavePreservesTheStampChoice(t *testing.T) {
 
 	c := i18n.Load("sr-Latn")
 	win, _ := sharedSettingsWindow(t, c, opened)
-	if !handleSettingsAction(win, c, opened, state) {
+	if !handleSettingsAction(win, c, opened, nil, state) {
 		t.Fatal("saving did not close the window")
 	}
 

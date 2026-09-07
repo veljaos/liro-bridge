@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/veljaos/liro-bridge/internal/api"
 	"github.com/veljaos/liro-bridge/internal/audit"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
@@ -48,6 +49,11 @@ const webView2ExitGrace = 400 * time.Millisecond
 // reached disk correctly and was then never read again.
 func runTray(cfg config.Config, version string) int {
 	c := i18n.Load(currentConfig(cfg).Locale)
+
+	// One pairing store for the life of the process (see openPairings):
+	// the settings window revokes through it, and the protocol
+	// authenticates against it, and F7 2.4 makes revoking immediate.
+	pairings := openPairingsOrNil()
 	quit := make(chan struct{})
 	openedAWindow := false
 
@@ -83,7 +89,7 @@ func runTray(cfg config.Config, version string) int {
 		},
 		OnSettings: func() {
 			openedAWindow = true
-			if err := runSettingsWindow(cfg, 0); err != nil {
+			if err := runSettingsWindow(cfg, 0, pairings); err != nil {
 				slog.Warn("tray: settings window failed", "error", err)
 			}
 		},
@@ -119,6 +125,7 @@ func runTray(cfg config.Config, version string) int {
 // internal/ui's Window.Eval doc comment).
 type settingsFormState struct {
 	Action                string `json:"action"`
+	RevokeAppID           string `json:"revokeAppId"`
 	Locale                string `json:"locale"`
 	StartWithWindows      bool   `json:"startWithWindows"`
 	TSAURL                string `json:"tsaURL"`
@@ -143,10 +150,10 @@ type settingsFormState struct {
 // reproduce the reading half — which is how the version of this that
 // only ever checked the view model came to pass while the window on
 // screen showed the old values.
-func settingsOnOpening(fallback config.Config) (*i18n.Catalogue, config.Config, map[string]any) {
+func settingsOnOpening(fallback config.Config, pairings *api.Pairings) (*i18n.Catalogue, config.Config, map[string]any) {
 	cfg := currentConfig(fallback)
 	c := i18n.Load(cfg.Locale)
-	return c, cfg, buildSettingsInit(c, cfg)
+	return c, cfg, buildSettingsInit(c, cfg, listPairings(pairings))
 }
 
 // owner is the window Settings was opened from, or zero when it was
@@ -159,8 +166,8 @@ func settingsOnOpening(fallback config.Config) (*i18n.Catalogue, config.Config, 
 // life of a batch — and a Config handed down from one of them says what
 // was true when *that* started, which is how a language saved a moment
 // ago came back as the old one on reopening.
-func runSettingsWindow(fallback config.Config, owner uintptr) error {
-	c, cfg, init := settingsOnOpening(fallback)
+func runSettingsWindow(fallback config.Config, owner uintptr, pairings *api.Pairings) error {
+	c, cfg, init := settingsOnOpening(fallback, pairings)
 	messages := make(chan ui.Message, 8)
 
 	win, err := ui.NewWindow(ui.Options{
@@ -215,7 +222,7 @@ func runSettingsWindow(fallback config.Config, owner uintptr) error {
 				slog.Warn("settings: decoding form state failed", "error", err)
 				continue
 			}
-			if handleSettingsAction(win, c, cfg, state) {
+			if handleSettingsAction(win, c, cfg, pairings, state) {
 				return nil
 			}
 		}
@@ -228,7 +235,7 @@ func runSettingsWindow(fallback config.Config, owner uintptr) error {
 // second-real-run review): "Export audit log" and "Check for updates"
 // both used to run to completion with their only output in the log
 // file, which on screen is indistinguishable from a dead button.
-func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, state settingsFormState) bool {
+func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, pairings *api.Pairings, state settingsFormState) bool {
 	switch state.Action {
 	case "save":
 		// Start from the configuration as it stands on disk *now* and
@@ -278,6 +285,26 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, s
 		return true
 	case "exportAuditLog":
 		exportAuditLogNow(win, c)
+		return false
+	case "revokePairing":
+		// F7 §2.4: immediate. The device secret is gone before this
+		// returns, so a request already in flight from that application
+		// authenticates against nothing.
+		text, ok := revokePairing(c, pairings, state.RevokeAppID)
+		if !ok {
+			return false
+		}
+		// The list the person clicked is now wrong by exactly one row,
+		// so it is re-rendered from the store rather than left to be
+		// believed. Only the list: re-posting the whole init payload
+		// would put every unsaved edit in the form back to what is on
+		// disk, which is not what disconnecting an application asked
+		// for.
+		_ = win.PostJSON(map[string]any{
+			"type":     "pairings",
+			"pairings": jsPairings(c, listPairings(pairings)),
+		})
+		postWindowStatus(win, text, ui.IntentPositive)
 		return false
 	case "stampSettings":
 		// F6 §6: the stamp window, reachable from Settings as well as
@@ -512,7 +539,7 @@ func breakReasonText(c *i18n.Catalogue, r audit.BreakReason) string {
 	}
 }
 
-func buildSettingsInit(c *i18n.Catalogue, cfg config.Config) map[string]any {
+func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pairing) map[string]any {
 	return map[string]any{
 		"type": "init",
 		"strings": map[string]string{
@@ -548,6 +575,9 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config) map[string]any {
 			"settings.copy":                           c.T("settings.copy"),
 			"settings.save":                           c.T("settings.save"),
 			"settings.close":                          c.T("settings.close"),
+			"settings.pairings_label":                 c.T("settings.pairings_label"),
+			"settings.pairings_empty":                 c.T("settings.pairings_empty"),
+			"settings.pairings_revoke":                c.T("settings.pairings_revoke"),
 		},
 		"model": map[string]any{
 			"tsaPresets":            tsaPresets(),
@@ -564,6 +594,7 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config) map[string]any {
 			"signatureLevel":        cfg.SignatureLevel,
 			"checkUpdatesDaily":     cfg.UpdateCheckEnabled,
 			"version":               version,
+			"pairings":              jsPairings(c, pairings),
 		},
 	}
 }

@@ -6,20 +6,51 @@
 <link rel="stylesheet" href="https://liro.invalid/intents.css" />
 <link rel="stylesheet" href="https://liro.invalid/pages/pairing.css" />
 </head>
-<body>
+<body class="liro-page">
 
-<main>
-  <p class="liro-display" id="app-name"></p>
-  <p class="liro-text-secondary">
-    <span data-i18n="pairing.wants_to_connect"></span>
-  </p>
-  <div class="liro-card liro-text-small">
-    <span data-i18n="pairing.origin_label"></span>: <code id="app-origin"></code>
+<!-- The pairing window (F7 §2.1).
+
+     There is no Allow button, and that is the whole design. Approval
+     is not a click here: it is the six digits below travelling through
+     a person, off this screen and into the application that asked. A
+     button would prove that somebody was at the machine; the code
+     proves that somebody was at the machine AND is talking to the
+     application that asked, which is the thing worth proving.
+
+     The name and the origin are shown exactly as the application
+     declared them — no prettifying, no stripping of the scheme — so a
+     person who sees http:// where they expected https:// can notice
+     (SPEC §6.2). -->
+<main id="state-code">
+  <div>
+    <p class="liro-display" id="app-name"></p>
+    <p class="liro-text-secondary" data-i18n="pairing.wants_to_connect"></p>
+  </div>
+
+  <div class="liro-card liro-text-small liro-row origin-row liro-scroll-region">
+    <span data-i18n="pairing.origin_label"></span>
+    <code id="app-origin"></code>
+  </div>
+
+  <div class="code-block">
+    <p class="liro-text-secondary" data-i18n="pairing.code_label"></p>
+    <p id="pairing-code" class="pairing-code"></p>
+    <p class="liro-text-small liro-text-secondary" data-i18n="pairing.code_explain"></p>
   </div>
 
   <div class="actions">
     <button id="deny-btn" class="liro-btn liro-btn-secondary" data-i18n="pairing.deny"></button>
-    <button id="allow-btn" class="liro-btn liro-btn-primary" data-i18n="pairing.allow"></button>
+  </div>
+</main>
+
+<main id="state-connected" hidden>
+  <div>
+    <p class="liro-display" id="connected-name"></p>
+    <p class="liro-text-secondary" data-i18n="pairing.connected_title"></p>
+  </div>
+  <p class="liro-text-small liro-text-secondary" data-i18n="pairing.connected_explain"></p>
+  <div class="actions">
+    <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="pairing.close"></button>
   </div>
 </main>
 

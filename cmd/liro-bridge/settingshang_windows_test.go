@@ -89,7 +89,7 @@ func newProductionSettingsWindow(t *testing.T, c *i18n.Catalogue, cfg config.Con
 	if err != nil {
 		t.Fatalf("NewWindow(settings): %v", err)
 	}
-	if err := win.PostJSON(buildSettingsInit(c, cfg)); err != nil {
+	if err := win.PostJSON(buildSettingsInit(c, cfg, nil)); err != nil {
 		t.Fatalf("PostJSON(settings init): %v", err)
 	}
 	return win, messages
@@ -145,7 +145,7 @@ func TestAWindowOpenedFromSettingsIsReachable(t *testing.T) {
 	}
 
 	returned := make(chan bool, 1)
-	go func() { returned <- handleSettingsAction(win, c, cfg, state) }()
+	go func() { returned <- handleSettingsAction(win, c, cfg, nil, state) }()
 
 	child := waitForWindowTitled(t, c.T("stampwindow.title"), 15*time.Second)
 	select {

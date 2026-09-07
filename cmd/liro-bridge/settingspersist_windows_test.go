@@ -293,7 +293,7 @@ func TestEverySettingsFieldSurvivesSaveCloseAndReopen(t *testing.T) {
 
 	probes := settingsProbes()
 
-	c, opened, _ := settingsOnOpening(stale)
+	c, opened, _ := settingsOnOpening(stale, nil)
 	win, messages := newProductionSettingsWindow(t, c, opened)
 	for _, p := range probes {
 		if _, err := win.Eval(p.set); err != nil {
@@ -314,7 +314,7 @@ func TestEverySettingsFieldSurvivesSaveCloseAndReopen(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("Save never reached Go")
 	}
-	if !handleSettingsAction(win, c, stale, collectSettingsState(t, win)) {
+	if !handleSettingsAction(win, c, stale, nil, collectSettingsState(t, win)) {
 		t.Fatal("saving did not close the window")
 	}
 	_ = win.Close()
@@ -329,7 +329,7 @@ func TestEverySettingsFieldSurvivesSaveCloseAndReopen(t *testing.T) {
 
 	// Closed, and opened again by a caller still holding the Config it
 	// read before any of this happened.
-	reopenC, reopened, _ := settingsOnOpening(stale)
+	reopenC, reopened, _ := settingsOnOpening(stale, nil)
 	if reopened.Locale != "sr-Cyrl" {
 		t.Errorf("the reopened window reads locale %q, want the saved sr-Cyrl", reopened.Locale)
 	}
@@ -355,7 +355,7 @@ func TestEverySettingsFieldSurvivesSaveCloseAndReopen(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("the second Save never reached Go")
 	}
-	if !handleSettingsAction(win2, reopenC, stale, collectSettingsState(t, win2)) {
+	if !handleSettingsAction(win2, reopenC, stale, nil, collectSettingsState(t, win2)) {
 		t.Fatal("the second save did not close the window")
 	}
 	again := readSavedConfig(t)
@@ -391,7 +391,7 @@ func TestSettingsWindowOpensInTheLanguageOnDisk(t *testing.T) {
 	}
 
 	returned := make(chan error, 1)
-	go func() { returned <- runSettingsWindow(stale, 0) }()
+	go func() { returned <- runSettingsWindow(stale, 0, nil) }()
 
 	hwnd := waitForWindowTitled(t, cyrl, 40*time.Second)
 
@@ -435,7 +435,7 @@ func TestSettingsSaveKeepsWhatTheStampWindowWrote(t *testing.T) {
 
 	c := i18n.Load("sr-Latn")
 	win, _ := sharedSettingsWindow(t, c, opened)
-	if !handleSettingsAction(win, c, opened, settingsFormState{
+	if !handleSettingsAction(win, c, opened, nil, settingsFormState{
 		Action: "save", Locale: "sr-Latn", OutputSuffix: "-signed", SignatureLevel: "b-lt",
 	}) {
 		t.Fatal("saving did not close the window")

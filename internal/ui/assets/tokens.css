@@ -44,6 +44,7 @@
   --liro-font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   --liro-font-family-mono: "Cascadia Mono", Consolas, monospace;
   --liro-font-size-display: 20px;
+  --liro-font-size-code: 34px;
   --liro-font-size-heading: 16px;
   --liro-font-size-body: 13px;
   --liro-font-size-small: 12px;
@@ -51,6 +52,7 @@
   --liro-font-weight-semibold: 600;
   --liro-font-weight-bold: 700;
   --liro-line-height-body: 1.4;
+  --liro-letter-spacing-code: 0.18em;
 
   /* Shape */
   --liro-radius-sm: 4px;

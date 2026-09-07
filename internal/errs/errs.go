@@ -97,6 +97,61 @@ const (
 	// opened as a PKCS#12 key pair — almost always a wrong password.
 	CodeTSAClientCertInvalid Code = "TSA_CLIENT_CERT_INVALID"
 
+	// CodeRequestInvalid means the request itself is not well formed:
+	// the wrong HTTP method, a body that is not JSON, a required field
+	// missing, a field whose value is not one this endpoint accepts.
+	// Details may carry {"field": "..."} naming the offending field —
+	// a structured fact, never prose (SPEC §7).
+	//
+	// It is deliberately one code rather than one per malformed field:
+	// every one of them needs the same thing from the caller, which is
+	// to fix its request, and a code per field would be a second
+	// vocabulary growing without limit alongside the first.
+	CodeRequestInvalid Code = "REQUEST_INVALID"
+
+	// CodeRateLimited means the caller asked for something more often
+	// than the agent will serve it (F7 §10). Details carry
+	// {"retryAfterSeconds": N}. Distinct from PAIRING_IN_PROGRESS,
+	// which is not about how often this caller asked but about somebody
+	// else's window already being open.
+	CodeRateLimited Code = "RATE_LIMITED"
+
+	// CodePairingInProgress means a pairing window is already open for
+	// some application, and the agent shows exactly one at a time (F7
+	// §10). The caller should try again shortly; nothing is wrong with
+	// its request.
+	CodePairingInProgress Code = "PAIRING_IN_PROGRESS"
+
+	// CodePairingExpired means the pairing request named cannot be used
+	// any more: its five minutes are up, five wrong codes voided it, it
+	// was already confirmed, or there is no such request at all. All
+	// four need the same thing — start a new pairing request — and
+	// folding "no such request" in with the rest is deliberate, so that
+	// guessing request identifiers tells a caller nothing about which
+	// ones exist.
+	CodePairingExpired Code = "PAIRING_EXPIRED"
+
+	// CodePairingCodeIncorrect means the six-digit code did not match
+	// and the request is still live. Details carry
+	// {"attemptsRemaining": N} so a caller can tell the person how many
+	// tries are left before the request is voided (F7 §2.1).
+	CodePairingCodeIncorrect Code = "PAIRING_CODE_INCORRECT"
+
+	// CodePairingOriginMismatch means confirm arrived from a different
+	// origin than the one that requested the pairing (F7 §2.1). It is
+	// its own code rather than folded into PAIRING_EXPIRED because it
+	// is almost always an integration mistake — two calls made with two
+	// different declared origins — and it reveals nothing an attacker
+	// does not already have, since the caller supplied the request
+	// identifier it is being told about.
+	CodePairingOriginMismatch Code = "PAIRING_ORIGIN_MISMATCH"
+
+	// CodePairingDenied means the person refused the pairing at the
+	// agent's own window, or closed it. Distinct from PAIRING_EXPIRED
+	// because the reaction differs: an expired request is worth
+	// retrying, a refused one is an answer.
+	CodePairingDenied Code = "PAIRING_DENIED"
+
 	CodeInternal Code = "INTERNAL"
 )
 
@@ -134,6 +189,13 @@ func AllCodes() []Code {
 		CodeInputUnreadable,
 		CodeTSAClientCertUnreadable,
 		CodeTSAClientCertInvalid,
+		CodeRequestInvalid,
+		CodeRateLimited,
+		CodePairingInProgress,
+		CodePairingExpired,
+		CodePairingCodeIncorrect,
+		CodePairingOriginMismatch,
+		CodePairingDenied,
 		CodeInternal,
 	}
 }

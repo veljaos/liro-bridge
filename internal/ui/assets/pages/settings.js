@@ -2,7 +2,50 @@
   "use strict";
 
   var pendingAction = "";
+  var pendingAppID = "";
   var presetURLs = {};
+
+  // renderPairings draws the applications that may ask this agent to
+  // sign (F7 2.4). Every value in a row is caller-supplied and goes in
+  // through setText, never innerHTML (SPEC 6.6): a display name is a
+  // name and an origin is an origin, neither of them markup.
+  function renderPairings(list) {
+    var host = document.getElementById("pairings");
+    host.innerHTML = "";
+    document.getElementById("pairings-empty").hidden = !!(list && list.length);
+    (list || []).forEach(function (p) {
+      var row = document.createElement("div");
+      row.className = "pairing-row";
+
+      var text = document.createElement("div");
+      text.className = "pairing-text";
+      var name = document.createElement("div");
+      name.className = "pairing-name";
+      window.liroSetText(name, p.name);
+      var origin = document.createElement("code");
+      origin.className = "pairing-origin";
+      window.liroSetText(origin, p.origin);
+      var when = document.createElement("div");
+      when.className = "pairing-when liro-text-small liro-text-secondary";
+      window.liroSetText(when, p.whenText);
+      text.appendChild(name);
+      text.appendChild(origin);
+      text.appendChild(when);
+
+      var revoke = document.createElement("button");
+      revoke.className = "liro-btn liro-btn-secondary liro-btn-compact pairing-revoke";
+      revoke.setAttribute("data-app-id", p.appId);
+      window.liroSetText(revoke, window.liroT("settings.pairings_revoke"));
+      revoke.addEventListener("click", function () {
+        pendingAppID = p.appId;
+        act("revokePairing");
+      });
+
+      row.appendChild(text);
+      row.appendChild(revoke);
+      host.appendChild(row);
+    });
+  }
 
   // syncPresetSelection checks the preset whose URL is exactly what the
   // URL field holds, and none when it matches neither (Task 1c: neither
@@ -33,6 +76,13 @@
       showStatus(payload.status);
       return;
     }
+    // A pairing was revoked: only the list changed, and re-rendering
+    // only the list is what keeps an unsaved edit in the form from
+    // being reset by an action that had nothing to do with it.
+    if (payload.type === "pairings") {
+      renderPairings(payload.pairings);
+      return;
+    }
     if (payload.type !== "init") return;
     window.liroApplyStaticStrings();
     // A freshly opened window says nothing about what an action did:
@@ -53,6 +103,7 @@
     document.getElementById("explorer-menu").checked = !!m.explorerMenu;
     document.getElementById("check-updates-daily").checked = !!m.checkUpdatesDaily;
     window.liroSetText(document.getElementById("version"), m.version);
+    renderPairings(m.pairings);
     // Task 3 (F5 fourth-real-run review): three levels, B-B included.
     // An unrecognised saved value falls back to the project's default
     // rather than leaving every radio unchecked — Go validates the
@@ -71,6 +122,7 @@
     var level = checkedLevel ? checkedLevel.value : "b-lt";
     return JSON.stringify({
       action: pendingAction,
+      revokeAppId: pendingAppID,
       locale: document.getElementById("locale").value,
       startWithWindows: document.getElementById("start-with-windows").checked,
       tsaURL: document.getElementById("tsa-url").value,
