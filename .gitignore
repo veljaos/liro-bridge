@@ -33,3 +33,9 @@ Thumbs.db
 # testdata/tsa/local/README.md.
 /testdata/tsa/local/*
 !/testdata/tsa/local/README.md
+
+# Throwaway measurement harnesses (FTEST). They live inside the module so
+# they can import internal/ packages, and they are deleted when the session
+# that made them ends — D-100's pattern, with a guard so an accidental
+# `git add -A` cannot commit one.
+/local/

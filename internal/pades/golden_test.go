@@ -82,7 +82,7 @@ type deterministicSession struct {
 	key  *rsa.PrivateKey
 }
 
-func newDeterministicSession(t *testing.T) *deterministicSession {
+func newDeterministicSession(t testing.TB) *deterministicSession {
 	t.Helper()
 	block, _ := pem.Decode([]byte(goldenKeyPEM))
 	if block == nil {

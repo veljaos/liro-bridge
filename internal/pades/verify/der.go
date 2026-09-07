@@ -18,7 +18,10 @@
 // the CMS/ByteRange signing path this rule protects.
 package verify
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // derNode is one parsed BER/DER tag-length-value, read independently of
 // internal/pades/tsa's identically-purposed but separate berNode.
@@ -68,9 +71,22 @@ func readDER(data []byte) (derNode, []byte, error) {
 		if numBytes == 0 || numBytes > 8 || pos+numBytes > len(data) {
 			return derNode{}, nil, fmt.Errorf("verify: malformed long-form length")
 		}
+		var v uint64
 		for i := 0; i < numBytes; i++ {
-			length = length<<8 | int(data[pos+i])
+			v = v<<8 | uint64(data[pos+i])
 		}
+		// Eight length octets are enough to set the sign bit of an int,
+		// and every check below this one compares length against a
+		// buffer size — which a negative value passes, straight into a
+		// slice bound that panics. Found by fuzzing the sibling reader
+		// in internal/pades/tsa, which had the identical defect: this
+		// package is deliberately an independent second implementation
+		// (D-044), and independence is no help against a mistake both
+		// implementations make.
+		if v > uint64(math.MaxInt) {
+			return derNode{}, nil, fmt.Errorf("verify: long-form length %d is larger than this machine can address", v)
+		}
+		length = int(v)
 		pos += numBytes
 	default:
 		length = int(lb)

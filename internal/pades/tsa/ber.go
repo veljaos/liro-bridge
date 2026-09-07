@@ -1,7 +1,10 @@
 // Package tsa implements an RFC 3161 time-stamping client (F3 §6).
 package tsa
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // berNode is one parsed BER/DER tag-length-value. content holds the
 // value bytes: for a definite-length value, exactly what the length
@@ -94,9 +97,23 @@ func readTagAndLength(data []byte) (class byte, constructed bool, tag int, lengt
 		if n > 8 || pos+n > len(data) {
 			return 0, false, 0, 0, false, 0, fmt.Errorf("tsa: malformed long-form length")
 		}
+		var v uint64
 		for i := 0; i < n; i++ {
-			length = length<<8 | int(data[pos+i])
+			v = v<<8 | uint64(data[pos+i])
 		}
+		// Eight length octets are enough to set the sign bit of an int,
+		// and a negative length is not a length — it is a slice bound
+		// that panics rather than a value any check further down can
+		// reject. Found by fuzzing: "30 88 30 30 30 30 30 30 30 30"
+		// produced a slice of [:-8633347502144212944] before this
+		// check existed. The same shape was in this project's second,
+		// independently written reader (internal/pades/verify), which
+		// is worth saying out loud: two implementations do not catch a
+		// mistake both of them make.
+		if v > uint64(math.MaxInt) {
+			return 0, false, 0, 0, false, 0, fmt.Errorf("tsa: long-form length %d is larger than this machine can address", v)
+		}
+		length = int(v)
 		pos += n
 	default:
 		length = int(lb)
