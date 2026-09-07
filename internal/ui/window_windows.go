@@ -120,6 +120,13 @@ type window struct {
 	closedCh  chan struct{}
 	closeOnce sync.Once
 
+	// iconSmall and iconBig are the two icons setWindowIcons loaded for
+	// this window's title bar and Alt+Tab entry. WM_SETICON does not
+	// take ownership and DestroyWindow does not free them, so this
+	// package owns them for the window's life and gives them back in
+	// wndProc's wmClose case, after DestroyWindow.
+	iconSmall, iconBig uintptr
+
 	// owner is the window this one was opened from, disabled for as
 	// long as this window is up and re-enabled before it is destroyed
 	// (Options.Owner). Zero when this window stands on its own.
@@ -294,7 +301,7 @@ func (w *window) run(opts Options, ready chan<- error) {
 	// Task 4 (F5 second-real-run review): the real Liro mark in the
 	// title bar and in Alt+Tab, for every window this package creates —
 	// the tray icon already came from icon.ico, the windows did not.
-	setWindowIcons(hwnd)
+	w.iconSmall, w.iconBig = setWindowIcons(hwnd)
 
 	// The window's actual monitor — and so its actual DPI — is only
 	// known once CreateWindowExW has placed it; correct the size
@@ -640,6 +647,11 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			setDragAcceptFiles(hwnd, false)
 		}
 		_, _, _ = procDestroyWindow.Call(hwnd)
+		// The two icons WM_SETICON handed this window are this
+		// package's to free, and only now that the window is gone —
+		// see destroyWindowIcons. Six GDI objects per window, measured.
+		destroyWindowIcons(w.iconSmall, w.iconBig)
+		w.iconSmall, w.iconBig = 0, 0
 		return 0
 
 	case wmDestroy:

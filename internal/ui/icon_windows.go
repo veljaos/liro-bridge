@@ -119,7 +119,10 @@ const (
 	smCYICON = 12
 )
 
-var procSendMessageW = user32DLL.NewProc("SendMessageW")
+var (
+	procSendMessageW = user32DLL.NewProc("SendMessageW")
+	procDestroyIcon  = user32DLL.NewProc("DestroyIcon")
+)
 
 // systemIconSize returns the icon dimensions Windows expects at hwnd's
 // own DPI for the given SM_CX*/SM_CY* metric pair, preferring the
@@ -160,14 +163,42 @@ func loadIconAt(cx, cy uintptr) uintptr {
 // (ICON_SMALL) and in Alt+Tab / the task switcher (ICON_BIG). A failure
 // to load either size is silently left as the Windows placeholder — a
 // missing icon must never stop a window from opening.
-func setWindowIcons(hwnd uintptr) {
+//
+// It returns the two handles, because the caller now owns them.
+// LoadImageW with LR_LOADFROMFILE and without LR_SHARED creates a new
+// icon on every call, and WM_SETICON does not take ownership: the
+// window stores the handle and uses it, and DestroyWindow does not free
+// it. Measured on this machine, one icon costs 3 GDI objects and 1 USER
+// object, and DestroyIcon gives every one of them back — so two icons
+// per window, never destroyed, is 6 GDI objects per window that never
+// come back. A process's default GDI quota is 10,000. See
+// destroyWindowIcons.
+func setWindowIcons(hwnd uintptr) (small, big uintptr) {
 	smallCX, smallCY := systemIconSize(hwnd, smCXSMICON, smCYSMICON)
 	if h := loadIconAt(smallCX, smallCY); h != 0 {
 		_, _, _ = procSendMessageW.Call(hwnd, wmSetIcon, iconSmall, h)
+		small = h
 	}
 	bigCX, bigCY := systemIconSize(hwnd, smCXICON, smCYICON)
 	if h := loadIconAt(bigCX, bigCY); h != 0 {
 		_, _, _ = procSendMessageW.Call(hwnd, wmSetIcon, iconBig, h)
+		big = h
+	}
+	return small, big
+}
+
+// destroyWindowIcons gives back the two icons setWindowIcons loaded.
+//
+// It must run after DestroyWindow, not before: until the window is gone
+// it is still using them to paint its own title bar, and destroying an
+// icon a live window holds leaves that window drawing from freed
+// memory. After the window is destroyed nothing refers to them and
+// nobody else will free them, which is the whole reason this exists.
+func destroyWindowIcons(small, big uintptr) {
+	for _, h := range [2]uintptr{small, big} {
+		if h != 0 {
+			_, _, _ = procDestroyIcon.Call(h)
+		}
 	}
 }
 
