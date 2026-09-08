@@ -124,16 +124,23 @@ func populatedSettings() config.Config {
 // §6.6 for this very reason, and is closed by default — so it can
 // never be a second scrollbar competing with the certificate list for
 // the same glance.
+//
+// The four numbers are read in one Eval rather than four, so that the
+// pair being compared always comes from one layout. Four Evals are four
+// round trips, and anything that relaid the page out between two of
+// them — a resize the page had not caught up with yet, most of all
+// (see resizeAndSettle) — produced a comparison of a content height
+// measured against one viewport with a client height measured against
+// another. That is not a layout defect and never was; it is two
+// questions asked at two different moments (D-201).
 func assertPageDoesNotScroll(t *testing.T, win ui.Window, window, scrollSelector string, alsoAllowed ...string) {
 	t.Helper()
 	for _, el := range []string{"document.documentElement", "document.body"} {
-		scrollH := evalNumber(t, win, el+".scrollHeight")
-		clientH := evalNumber(t, win, el+".clientHeight")
+		box := evalNumbers(t, win, el+".scrollHeight", el+".clientHeight", el+".scrollWidth", el+".clientWidth")
+		scrollH, clientH, scrollW, clientW := box[0], box[1], box[2], box[3]
 		if scrollH > clientH {
 			t.Errorf("%s: %s scrollHeight %v exceeds clientHeight %v — the page itself scrolls", window, el, scrollH, clientH)
 		}
-		scrollW := evalNumber(t, win, el+".scrollWidth")
-		clientW := evalNumber(t, win, el+".clientWidth")
 		if scrollW > clientW {
 			t.Errorf("%s: %s scrollWidth %v exceeds clientWidth %v — the page scrolls sideways", window, el, scrollW, clientW)
 		}
@@ -154,6 +161,42 @@ func assertPageDoesNotScroll(t *testing.T, win ui.Window, window, scrollSelector
 		"});return bad.join(', ');})()"
 	if extra := evalString(t, win, script); extra != "" {
 		t.Errorf("%s: a second scrollable region alongside %s: %s", window, scrollSelector, extra)
+	}
+}
+
+// resizeAndSettle resizes win and returns once the page itself reports
+// the new viewport — never before, and never after a fixed wait.
+//
+// Window.Resize returns when the native window has been moved and the
+// WebView2 controller's bounds have been set, both on the window's own
+// OS thread. The page learns its new size down a different path, and
+// that path is not ordered against ExecuteScript, which is what Eval
+// uses. So a measurement taken straight after Resize can be answered
+// out of the layout as it stood before it. This is not theoretical and
+// was not inferred: an atomic snapshot taken immediately after
+// Resize(420, 210) on this machine reported window.innerHeight 330,
+// document.body.scrollHeight 330 and clientHeight 330 — the whole
+// pre-resize viewport, after Resize had returned.
+//
+// Waiting for the resize to become observable is the fix; waiting for a
+// duration is not (D-112). The deadline exists only to turn a window
+// that never resizes at all into a failure rather than a hang, and each
+// turn of the loop is a real round trip through the page, so nothing
+// here spins.
+func resizeAndSettle(t *testing.T, win ui.Window, width, height int) {
+	t.Helper()
+	if err := win.Resize(width, height); err != nil {
+		t.Fatalf("Resize(%dx%d): %v", width, height, err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		got := evalNumbers(t, win, "window.innerWidth", "window.innerHeight")
+		if int(got[0]) == width && int(got[1]) == height {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("30s after Resize(%dx%d) the page still reports a %vx%v viewport", width, height, got[0], got[1])
+		}
 	}
 }
 

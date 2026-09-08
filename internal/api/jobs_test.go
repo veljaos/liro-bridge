@@ -362,14 +362,30 @@ func TestTheEventStreamCanBeDisconnectedAndReconnected(t *testing.T) {
 	}
 }
 
+// TestTheAwaitingConsentEventCarriesTheRemainingTime is F7 §7.2's
+// countdown: the one state that has a clock attached carries it, and
+// every other state leaves the field out.
+//
+// The run and the reader hand off, exactly as
+// TestTheEventStreamReportsEveryStateAndEnds does and for the same
+// reason: the job stays in awaiting_consent until the stream has
+// reported it, and only then is released. Publishing the state and
+// immediately releasing the run asserted that the reader was attached
+// and scheduled before the job left the state — one goroutine
+// outrunning another — which under -race it was not. The stream is
+// right to coalesce: a follower lands on the newest state rather than
+// working through a backlog (PROTOCOL.md §6.2, D-188), so a state the
+// run passes straight through is a state a follower may never see.
+// Holding the job there is what makes the state observable; a sleep
+// would only make it likely.
 func TestTheAwaitingConsentEventCarriesTheRemainingTime(t *testing.T) {
 	h := newHarness(t)
 	c := h.client("My ERP", "https://erp.example.com")
 
-	proceed := make(chan struct{})
+	seen := make(chan string, 64)
 	h.signer.answer(func(req SignRequest, job *jobs.Job) (SignResult, error) {
 		job.Publish(jobs.Update{State: jobs.JobAwaitingConsent, RemainingConsent: 118 * time.Second})
-		<-proceed
+		awaitState(t, seen, string(jobs.JobAwaitingConsent))
 		return signEverything(req, job)
 	})
 	_, submit := c.submitDigests(1)
@@ -380,9 +396,17 @@ func TestTheAwaitingConsentEventCarriesTheRemainingTime(t *testing.T) {
 		t.Fatalf("opening the event stream: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	close(proceed)
 
-	events := readEvents(t, resp)
+	var events []map[string]any
+	scanEvents(t, resp, func(event map[string]any) {
+		events = append(events, event)
+		state, _ := event["state"].(string)
+		select {
+		case seen <- state:
+		default:
+		}
+	})
+
 	found := false
 	for _, e := range events {
 		if e["state"] != string(jobs.JobAwaitingConsent) {

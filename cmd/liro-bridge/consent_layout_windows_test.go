@@ -146,3 +146,29 @@ func evalNumber(t *testing.T, win ui.Window, script string) float64 {
 	}
 	return *v
 }
+
+// evalNumbers evaluates several numeric expressions in one Eval and
+// returns their values in order.
+//
+// One Eval, not one per expression, because every number it returns is
+// measured against the same layout at the same moment. Two Evals are
+// two round trips, and a page that relaid out between them answers the
+// second question about a different page than the first — which is how
+// a scrollHeight from one viewport came to be compared against a
+// clientHeight from another (D-201).
+func evalNumbers(t *testing.T, win ui.Window, exprs ...string) []float64 {
+	t.Helper()
+	script := "(function(){return [" + strings.Join(exprs, ",") + "]})()"
+	raw, err := win.Eval(script)
+	if err != nil {
+		t.Fatalf("Eval(%s): %v", script, err)
+	}
+	var v []float64
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		t.Fatalf("Eval(%s): decoding result %q: %v", script, raw, err)
+	}
+	if len(v) != len(exprs) {
+		t.Fatalf("Eval(%s): returned %d values, want %d", script, len(v), len(exprs))
+	}
+	return v
+}

@@ -243,13 +243,7 @@ func (r *Runner) RunItems(ctx context.Context, items []Item, sign SignFunc, hook
 			Failed:    report.Failed,
 			Skipped:   report.Skipped,
 		}
-		if len(durations) > 0 {
-			var median time.Duration
-			if len(durations) > 1 {
-				median = signing.MedianOf(durations[1:])
-			}
-			p.ETA, p.ETAKnown = signing.EstimatedTotal(durations[0], len(items)-current, median)
-		}
+		p.ETA, p.ETAKnown = etaFor(durations, len(items)-current)
 		p.PerSignaturePIN = signing.DetectPINPolicy(durations) == signing.PINPolicyPerSignature
 		hooks.OnProgress(p)
 	}
@@ -343,6 +337,33 @@ func (r *Runner) RunItems(ctx context.Context, items []Item, sign SignFunc, hook
 	report.Timing = signing.BuildTimingReport(durations)
 	emitProgress(PhaseFinished, len(items))
 	return report
+}
+
+// etaFor is the estimate a run reports at one moment of itself: the
+// measured first signature, plus what is still to come at the measured
+// median of the signatures after the first (F2 §5.6, SPEC §12.9).
+//
+// durations holds one entry per signature attempt made so far, in the
+// order they were made; remaining is how many documents the run has not
+// reached. Nothing has been measured yet means no estimate at all —
+// the indeterminate "Preparing card…" state — rather than a guess.
+//
+// It is a function rather than four lines inside RunItems so that the
+// property SPEC §12.9 actually asks for — that this number comes from
+// what was measured and never from a constant — can be asserted by
+// handing it durations. Producing durations by sleeping and then
+// comparing two runs asserts something else: that the machine ran the
+// short sleep faster than the long one, which on a loaded two-core
+// runner is not true and is not a property of this code (D-201, D-112).
+func etaFor(durations []time.Duration, remaining int) (time.Duration, bool) {
+	if len(durations) == 0 {
+		return 0, false
+	}
+	var median time.Duration
+	if len(durations) > 1 {
+		median = signing.MedianOf(durations[1:])
+	}
+	return signing.EstimatedTotal(durations[0], remaining, median)
 }
 
 // parentDir is filepath.Dir, but empty for an empty path rather than

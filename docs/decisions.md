@@ -12840,3 +12840,238 @@ read the rendered payload rather than the value behind it.
   `CanonicalString`.** It would have been green for a third wrong
   reason — the one [[D-044]] names for verifiers: a bug in a shared
   helper passes both ways.
+
+---
+
+## D-201 — Three CI failures, all one defect: a test asserting a property must observe the property, not time how long the machine took
+
+**Date:** 2026-09-08
+**Phase:** F7 — CI repair
+
+**Decision, and the rule the three share.** A test that asserts a
+property must observe that property. It may wait on a channel, an
+event, or a state it can read back; it may never wait on a duration,
+and it may never assume one goroutine outruns another. Three tests were
+red on the CI runner and green here, none of them because the product
+was wrong, and all three for that one reason. This is [[D-112]]'s rule,
+recorded again because three more instances of it arrived at once and
+that entry had recorded only its own.
+
+None of the three assertions was weakened. Each was already asserting
+something true; each was asserting it by a means that measured the
+machine instead.
+
+**Failure 1 — `TestASuccessfulPairingShowsTheConnectedScreen/en`: a
+race, and the numbers say so.**
+
+```
+pairing connected (en): document.body scrollHeight 330 exceeds clientHeight 210
+```
+
+The window shrinks from 420x330 to 420x210 when a pairing succeeds, and
+the test measures after the shrink. Two readings were possible — the
+content is genuinely taller on the runner (a substituted font, a
+different line height), or the measurement raced the resize and read the
+new window height against the old content — and the whole of the fix
+depends on which, so it was established rather than assumed.
+
+Measured, in the real window, at the size each screen is really shown at:
+
+| screen | window | body scrollHeight | body clientHeight |
+|---|---|---|---|
+| connected | 420x330 | 330 | 330 |
+| connected | 420x210 | 210 | 210 |
+| connected | 420x180 | 195 | 180 |
+| code | 420x330 | 330 | 330 |
+| code | 420x210 | 270 | 210 |
+
+The connected screen's content needs **195 points** and is given 210,
+identically in all three locales — its text wraps to the same number of
+lines in each. Nothing on it is 330 tall and nothing could be: 330 is
+what `body { height: 100vh }` measures in the window as it stood
+*before* the resize. So the reported 330 was never a content height. It
+was the old viewport.
+
+That was then reproduced rather than left as an inference. A single
+atomic snapshot taken immediately after `Resize(420, 210)` returned
+reported `window.innerHeight 330, body.scrollHeight 330,
+body.clientHeight 330` — the entire pre-resize layout, after Resize had
+returned. And the old test, run 100 times at `GOMAXPROCS=2` with every
+core of this machine kept busy, **failed 8 times out of 100** with the
+runner's own message.
+
+The mechanism: `Window.Resize` returns once the native window has been
+moved and the WebView2 controller's bounds have been set, both on the
+window's own OS thread. The page learns its new size down the browser's
+own path to the renderer, which is not ordered against `ExecuteScript`,
+the path `Eval` uses. `assertPageDoesNotScroll` then asked four separate
+`Eval` questions, and the resize landing between two of them compared a
+content height measured against one viewport with a client height
+measured against another.
+
+Both halves were fixed. `resizeAndSettle` waits until the page itself
+reports the new viewport — an observable state, with a 30-second ceiling
+that exists only to turn a window that never resizes into a failure
+instead of a hang — and `assertPageDoesNotScroll` now takes its four
+numbers in one `Eval`, so a pair can never straddle anything. The second
+half matters on its own: a fully stale snapshot is self-consistent and
+would have asserted the layout of a window nobody was looking at, which
+is a false green rather than a false red.
+
+**This is not a product defect. A different one, in the same window, was
+found while establishing that — at the end of this entry.**
+
+**Failure 2 — `TestETAIsMeasuredNeverConstant`: a premise that cannot
+hold on a loaded machine.**
+
+```
+ETA did not grow with measured signature time: fast 41.6492ms, slow 31.7008ms
+```
+
+The test signed one batch through a `SignFunc` sleeping 30 ms and
+another through one sleeping 2 ms, and required the first batch's
+estimate to be the larger. On a two-core runner under `-race` the 2 ms
+sleep came back in 41.6 ms and the 30 ms one in 31.7 ms, so the premise
+was false and the test failed for being right about a machine it was
+never asserting anything about.
+
+The property SPEC §12.9 asks for is that the estimate comes from
+measurement and never from a constant — the rule exists because a
+hard-coded 4900 ms is wrong for a Pošta card measured at 12.7 s. That is
+a property of a function, so it is now asserted over one. `RunItems`'
+four lines of estimate arithmetic became `etaFor`
+(`internal/jobs/run.go`), unchanged in behaviour, and the test hands it
+the durations two different cards would have produced and checks the
+arithmetic F2 §5.6 states — including that halving every measurement
+shrinks the estimate, so the number is a function of the measurement in
+both directions rather than merely larger for a larger input.
+
+A second test keeps the runner itself honest, since a unit test over
+`etaFor` says nothing about what `RunItems` feeds it. It asserts an
+identity rather than a comparison: the first estimate a run reports
+equals `Report.Timing.FirstSignature`, the run's own measurement of its
+own first signature. That holds however long the machine took, and no
+constant can satisfy it, because a measured duration is never exactly
+one.
+
+Its `SignFunc` waits for the process clock to visibly advance before
+returning. That is a state being waited for, not a period being slept: a
+loaded machine reaches it later and never sooner. It is needed because
+`time.Since` across an instant call is exactly **0** on Windows — the
+clock's granularity here measured 512 µs — and a first signature of zero
+is F2 §5.6's "no measurement yet" ([[D-030]]), so a run of instant
+signatures reports no ETA at all. That is correct behaviour and not a
+defect: a real signature takes ~0.41 s.
+
+**Failure 3 — `TestTheAwaitingConsentEventCarriesTheRemainingTime`: a
+race against a design that is right.**
+
+```
+jobs_test.go:398: the stream never reported awaiting_consent
+```
+
+The signer published `awaiting_consent` and was released the moment the
+test had opened its stream, which assumed the reader was attached and
+scheduled before the job left the state. Under `-race` it was not. The
+stream is not at fault: a follower lands on the newest state rather than
+working through a backlog (PROTOCOL.md §6.2, [[D-188]]), because a
+hundred stale `signing` events are worth less than the one saying where
+the batch actually is. A state a run passes straight through is
+therefore a state a follower may legitimately never see.
+
+So the job is held in `awaiting_consent` until the stream has reported
+it, and only then released — the same hand-off
+`TestTheEventStreamReportsEveryStateAndEnds` already uses, for the same
+reason, recorded in [[D-188]] when that test had to learn it. Nothing
+about the stream changed, no sleep was added, and no history is
+replayed. Holding the job there is what makes the state observable; a
+sleep would only have made it likely.
+
+**A fourth site, found by scanning for the same shape.**
+`TestTheWindowResizesToItsContent` (`signflow_windows_test.go`) read
+`window.innerWidth`/`innerHeight` once, immediately after `Resize`, and
+required them to equal the step's size — the identical defect, one file
+away, still green only because nothing had ever loaded this machine
+enough. It now waits through `resizeAndSettle` and asserts exactly what
+it asserted before.
+
+**A genuine product defect, found while establishing that Failure 1 was
+not one — reported here, not fixed.**
+
+Measuring what the connected screen really needs (195 of 210 points)
+raised the question of what happens to a name longer than the
+26-character one every pairing test uses. A pairing name is
+caller-supplied and reaches the window at up to
+`consent.MaxDisplayLength` = 120 characters. Measured at that length, in
+all three locales:
+
+- **Code screen, 420x330:** content is 354 points. `#app-name`'s
+  rendered box runs from **-8 to 104** — its first line is above the top
+  of the window. The page overflows, and `deny-btn.focus()` scrolls that
+  overflow, taking the application's name off the top of the screen.
+- **Connected screen, 420x210:** content is 279 points. `#connected-name`
+  runs from **-53 to 59** — a third of the name is off-screen.
+
+This is the class [[D-096]], [[D-106]] and [[D-167]] each name, and the
+one `pairing.css`'s own comment already describes for the origin: a
+caller-supplied field with no length bound, in a window with a fixed
+height. It is worse here than for the origin, because the name is the
+one thing on that screen a person is meant to read before typing a code
+into somebody else's application — SPEC §6.2's reason for showing the
+origin verbatim applies to the name at least as strongly.
+
+It is recorded rather than fixed because the remedy is a design choice
+on a security screen, not a mechanical repair: make the identity block
+the page's one scrolling region (the shape `.origin-row` already has,
+which hides nothing and moves neither the code nor the buttons), clamp
+the name to a fixed number of lines with a visible ellipsis, or make
+both windows taller for a case that is rare.
+The first is recommended.
+`TestALongOriginWrapsRatherThanWideningThePairingWindow` covers the
+origin and has no counterpart for the name; whichever remedy is chosen
+needs one.
+
+**Verified.** Each of the three, one hundred consecutive runs on this
+machine at `-count=100`: 100/100 idle, and 100/100 again with every core
+kept busy by two load generators — at `GOMAXPROCS=2` for the pairing
+test, which is the condition under which the old one failed 8 times in
+the same 100, and at `GOMAXPROCS=1` for the two that need no window. The
+full suite passes with `-count=1`, with and without the `softtoken`
+tag, alongside `gofmt`, `go vet -unsafeptr=false`, `golangci-lint` in
+both the Linux and the `GOOS=windows` views, `checkdeps` and `checkcss`.
+No `//nolint` was added.
+
+**`-race` was not run, and that is not a formality.** This machine has
+no C compiler — verified again here, `cgo: C compiler "gcc" not found` —
+which is [[D-012]]'s condition and the same one [[D-112]] had to record.
+`-race` is exactly what turned all three of these red, so the runner
+remains the only place that check happens, and the load substitute above
+is a substitute, not the thing itself.
+
+**The machine was put back.** `config.json`, the audit directory, the
+log and the extracted UI assets all hash identically to a snapshot taken
+before any of this ran; the only files under `%LOCALAPPDATA%\Liro` that
+changed are inside WebView2's own browser profile, which every run of
+the UI tests touches. `HKCU\...\Run` exports byte-for-byte identically
+and carries no `LiroBridge` value, and the Explorer verb key is still
+absent, both as they were. Both load generators were stopped by their
+own exact PIDs.
+
+**Rejected.**
+- **A sleep, a retry, or a wider budget in any of the three.** Every one
+  of them re-picks a number that works on the two machines anyone has
+  looked at, which is what [[D-112]] already rejected and the reason
+  this entry exists.
+- **Making the event stream replay history so Failure 3's state could
+  not be missed.** That trades the guarantee that matters — a follower
+  always lands on where the batch actually is — for the convenience of a
+  test. PROTOCOL.md §6.2 is right.
+- **Keeping Failure 2 as an integration test with the sleeps made
+  longer.** A ten-to-one ratio was already there and was lost anyway.
+  The property is arithmetic over measurements, and a test that cannot
+  be defeated by a busy machine is worth more than one that observes the
+  arithmetic through a scheduler.
+- **Fixing the long-name overflow while in here.** Real, recommended,
+  and described above — but it is a layout decision about a window whose
+  job is to be read carefully, and making it silently inside a change
+  meant to repair three tests is how a design nobody chose ships.

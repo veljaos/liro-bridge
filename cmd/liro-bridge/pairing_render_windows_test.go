@@ -133,10 +133,15 @@ func TestASuccessfulPairingShowsTheConnectedScreen(t *testing.T) {
 			// At the size the connected screen is actually shown at:
 			// a layout measured in a differently-sized window says
 			// nothing about the window a person opens (D-124).
-			if err := win.Resize(pairingWindowWidth, pairingConnectedHeight); err != nil {
-				t.Fatalf("Resize: %v", err)
-			}
-			defer func() { _ = win.Resize(pairingWindowWidth, pairingWindowHeight) }()
+			//
+			// And measured at that size once the page has actually
+			// reached it. Resize returns before the page has been
+			// relaid out, so a measurement taken straight afterwards
+			// can be answered out of the 420x330 layout the window had
+			// a moment ago — which is what "the page itself scrolls"
+			// meant on the runner (D-201).
+			resizeAndSettle(t, win, pairingWindowWidth, pairingConnectedHeight)
+			defer resizeAndSettle(t, win, pairingWindowWidth, pairingWindowHeight)
 			if err := win.PostJSON(map[string]any{"type": "connected"}); err != nil {
 				t.Fatalf("PostJSON(connected): %v", err)
 			}

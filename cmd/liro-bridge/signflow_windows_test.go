@@ -343,14 +343,12 @@ func TestTheWindowResizesToItsContent(t *testing.T) {
 		if err := win.Navigate(step.page()); err != nil {
 			t.Fatalf("Navigate(%v): %v", step, err)
 		}
-		if err := win.Resize(w, h); err != nil {
-			t.Fatalf("Resize(%v): %v", step, err)
-		}
-		gotW := evalNumber(t, win, "window.innerWidth")
-		gotH := evalNumber(t, win, "window.innerHeight")
-		if int(gotW) != w || int(gotH) != h {
-			t.Errorf("step %v: the page is %vx%v, want %dx%d", step, gotW, gotH, w, h)
-		}
+		// The page must reach the size the step asks for. It is waited
+		// for rather than read once, because Resize returns before the
+		// page has been relaid out and a single read straight after it
+		// answers out of the previous step's layout — the same defect,
+		// in the same package, that D-201 found in the pairing window.
+		resizeAndSettle(t, win, w, h)
 	}
 
 	// And the steps are genuinely different sizes: the point of
