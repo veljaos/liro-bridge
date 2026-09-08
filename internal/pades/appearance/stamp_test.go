@@ -10,13 +10,20 @@ import (
 	"github.com/veljaos/liro-bridge/internal/pades/pdf"
 )
 
+// bothWeights is every face the stamp draws in: the fitting rules are
+// the same for each, and the one line drawn bold — the signer's name —
+// is also the one most likely to need them.
+var bothWeights = []Weight{Regular, Bold}
+
 func TestFitLineUsesNominalSizeWhenItFits(t *testing.T) {
-	text, size, err := fitLine("short", 1000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if text != "short" || size != nominalFontSize {
-		t.Fatalf("fitLine = (%q, %g), want (%q, %g)", text, size, "short", nominalFontSize)
+	for _, weight := range bothWeights {
+		text, size, err := fitLine("short", 1000, weight)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if text != "short" || size != nominalFontSize {
+			t.Fatalf("weight %d: fitLine = (%q, %g), want (%q, %g)", weight, text, size, "short", nominalFontSize)
+		}
 	}
 }
 
@@ -24,23 +31,25 @@ func TestFitLineReducesOneStepBeforeTruncating(t *testing.T) {
 	// A width that the nominal size overflows but the reduced size just
 	// fits (F4 §5.4: "reduce the font size in one step" comes before
 	// truncation, not instead of trying it).
-	w1000, err := TextWidth1000("Redžvel Mešković")
-	if err != nil {
-		t.Fatal(err)
-	}
-	nominalWidth := float64(w1000) * nominalFontSize / 1000
-	reducedWidth := float64(w1000) * reducedFontSize / 1000
-	maxWidth := (nominalWidth + reducedWidth) / 2 // strictly between the two
+	for _, weight := range bothWeights {
+		w1000, err := TextWidth1000("Redžvel Mešković", weight)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nominalWidth := float64(w1000) * nominalFontSize / 1000
+		reducedWidth := float64(w1000) * reducedFontSize / 1000
+		maxWidth := (nominalWidth + reducedWidth) / 2 // strictly between the two
 
-	text, size, err := fitLine("Redžvel Mešković", maxWidth)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if text != "Redžvel Mešković" {
-		t.Fatalf("fitLine truncated %q when the reduced size alone should have fit", text)
-	}
-	if size != reducedFontSize {
-		t.Fatalf("fitLine size = %g, want reducedFontSize %g", size, reducedFontSize)
+		text, size, err := fitLine("Redžvel Mešković", maxWidth, weight)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if text != "Redžvel Mešković" {
+			t.Fatalf("weight %d: fitLine truncated %q when the reduced size alone should have fit", weight, text)
+		}
+		if size != reducedFontSize {
+			t.Fatalf("weight %d: fitLine size = %g, want reducedFontSize %g", weight, size, reducedFontSize)
+		}
 	}
 }
 
@@ -52,26 +61,28 @@ func TestFitLineTruncatesAndNeverOverflows(t *testing.T) {
 	longName := strings.Repeat("Aleksandar Nikolić-Petrović ", 10)
 	const maxWidth = 138.0 // this project's own text-column width (StampWidth - logo - padding)
 
-	text, size, err := fitLine(longName, maxWidth)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if size != reducedFontSize {
-		t.Fatalf("fitLine size = %g, want reducedFontSize %g for an extreme overflow", size, reducedFontSize)
-	}
-	if !strings.HasSuffix(text, truncationMark) {
-		t.Fatalf("fitLine result %q does not end with the truncation mark %q", text, truncationMark)
-	}
-	if text == longName {
-		t.Fatal("fitLine did not actually shorten a name many times wider than the stamp")
-	}
-	w1000, err := TextWidth1000(text)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotWidth := float64(w1000) * size / 1000
-	if gotWidth > maxWidth+0.01 {
-		t.Fatalf("truncated text still overflows: width %g > maxWidth %g", gotWidth, maxWidth)
+	for _, weight := range bothWeights {
+		text, size, err := fitLine(longName, maxWidth, weight)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if size != reducedFontSize {
+			t.Fatalf("weight %d: fitLine size = %g, want reducedFontSize %g for an extreme overflow", weight, size, reducedFontSize)
+		}
+		if !strings.HasSuffix(text, truncationMark) {
+			t.Fatalf("weight %d: fitLine result %q does not end with the truncation mark %q", weight, text, truncationMark)
+		}
+		if text == longName {
+			t.Fatalf("weight %d: fitLine did not actually shorten a name many times wider than the stamp", weight)
+		}
+		w1000, err := TextWidth1000(text, weight)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotWidth := float64(w1000) * size / 1000
+		if gotWidth > maxWidth+0.01 {
+			t.Fatalf("weight %d: truncated text still overflows: width %g > maxWidth %g", weight, gotWidth, maxWidth)
+		}
 	}
 }
 
@@ -79,19 +90,21 @@ func TestFitLineNeverWidensBeyondMaxWidth(t *testing.T) {
 	// F4 §5.4: "Do not widen the stamp." No return value from fitLine,
 	// at either size, may exceed maxWidth.
 	texts := []string{"x", "Aleksandar Nikolić-Petrović", strings.Repeat("Ж", 40)}
-	for _, in := range texts {
-		for _, maxWidth := range []float64{10, 50, 138, 500} {
-			text, size, err := fitLine(in, maxWidth)
-			if err != nil {
-				continue // a maxWidth too small even for one ellipsis is not this test's concern
-			}
-			w1000, err := TextWidth1000(text)
-			if err != nil {
-				t.Fatal(err)
-			}
-			gotWidth := float64(w1000) * size / 1000
-			if gotWidth > maxWidth+0.01 {
-				t.Errorf("fitLine(%q, maxWidth=%g) = %q at size %g: width %g exceeds maxWidth", in, maxWidth, text, size, gotWidth)
+	for _, weight := range bothWeights {
+		for _, in := range texts {
+			for _, maxWidth := range []float64{10, 50, 138, 500} {
+				text, size, err := fitLine(in, maxWidth, weight)
+				if err != nil {
+					continue // a maxWidth too small even for one ellipsis is not this test's concern
+				}
+				w1000, err := TextWidth1000(text, weight)
+				if err != nil {
+					t.Fatal(err)
+				}
+				gotWidth := float64(w1000) * size / 1000
+				if gotWidth > maxWidth+0.01 {
+					t.Errorf("weight %d: fitLine(%q, maxWidth=%g) = %q at size %g: width %g exceeds maxWidth", weight, in, maxWidth, text, size, gotWidth)
+				}
 			}
 		}
 	}

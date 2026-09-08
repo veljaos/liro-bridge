@@ -19,6 +19,26 @@ const (
 	reducedFontSize = 6.0
 )
 
+// stampInkR, stampInkG and stampInkB are the stamp's text colour as PDF
+// DeviceRGB components: #16211F, which is --liro-color-text-primary,
+// the design system's primary text colour (internal/ui/assets/
+// tokens.css). It is taken from the token rather than chosen here, the
+// way the logo's #038387 is taken from the logo asset (D-070), and
+// TestStampInkIsTheTextPrimaryToken reads tokens.css and checks that
+// these three numbers still are it.
+//
+// Before this, the stamp set no fill colour at all and inherited PDF's
+// initial black. That was not a decision anyone had made — it was the
+// absence of one, and it meant the text's colour depended on the
+// graphics state a viewer happened to be in when it drew the
+// appearance stream. Naming the colour makes it the product's ink
+// rather than a default, and makes it the same ink as every window.
+const (
+	stampInkR = 0x16 / 255.0
+	stampInkG = 0x21 / 255.0
+	stampInkB = 0x1F / 255.0
+)
+
 // truncationMark replaces SPEC §13's literal "…" with three ASCII
 // periods: U+2026 is not in this project's font subset (F4 §3.2 lists
 // exactly ASCII, the Serbian Latin extras and the Serbian Cyrillic
@@ -37,9 +57,10 @@ const truncationMark = "..."
 // package" is true by construction, not by convention.
 type Options struct {
 	// Label is line 1, already localised by the caller (F4 §5.3):
-	// "Digitally signed" / "Digitalno potpisano" / "Дигитално
-	// потписано". It is the one line whose script follows the interface
-	// language rather than the certificate.
+	// "Digitally signed" / "Elektronski potpisano" / "Електронски
+	// потписано" (D-209, superseding D-125's "Дигитално потписано").
+	// It is the one line whose script follows the interface language
+	// rather than the certificate.
 	Label string
 
 	// SignerName is never localised and never transliterated (F4
@@ -148,7 +169,10 @@ func Render(doc *pdf.Document, pageDict pdf.Dict, u *pdf.Update, opts Options) (
 	}
 
 	resources := pdf.Dict{
-		pdf.Name("Font"):    pdf.Dict{pdf.Name("F1"): pdf.Reference{Num: fonts.Type0Num}},
+		pdf.Name("Font"): pdf.Dict{
+			pdf.Name("F1"): pdf.Reference{Num: fonts.Type0Num},
+			pdf.Name("F2"): pdf.Reference{Num: fonts.Type0BoldNum},
+		},
 		pdf.Name("XObject"): pdf.Dict{pdf.Name("Logo"): pdf.Reference{Num: logoNum}},
 	}
 	formNum := u.NewObjectNumber()
@@ -172,13 +196,51 @@ func Render(doc *pdf.Document, pageDict pdf.Dict, u *pdf.Update, opts Options) (
 // fits beside a 36pt logo.
 const serialPrefix = "SN "
 
+// serialGroup is how many hexadecimal digits of the certificate serial
+// are set together before a space. Four, in the way a card number or an
+// IBAN is grouped: an eighteen-digit run of hex is not something a
+// person can read off a page, compare against a certificate viewer, or
+// read aloud down a telephone, and groups of four are the length at
+// which people reliably do all three.
+//
+// It costs width — "SN 20F0 48A7 68F5 6F09 9E" is 25 characters where
+// "SN 20F048A768F56F099E" was 21 — and the stamp's width is fixed at
+// 190 points (SPEC §13.1), so the grouped line has to be measured, not
+// assumed to fit. TestGroupedSerialFitsTheStampAtNominalSize measures
+// it against the real MUP serial.
+const serialGroup = 4
+
+// groupSerial breaks a hexadecimal serial into serialGroup-digit groups
+// separated by single spaces, from the left, so that the short group —
+// if the serial's length is not a multiple of four — falls at the end,
+// where a reader comparing digit by digit has already stopped counting.
+func groupSerial(hex string) string {
+	var b strings.Builder
+	for i, r := range hex {
+		if i > 0 && i%serialGroup == 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// stampLine is one line of stamp text and the face it is drawn in.
+// Everything is Regular but the signer's name, which is Bold: it is the
+// one thing a person looks at the stamp to find, and the only way a
+// four-line block of 7pt type says so is weight.
+type stampLine struct {
+	text   string
+	weight Weight
+}
+
 // buildLines assembles the stamp's text lines, in the order they are
 // drawn. Four are always present and always on their own line:
 //
-//	Дигитално потписано      the label, in the interface's language
-//	ВЕЉКО СТАНОЈЕВИЋ         the signer, in the certificate's own script
-//	SN 20F048A768F56F099E    the certificate serial
-//	04.09.2026. 15:04:33     the signing date and time
+//	Електронски потписано         the label, in the interface's language
+//	ВЕЉКО СТАНОЈЕВИЋ              the signer, bold, in the certificate's own script
+//	SN 20F0 48A7 68F5 6F09 9E     the certificate serial, in groups of four
+//	04.09.2026. 15:04:33          the signing date and time
 //
 // then the caller's reference line, then the identity document number,
 // each only when supplied — six lines at most.
@@ -195,21 +257,21 @@ const serialPrefix = "SN "
 // changes its case and not its script: strings.ToUpper is
 // Unicode-aware, so "Zoran Milovanović" becomes "ZORAN MILOVANOVIĆ"
 // and "ВЕЉКО СТАНОЈЕВИЋ" is already what it will be.
-func buildLines(opts Options) ([]string, error) {
+func buildLines(opts Options) ([]stampLine, error) {
 	if opts.Label == "" || opts.SignerName == "" {
 		return nil, fmt.Errorf("appearance: Label and SignerName are required")
 	}
-	lines := []string{
-		opts.Label,
-		strings.ToUpper(opts.SignerName),
-		serialPrefix + opts.SerialHex,
-		opts.SigningTime,
+	lines := []stampLine{
+		{text: opts.Label},
+		{text: strings.ToUpper(opts.SignerName), weight: Bold},
+		{text: serialPrefix + groupSerial(opts.SerialHex)},
+		{text: opts.SigningTime},
 	}
 	if opts.Reference != "" {
-		lines = append(lines, opts.Reference)
+		lines = append(lines, stampLine{text: opts.Reference})
 	}
 	if opts.DocumentID != "" {
-		lines = append(lines, opts.DocumentID)
+		lines = append(lines, stampLine{text: opts.DocumentID})
 	}
 	return lines, nil
 }
@@ -220,19 +282,21 @@ func buildLines(opts Options) ([]string, error) {
 // Form XObject /Matrix is what makes this display correctly regardless
 // of the target page's /Rotate (see geometry.go's rotationPlan doc
 // comment).
-func buildContentStream(lines []string, height float64) ([]byte, error) {
+func buildContentStream(lines []stampLine, height float64) ([]byte, error) {
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "q %g 0 0 %g %g %g cm /Logo Do Q\n", float64(LogoSize), float64(LogoSize), float64(Padding), float64(Padding))
+	fmt.Fprintf(&b, "q %g 0 0 %g %g %g cm /Logo Do Q\n", float64(LogoSize), float64(LogoSize), float64(Padding), logoY(height))
 
 	textX := float64(Padding + LogoSize + Padding)
 	maxTextWidth := StampWidth - textX - Padding
 
-	n := len(lines)
-	slot := (height - 2*Padding) / float64(n)
+	// The fill colour is a graphics-state parameter, not a text one, so
+	// it is set once before BT and applies to every line that follows.
+	fmt.Fprintf(&b, "%.4f %.4f %.4f rg\n", stampInkR, stampInkG, stampInkB)
 
 	b.WriteString("BT\n")
+	top := textBlockTop(len(lines), height)
 	for i, line := range lines {
-		fitted, size, err := fitLine(line, maxTextWidth)
+		fitted, size, err := fitLine(line.text, maxTextWidth, line.weight)
 		if err != nil {
 			return nil, err
 		}
@@ -240,20 +304,30 @@ func buildContentStream(lines []string, height float64) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		top := height - Padding - float64(i)*slot
-		baseline := top - slot*0.72 // roughly centres the glyph body within its slot
-		fmt.Fprintf(&b, "/F1 %.2f Tf 1 0 0 1 %.2f %.2f Tm %s Tj\n", size, textX, baseline, cidsToHex(cids))
+		slotTop := top - float64(i)*stampLineHeight
+		baseline := slotTop - stampLineHeight*0.72 // roughly centres the glyph body within its slot
+		fmt.Fprintf(&b, "%s %.2f Tf 1 0 0 1 %.2f %.2f Tm %s Tj\n", fontResourceName(line.weight), size, textX, baseline, cidsToHex(cids))
 	}
 	b.WriteString("ET\n")
 	return b.Bytes(), nil
 }
 
+// fontResourceName is the /Resources /Font key one weight is reachable
+// under inside the stamp's own content stream (see Render, which builds
+// that dictionary).
+func fontResourceName(weight Weight) string {
+	if weight == Bold {
+		return "/F2"
+	}
+	return "/F1"
+}
+
 // fitLine implements F4 §5.4 exactly: try the nominal size, then the
 // (single-step) reduced size, then truncate with an ellipsis at the
 // reduced size — never widening the stamp, never wrapping.
-func fitLine(text string, maxWidth float64) (string, float64, error) {
+func fitLine(text string, maxWidth float64, weight Weight) (string, float64, error) {
 	widthAt := func(s string, size float64) (float64, error) {
-		w1000, err := TextWidth1000(s)
+		w1000, err := TextWidth1000(s, weight)
 		if err != nil {
 			return 0, err
 		}

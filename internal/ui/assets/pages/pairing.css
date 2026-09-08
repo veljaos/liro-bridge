@@ -11,14 +11,52 @@ main {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--liro-space-4);
+}
+
+/* The code screen is a two-field table with the code under it, and the
+   gap above the code is wider than the gap between the fields — that
+   difference is the whole separation between who is asking and the
+   thing being read out loud (D-208). */
+#state-code {
+  gap: var(--liro-space-5);
+}
+
+/* One field: a quiet label above its value. Both are the page's own
+   typeface at the page's own weights — the label is smaller, lighter
+   and secondary, the value larger, stronger and primary, and nothing
+   here changes font family to make the distinction (D-208). The origin
+   was a monospace <code> and is now the same face as everything else,
+   which is what makes the two fields read as one table. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-1);
+  min-width: 0;
+}
+
+.field-label {
+  margin: 0;
+  font-size: var(--liro-font-size-small);
+  font-weight: var(--liro-font-weight-regular);
+  color: var(--liro-color-text-secondary);
+}
+
+/* Neither value has a break opportunity guaranteed in it — an origin is
+   one unbroken token by nature, and a name may be — so both break
+   inside the word rather than widening the window (D-096). */
+.field-value {
+  margin: 0;
+  font-size: var(--liro-font-size-heading);
+  font-weight: var(--liro-font-weight-semibold);
+  color: var(--liro-color-text-primary);
+  overflow-wrap: anywhere;
 }
 
 /* The identity block: who is asking, and from where. It is the page's
-   one scrolling region, and it is the identity block rather than the
-   origin card alone because *both* values in it are caller-supplied
-   and neither has a length this window controls — a name arrives at up
-   to consent.MaxDisplayLength (120 characters) and an origin at up to
+   one scrolling region, and it is the identity block rather than one
+   field alone because *both* values in it are caller-supplied and
+   neither has a length this window controls — a name arrives at up to
+   consent.MaxDisplayLength (120 characters) and an origin at up to
    api.MaxOriginLength (255).
 
    Wrapping alone is not enough here, because this window has no list to
@@ -38,52 +76,33 @@ main {
 .identity {
   display: flex;
   flex-direction: column;
-  gap: var(--liro-space-4);
+  gap: var(--liro-space-3);
   /* .liro-scroll-region's flex-grow, overridden: this region takes
      what is left over only in the sense of shrinking into it. */
   flex: 0 1 auto;
 }
 
-.identity p {
-  margin: 0;
-}
-
-/* Neither value has a break opportunity guaranteed in it — an origin is
-   one unbroken token by nature, and a name may be — so both break
-   inside the word rather than widening the window (D-096). */
-#app-name,
-#connected-name,
-#app-origin {
-  overflow-wrap: anywhere;
-}
-
-.origin-row {
-  align-items: baseline;
-  gap: var(--liro-space-3);
-}
-
-#app-origin {
-  font-family: var(--liro-font-family-mono);
-  color: var(--liro-color-text-secondary);
-  text-align: right;
-}
-
+/* Centred on the window's axis, unlike the table above it: the code is
+   the thing being read out loud rather than a third field about who is
+   asking, and centring is the second half of what says so (the first
+   is the wider gap above it). */
 .code-block {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--liro-space-1);
   text-align: center;
+  gap: var(--liro-space-1);
 }
 
-.code-block > p {
+.code-block p {
   margin: 0;
 }
 
 /* Six digits, spaced apart, in the one place in this program where
-   type is meant to be read across a desk. */
+   type is meant to be read across a desk. The size and the letter
+   spacing are the ones this code has always had; the family is the
+   page's own, because the screen is one typeface throughout (D-208). */
 .pairing-code {
-  font-family: var(--liro-font-family-mono);
   font-size: var(--liro-font-size-code);
   font-weight: var(--liro-font-weight-bold);
   letter-spacing: var(--liro-letter-spacing-code);
@@ -91,6 +110,42 @@ main {
   /* letter-spacing adds its gap after the last character too, which
      visually shifts a centred string to the left by that much. */
   text-indent: var(--liro-letter-spacing-code);
+}
+
+/* Two lines, not one paragraph: what to do with the number, and how
+   long it lasts. .code-block's own gap would put four points between
+   them, which reads as two notes rather than two lines of one. */
+.code-note {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The connected screen: the mark, the word and the name on one centred
+   axis, and the way out where every other window keeps it. Only the
+   name scrolls — it is the one caller-supplied value here, and a mark
+   that scrolled off the top of its own success message would be the
+   thing this screen exists to say, out of sight. */
+#state-connected {
+  align-items: center;
+  text-align: center;
+  gap: var(--liro-space-2);
+}
+
+#state-connected > .identity,
+#state-connected > .actions {
+  align-self: stretch;
+}
+
+/* Drawn, not typed: one glyph is not worth an icon library. Its size
+   and its colour are tokens — the positive intent colour every other
+   thing that went right in this program is drawn in (D-093) — and the
+   SVG paints itself with currentColor so the colour is set in exactly
+   one place. */
+.connected-check {
+  flex: 0 0 auto;
+  width: var(--liro-icon-size-lg);
+  height: var(--liro-icon-size-lg);
+  color: var(--liro-color-positive);
 }
 
 .actions {

@@ -28,12 +28,16 @@
 // Usage:
 //
 //	go run ./scripts/gensubsetfont --font <path to NotoSans-Regular.ttf>
+//	go run ./scripts/gensubsetfont --font <path to NotoSans-Bold.ttf> --set stamp-bold
 //
-// The source font, recorded because it was not before and a
-// regeneration had to go looking for it:
+// The source fonts, recorded because they were not before and a
+// regeneration had to go looking for them:
 //
 //	https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSans/unhinted/ttf/NotoSans-Regular.ttf
 //	SHA-256 f3961a9cde016d41a4879aecda1474d3a36d6bf54fa0e4643de029cc2248b0e8
+//
+//	https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSans/unhinted/ttf/NotoSans-Bold.ttf
+//	SHA-256 87cb2d84472a7d66da659ee47b6cdb9552326e8c128245231f191b6ac72529d9
 //
 // Unhinted rather than hinted: this writer strips hinting bytecode
 // anyway, and both variants of that release produce a byte-identical
@@ -44,9 +48,11 @@
 //
 // Output (committed):
 //
-//	internal/pades/appearance/notosans-subset.ttf
-//	internal/pades/appearance/subset_data.go
-//	internal/pades/appearance/charset.txt
+//	--set stamp       internal/pades/appearance/notosans-subset.ttf
+//	                  internal/pades/appearance/subset_data.go
+//	                  internal/pades/appearance/charset.txt
+//	--set stamp-bold  internal/pades/appearance/notosans-bold-subset.ttf
+//	                  internal/pades/appearance/subset_data_bold.go
 package main
 
 import (
@@ -77,13 +83,13 @@ const subsetTag = "LIROBR"
 func main() {
 	fontPath := flag.String("font", "", "path to the source font (see the URLs in this file's doc comment)")
 	outDir := flag.String("out", "internal/pades/appearance", "output directory")
-	set := flag.String("set", "stamp", `which character set to build: "stamp" (the visual signature stamp) or "preview" (the placement preview's substitute font)`)
+	set := flag.String("set", "stamp", `which subset to build: "stamp" (the visual signature stamp's regular face), "stamp-bold" (its bold face, same characters, for the signer's name) or "preview" (the placement preview's substitute font)`)
 	name := flag.String("name", "", "output .ttf file name (defaults to the set's own)")
 	flag.Parse()
 	if *fontPath == "" {
 		log.Fatal("gensubsetfont: --font is required")
 	}
-	if *set != "stamp" && *set != "preview" {
+	if *set != "stamp" && *set != "stamp-bold" && *set != "preview" {
 		log.Fatalf("gensubsetfont: unknown --set %q", *set)
 	}
 
@@ -100,6 +106,19 @@ func main() {
 	optional := false
 	ttfName := "notosans-subset.ttf"
 	charsetName := "charset.txt"
+	// The bold face is the *same* character set as the regular one
+	// (D-209), which is what makes the two share one rune -> GID table
+	// and one /ToUnicode CMap at run time: charset() is sorted and
+	// extractSubset assigns GIDs sequentially in that order, so the same
+	// input produces the same numbering whatever the source face's
+	// weight. It therefore writes no charset file of its own — a second
+	// copy of charset.txt would be a second thing to keep in step, and
+	// TestBoldSubsetCoversExactlyTheRegularSubsetsCharacters checks the
+	// two committed .ttf files against each other directly.
+	if *set == "stamp-bold" {
+		ttfName = "notosans-bold-subset.ttf"
+		charsetName = ""
+	}
 	if *set == "preview" {
 		runes = previewCharset()
 		// The preview's substitute font asks for characters no single
@@ -150,8 +169,10 @@ func main() {
 	if err := os.WriteFile(*outDir+"/"+ttfName, ttf, 0o644); err != nil {
 		log.Fatalf("gensubsetfont: writing subset TTF: %v", err)
 	}
-	if err := os.WriteFile(*outDir+"/"+charsetName, charsetFile(runes, ttfName), 0o644); err != nil {
-		log.Fatalf("gensubsetfont: writing %s: %v", charsetName, err)
+	if charsetName != "" {
+		if err := os.WriteFile(*outDir+"/"+charsetName, charsetFile(runes, ttfName), 0o644); err != nil {
+			log.Fatalf("gensubsetfont: writing %s: %v", charsetName, err)
+		}
 	}
 	// subset_data.go is the stamp's rune -> GID table, which only the
 	// stamp needs: the preview reads the substitute font's own character
@@ -164,6 +185,15 @@ func main() {
 		}
 		if err := os.WriteFile(*outDir+"/subset_data.go", formatted, 0o644); err != nil {
 			log.Fatalf("gensubsetfont: writing subset_data.go: %v", err)
+		}
+	}
+	if *set == "stamp-bold" {
+		formatted, err := format.Source(boldSubsetDataGo(sf))
+		if err != nil {
+			log.Fatalf("gensubsetfont: generated subset_data_bold.go is not valid Go: %v", err)
+		}
+		if err := os.WriteFile(*outDir+"/subset_data_bold.go", formatted, 0o644); err != nil {
+			log.Fatalf("gensubsetfont: writing subset_data_bold.go: %v", err)
 		}
 	}
 	fmt.Printf("gensubsetfont: wrote %d glyphs (%d bytes) to %s\n", len(sf.glyphs), len(ttf), *outDir)

@@ -7821,6 +7821,12 @@ step 3 and `stampOptionsFor`.
 
 ## D-125 — The stamp is four lines: label, name in capitals, serial, date; only the label follows the interface language
 
+> **Partly superseded by [[D-209]]**, which changes the label's wording,
+> sets line 2 in a bold face, groups line 3's serial in fours and centres
+> the block against the logo. What stands: four lines in this order, the
+> name upper-cased from `givenName` + `surname`, only the label following
+> the interface language, and the date not localised.
+
 **Date:** 2026-09-05
 **Phase:** F6 — first-real-use fix pass (Task 3)
 
@@ -13702,3 +13708,468 @@ cost is invisible to a fixture there is only one of ([[D-172]]).
 - **Shutting the apartment down at process exit.** There is nothing to
   gain: the operating system reclaims it, and any code that ran early
   would be shutting it down under a window still using it.
+
+---
+
+## D-208 — The pairing window is a two-field table under one typeface, and the connected screen is a mark, a word and a name
+
+**Date:** 2026-09-08
+**Phase:** Pre-F8 redesign (Tasks 1 and 2)
+
+**Decision.** Both screens of the pairing window are redrawn. Nothing
+either of them does changes: no new strings arrive, none of them are
+sanitised differently, the origin is still shown verbatim, there is
+still no Allow button, and the identity block is still the page's one
+scrolling region ([[D-177]], [[D-178]], [[D-202]]).
+
+*The code screen* is a two-field table — a small quiet label above a
+larger, stronger value, twice — with the code centred below it and Deny
+alone in the bottom right:
+
+    Zahtev
+    Knjigovodstvo d.o.o. — ERP
+
+    Poreklo
+    https://test.local
+
+
+                     Kod
+                 0 3 7 8 6 8
+          Unesite ovaj broj u aplikaciju.
+             Ovaj kod važi 5 minuta.
+
+                                         [ Odbij ]
+
+`pairing.wants_to_connect` is deleted from all three catalogues and
+`pairing.request_label` — *Zahtev / Захтев / Request* — takes its place.
+The label says what the sentence said, above the value it is about,
+which is one line of screen instead of two and one less thing to read.
+
+*The connected screen* is a green circle-check, **Povezano**, and the
+application's name, centred, one under the other, with Close where it
+was. `pairing.connected_explain` — "the application can now ask to sign;
+you still approve every signature yourself" — is deleted from all three.
+
+**Why one typeface.** Before this the screen had four treatments: the
+name at `--liro-font-size-display`, the phrase under it at body size,
+the origin in `--liro-font-family-mono` inside a bordered card, and the
+code in mono again. Four for two facts about one caller, and the two
+facts did not look like the same kind of thing — the name read as a
+title and the origin as a technical detail, when the origin is the one
+SPEC §6.2 says a person must be able to notice `http://` in. A label
+above a value, twice, in one face, says they are two fields of one
+record. The distinction between a label and its value is carried by
+size, weight and colour, which is what type is for; a second family
+would have said the two were different in kind, which they are not.
+
+The code keeps `--liro-font-size-code` and `--liro-letter-spacing-code`
+and gives up the monospace family with everything else. It is six digits
+with generous letter spacing at thirty-four points: nothing about
+reading them across a desk needed the family, and the family was the
+last thing on the screen making the page look like two pages.
+
+**Why the code block is separated and centred.** Two things say the six
+digits are not a third field about who is asking. The gap above them is
+`--liro-space-5` against the `--liro-space-3` between the fields, and
+the block — label, digits, note — is centred on the window's own axis
+while the table above it stays left-aligned.
+`TestTheGapAboveTheCodeIsLargerThanTheGapBetweenTheFields` and
+`TestTheCodeIsCentredOnTheWindow` assert both in all three locales
+rather than leaving them to whoever next edits the stylesheet.
+
+Centring the digits needs one correction that is invisible until it is
+missing. `letter-spacing` puts its gap after the *last* character too,
+so a centred run of six spaced digits sits half a letter-space left of
+where it looks like it should; `text-indent: var(--liro-letter-spacing-code)`
+puts it back. Measured, in the real window: with the correction the ink
+spans 136.0..284.0 in a 420-point window and is centred on 210.0; without
+it, on 206.9. The test measures the ink rather than the paragraph's box,
+because the box is shrink-wrapped and centred by the flex container
+whatever the type inside it does — it reads 210.0 either way, which is
+exactly how this would have shipped unnoticed.
+
+**Why the note under the code is two lines.** It says two things — what
+to do with the number and how long it lasts — and the sentence a person
+has to act on should not have to be found inside a paragraph.
+`pairing.code_explain` becomes *Unesite ovaj broj u aplikaciju.* and a
+new `pairing.code_validity` carries *Ovaj kod važi 5 minuta.*, in all
+three catalogues. Two elements rather than one string with a line break
+in it: a catalogue holds sentences, not layout, and a translator who is
+handed one string containing a newline will eventually be handed one
+without it. `TestTheCodeIsCentredOnTheWindow` also asserts each of the
+two renders as exactly one line in every locale, so a longer translation
+that quietly wraps to three is a failure rather than a surprise in the
+window.
+
+**Why the connected screen loses its sentence.** [[D-177]] put it there
+to say the one thing a person needs to know about what they just did —
+that pairing did not buy the application a signature, only the right to
+ask. That is still true, and it is still the reason the screen exists at
+all; what is no longer true is that a paragraph is how to say it. The
+screen is shown for the few seconds between a code being confirmed and
+somebody pressing Close, and a mark, a word and a name are read in one
+glance where three lines of prose are read by nobody. The sentence's
+content is not lost: SPEC §6.5 makes the consent window the gate, and
+that window is where a person meets the claim again, with a document in
+front of them.
+
+The keys are **deleted from all three catalogues**, not merely
+unreferenced, and
+`TestTheStringsTheRedesignRemovedAreGoneFromEveryCatalogue` asserts both
+are gone in all three — the check
+`TestThePairingWindowShowsTheCodeAndNoAllowButton` already makes for
+`pairing.allow`. An unused message is one edit away from being wired
+back in.
+
+**The mark is drawn in the page, and both of its numbers are tokens.**
+Inline SVG: a circle and a check, `stroke="currentColor"`, inside an
+element whose `color` is `var(--liro-color-positive)` and whose width
+and height are `var(--liro-icon-size-lg)`. `--liro-icon-size-lg: 40px`
+is a new token in `scripts/synctokens`, because SPEC §10.1's answer to a
+value that does not exist as a token is to add one, and a spacing token
+standing in for an icon size would have been the number written down
+twice under a name that means something else. `scripts/checkcss` stays
+green; there is no literal in the CSS and none in the HTML either.
+
+An icon library was not added. One glyph is not a dependency, and a font
+that has to load is a mark that is missing for the first frame of a
+screen whose whole content is that mark.
+
+**The sizes, and the content heights behind them.** Measured in the real
+window at each screen's own size, in all three locales — the numbers are
+identical in each, because the only text that differs between them is
+three short labels.
+
+| | code screen 420×369 | connected screen 420×228 |
+|---|---|---|
+| room the identity block can be given | 140 | 61 |
+| one-line name | identity 98 — nothing scrolls; code at 138, note 34 tall, Deny at 310 | identity 22 — nothing scrolls; mark 16..56, Povezano 64..92, name 100..122, Close at 169 |
+| ordinary two-line company name | identity 121 — nothing scrolls, 19 points spare | identity 45 — nothing scrolls, 16 points spare |
+| 120-character name | identity 143 of 140, **scrolls**; name's first line at 16; code at 180, Deny at 310 | identity 67 of 61, **scrolls**; name's first line at 100; mark and Povezano do not move; Close at 169 |
+
+**Why the code screen grew, 330 → 369.** Not for the 120-character
+case — for the ordinary one, and the height is set by one rule: the
+identity block must not scroll for an ordinary two-line company name,
+with one `--liro-space-4` of slack. Everything below that block grew.
+The fields are taller than the old prose-and-card — the origin is
+sixteen points rather than twelve — the gap above the code is
+twenty-four rather than sixteen, and the note under the code is two
+lines rather than one. Measured at 330 with the new fields, that name
+needed 121 points in a block that could be given 118; at 352, with the
+note still one line, 123. Three points short, and then two, is a
+scrollbar beside an ordinary name — exactly the defect [[D-202]] found
+by looking at the shipped connected screen, and exactly the one every
+layout test passes through: the page does not scroll, the buttons are on
+screen, the name is inside the window, and there is a scrollbar in the
+picture. 369 gives the block 140.
+
+**Why the connected screen grew, 226 → 228.** The sentence came off and
+a forty-point mark went on, and what sets the height is unchanged: an
+ordinary two-line company name must not make the identity block scroll,
+with one `--liro-space-4` of slack so that a one-word label change in
+any of the three catalogues does not put the scrollbar straight back.
+That name needs 45; at 228 the block can be given 61. The number was
+measured again rather than carried over, which is the whole reason it
+moved by two points instead of staying where it was.
+
+**What a 120-character name costs, stated plainly.** Deny and Close do
+not move at all — `.actions` keeps `margin-top: auto`. The code does: it
+sits at 138 for a one-line name and at 180 for a 120-character one,
+because the identity block grows into the slack between the code and the
+actions rather than pushing anything. That is [[D-202]]'s mechanism
+unchanged (`flex: 0 1 auto` over `.liro-scroll-region`), and the
+movement is larger than the ten points [[D-202]] measured only because
+the slack it grows into is larger. Pinning the code absolutely would
+mean giving the identity block a fixed height — dead space under every
+ordinary name, to hold still for a case that is padding.
+
+**Verified by looking at it.** The binary was built and started in tray
+mode, a real HTTP client posted `/v2/pair/request` and then
+`/v2/pair/confirm` with the code read off the screen — which is the
+mechanism [[D-177]] describes, performed rather than simulated — and
+both screens were photographed with `PrintWindow`, so taking the picture
+did not take the foreground from whoever was using the machine
+([[D-122]]). Twelve pictures: both screens, an ordinary name and a
+120-character one, in `sr-Latn`, `sr-Cyrl` and `en`. No synthetic mouse
+or keyboard input anywhere ([[D-094]]); the one window that had to be
+dismissed between runs was sent `WM_CLOSE`, a window message. The
+process was stopped by its own exact PID.
+
+The machine was left as it was found, checked by hash: `config.json`,
+the audit directory, `HKCU\...\Run` and the Explorer verb. One of the
+four had actually changed — starting the agent from `dist/` made
+`applyExplorerMenu` re-point the `.pdf` verb at the binary that was
+running, which is that function working correctly and is why the hash is
+taken rather than assumed. It was restored.
+
+**Rejected.**
+- **Keeping the origin in monospace.** It is the argument for the
+  redesign in miniature: monospace says "technical detail", and SPEC
+  §6.2 wants the origin read as carefully as the name.
+- **`text-transform: uppercase` on the labels.** The sketch this was
+  drawn from writes KOD in capitals; it also writes the application's
+  name in capitals, and the name is caller-supplied text this window may
+  not alter. One rule for all three labels, and the catalogues already
+  hold them in the case Serbian writes them in.
+- **One catalogue string with a newline in it for the two-line note.**
+  A catalogue holds sentences; a translator handed one string with a
+  line break in it will eventually hand one back without it, and the
+  layout would then depend on a character nobody can see in a JSON
+  file. Two keys, two elements.
+- **Leaving the note as the single sentence it was** ("Dajte ovaj kod
+  aplikaciji. Važi pet minuta."). Two instructions in one line, and the
+  one a person has to act on — type this number over there — was the
+  half nobody read.
+- **An icon font or library for the check mark.** Above.
+- **Reusing `--liro-space-6` as the mark's size.** 32 points is the
+  right order of magnitude and the wrong name: a spacing token used as a
+  size is the value written down twice, once under a name that means
+  something else.
+- **Sizing either window for the 120-character case.** [[D-201]]'s third
+  option and [[D-202]]'s rejection, unchanged: a name that long needs
+  143 points on a screen whose ordinary name needs 98, and sizing for it
+  means every ordinary pairing looks at a window a third empty.
+- **Leaving the connected screen at 226 because the content got
+  shorter.** It did not: a sentence came off and a forty-point mark went
+  on. The height was measured again, which is the point.
+
+---
+
+## D-209 — The stamp says "Elektronski potpisano", sets the signer's name in a real bold face, takes its ink from the tokens, and groups the serial in fours
+
+**Date:** 2026-09-08
+**Phase:** Pre-F8 redesign (Task 3)
+
+**Decision.** Four changes to the visible signature stamp, and nothing
+else. The width is still 190 points, the margin still 12, the logo is
+still the full-colour mark on the left, the SN line and the seconds in
+the timestamp both stay, and the height still comes out of the table
+`geometry.go` computes from `stampLineHeight` rather than out of
+anybody's hand. [[D-125]]'s wording and its four-line arrangement are
+superseded; the rest of it — the label follows the interface, the name
+follows the certificate, the date is not localised — stands unchanged.
+
+### 1. The label is "Elektronski potpisano"
+
+`sign.stamp_label` in all three catalogues:
+
+| Locale | Was | Is |
+|---|---|---|
+| `sr-Latn` | Digitalno potpisano | **Elektronski potpisano** |
+| `sr-Cyrl` | Дигитално потписано | **Електронски потписано** |
+| `en` | Digitally signed | Digitally signed |
+
+"Digitalno" describes how the signature was made. "Elektronski" is what
+the thing *is* — the term the Serbian law on electronic documents uses,
+the term the MUP certificate's own policy text uses ("Ovo je
+kvalifikovani sertifikat za elektronski potpis," which is in the
+certificate this was verified with), and therefore the term a person
+holding the printed document already has a meaning for. English is
+untouched: "Digitally signed" is the established English form, capital
+D and lower-case s, and changing it to match the Serbian would be
+translating in the wrong direction.
+
+The key name did not change, so no key was added; what the change
+required was that the *old strings* be gone rather than merely unused,
+and `TestStampLabelIsTheElectronicWordingInEveryCatalogue` searches
+every value of every catalogue for all four old forms (both scripts,
+both the "-ano" and the earlier "-ao" endings) rather than only checking
+`sign.stamp_label`. A phrase left behind under some other key would
+still reach a screen.
+
+### 2. The signer's name is bold, and the bold is real
+
+The name is the one thing a person looks at a signature stamp to find,
+and in a four-line block of 7pt type the only thing that says so is
+weight.
+
+**What it cost, measured before choosing.** The stamp embeds a
+subsetted NotoSans as Type0/CIDFontType2 (SPEC §13.2, [[D-051]]), and
+that subset has no bold face — a bold face means generating and
+committing a second one:
+
+| | Regular | Bold | |
+|---|---|---|---|
+| Subset `.ttf` | 31 052 B | 31 184 B | committed asset |
+| `/FontFile2` stream (Flate) | 13 142 B | 13 514 B | in every stamped document |
+
+- **The binary grows by 31 232 bytes** — measured, by building
+  `./cmd/liro-bridge` with and without the asset: 15 472 128 against
+  15 440 896. That is 0.2% of the binary.
+- **Every stamped document grows by 14 934 bytes** — measured, by
+  applying the incremental revision with one face and with two: 17 936
+  bytes against 32 870. The extra beyond the font stream is the second
+  `/W` array, the second Type0/CIDFont/FontDescriptor dictionaries and
+  their xref entries.
+- Against a real signed document that is small. The one this was
+  verified on — a blank page, real MUP card, B-B — is 104 708 bytes, of
+  which the certificate, the chain and the CMS are most; a B-LT document
+  with revocation data is larger again.
+
+So it was affordable, and it was taken. **The name is set in a genuine
+NotoSans Bold, not in a synthetic stroke.** That matters enough to be
+tested rather than asserted:
+`TestBoldFaceIsAGenuineBoldNotTheRegularFaceRenamed` reads the committed
+asset with an independent decoder and
+measures the width of the capital I's outline, which is a stem and
+nothing else — 258 design units regular, 325 bold, a quarter again
+heavier. A renamed copy of the regular subset, or a `Tr 2` fill-and-
+stroke fake, passes every other test in the file and fails that one.
+
+**Two faces, one of everything else.** Both subsets are generated by
+`scripts/gensubsetfont` from the same sorted `charset()`, and it assigns
+GIDs sequentially in that order, so **a character's glyph index is the
+same number in either face**. Three things follow, and all three are the
+reason the second face is as cheap as it is:
+
+- `runeToGID` is not duplicated. `subset_data_bold.go` carries advance
+  widths and vertical metrics and nothing else — a second copy of the
+  rune table would be a second thing to drift, and a drifted one would
+  not fail: it would draw the signer's name in the wrong letters.
+- The `/ToUnicode` CMap is written once and referenced by both Type0
+  fonts. That saves 2 790 bytes per document and, more to the point,
+  leaves one answer to "what text is this" rather than two that have to
+  agree.
+- The bold face's character coverage cannot be narrower than the regular
+  face's, so no name that could be stamped before can fail to be stamped
+  now. Restricting the bold subset to the capitals a name upper-cases
+  into was considered and rejected below.
+
+`/StemV` is 160 for bold against 80 for regular. Both remain the
+conventional placeholders the descriptor comment describes — this subset
+carries no OS/2 data to measure from — but a bold face declaring the
+regular face's stem width would be a statement this project knows to be
+false.
+
+### 3. The ink comes from the design tokens
+
+`stampInkR/G/B` is `#16211F`, which is `--liro-color-text-primary`, and
+`TestStampInkIsTheDesignTokensTextPrimary` reads
+`internal/ui/assets/tokens.css` and checks it — the same standard the
+logo's `#038387` is held to against the logo asset ([[D-070]]). Reading
+the file from a test, rather than importing anything, is what keeps
+`internal/pades` clear of the window layer (`scripts/checkdeps`).
+
+**An honest note on "darker".** The task asked for darker text, and the
+measurement says the text was already as dark as a PDF gets: the content
+stream set *no* fill colour at all, so it drew in the initial graphics
+state, which is pure black. Rendered at 4× before the change, the
+darkest text pixel is `#000000`. `#16211F` is very slightly *lighter*
+than that in absolute terms.
+
+It was applied anyway, and not as a technicality. Black-by-omission was
+never a decision anyone made; it meant the stamp's colour was whatever
+graphics state a viewer happened to be in when it drew the appearance
+stream, and a viewer that left a fill colour set would have tinted the
+text. Naming the colour makes it deterministic, and makes it the same
+ink as every window in the product. What actually makes the block read
+darker on paper is the second change above — weight, not hue — and if
+more is wanted the lever is size or weight, not a darker grey, because
+there is no darker grey to reach for.
+
+### 4. The serial is grouped in fours, and it fits
+
+`SN 20F0 48A7 68F5 6F09 9E`, from the left, so the short group falls at
+the end where a reader comparing digit by digit has already stopped
+counting. Eighteen unbroken hexadecimal digits is not something a person
+can read off a page, check against a certificate viewer, or read down a
+telephone; groups of four are the length at which people reliably do all
+three, and it is how a card number and an IBAN are already set.
+
+It is **longer**, not shorter — 25 characters against 21 — and the
+stamp's width is fixed, so it was measured rather than assumed:
+
+| Line | Width at 7pt | Text column |
+|---|---|---|
+| `SN 20F048A768F56F099E` (was) | 82.30 pt | 142 pt |
+| `SN 20F0 48A7 68F5 6F09 9E` (is) | **89.58 pt** | 142 pt |
+
+The text column is `190 − (4 + 36 + 4) − 4 = 142` points. The grouped
+line is 89.58 of them at the nominal 7pt, with 52 points to spare.
+**Nothing was reduced and nothing was changed to make it fit**, and
+`TestGroupedSerialFitsTheTextColumnAtNominalSize` measures the real MUP
+serial through `fitLine` so that what is asserted is what is drawn.
+Halcom's serial is eight digits and less than half as wide. A serial at
+X.509's full 20-byte limit would be 52 characters and would still be
+reduced then truncated by `fitLine`, exactly as it was before grouping;
+neither issuer this project has certificates from comes near that.
+
+### 5. The text block is centred against the logo
+
+It used to start at the top of the box and run down from there. In a
+48-point four-line stamp that put the text's centre at 24 and the mark's
+at 22 — the logo was pinned at the bottom padding, leaving 8 points of
+white above it and 4 below, and the block sat visibly higher than the
+mark it stands beside.
+
+Both are now centred on the box: `logoY` puts the mark at
+`(h − 36) / 2`, and `textBlockTop` centres a block of `n ×
+stampLineHeight` on the same point, clamped into the padding — bottom
+edge first, so the top edge wins for a six-line stamp that cannot fit
+either way. `TestLogoAndTextBlockShareOneCentre` checks the two centres
+coincide for every line count the height table defines, not only for the
+four-line case that prompted it.
+
+The line spacing itself is unchanged (`stampLineHeight` is still 10, and
+still the only number the height table is computed from), so no height
+in the table moved: a four-line stamp is still 48 points. The lines also
+no longer *stretch* to fill whatever height the box has, which they did
+before — for one to three lines that spread four lines' worth of
+leading over the box and read as a paragraph rather than a stamp.
+
+### How this was verified
+
+- **A real document, signed with a real card.** The MUP certificate on
+  this machine (`…B3D1ECCE`, ВЕЉКО СТАНОЈЕВИЋ, MUP Gradjani CA 4),
+  B-B — the command line was given no `--tsa`, so B-T degraded under
+  `--on-tsa-failure b-b` and said so, which is [[D-067]] and [[D-047]]
+  and not this change's business. The result verifies:
+  `ByteRangeDigestOK`, `SignatureOK` and `SigningCertificateOK` all
+  true through `internal/pades/verify`, the independent reader.
+- **Rendered at 4×** through `internal/pades/render` — the project's own
+  rasteriser, which is not the code that wrote the stamp — from the
+  finished signed document, and from both real certificates (MUP,
+  Cyrillic; Halcom, Latin) in all three interfaces. All six say the
+  right thing: the label follows the interface, the name follows the
+  certificate and is never transliterated.
+- **The renderer is also the test.**
+  `TestStampPreviewDrawsBothEmbeddedFacesWithoutSubstituting` puts the
+  stamp through that
+  rasteriser and fails if it had to *substitute* a face — because a
+  substituted face still draws a picture with letters in it that looks
+  broadly right, so the picture is not the evidence; the absence of the
+  note is. Proved to fail: with the bold asset replaced by 31 184 random
+  bytes it reports "substituted a FontFile2 font program", and the asset
+  was restored and its digest checked.
+
+**Rejected.**
+- **Faking the bold with a synthetic stroke** (`2 Tr` plus a small
+  `w`). Free, and it does thicken the letters — but it thickens them
+  outward from the same outlines, so the counters fill in at 7pt and the
+  advance widths stay the regular face's, which means the line measures
+  as one width and draws as another. The cost of the real face was
+  measured first, at 0.2% of the binary and 15 KB per document, and it
+  was not high enough to accept a fake. Had it been, this entry would
+  have said so out loud rather than shipping a stroke quietly.
+- **A bold subset of only the capitals a name upper-cases into.** About
+  70 glyphs instead of 177, so perhaps 40% of the cost. Rejected because
+  `strings.ToUpper` leaves uncased characters alone: a name containing a
+  digit, or any character outside that list, would then fail to stamp in
+  bold although it stamps today in regular — a name that could be signed
+  becoming a name that cannot, to save 8 KB.
+- **Bolding the label as well, or instead.** The label is the least
+  informative line on the stamp; emphasis on every line is emphasis on
+  none, and it would spend the same 15 KB per document to say nothing.
+- **Reducing `stampLineHeight` so four lines fit inside the logo's 36
+  points.** It would make the block and the mark exactly the same
+  height, which is tidy, and it would tighten 7pt type below the 1.4×
+  leading the existing reasoning arrived at. The instruction was to
+  compute the height from the line height, not to choose a line height
+  that produces a pleasing height.
+- **Setting the ink to a chosen dark grey instead of the token.** That
+  is the value written down in a second place, which is the thing this
+  project's token rule exists to prevent — and, as measured above, every
+  candidate grey is lighter than what was already being drawn.
+- **Grouping the serial from the right,** so the short group leads. Card
+  numbers and IBANs group from the left, and a leading short group reads
+  as a prefix rather than as the beginning of the number.

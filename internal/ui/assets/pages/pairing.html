@@ -22,28 +22,41 @@
      person who sees http:// where they expected https:// can notice
      (SPEC §6.2). -->
 <main id="state-code">
-  <!-- The identity block — who is asking, and from where — is the one
+  <!-- Two fields, each a quiet label above its value, and nothing else
+       between them and the code (D-208). The label says what the value
+       is, so the value does not have to say it in a sentence.
+
+       The identity block — who is asking, and from where — is the one
        region of this page that scrolls. Both values in it are supplied
        by the caller and neither has a length this window controls: a
        name arrives at up to consent.MaxDisplayLength (120 characters)
        and an origin at up to api.MaxOriginLength (255). The code, the
        explanation and the button below it never move. -->
   <div class="identity liro-scroll-region">
-    <div>
-      <p class="liro-display" id="app-name"></p>
-      <p class="liro-text-secondary" data-i18n="pairing.wants_to_connect"></p>
+    <div class="field">
+      <p class="field-label" data-i18n="pairing.request_label"></p>
+      <p class="field-value" id="app-name"></p>
     </div>
 
-    <div class="liro-card liro-text-small liro-row origin-row">
-      <span data-i18n="pairing.origin_label"></span>
-      <code id="app-origin"></code>
+    <div class="field">
+      <p class="field-label" data-i18n="pairing.origin_label"></p>
+      <p class="field-value" id="app-origin"></p>
     </div>
   </div>
 
+  <!-- The code, its label and its note are centred on the window's own
+       axis, apart from the left-aligned table above: this is the thing
+       being read out loud, not another field about who is asking. The
+       note is two lines because it says two things — what to do with
+       the number, and how long it lasts — and a sentence a person is
+       meant to act on should not have to be found inside a paragraph. -->
   <div class="code-block">
-    <p class="liro-text-secondary" data-i18n="pairing.code_label"></p>
+    <p class="field-label" data-i18n="pairing.code_label"></p>
     <p id="pairing-code" class="pairing-code"></p>
-    <p class="liro-text-small liro-text-secondary" data-i18n="pairing.code_explain"></p>
+    <div class="code-note liro-text-small liro-text-secondary">
+      <p data-i18n="pairing.code_explain"></p>
+      <p data-i18n="pairing.code_validity"></p>
+    </div>
   </div>
 
   <div class="actions">
@@ -51,14 +64,24 @@
   </div>
 </main>
 
+<!-- The connected screen: a mark, the word, the name, and the way out.
+     The mark is drawn here rather than pulled from an icon library,
+     because one glyph is not a dependency; its size and its colour both
+     come from tokens, like every other value on these pages (SPEC
+     §10.1). aria-hidden, because the word beside it already says
+     "Connected" — a screen reader that announced both would say it
+     twice. -->
 <main id="state-connected" hidden>
+  <svg id="connected-check" class="connected-check" viewBox="0 0 24 24"
+       aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" />
+    <path d="M7.4 12.4 10.6 15.6 16.6 9.2" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+  <p class="liro-display" id="connected-title" data-i18n="pairing.connected_title"></p>
   <div class="identity liro-scroll-region">
-    <div>
-      <p class="liro-display" id="connected-name"></p>
-      <p class="liro-text-secondary" data-i18n="pairing.connected_title"></p>
-    </div>
+    <p class="field-value" id="connected-name"></p>
   </div>
-  <p class="liro-text-small liro-text-secondary" data-i18n="pairing.connected_explain"></p>
   <div class="actions">
     <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="pairing.close"></button>
   </div>

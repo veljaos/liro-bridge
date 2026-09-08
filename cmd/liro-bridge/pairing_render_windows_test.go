@@ -143,7 +143,198 @@ func TestALongApplicationNameStaysReadableInThePairingWindow(t *testing.T) {
 			assertPageDoesNotScroll(t, win, "pairing connected, long name ("+locale+")", ".identity")
 			assertButtonsVisible(t, win, "pairing connected, long name ("+locale+")", ".identity")
 			assertNameStartsInsideTheWindow(t, win, "pairing connected, long name ("+locale+")", "connected-name")
+
+			// The mark and the word are outside the scrolling region
+			// for this case and no other: a screen whose whole message
+			// is "connected" must not push that message off its own top
+			// to make room for the caller's padding (D-208).
+			assertNameStartsInsideTheWindow(t, win, "pairing connected, long name ("+locale+")", "connected-check")
+			assertNameStartsInsideTheWindow(t, win, "pairing connected, long name ("+locale+")", "connected-title")
 		})
+	}
+}
+
+// The strings the redesign took off these two screens are gone from the
+// catalogues, not merely unreferenced by the pages (D-208). An unused
+// message is one edit away from being wired back in; a missing one is
+// not. This is the check TestThePairingWindowShowsTheCodeAndNoAllowButton
+// already makes for pairing.allow, for the two that followed it.
+func TestTheStringsTheRedesignRemovedAreGoneFromEveryCatalogue(t *testing.T) {
+	for _, locale := range everyLocale {
+		c := i18n.Load(locale)
+		for _, key := range []string{"pairing.wants_to_connect", "pairing.connected_explain"} {
+			if got := c.T(key); got != key {
+				t.Errorf("%s is still in the %s catalogue as %q", key, locale, got)
+			}
+		}
+	}
+}
+
+// One typeface on the whole screen, and the difference between a label
+// and its value made with size, weight and colour rather than with a
+// second font (D-208). The origin used to be monospace inside a card,
+// which made two fields that say the same kind of thing look like two
+// different kinds of thing.
+func TestThePairingWindowIsOneTypeface(t *testing.T) {
+	win, _ := sharedPairingWindow(t, i18n.Load("sr-Latn"), testPrompt())
+
+	// Every piece of text on both screens, hidden or not: a computed
+	// font-family is resolved even for a display:none subtree.
+	families := evalString(t, win, "(function(){var seen={};"+
+		"document.querySelectorAll('#state-code p, #state-connected p, button').forEach(function(el){"+
+		"seen[getComputedStyle(el).fontFamily]=1;});"+
+		"return Object.keys(seen).join(' | ');})()")
+	if strings.Contains(families, "|") {
+		t.Errorf("the pairing window renders in more than one font family: %s", families)
+	}
+	if body := evalString(t, win, "getComputedStyle(document.body).fontFamily"); body != families {
+		t.Errorf("the page's text is in %q, the body's family is %q", families, body)
+	}
+
+	// And the label/value distinction is the three things it is
+	// allowed to be.
+	got := evalNumbers(t, win,
+		"parseFloat(getComputedStyle(document.querySelector('#state-code .field-label')).fontSize)",
+		"parseFloat(getComputedStyle(document.querySelector('#state-code .field-label')).fontWeight)",
+		"parseFloat(getComputedStyle(document.getElementById('app-name')).fontSize)",
+		"parseFloat(getComputedStyle(document.getElementById('app-name')).fontWeight)")
+	if got[2] <= got[0] {
+		t.Errorf("a value renders at %v points and its label at %v; the value is meant to be the larger", got[2], got[0])
+	}
+	if got[3] <= got[1] {
+		t.Errorf("a value renders at weight %v and its label at %v; the value is meant to be the stronger", got[3], got[1])
+	}
+	colours := evalString(t, win,
+		"getComputedStyle(document.querySelector('#state-code .field-label')).color+' | '+"+
+			"getComputedStyle(document.getElementById('app-name')).color")
+	if parts := strings.Split(colours, " | "); parts[0] == parts[1] {
+		t.Errorf("a label and its value are the same colour (%s); the label is meant to be the quieter", parts[0])
+	}
+}
+
+// The code is separated from the identity by more than the two fields
+// are separated from each other — that difference is the only thing on
+// the screen saying that the six digits are not a third field about who
+// is asking, but the thing being read out loud (D-208).
+func TestTheGapAboveTheCodeIsLargerThanTheGapBetweenTheFields(t *testing.T) {
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) {
+			win, _ := sharedPairingWindow(t, i18n.Load(locale), testPrompt())
+			gaps := evalNumbers(t, win,
+				"document.querySelectorAll('#state-code .field')[1].getBoundingClientRect().top - "+
+					"document.querySelectorAll('#state-code .field')[0].getBoundingClientRect().bottom",
+				"document.querySelector('#state-code .code-block').getBoundingClientRect().top - "+
+					"document.querySelector('#state-code .identity').getBoundingClientRect().bottom",
+				"0", "0")
+			if gaps[1] <= gaps[0] {
+				t.Errorf("the code sits %v points below the identity and the fields are %v points apart; "+
+					"the code is meant to be the more separated", gaps[1], gaps[0])
+			}
+		})
+	}
+}
+
+// The code, its label and its two-line note sit on the window's own
+// centre line, apart from the left-aligned table above them (D-208).
+// Centring the digits needs one correction that is invisible until it
+// is missing: letter-spacing adds its gap after the last character too,
+// so a centred string of six spaced digits sits left of centre by that
+// much unless the text-indent puts it back.
+func TestTheCodeIsCentredOnTheWindow(t *testing.T) {
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) {
+			win, _ := sharedPairingWindow(t, i18n.Load(locale), testPrompt())
+
+			// The label and the note are centred by their boxes, which is
+			// what .code-block's align-items does.
+			for _, sel := range []string{".code-block .field-label", ".code-note"} {
+				box := evalNumbers(t, win,
+					"document.querySelector("+jsStringLiteral(sel)+").getBoundingClientRect().left",
+					"document.querySelector("+jsStringLiteral(sel)+").getBoundingClientRect().right",
+					"window.innerWidth", "0")
+				centre, page := (box[0]+box[1])/2, box[2]/2
+				if diff := centre - page; diff > 1 || diff < -1 {
+					t.Errorf("%s is centred on %.1f, the window on %.1f — %.1f points off",
+						sel, centre, page, diff)
+				}
+			}
+
+			// The digits are measured as ink, not as a box. Their box is
+			// shrink-wrapped and centred by the flex container whatever
+			// the type inside it does, so it sits on the window's centre
+			// line even when the digits do not — which is exactly how the
+			// trailing letter-space goes unnoticed. The run's own
+			// rectangle ends after that trailing gap, so the last
+			// letter-space comes off the right edge to leave the glyphs.
+			ink := evalNumbers(t, win,
+				"(function(){var r=document.createRange();"+
+					"r.selectNodeContents(document.getElementById('pairing-code'));"+
+					"return r.getBoundingClientRect().left;})()",
+				"(function(){var r=document.createRange();"+
+					"r.selectNodeContents(document.getElementById('pairing-code'));"+
+					"return r.getBoundingClientRect().right;})()",
+				"parseFloat(getComputedStyle(document.getElementById('pairing-code')).letterSpacing)",
+				"window.innerWidth")
+			centre, page := (ink[0]+ink[1]-ink[2])/2, ink[3]/2
+			if diff := centre - page; diff > 1 || diff < -1 {
+				t.Errorf("the code's digits are centred on %.1f, the window on %.1f — %.1f points off",
+					centre, page, diff)
+			}
+
+			// And the note really is two lines, not one that happens to
+			// wrap: two elements, each one line high, in every locale.
+			lines := evalString(t, win, "(function(){var out=[];"+
+				"document.querySelectorAll('.code-note p').forEach(function(p){"+
+				"out.push(Math.round(p.getBoundingClientRect().height/"+
+				"parseFloat(getComputedStyle(p).lineHeight)));});return out.join(',');})()")
+			if lines != "1,1" {
+				t.Errorf("the note under the code renders as %q lines per paragraph, want two paragraphs of one", lines)
+			}
+		})
+	}
+}
+
+// The mark on the connected screen is drawn in the page, in the design
+// system's positive intent colour, at the size the token says — never a
+// literal, and never an icon library for one glyph (SPEC §10.1, D-208).
+func TestTheConnectedScreenMarkIsDrawnInThePositiveIntentColour(t *testing.T) {
+	win, _ := sharedPairingWindow(t, i18n.Load("sr-Latn"), testPrompt())
+
+	// The token's own value, resolved on the page and converted to the
+	// form getComputedStyle answers in, so the comparison is against
+	// tokens.css rather than against a colour written down twice.
+	report := evalString(t, win, "(function(){"+
+		"var root=getComputedStyle(document.documentElement);"+
+		"var hex=root.getPropertyValue('--liro-color-positive').trim();"+
+		"var m=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);"+
+		"var want=m?'rgb('+parseInt(m[1],16)+', '+parseInt(m[2],16)+', '+parseInt(m[3],16)+')':hex;"+
+		"var svg=document.getElementById('connected-check');"+
+		"return [svg.tagName.toLowerCase(),"+
+		"svg.querySelectorAll('circle').length+'+'+svg.querySelectorAll('path').length,"+
+		"getComputedStyle(svg).color,want,"+
+		"getComputedStyle(svg.querySelector('circle')).stroke,"+
+		"root.getPropertyValue('--liro-icon-size-lg').trim(),"+
+		"getComputedStyle(svg).width].join('|');})()")
+
+	parts := strings.Split(report, "|")
+	if len(parts) != 7 {
+		t.Fatalf("the mark reported %q, which is not the seven values asked for", report)
+	}
+	tag, shapes, colour, want, stroke, token, width := parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]
+	if tag != "svg" {
+		t.Errorf("the mark is a <%s>; it is meant to be inline SVG drawn in the page", tag)
+	}
+	if shapes != "1+1" {
+		t.Errorf("the mark is %s circles+paths, want a circle and a check", shapes)
+	}
+	if colour != want {
+		t.Errorf("the mark renders in %s; --liro-color-positive is %s", colour, want)
+	}
+	if stroke != want {
+		t.Errorf("the mark's circle is stroked %s, not the colour the SVG was given (%s)", stroke, want)
+	}
+	if width != token {
+		t.Errorf("the mark renders %s wide; --liro-icon-size-lg is %s", width, token)
 	}
 }
 
@@ -269,11 +460,15 @@ func TestASuccessfulPairingShowsTheConnectedScreen(t *testing.T) {
 				"getComputedStyle(document.getElementById('state-connected')).display"); display == "none" {
 				t.Fatal("the connected screen did not appear")
 			}
-			// The sentence that matters on that screen: pairing did not
-			// buy the application a signature, only the right to ask.
+			// What that screen says is now three things and no
+			// sentence (D-208): the mark, the word, and who it is
+			// that connected.
 			body := evalString(t, win, "document.body.textContent")
-			if !strings.Contains(body, c.T("pairing.connected_explain")) {
-				t.Fatalf("the connected screen does not say who still approves each signature:\n%s", body)
+			if !strings.Contains(body, c.T("pairing.connected_title")) {
+				t.Fatalf("the connected screen does not say that it connected:\n%s", body)
+			}
+			if !strings.Contains(body, testPrompt().Name) {
+				t.Fatalf("the connected screen does not say which application connected:\n%s", body)
 			}
 			if strings.Contains(body, "042317") {
 				t.Fatal("the spent code is still on screen")

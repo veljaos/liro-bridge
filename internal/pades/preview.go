@@ -34,16 +34,61 @@ type StampPreview struct {
 // the object that ends up in the document, which is the only way "what
 // you place is what you get" can be true rather than nearly true.
 func RenderStampPreview(signerCert *x509.Certificate, signingDate time.Time, stamp *StampOptions, scale float64) (StampPreview, error) {
-	if stamp == nil {
-		return StampPreview{}, fmt.Errorf("pades: no stamp to preview")
-	}
 	if scale <= 0 {
 		return StampPreview{}, fmt.Errorf("pades: preview scale must be positive")
 	}
-	opts := buildAppearanceOptions(signerCert, signingDate, stamp)
-	height, err := appearance.HeightFor(opts)
+	out, height, signerName, err := stampPreviewDocument(signerCert, signingDate, stamp)
 	if err != nil {
 		return StampPreview{}, err
+	}
+
+	rdoc, err := render.Open(out)
+	if err != nil {
+		return StampPreview{}, err
+	}
+	res, err := rdoc.RenderPage(1, scale)
+	if err != nil {
+		return StampPreview{}, err
+	}
+
+	// Crop the margin back off, so the image is the stamp and nothing
+	// else and the window can position it by its own corner.
+	const m = appearance.Margin
+	crop := image.Rect(
+		int(m*scale), int(m*scale),
+		int((m+float64(appearance.StampWidth))*scale), int((m+height)*scale),
+	).Intersect(res.Image.Bounds())
+	cropped := image.NewRGBA(image.Rect(0, 0, crop.Dx(), crop.Dy()))
+	for y := 0; y < crop.Dy(); y++ {
+		src := res.Image.PixOffset(crop.Min.X, crop.Min.Y+y)
+		dst := cropped.PixOffset(0, y)
+		copy(cropped.Pix[dst:dst+crop.Dx()*4], res.Image.Pix[src:src+crop.Dx()*4])
+	}
+
+	return StampPreview{
+		Image:      cropped,
+		WidthPt:    float64(appearance.StampWidth),
+		HeightPt:   height,
+		SignerName: signerName,
+	}, nil
+}
+
+// stampPreviewDocument builds the one-page document RenderStampPreview
+// rasterises: the real stamp, drawn by the same appearance.Render the
+// signing path uses, on a page the size of the stamp plus its margins.
+// It is separate from the rasterising so that a test can put the
+// document through the renderer itself and look at what the renderer
+// reports — a font it had to substitute, above all, which is invisible
+// in the finished picture and would mean the stamp's embedded faces are
+// not being read.
+func stampPreviewDocument(signerCert *x509.Certificate, signingDate time.Time, stamp *StampOptions) (out []byte, height float64, signerName string, err error) {
+	if stamp == nil {
+		return nil, 0, "", fmt.Errorf("pades: no stamp to preview")
+	}
+	opts := buildAppearanceOptions(signerCert, signingDate, stamp)
+	height, err = appearance.HeightFor(opts)
+	if err != nil {
+		return nil, 0, "", err
 	}
 
 	// The page is the stamp plus a margin on every side, and the stamp
@@ -55,11 +100,11 @@ func RenderStampPreview(signerCert *x509.Certificate, signingDate time.Time, sta
 
 	doc, err := pdf.Parse(minimalPage(pageW, pageH))
 	if err != nil {
-		return StampPreview{}, err
+		return nil, 0, "", err
 	}
 	pageDict, err := doc.PageDict(1)
 	if err != nil {
-		return StampPreview{}, err
+		return nil, 0, "", err
 	}
 
 	u := pdf.NewUpdate(doc)
@@ -69,7 +114,7 @@ func RenderStampPreview(signerCert *x509.Certificate, signingDate time.Time, sta
 	place.Corner = appearance.BottomRight
 	ap, err := appearance.Render(doc, pageDict, u, place)
 	if err != nil {
-		return StampPreview{}, wrapStampError(err)
+		return nil, 0, "", wrapStampError(err)
 	}
 
 	// A widget annotation is how the stamp reaches a page in a signed
@@ -91,39 +136,11 @@ func RenderStampPreview(signerCert *x509.Certificate, signingDate time.Time, sta
 	page[pdf.Name("Annots")] = pdf.Array{pdf.Reference{Num: annotNum}}
 	u.Set(previewPageObject, page)
 
-	out, err := u.Apply()
+	out, err = u.Apply()
 	if err != nil {
-		return StampPreview{}, err
+		return nil, 0, "", err
 	}
-
-	rdoc, err := render.Open(out)
-	if err != nil {
-		return StampPreview{}, err
-	}
-	res, err := rdoc.RenderPage(1, scale)
-	if err != nil {
-		return StampPreview{}, err
-	}
-
-	// Crop the margin back off, so the image is the stamp and nothing
-	// else and the window can position it by its own corner.
-	crop := image.Rect(
-		int(m*scale), int(m*scale),
-		int((m+float64(appearance.StampWidth))*scale), int((m+height)*scale),
-	).Intersect(res.Image.Bounds())
-	cropped := image.NewRGBA(image.Rect(0, 0, crop.Dx(), crop.Dy()))
-	for y := 0; y < crop.Dy(); y++ {
-		src := res.Image.PixOffset(crop.Min.X, crop.Min.Y+y)
-		dst := cropped.PixOffset(0, y)
-		copy(cropped.Pix[dst:dst+crop.Dx()*4], res.Image.Pix[src:src+crop.Dx()*4])
-	}
-
-	return StampPreview{
-		Image:      cropped,
-		WidthPt:    float64(appearance.StampWidth),
-		HeightPt:   height,
-		SignerName: opts.SignerName,
-	}, nil
+	return out, height, opts.SignerName, nil
 }
 
 // previewPageObject is the page object's number in minimalPage below.

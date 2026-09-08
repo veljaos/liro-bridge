@@ -80,6 +80,44 @@ var heightsByLineCount = [6]float64{
 // mark inside it.
 const logoBlockHeight = LogoSize + 2*Padding
 
+// logoY is the bottom edge of the logo's 36pt box in a stamp of height
+// h: vertically centred, not pinned to the bottom padding.
+//
+// It used to be pinned — drawn at Padding, which in a 48pt four-line
+// stamp left 8 points of white above the mark and 4 below and put the
+// mark's centre 2 points below the box's. That is the gap the text
+// block was asked to be centred against, so both are now centred
+// against the same thing: the box.
+func logoY(h float64) float64 {
+	return (h - LogoSize) / 2
+}
+
+// textBlockTop is the top edge of an n-line text block in a stamp of
+// height h — the y the first line's slot starts at.
+//
+// The block is n whole line heights tall and is centred on the logo,
+// rather than starting at the top of the box and running down from
+// there. Four lines beside a 36pt mark is the case that matters and the
+// case that made this necessary: the block and the mark are now
+// concentric, so neither reads as sitting higher than the other.
+//
+// Centring is then clamped into the box's own padding, bottom edge
+// first so that the top edge wins if a block is taller than the box can
+// hold: a stamp with every optional line present is the taller thing,
+// and running out of room at the bottom is more legible than running
+// out of it at the top.
+func textBlockTop(n int, h float64) float64 {
+	blockHeight := float64(n) * stampLineHeight
+	top := logoY(h) + LogoSize/2 + blockHeight/2
+	if top-blockHeight < Padding {
+		top = Padding + blockHeight
+	}
+	if top > h-Padding {
+		top = h - Padding
+	}
+	return top
+}
+
 // heightForTextLines is the derivation behind heightsByLineCount's
 // fourth entry onward, written out rather than commented so it cannot
 // drift from the numbers it produced: the text column's own height,

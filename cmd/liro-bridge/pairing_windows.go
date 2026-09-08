@@ -11,30 +11,44 @@ import (
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
-// The pairing window's size, measured in a real window with the longest
-// of the three catalogues.
+// The pairing window's size, measured in a real window in all three
+// locales — the numbers below are identical in each, because the only
+// text on this screen that differs between them is three short labels.
 //
-// It holds four things and no list, so nothing about it grows: a name,
-// an origin that wraps, six digits at --liro-font-size-code, and one
-// button. 420 x 330 fits all of them with the origin on two lines,
-// which is where a long one lands.
+// It holds three things and no list, so nothing about it grows: two
+// fields, six digits at --liro-font-size-code with a two-line note
+// under them, and one button.
+//
+// 369 rather than the 330 it was, and the height is set by one rule:
+// the identity block must not scroll for an ordinary two-line company
+// name, with one --liro-space-4 of slack (D-202). What made the old
+// number too small is that everything below the block grew — the
+// origin is the page's own face at --liro-font-size-heading rather
+// than twelve points of monospace in a card, the gap above the code is
+// --liro-space-5 rather than --liro-space-4, and the note under the
+// code is two lines rather than one (D-208). Measured at 330 with the
+// new fields, that name needed 121 points in a block that could be
+// given 118; at 352, with the note still one line, 123. Three points
+// short, and then two, is a scrollbar beside an ordinary name — D-202's
+// own defect one screen over. At 369 the block can be given 140.
 const (
 	pairingWindowWidth  = 420
-	pairingWindowHeight = 330
+	pairingWindowHeight = 369
 
-	// The screen shown once the pairing has succeeded has no code and
-	// no origin on it, so it needs about two thirds of the height. The
-	// window shrinks to it rather than leaving half of itself empty
-	// under one sentence — measured, by looking at it.
+	// The screen shown once the pairing has succeeded carries a mark,
+	// one word and the name — no code, no origin — so it needs about
+	// two thirds of the height. The window shrinks to it rather than
+	// leaving half of itself empty, measured by looking at it.
 	//
-	// 226 rather than the 210 it was: at 210 the identity block was
-	// short of what its own content needs by eight tenths of a point,
-	// so it scrolled — an ordinary two-line name with a scrollbar
-	// beside it, which was visible in the shipped window and in no
-	// test. The extra sixteen points are one --liro-space-4 of slack,
-	// so a one-word label change in any of the three catalogues does
-	// not put the scrollbar straight back.
-	pairingConnectedHeight = 226
+	// 228 rather than the 226 it was: the sentence that used to sit
+	// under the name is gone (D-208) and a 40-point mark stands above
+	// it, and what the height is set by is unchanged — the identity
+	// block must not scroll for an ordinary two-line company name.
+	// Measured: that name needs 45 points, and at 228 the block can be
+	// given 61 — one --liro-space-4 of slack, which is the margin
+	// D-202 chose so that a one-word label change in any of the three
+	// catalogues does not put the scrollbar straight back.
+	pairingConnectedHeight = 228
 )
 
 // pairingUI opens the agent's own pairing window (F7 §2.1). It is what
@@ -149,13 +163,13 @@ func (w *pairingWindow) Close() {
 // textContent, never innerHTML.
 func buildPairingInit(c *i18n.Catalogue, prompt api.PairingPrompt) map[string]any {
 	keys := []string{
-		"pairing.wants_to_connect",
+		"pairing.request_label",
 		"pairing.origin_label",
 		"pairing.code_label",
 		"pairing.code_explain",
+		"pairing.code_validity",
 		"pairing.deny",
 		"pairing.connected_title",
-		"pairing.connected_explain",
 		"pairing.close",
 	}
 	strs := make(map[string]string, len(keys))

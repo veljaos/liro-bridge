@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
@@ -107,6 +108,42 @@ func TestEveryErrorCodeHasAMessageInEveryCatalogue(t *testing.T) {
 			key := CodeKey(code)
 			if _, ok := c.data[key]; !ok {
 				t.Errorf("locale %s has no message for %s (key %q)", locale, code, key)
+			}
+		}
+	}
+}
+
+// TestStampLabelIsTheElectronicWordingInEveryCatalogue is D-209's
+// wording, and the check that the old wording is gone rather than
+// merely unused.
+//
+// "Digitalno potpisano" said the signature was digital, which is a
+// statement about how it was made; "Elektronski potpisano" says it was
+// electronically signed, which is the term the law and the people
+// reading the document use. English is unchanged: "Digitally signed"
+// is the established English form and reads correctly as it is.
+//
+// The old strings are searched for across the whole of each catalogue,
+// not only under sign.stamp_label, because a phrase left behind under
+// some other key would still reach a user's screen.
+func TestStampLabelIsTheElectronicWordingInEveryCatalogue(t *testing.T) {
+	want := map[string]string{
+		"sr-Latn": "Elektronski potpisano",
+		"sr-Cyrl": "Електронски потписано",
+		"en":      "Digitally signed",
+	}
+	gone := []string{"Digitalno potpisano", "Дигитално потписано", "Digitalno potpisao", "Дигитално потписао"}
+
+	for locale, wantLabel := range want {
+		c := Load(locale)
+		if got := c.T("sign.stamp_label"); got != wantLabel {
+			t.Errorf("%s: sign.stamp_label = %q, want %q", locale, got, wantLabel)
+		}
+		for key, value := range c.data {
+			for _, old := range gone {
+				if strings.Contains(value, old) {
+					t.Errorf("%s: %s still carries the old stamp wording %q: %q", locale, key, old, value)
+				}
 			}
 		}
 	}

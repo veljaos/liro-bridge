@@ -134,3 +134,53 @@ func TestNormaliseRotate(t *testing.T) {
 		}
 	}
 }
+
+// TestLogoAndTextBlockShareOneCentre is D-209's arrangement: the text
+// block is vertically centred against the logo, rather than starting at
+// the top of the box and running down past the mark's foot.
+//
+// Both are centred on the same thing — the stamp's own box — so the
+// check is that their centres coincide, for every line count the height
+// table defines rather than only for the four-line stamp that made the
+// change necessary.
+func TestLogoAndTextBlockShareOneCentre(t *testing.T) {
+	for n := 1; n <= 6; n++ {
+		height, err := HeightForLines(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		logoCentre := logoY(height) + LogoSize/2
+		top := textBlockTop(n, height)
+		blockCentre := top - float64(n)*stampLineHeight/2
+
+		if diff := blockCentre - logoCentre; diff > 0.001 || diff < -0.001 {
+			t.Errorf("%d lines in a %g pt stamp: the text block's centre is %g, the logo's is %g",
+				n, height, blockCentre, logoCentre)
+		}
+	}
+}
+
+// TestTextBlockAndLogoStayInsideTheirPadding is the other half: a
+// centred block is only an improvement if it is still inside the box.
+// Six lines is the case that could push past the bottom, and it is
+// exactly the case the height table grows for — which is why this is
+// checked against the table rather than against a number written here.
+func TestTextBlockAndLogoStayInsideTheirPadding(t *testing.T) {
+	for n := 1; n <= 6; n++ {
+		height, err := HeightForLines(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		top := textBlockTop(n, height)
+		bottom := top - float64(n)*stampLineHeight
+		if top > height-Padding+0.001 {
+			t.Errorf("%d lines: the block's top is %g, the box less its padding ends at %g", n, top, height-Padding)
+		}
+		if bottom < Padding-0.001 {
+			t.Errorf("%d lines: the block's foot is %g, the box's padding starts at %g", n, bottom, float64(Padding))
+		}
+		if y := logoY(height); y < Padding-0.001 || y+LogoSize > height-Padding+0.001 {
+			t.Errorf("%d lines: the logo sits at %g..%g in a %g pt box with %d pt padding", n, y, y+LogoSize, height, Padding)
+		}
+	}
+}

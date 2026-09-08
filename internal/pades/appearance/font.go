@@ -19,6 +19,37 @@ import (
 //go:embed notosans-subset.ttf
 var subsetFontTTF []byte
 
+// boldSubsetFontTTF is the same subset of NotoSans Bold: the same
+// characters, in the same sorted order, so it shares runeToGID and the
+// /ToUnicode CMap with the regular face and differs only in outlines
+// and advance widths (D-209). It exists for one line of the stamp — the
+// signer's name — and costs 31 184 bytes in the binary and 13 514 bytes
+// of /FontFile2 in every stamped document.
+//
+//go:embed notosans-bold-subset.ttf
+var boldSubsetFontTTF []byte
+
+// Weight selects which of the two embedded faces a line of stamp text
+// is drawn in. The two are interchangeable everywhere a CID is
+// concerned — same characters, same GIDs — and differ only in shape and
+// advance width, which is why nothing outside widthsFor and addFace has
+// to know that there are two of them at all.
+type Weight int
+
+const (
+	Regular Weight = iota
+	Bold
+)
+
+// widthsFor is one weight's advance-width table, in 1000-unit glyph
+// space.
+func widthsFor(weight Weight) []uint16 {
+	if weight == Bold {
+		return gidWidthsBold
+	}
+	return gidWidths
+}
+
 // MissingGlyphError is returned by EncodeCIDs for a character the
 // embedded subset cannot draw (F4 §3.3): "If a character is not in the
 // subset, return a clear error naming the character and its code
@@ -45,17 +76,23 @@ func EncodeCIDs(text string) ([]uint16, error) {
 	return cids, nil
 }
 
-// TextWidth1000 returns text's total advance width in 1000-unit glyph
-// space (the space /W and font size arithmetic both use), or a
-// MissingGlyphError if any character is not in the subset.
-func TextWidth1000(text string) (int, error) {
+// TextWidth1000 returns text's total advance width in weight's face, in
+// 1000-unit glyph space (the space /W and font size arithmetic both
+// use), or a MissingGlyphError if any character is not in the subset.
+//
+// The weight is a parameter rather than an assumption because bold is
+// measurably wider than regular for the same string, and the one line
+// drawn bold — the signer's name — is also the stamp's longest and the
+// one most likely to need reducing or truncating to fit.
+func TextWidth1000(text string, weight Weight) (int, error) {
 	cids, err := EncodeCIDs(text)
 	if err != nil {
 		return 0, err
 	}
+	widths := widthsFor(weight)
 	total := 0
 	for _, cid := range cids {
-		total += int(gidWidths[cid])
+		total += int(widths[cid])
 	}
 	return total, nil
 }
@@ -72,31 +109,70 @@ func cidsToHex(cids []uint16) string {
 	return b.String()
 }
 
-// fontObjects is every indirect object this stamp's embedded font
-// contributes to the incremental revision, plus the Type0 font's own
-// object number (the one /Resources /Font entries point at).
+// fontObjects is the two Type0 font object numbers the stamp's
+// /Resources /Font entries point at: the regular face every line but
+// one is drawn in, and the bold face the signer's name is drawn in.
 type fontObjects struct {
-	Type0Num int
+	Type0Num     int
+	Type0BoldNum int
 }
 
-// addFontObjects allocates and writes (via u.Set) the complete Type0
-// font: the Type0 dict, its CIDFontType2 descendant, the
-// FontDescriptor, the FontFile2 stream and the ToUnicode CMap stream
-// (F4 §3.1/§3.4) — every table F4's structure diagram requires, built
-// from the data scripts/gensubsetfont embedded.
+// addFontObjects allocates and writes (via u.Set) both embedded faces —
+// each a Type0 dict, a CIDFontType2 descendant, a FontDescriptor and a
+// FontFile2 stream (F4 §3.1) — over one shared /ToUnicode CMap stream
+// (F4 §3.4), built from the data scripts/gensubsetfont embedded.
 func addFontObjects(u *pdf.Update) fontObjects {
+	// One /ToUnicode CMap, shared by both faces. Both carry the same
+	// characters at the same GIDs (D-209), so the GID-to-Unicode map is
+	// the same table twice over — and text a reader selects across both
+	// faces comes back as one answer rather than two that have to agree.
+	toUnicodeNum := u.NewObjectNumber()
+	u.Set(toUnicodeNum, &pdf.Stream{
+		Dict: pdf.Dict{},
+		Raw:  buildToUnicodeCMap(),
+	})
+
+	return fontObjects{
+		Type0Num:     addFace(u, Regular, toUnicodeNum),
+		Type0BoldNum: addFace(u, Bold, toUnicodeNum),
+	}
+}
+
+// addFace writes one complete embedded face — the Type0 dict, its
+// CIDFontType2 descendant, the FontDescriptor and the FontFile2 stream
+// (F4 §3.1) — and returns the Type0 dict's object number. The
+// /ToUnicode CMap is passed in rather than built here because the two
+// faces share one (addFontObjects).
+func addFace(u *pdf.Update, weight Weight, toUnicodeNum int) int {
 	type0Num := u.NewObjectNumber()
 	cidFontNum := u.NewObjectNumber()
 	descriptorNum := u.NewObjectNumber()
 	fontFileNum := u.NewObjectNumber()
-	toUnicodeNum := u.NewObjectNumber()
 
+	ttf := subsetFontTTF
 	baseFont := pdf.Name(subsetTag + "+NotoSans")
+	ascent, descent, capHeight := int64(fontAscent), int64(fontDescent), int64(fontCapHeight)
+	bbox := pdf.Array{int64(fontBBoxMinX), int64(fontBBoxMinY), int64(fontBBoxMaxX), int64(fontBBoxMaxY)}
+	// StemV is the one /FontDescriptor entry that is supposed to differ
+	// with weight — it is the vertical stem width, and a bold face's
+	// stems really are thicker. Both numbers are still the conventional
+	// placeholders the comment below describes, since no PANOSE/OS-2
+	// data survives this subset; but a bold face declaring the regular
+	// face's stem width would be a statement this project knows to be
+	// false, so the two are not the same placeholder.
+	stemV := int64(80)
+	if weight == Bold {
+		ttf = boldSubsetFontTTF
+		baseFont = pdf.Name(subsetTag + "+NotoSans-Bold")
+		ascent, descent, capHeight = int64(boldFontAscent), int64(boldFontDescent), int64(boldFontCapHeight)
+		bbox = pdf.Array{int64(boldFontBBoxMinX), int64(boldFontBBoxMinY), int64(boldFontBBoxMaxX), int64(boldFontBBoxMaxY)}
+		stemV = 160
+	}
 
-	compressed := flateCompress(subsetFontTTF)
+	compressed := flateCompress(ttf)
 	u.Set(fontFileNum, &pdf.Stream{
 		Dict: pdf.Dict{
-			pdf.Name("Length1"): int64(len(subsetFontTTF)),
+			pdf.Name("Length1"): int64(len(ttf)),
 			pdf.Name("Filter"):  pdf.Name("FlateDecode"),
 		},
 		Raw: compressed,
@@ -109,18 +185,18 @@ func addFontObjects(u *pdf.Update) fontObjects {
 		// CID/GID via Identity-H, not through a StandardEncoding-style
 		// named-glyph encoding (PDF 32000-1 §9.8.2, Table 123).
 		pdf.Name("Flags"):       int64(4),
-		pdf.Name("FontBBox"):    pdf.Array{int64(fontBBoxMinX), int64(fontBBoxMinY), int64(fontBBoxMaxX), int64(fontBBoxMaxY)},
+		pdf.Name("FontBBox"):    bbox,
 		pdf.Name("ItalicAngle"): int64(0),
-		pdf.Name("Ascent"):      int64(fontAscent),
-		pdf.Name("Descent"):     int64(fontDescent),
-		pdf.Name("CapHeight"):   int64(fontCapHeight),
+		pdf.Name("Ascent"):      ascent,
+		pdf.Name("Descent"):     descent,
+		pdf.Name("CapHeight"):   capHeight,
 		// StemV has no measured value here (this subset carries no PANOSE/
 		// OS/2 data — see scripts/gensubsetfont's package doc comment for
 		// why OS/2 is omitted); 80 is the conventional placeholder several
 		// real-world PDF producers use for a medium-weight sans-serif, and
 		// PDF viewers use it only for font-substitution decisions, which
 		// never apply here since the font is embedded (PDF 32000-1 §9.8.1).
-		pdf.Name("StemV"):     int64(80),
+		pdf.Name("StemV"):     stemV,
 		pdf.Name("FontFile2"): pdf.Reference{Num: fontFileNum},
 	})
 
@@ -135,13 +211,8 @@ func addFontObjects(u *pdf.Update) fontObjects {
 		},
 		pdf.Name("FontDescriptor"): pdf.Reference{Num: descriptorNum},
 		pdf.Name("DW"):             int64(1000),
-		pdf.Name("W"):              widthsArray(),
+		pdf.Name("W"):              widthsArray(weight),
 		pdf.Name("CIDToGIDMap"):    pdf.Name("Identity"),
-	})
-
-	u.Set(toUnicodeNum, &pdf.Stream{
-		Dict: pdf.Dict{},
-		Raw:  buildToUnicodeCMap(),
 	})
 
 	u.Set(type0Num, pdf.Dict{
@@ -153,7 +224,7 @@ func addFontObjects(u *pdf.Update) fontObjects {
 		pdf.Name("ToUnicode"):       pdf.Reference{Num: toUnicodeNum},
 	})
 
-	return fontObjects{Type0Num: type0Num}
+	return type0Num
 }
 
 // widthsArray builds /W in the compact "c [w1 w2 ... wn]" form, one
@@ -162,9 +233,10 @@ func addFontObjects(u *pdf.Update) fontObjects {
 // stamp happens to draw — the font is embedded once and may be reused,
 // within the same document, by a later revision this project does not
 // control).
-func widthsArray() pdf.Array {
-	ws := make(pdf.Array, len(gidWidths))
-	for i, w := range gidWidths {
+func widthsArray(weight Weight) pdf.Array {
+	widths := widthsFor(weight)
+	ws := make(pdf.Array, len(widths))
+	for i, w := range widths {
 		ws[i] = int64(w)
 	}
 	return pdf.Array{int64(0), ws}
