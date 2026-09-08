@@ -109,6 +109,35 @@ func (b *remoteBatch) result() api.SignResult {
 // time and a second request arriving mid-decision must wait rather than
 // stack a window on top of the one a person is reading.
 func runProtocolFlow(ctx context.Context, cfg config.Config, locale string, req api.SignRequest, job *jobs.Job) api.SignResult {
+	m := newProtocolWindow(cfg, locale, req, job)
+
+	if !m.gatherCertificatesBeforeOpening(ctx) {
+		return api.SignResult{Code: errs.CodeInternal}
+	}
+	certs, err := certificatesOfferedFor(m.certInfos, req.Thumbprint)
+	if err != nil {
+		// Nothing to offer means nothing to ask about. Opening a window
+		// on an empty list would be asking a person to approve a batch
+		// no certificate on this machine can sign.
+		slog.Info("protocol: no certificate to offer for a request",
+			"jobId", job.ID, "code", string(codeOfInteractive(err)))
+		return api.SignResult{Code: codeOfInteractive(err)}
+	}
+	m.certInfos = certs
+
+	m.open(ctx, nil, stepCertificate)
+	return m.remote.result()
+}
+
+// newProtocolWindow builds the flow for one protocol request: what the
+// batch is made of, and every way this run differs from a person's own.
+//
+// It is its own function so that those differences are stated in
+// exactly one place. A test that rebuilt them beside this would be
+// measuring its own copy rather than the product's — which is how a
+// settings window came to be checked against the value it was handed
+// instead of the one on disk (D-134).
+func newProtocolWindow(cfg config.Config, locale string, req api.SignRequest, job *jobs.Job) *mainWindow {
 	m := newMainWindow(cfg, locale)
 	m.documentsSupplied = true
 	// There are no output files at all on this path — nothing is
@@ -116,6 +145,25 @@ func runProtocolFlow(ctx context.Context, cfg config.Config, locale string, req 
 	// the output-file question has nothing to ask about.
 	m.force = true
 	m.hashesOnly = req.Kind == api.SignDigests
+	// A remembered placement never applies to a request that arrived
+	// over the protocol, whether or not the caller answered the method
+	// question itself.
+	//
+	// A placed position is an answer to "where on *this* document",
+	// given by a person who was looking at the page when they gave it.
+	// The documents in a protocol batch are not that document and
+	// nobody has looked at them: they arrived over a socket, from a
+	// program, possibly a hundred at a time. Inheriting the position put
+	// a stamp on top of a document's existing signature the first time
+	// this path was used with a real card — visible to the owner,
+	// because he looked; an ERP sending a hundred documents has nobody
+	// looking.
+	//
+	// So the position is dropped and the corner is what is left: the
+	// person still chooses in the window, exactly as they do locally, or
+	// the default corner applies. Nothing is written to disk — the
+	// remembered position is the person's own and stays theirs.
+	m.cfg = withoutRememberedPlacement(m.cfg)
 	m.suppliedStamp = req.Stamp
 	m.applySuppliedStamp()
 	m.remote = &remoteBatch{
@@ -140,23 +188,7 @@ func runProtocolFlow(ctx context.Context, cfg config.Config, locale string, req 
 		items = append(items, jobs.Item{DisplayName: label, State: jobs.StateWaiting})
 	}
 	m.remoteItems = items
-
-	if !m.gatherCertificatesBeforeOpening(ctx) {
-		return api.SignResult{Code: errs.CodeInternal}
-	}
-	certs, err := certificatesOfferedFor(m.certInfos, req.Thumbprint)
-	if err != nil {
-		// Nothing to offer means nothing to ask about. Opening a window
-		// on an empty list would be asking a person to approve a batch
-		// no certificate on this machine can sign.
-		slog.Info("protocol: no certificate to offer for a request",
-			"jobId", job.ID, "code", string(codeOfInteractive(err)))
-		return api.SignResult{Code: codeOfInteractive(err)}
-	}
-	m.certInfos = certs
-
-	m.open(ctx, nil, stepCertificate)
-	return m.remote.result()
+	return m
 }
 
 // protocolLabel is what the window shows for document i. Already

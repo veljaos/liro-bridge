@@ -15,6 +15,7 @@ package main
 // and named.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -521,6 +522,28 @@ func TestTwoDocumentsWithOneNameAreBothKeptAndBothLegible(t *testing.T) {
 // certificate — the same structural guarantee D-084 gave the audit
 // entry — and the consent window offers no pre-selected one however
 // many usable certificates it is handed.
+// thumbprintShaped returns the first run of forty or more hexadecimal
+// characters in s, or "" — a SHA-1 thumbprint as this project writes
+// one, which is what a remembered certificate would look like on disk
+// whatever the field around it was called.
+func thumbprintShaped(s string) string {
+	isHex := func(r rune) bool {
+		return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+	}
+	run := 0
+	for i, r := range s {
+		if isHex(r) {
+			run++
+			if run == 40 {
+				return s[i-39 : i+1]
+			}
+			continue
+		}
+		run = 0
+	}
+	return ""
+}
+
 func TestCertificateSelectionDoesNotPersistBetweenRuns(t *testing.T) {
 	cfg := config.Default()
 	cfg.TSAURL = "https://tsa.example.rs"
@@ -534,10 +557,37 @@ func TestCertificateSelectionDoesNotPersistBetweenRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"thumbprint", "certificate", "signer", "lastused"} {
-		if strings.Contains(strings.ToLower(string(raw)), forbidden) {
-			t.Fatalf("the configuration file has a %q field; SPEC §18.15 forbids remembering a certificate", forbidden)
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("the configuration file is not JSON: %v", err)
+	}
+	for name, value := range fields {
+		lower := strings.ToLower(name)
+		for _, forbidden := range []string{"thumbprint", "certificate", "signer", "lastused"} {
+			if !strings.Contains(lower, forbidden) {
+				continue
+			}
+			// A switch is not a memory. A boolean cannot identify a
+			// certificate whatever it is called, and one of them is
+			// named after the endpoint it governs
+			// (certificateListingEnabled) rather than after anything it
+			// remembers. Everything else with one of these words in its
+			// name is a place a thumbprint could be put, and there is
+			// not to be one.
+			if _, isSwitch := value.(bool); isSwitch {
+				continue
+			}
+			t.Fatalf("the configuration file has a %q field (%q); SPEC §18.15 forbids remembering a certificate",
+				name, forbidden)
 		}
+	}
+	// And the property itself rather than a proxy for it: nothing
+	// anywhere in the file is shaped like a certificate's identity. A
+	// field nobody thought to name "thumbprint" would still be one if
+	// it held forty hexadecimal characters.
+	if where := thumbprintShaped(string(raw)); where != "" {
+		t.Fatalf("the configuration file holds something thumbprint-shaped (%q); "+
+			"SPEC §18.15 forbids remembering a certificate", where)
 	}
 
 	// And the consent window, given two usable certificates — SPEC

@@ -111,6 +111,16 @@ func settingsProbes() []settingsProbe {
 			func(c config.Config) string { return boolText(c.ExplorerMenuEnabled) },
 		},
 		{
+			"document signing", `document.getElementById('document-signing').checked=false`,
+			`String(document.getElementById('document-signing').checked)`, "false",
+			func(c config.Config) string { return boolText(c.DocumentSigningEnabled) },
+		},
+		{
+			"certificate listing", `document.getElementById('certificate-listing').checked=false`,
+			`String(document.getElementById('certificate-listing').checked)`, "false",
+			func(c config.Config) string { return boolText(c.CertificateListingEnabled) },
+		},
+		{
 			"signature level", `document.getElementById('level-bt').checked=true`,
 			`document.querySelector('input[name=level]:checked').value`, "b-t",
 			func(c config.Config) string { return c.SignatureLevel },

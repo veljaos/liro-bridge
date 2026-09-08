@@ -151,6 +151,7 @@ type settingsFormState struct {
 	OutputFolder          string `json:"outputFolder"`
 	ExplorerMenu          bool   `json:"explorerMenu"`
 	DocumentSigning       bool   `json:"documentSigning"`
+	CertificateListing    bool   `json:"certificateListing"`
 	SignatureLevel        string `json:"signatureLevel"`
 	CheckUpdatesDaily     bool   `json:"checkUpdatesDaily"`
 }
@@ -281,6 +282,7 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		newCfg.OutputFolder = strings.TrimSpace(state.OutputFolder)
 		newCfg.ExplorerMenuEnabled = state.ExplorerMenu
 		newCfg.DocumentSigningEnabled = state.DocumentSigning
+		newCfg.CertificateListingEnabled = state.CertificateListing
 		newCfg.SignatureLevel = state.SignatureLevel
 		newCfg.UpdateCheckEnabled = state.CheckUpdatesDaily
 		if err := config.Save(config.DefaultPath(), newCfg); err != nil {
@@ -581,6 +583,8 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.explorer_menu":                  c.T("settings.explorer_menu"),
 			"settings.document_signing":               c.T("settings.document_signing"),
 			"settings.document_signing_hint":          c.T("settings.document_signing_hint"),
+			"settings.certificate_listing":            c.T("settings.certificate_listing"),
+			"settings.certificate_listing_hint":       c.T("settings.certificate_listing_hint"),
 			"settings.stamp_settings":                 c.T("settings.stamp_settings"),
 			"settings.signature_level_label":          c.T("settings.signature_level_label"),
 			"settings.level_bb":                       c.T("settings.level_bb"),
@@ -610,6 +614,7 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"outputFolder":          cfg.OutputFolder,
 			"explorerMenu":          cfg.ExplorerMenuEnabled,
 			"documentSigning":       cfg.DocumentSigningEnabled,
+			"certificateListing":    cfg.CertificateListingEnabled,
 			"signatureLevel":        cfg.SignatureLevel,
 			"checkUpdatesDaily":     cfg.UpdateCheckEnabled,
 			"version":               version,

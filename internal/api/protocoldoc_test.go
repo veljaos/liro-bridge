@@ -131,6 +131,25 @@ func TestTheProtocolDocumentsLimitsAreThisPackagesOwn(t *testing.T) {
 		}
 	}
 
+	// The echo endpoint's own limit, written the way the document
+	// states it. A number stated in two places is a number that can
+	// disagree with itself, which is what this whole test exists for.
+	if kb := itoaForDoc(maxEchoBody>>10) + " KB"; !strings.Contains(doc, kb) {
+		t.Errorf("docs/PROTOCOL.md does not carry the echo body limit (%s)", kb)
+	}
+
+	// Every endpoint this package routes is one an integrator has to be
+	// able to find. A path that exists and is not written down is a
+	// path nobody can use.
+	for _, path := range []string{
+		"/v2/health", "/v2/pair/request", "/v2/pair/confirm",
+		"/v2/certificates", "/v2/echo", "/v2/sign", "/v2/sign/pdf",
+	} {
+		if !strings.Contains(doc, path) {
+			t.Errorf("docs/PROTOCOL.md does not document %s", path)
+		}
+	}
+
 	// Every code this package can return is in the document's table.
 	// F7 §8 asks for exactly that: "document every code a caller can
 	// receive."

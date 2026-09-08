@@ -325,6 +325,64 @@ func consentTenLongNames(t *testing.T, locale string) {
 	assertButtonsVisible(t, win, "consent (ten long names) "+locale, "#cert-list")
 }
 
+// The application name on the consent screen comes from the pairing
+// (SPEC §6.6, D-178), so it has the same length bound the pairing
+// window's own name does — consent.MaxDisplayLength, 120 characters —
+// and the same shape of risk: a value with no length this window
+// controls, in a window with a fixed height. It is checked here for the
+// same reason the pairing window's was.
+//
+// The certificate list is the region that gives way (D-106), and it has
+// a 120-point floor, so this is not a foregone conclusion: a name long
+// enough to grow the fixed footer past what is left over would push the
+// buttons off the bottom.
+func TestALongApplicationNameFitsOnTheConsentScreen(t *testing.T) {
+	name := consent.TruncateMiddle(
+		consent.SanitizeDisplayText(strings.Repeat("Padding ", 12)+"Knjigovodstvo d.o.o. ERP"),
+		consent.MaxDisplayLength)
+	if got := len([]rune(name)); got != consent.MaxDisplayLength {
+		t.Fatalf("the name under test is %d characters, want the full %d", got, consent.MaxDisplayLength)
+	}
+
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) {
+			c := i18n.Load(locale)
+			win, _ := sharedConsentWindow(t)
+			vm := consent.BuildViewModel(name,
+				[][]byte{{1}, {2}, {3}}, []string{"ugovor.pdf", "aneks.pdf", "izjava.pdf"}, sixCertificates())
+			if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm))); err != nil {
+				t.Fatalf("PostJSON: %v", err)
+			}
+			if got := evalString(t, win, "document.getElementById('application-name').textContent"); got != name {
+				t.Fatalf("the application name renders as %q, want the bound name", got)
+			}
+			assertPageDoesNotScroll(t, win, "consent (long application name) "+locale, "#cert-list")
+			assertButtonsVisible(t, win, "consent (long application name) "+locale, "#cert-list")
+			assertNoHorizontalOverflow(t, win, "consent (long application name) "+locale)
+
+			openConsentDetails(t, win)
+			assertPageDoesNotScroll(t, win, "consent (long application name, details) "+locale, "#cert-list", "#file-list")
+			assertButtonsVisible(t, win, "consent (long application name, details) "+locale, "#cert-list")
+		})
+	}
+}
+
+// assertNoHorizontalOverflow is the other half of "a value with no
+// length bound wraps rather than widening its container" (D-096): the
+// page-level check above catches a body that scrolls sideways, and this
+// catches an element inside it that does.
+func assertNoHorizontalOverflow(t *testing.T, win ui.Window, window string) {
+	t.Helper()
+	script := "(function(){var bad=[];" +
+		"document.querySelectorAll('*').forEach(function(el){" +
+		"if(el.scrollWidth - el.clientWidth <= 1) return;" +
+		"bad.push(el.tagName+'#'+el.id+' '+el.scrollWidth+' of '+el.clientWidth);" +
+		"});return bad.join('; ');})()"
+	if bad := evalString(t, win, script); bad != "" {
+		t.Errorf("%s: element(s) wider than the space they have: %s", window, bad)
+	}
+}
+
 // TestTheQuestionsAfterApprovalFitToo covers the three screens a batch
 // passes through between the approval and the first signature — each
 // has its own actions row, and each is now on the page that carries the

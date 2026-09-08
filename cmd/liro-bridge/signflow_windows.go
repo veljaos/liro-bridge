@@ -573,6 +573,20 @@ func (m *mainWindow) signAtAChosenPosition(ctx context.Context) bool {
 		path: firstInputPath(m.inputs),
 		cert: certificateFor(m.certs, m.selected),
 	}
+	if doc.path == "" {
+		// A protocol batch's documents arrived over a socket and are
+		// nowhere on disk, so there is no page to open the picker on.
+		// placeStamp's no-path branch opens a file chooser, which here
+		// would place the stamp by looking at some *other* document —
+		// the same error the remembered position makes, one step
+		// further on. The corners are what is left, and the screen says
+		// so, exactly as it does for a document the renderer cannot
+		// draw (F6b §5).
+		m.method = stampMethodCorners
+		m.postStampStep()
+		postWindowStatus(m.win, m.c.T("place.unavailable"), ui.IntentWarning)
+		return false
+	}
 	out := placementResult(m.cfg, func(in config.Config) (config.Config, bool, string) {
 		return placeStamp(in, m.c, m.locale, doc, m.win.Handle())
 	})
@@ -626,6 +640,21 @@ func (m *mainWindow) applicationName() string {
 		return m.remote.req.Application
 	}
 	return consent.ApplicationLocal
+}
+
+// withoutRememberedPlacement drops the position a person placed by
+// looking at a page, and leaves everything else about the stamp alone —
+// whether there is one, which corner, which page, the reference line.
+//
+// It is a value returned rather than a field cleared because the
+// configuration it is applied to is this run's own copy: what is on
+// disk is the person's standing answer and is not touched (D-103).
+func withoutRememberedPlacement(cfg config.Config) config.Config {
+	if cfg.StampPosition == config.StampPositionCustom {
+		cfg.StampPosition = config.DefaultStampPosition
+	}
+	cfg.StampPlacedPage, cfg.StampX, cfg.StampY = 0, 0, 0
+	return cfg
 }
 
 // applySuppliedStamp folds a caller's supplied answer into the

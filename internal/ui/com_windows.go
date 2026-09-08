@@ -49,13 +49,13 @@ var (
 	ole32DLL = windows.NewLazySystemDLL("ole32.dll")
 
 	procCoInitializeEx = ole32DLL.NewProc("CoInitializeEx")
-	procCoUninitialize = ole32DLL.NewProc("CoUninitialize")
 	procCoTaskMemFree  = ole32DLL.NewProc("CoTaskMemFree")
 
 	// OleInitialize, not CoInitializeEx, is what a window that accepts
 	// dropped files needs on its own thread — see initApartment below.
-	procOleInitializeCOM   = ole32DLL.NewProc("OleInitialize")
-	procOleUninitializeCOM = ole32DLL.NewProc("OleUninitialize")
+	// There is no OleUninitialize beside it: the one apartment this
+	// package takes is never given back (initApartment).
+	procOleInitializeCOM = ole32DLL.NewProc("OleInitialize")
 )
 
 const (
@@ -103,8 +103,16 @@ var (
 )
 
 // initApartment puts the calling thread into a single-threaded
-// apartment with the OLE subsystem running, and reports which call
-// achieved it so shutdownApartment can undo the matching one.
+// apartment with the OLE subsystem running.
+//
+// It is called once per process, by the UI thread
+// (uithread_windows.go), and is never undone: that thread outlives
+// every window on it, and the environment, the controllers and the
+// browser process group behind them all belong to this apartment.
+// There is no OleUninitialize here for the same reason there is no
+// WM_QUIT — the operating system reclaims the apartment at process
+// exit, and anything that shut it down earlier would be shutting it
+// down under a window still using it.
 //
 // OleInitialize is used in preference to CoInitializeEx because
 // RegisterDragDrop — which droptarget_windows.go calls for a window
@@ -122,12 +130,12 @@ var (
 // OleInitialize itself calls CoInitializeEx(NULL,
 // COINIT_APARTMENTTHREADED), so every WebView2 COM call this package
 // makes is in exactly the apartment it was before.
-func initApartment() (ole bool, err error) {
+func initApartment() error {
 	r0, _, _ := procOleInitializeCOM.Call(0)
 	// S_FALSE (1) means OLE was already initialised on this thread;
-	// that is not an error, and it still needs its own OleUninitialize.
+	// that is not an error.
 	if int32(r0) >= 0 {
-		return true, nil
+		return nil
 	}
 	oleHR := uint32(r0)
 
@@ -139,18 +147,9 @@ func initApartment() (ole bool, err error) {
 	// silently producing a window that looks like a drop target.
 	r1, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded)
 	if int32(r1) < 0 {
-		return false, fmt.Errorf("OleInitialize: HRESULT 0x%08X; CoInitializeEx: HRESULT 0x%08X", oleHR, uint32(r1))
+		return fmt.Errorf("OleInitialize: HRESULT 0x%08X; CoInitializeEx: HRESULT 0x%08X", oleHR, uint32(r1))
 	}
-	return false, nil
-}
-
-// shutdownApartment undoes initApartment on the same thread.
-func shutdownApartment(ole bool) {
-	if ole {
-		_, _, _ = procOleUninitializeCOM.Call()
-		return
-	}
-	_, _, _ = procCoUninitialize.Call()
+	return nil
 }
 
 func coTaskMemFree(p uintptr) {

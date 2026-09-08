@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/api"
+	"github.com/veljaos/liro-bridge/internal/consent"
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
@@ -90,9 +91,124 @@ func TestALongOriginWrapsRatherThanWideningThePairingWindow(t *testing.T) {
 	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
 		t.Run(locale, func(t *testing.T) {
 			win, _ := sharedPairingWindow(t, i18n.Load(locale), prompt)
-			assertPageDoesNotScroll(t, win, "pairing ("+locale+")", ".origin-row")
-			assertButtonsVisible(t, win, "pairing ("+locale+")", ".origin-row")
+			assertPageDoesNotScroll(t, win, "pairing ("+locale+")", ".identity")
+			assertButtonsVisible(t, win, "pairing ("+locale+")", ".identity")
 		})
+	}
+}
+
+// A caller's *name* has no length bound either, and it is the one thing
+// on this screen a person is meant to read before typing a code into
+// somebody else's application. Measured at the full 120 characters
+// before the identity block became the page's scrolling region: the
+// page overflowed its own window, deny-btn.focus() scrolled that
+// overflow, and #app-name's first line rendered at -8 on the code
+// screen and -53 on the connected one — above the top of the window in
+// both. An application calling itself 120 characters of padding
+// followed by its real name would put the real name out of sight, and
+// the person would approve what they could not see.
+//
+// Both screens, at the size each is really shown at, in all three
+// locales. The assertion is the two properties that were false: the
+// name's first line is inside the window, and the page does not scroll.
+func TestALongApplicationNameStaysReadableInThePairingWindow(t *testing.T) {
+	prompt := testPrompt()
+	// consent.MaxDisplayLength is where a name arrives from
+	// api.validatePairingRequest, so this is the longest one that can
+	// reach this window at all. The padding-then-real-name shape is the
+	// case the finding names: the part that identifies the application
+	// is last, so it is what a truncated or scrolled-away name loses.
+	prompt.Name = strings.Repeat("Padding ", 12) + "Knjigovodstvo d.o.o. ERP"
+	prompt.Name = consent.SanitizeDisplayText(prompt.Name)
+	prompt.Name = consent.TruncateMiddle(prompt.Name, consent.MaxDisplayLength)
+	if got := len([]rune(prompt.Name)); got != consent.MaxDisplayLength {
+		t.Fatalf("the name under test is %d characters, want the full %d", got, consent.MaxDisplayLength)
+	}
+
+	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+		t.Run(locale, func(t *testing.T) {
+			win, _ := sharedPairingWindow(t, i18n.Load(locale), prompt)
+
+			assertPageDoesNotScroll(t, win, "pairing, long name ("+locale+")", ".identity")
+			assertButtonsVisible(t, win, "pairing, long name ("+locale+")", ".identity")
+			assertNameStartsInsideTheWindow(t, win, "pairing, long name ("+locale+")", "app-name")
+
+			// And the same at the size the connected screen is shown at,
+			// once the page has actually reached it (D-201).
+			resizeAndSettle(t, win, pairingWindowWidth, pairingConnectedHeight)
+			defer resizeAndSettle(t, win, pairingWindowWidth, pairingWindowHeight)
+			if err := win.PostJSON(map[string]any{"type": "connected"}); err != nil {
+				t.Fatalf("PostJSON(connected): %v", err)
+			}
+			assertPageDoesNotScroll(t, win, "pairing connected, long name ("+locale+")", ".identity")
+			assertButtonsVisible(t, win, "pairing connected, long name ("+locale+")", ".identity")
+			assertNameStartsInsideTheWindow(t, win, "pairing connected, long name ("+locale+")", "connected-name")
+		})
+	}
+}
+
+// The other side of making the identity block scrollable: for an
+// ordinary name it must not actually scroll. A scrollbar beside a
+// two-line company name is what the remedy would cost if the block were
+// even a point short of what it needs, and a point is exactly what it
+// was short of on the connected screen when this was first built — the
+// page did not scroll, every layout test passed, and the shipped window
+// had a scrollbar in it (D-167's pattern for the third time).
+func TestAnOrdinaryNameLeavesTheIdentityBlockUnscrolled(t *testing.T) {
+	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+		t.Run(locale, func(t *testing.T) {
+			win, _ := sharedPairingWindow(t, i18n.Load(locale), testPrompt())
+			assertRegionDoesNotScroll(t, win, "pairing ("+locale+")", "#state-code .identity")
+
+			resizeAndSettle(t, win, pairingWindowWidth, pairingConnectedHeight)
+			defer resizeAndSettle(t, win, pairingWindowWidth, pairingWindowHeight)
+			if err := win.PostJSON(map[string]any{"type": "connected"}); err != nil {
+				t.Fatalf("PostJSON(connected): %v", err)
+			}
+			assertRegionDoesNotScroll(t, win, "pairing connected ("+locale+")", "#state-connected .identity")
+		})
+	}
+}
+
+// assertRegionDoesNotScroll is the opposite of assertScrolls: a region
+// that is allowed to scroll, given content that should not make it.
+func assertRegionDoesNotScroll(t *testing.T, win ui.Window, window, selector string) {
+	t.Helper()
+	box := evalNumbers(t, win,
+		"document.querySelector("+jsStringLiteral(selector)+").scrollHeight",
+		"document.querySelector("+jsStringLiteral(selector)+").clientHeight",
+		"0", "0")
+	if box[0] > box[1] {
+		t.Errorf("%s: %s scrolls for an ordinary name — %v of %v", window, selector, box[1], box[0])
+	}
+}
+
+// assertNameStartsInsideTheWindow is the half a scrolling check cannot
+// see: a page that does not scroll can still hold a block scrolled past
+// its own first line, and the first line is where a name begins.
+//
+// The four numbers come from one Eval for the reason
+// assertPageDoesNotScroll takes its four that way (D-201): two
+// questions asked at two moments can straddle a relayout and compare
+// numbers from different layouts.
+func assertNameStartsInsideTheWindow(t *testing.T, win ui.Window, window, id string) {
+	t.Helper()
+	box := evalNumbers(t, win,
+		"document.getElementById('"+id+"').getBoundingClientRect().top",
+		"document.getElementById('"+id+"').getBoundingClientRect().bottom",
+		"window.innerHeight",
+		"document.getElementById('"+id+"').getBoundingClientRect().height")
+	top, bottom, viewport, height := box[0], box[1], box[2], box[3]
+	if height <= 0 {
+		t.Fatalf("%s: #%s has no rendered height; nothing was measured", window, id)
+	}
+	if top < -0.5 {
+		t.Errorf("%s: #%s renders at %.0f..%.0f of a %.0f-point window — its first line is above the top",
+			window, id, top, bottom, viewport)
+	}
+	if top > viewport+0.5 {
+		t.Errorf("%s: #%s renders at %.0f..%.0f of a %.0f-point window — it starts below the bottom",
+			window, id, top, bottom, viewport)
 	}
 }
 
@@ -162,8 +278,8 @@ func TestASuccessfulPairingShowsTheConnectedScreen(t *testing.T) {
 			if strings.Contains(body, "042317") {
 				t.Fatal("the spent code is still on screen")
 			}
-			assertPageDoesNotScroll(t, win, "pairing connected ("+locale+")", ".origin-row")
-			assertButtonsVisible(t, win, "pairing connected ("+locale+")", ".origin-row")
+			assertPageDoesNotScroll(t, win, "pairing connected ("+locale+")", ".identity")
+			assertButtonsVisible(t, win, "pairing connected ("+locale+")", ".identity")
 		})
 	}
 }

@@ -8,15 +8,15 @@ package ui
 // one window: a native HWND with a WebView2 control filling its
 // client area.
 //
-// Everything after window creation runs on a single OS thread with its
-// own STA COM apartment (F5 §2.1) — CoInitializeEx(COINIT_APARTMENTTHREADED)
-// is called once, on a goroutine pinned there with runtime.LockOSThread,
-// and every COM call this package makes for that window's lifetime,
-// Go->page or page->Go, is marshaled onto that same thread. This is not
-// an optimisation; calling a single-threaded-apartment COM object from
-// any other thread is undefined behaviour, so PostJSON and Close must
-// never touch a COM pointer directly — they hand a closure to the
-// owning thread via wmRunFunc instead (see invoke below).
+// Every window in this process lives on one OS thread with one STA COM
+// apartment (F5 §2.1) and one WebView2 environment — uithread_windows.go
+// is that thread, and J-6 is why it is one rather than one per window.
+// Every COM call this package makes for a window's lifetime, Go->page or
+// page->Go, is marshaled onto it. This is not an optimisation; calling a
+// single-threaded-apartment COM object from any other thread is
+// undefined behaviour, so PostJSON and Close must never touch a COM
+// pointer directly — they hand a closure to the owning thread via
+// wmRunFunc instead (see invoke below).
 //
 // Nothing a *caller* supplies ever runs on that thread. OnMessage,
 // OnFilesDropped and OnClosed are queued by the thread that produces
@@ -53,16 +53,12 @@ package ui
 import (
 	"fmt"
 	"log/slog"
-	"path/filepath"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-
-	"github.com/veljaos/liro-bridge/internal/platform"
 )
 
 // coreWebView2HostResourceAccessKindDeny is
@@ -89,7 +85,6 @@ const coreWebView2HostResourceAccessKindAllow = 1
 
 type window struct {
 	hwnd       uintptr
-	env        uintptr
 	controller uintptr
 	cw2        uintptr // ICoreWebView2 (base)
 	cw2v3      uintptr // ICoreWebView2_3, QueryInterface'd once at setup
@@ -112,8 +107,13 @@ type window struct {
 
 	// threadID is the OS thread that created this window's WebView2
 	// controller and is the only one allowed to release it (see this
-	// file's package doc comment). Written once, before NewWindow's
-	// ready channel is signalled, and only read afterwards.
+	// file's package doc comment). It is the process's one UI thread
+	// (uithread_windows.go) and therefore the same value for every
+	// window; it is kept per window anyway, because what it answers is
+	// a question about this window — am I the thread allowed to touch
+	// it — and an answer that happens to be shared is still that
+	// window's answer. Written once, while the window is being created
+	// on that thread, and only read afterwards.
 	threadID uintptr
 
 	workCh    chan func()
@@ -153,13 +153,6 @@ type window struct {
 	// drops, or when registration failed.
 	dropTargets []*dropTarget
 
-	// apartmentIsOLE says which call put this thread into its
-	// apartment (com_windows.go's initApartment), so the teardown
-	// undoes the matching one. OleInitialize and CoInitializeEx keep
-	// separate counts; calling CoUninitialize against an OleInitialize
-	// leaves OLE half-shut-down on a thread that is about to end.
-	apartmentIsOLE bool
-
 	// tearingDown is set by the owning thread, on entry to the teardown
 	// and before it releases anything, so that a second WM_CLOSE — from
 	// the title bar, from Close, or dispatched by the nested message
@@ -198,11 +191,16 @@ func NewWindow(opts Options) (Window, error) {
 		onClosed:       opts.OnClosed,
 		onFilesDropped: opts.OnFilesDropped,
 	}
-	go w.dispatchEvents()
-	ready := make(chan error, 1)
-	go w.run(opts, ready)
-	if err := <-ready; err != nil {
+
+	t, err := ensureUIThread()
+	if err != nil {
 		return nil, err
+	}
+	go w.dispatchEvents()
+	var createErr error
+	t.do(func() { createErr = w.create(t, opts) })
+	if createErr != nil {
+		return nil, createErr
 	}
 	return w, nil
 }
@@ -271,30 +269,22 @@ func (w *window) drainEvents() {
 	}
 }
 
-func (w *window) run(opts Options, ready chan<- error) {
-	runtime.LockOSThread()
+// create builds the native frame and its WebView2 control. It runs on
+// the process's one UI thread (uithread_windows.go), which is the
+// thread that owns the apartment, the environment and — from here on —
+// this window's controller.
+//
+// It does not pump: the UI thread's own loop, and the nested pumps this
+// function's own calls run, are what dispatch this window's messages
+// from now on. That is the whole difference from the thread-per-window
+// shape it replaces.
+func (w *window) create(t *uiThread, opts Options) error {
 	w.threadID = currentThreadID()
-	// Deliberately never unlocked: this goroutine and the OS thread it
-	// is pinned to live exactly as long as the window. Ending the
-	// goroutine (after WM_QUIT, at the bottom of this function) ends the
-	// thread too, which is correct — nothing else may use this STA
-	// apartment once the window that owns it is gone.
-
-	ensureDPIAware()
-	ole, err := initApartment()
-	if err != nil {
-		ready <- err
-		return
-	}
-	w.apartmentIsOLE = ole
-	registerWindowClass()
 
 	dpi := uint32(96)
 	hwnd, err := w.createNativeWindow(opts, dpi)
 	if err != nil {
-		shutdownApartment(w.apartmentIsOLE)
-		ready <- err
-		return
+		return err
 	}
 	w.hwnd = hwnd
 	setWindowUserData(hwnd, unsafe.Pointer(w))
@@ -313,33 +303,30 @@ func (w *window) run(opts Options, ready chan<- error) {
 		w.resizeToClientPoints(opts.Width, opts.Height, dpi)
 	}
 
-	if err := w.setUpWebView2(opts); err != nil {
+	if err := w.setUpWebView2(t, opts); err != nil {
 		if w.owner != 0 {
 			enableWindow(w.owner, true)
 		}
 		w.closeWebView()
 		// DestroyWindow dispatches WM_DESTROY synchronously on this same
-		// thread, which is what actually calls shutdownApartment (wndProc's
-		// wmDestroy case, below) — no separate call needed here.
+		// thread, which is what closes closedCh (wndProc's wmDestroy
+		// case, below) — no separate call needed here.
 		_, _, _ = procDestroyWindow.Call(hwnd)
-		ready <- err
-		return
+		return err
 	}
 
 	showAndFocusWindow(hwnd, opts.AlwaysOnTop)
-	ready <- nil
-
-	pumpUntil(func() bool { return false })
+	return nil
 }
 
-func (w *window) setUpWebView2(opts Options) error {
-	userDataDir := filepath.Join(platform.ConfigDir(runtime.GOOS, platform.OSEnv), "webview2-profile")
-
-	env, err := createEnvironment(userDataDir)
+func (w *window) setUpWebView2(t *uiThread, opts Options) error {
+	// The process's one environment, created on this thread at the
+	// first window and shared by every one after it (J-6). It is not
+	// this window's to release, and closeWebView does not.
+	env, err := t.environment()
 	if err != nil {
 		return fmt.Errorf("ui: creating WebView2 environment: %w", err)
 	}
-	w.env = env
 
 	controller, err := environmentCreateController(env, w.hwnd)
 	if err != nil {
@@ -655,13 +642,18 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		return 0
 
 	case wmDestroy:
-		shutdownApartment(w.apartmentIsOLE)
+		// The apartment is not shut down and no WM_QUIT is posted: this
+		// window's thread is the process's one UI thread and it outlives
+		// every window on it (uithread_windows.go). Posting WM_QUIT here
+		// would end the loop every other window depends on, and
+		// uninitialising the apartment would take the environment and
+		// the controllers of any window still open with it.
+		//
 		// Once: DestroyWindow is reached from the WM_CLOSE path and from
-		// setUpWebView2's failure path, and a closed channel closed twice
+		// create's failure path, and a closed channel closed twice
 		// panics — which would turn a teardown ordering bug into a dead
 		// process rather than a harmless repeat.
 		w.closeOnce.Do(func() { close(w.closedCh) })
-		postQuitMessage(0)
 		return 0
 
 	default:
@@ -696,8 +688,11 @@ func (w *window) closeWebView() {
 	comRelease(w.cw2v3)
 	comRelease(w.cw2)
 	comRelease(w.controller)
-	comRelease(w.env)
-	w.cw2v3, w.cw2, w.controller, w.env = 0, 0, 0, 0
+	// The environment is deliberately absent from that list. It is the
+	// process's, not this window's (uithread_windows.go): releasing it
+	// here would take it away from every window still open and from
+	// every one still to be created.
+	w.cw2v3, w.cw2, w.controller = 0, 0, 0
 
 	// This package's own references to the two event handlers, dropped
 	// after ICoreWebView2Controller::Close has dropped WebView2's. Each

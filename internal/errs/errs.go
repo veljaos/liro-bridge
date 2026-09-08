@@ -178,6 +178,16 @@ const (
 	// machine to turn it on.
 	CodeDocumentSigningDisabled Code = "DOCUMENT_SIGNING_DISABLED"
 
+	// CodeCertificateListingDisabled means GET /v2/certificates is
+	// switched off on this machine. The listing says who is at the
+	// machine and which qualified certificates they hold, and on a
+	// bookkeeper's machine that is several clients rather than one
+	// (SPEC §14.1) — so the person at it can decline to answer, and an
+	// application that asks is told so rather than being told it is
+	// unpaired, which is not true and would send it to re-pair for no
+	// gain.
+	CodeCertificateListingDisabled Code = "CERTIFICATE_LISTING_DISABLED"
+
 	CodeInternal Code = "INTERNAL"
 )
 
@@ -225,6 +235,7 @@ func AllCodes() []Code {
 		CodeJobInProgress,
 		CodeJobNotFound,
 		CodeDocumentSigningDisabled,
+		CodeCertificateListingDisabled,
 		CodeInternal,
 	}
 }

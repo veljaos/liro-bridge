@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/consent"
+	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
@@ -160,8 +161,11 @@ type harness struct {
 	server   *Server
 	http     *httptest.Server
 
-	mu              sync.Mutex
-	documentSigning bool
+	certs *fakeCertificates
+
+	mu                 sync.Mutex
+	documentSigning    bool
+	certificateListing bool
 
 	// expire is fed by the test to make a pairing request's watcher
 	// believe its five minutes are up, without waiting five minutes.
@@ -189,18 +193,26 @@ func newHarness(t *testing.T) *harness {
 	h.auth = NewAuthenticator(pairings, h.nonces, clock.Now)
 	h.registry = jobs.NewRegistry(clock.Now)
 	h.signer = newFakeSigner()
+	h.certs = newFakeCertificates()
 	h.documentSigning = true
+	h.certificateListing = true
 	h.server = NewServer(Options{
 		Pairings:     pairings,
 		Flow:         h.flow,
 		Auth:         h.auth,
 		Jobs:         h.registry,
 		Signer:       h.signer,
+		Certificates: h.certs,
 		AgentVersion: testAgentVersion,
 		DocumentSigningEnabled: func() bool {
 			h.mu.Lock()
 			defer h.mu.Unlock()
 			return h.documentSigning
+		},
+		CertificateListingEnabled: func() bool {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return h.certificateListing
 		},
 		Now: clock.Now,
 	})
@@ -220,6 +232,69 @@ func (h *harness) setDocumentSigning(on bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.documentSigning = on
+}
+
+// setCertificateListing turns the certificate listing on or off while
+// the agent is running, which is what the real setting does.
+func (h *harness) setCertificateListing(on bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.certificateListing = on
+}
+
+// fakeCertificates stands in for the machine's certificate store. It
+// carries what internal/trust/classify would have produced — the shape
+// the endpoint reports — because the enumeration itself is Windows and
+// has its own tests.
+type fakeCertificates struct {
+	mu    sync.Mutex
+	certs []Certificate
+	err   error
+	calls int
+}
+
+func newFakeCertificates() *fakeCertificates {
+	return &fakeCertificates{certs: []Certificate{
+		{
+			Thumbprint:  "7758D4D4B8973EA619B3225185EDE740B3D1ECCE",
+			DisplayName: "ВЕЉКО СТАНОЈЕВИЋ",
+			Issuer:      "MUPGradjaniCA4",
+			Purpose:     "signing",
+			Qualified:   true,
+			Usable:      true,
+		},
+		{
+			Thumbprint:      "1234567890ABCDEF1234567890ABCDEF12345678",
+			DisplayName:     "Zoran Milovanović",
+			Issuer:          "Halcom CA PO 2",
+			Purpose:         "signing",
+			Qualified:       true,
+			Usable:          false,
+			NotUsableReason: errs.CodeCardNotPresent,
+		},
+	}}
+}
+
+func (f *fakeCertificates) Certificates(ctx context.Context) ([]Certificate, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]Certificate(nil), f.certs...), nil
+}
+
+func (f *fakeCertificates) set(certs []Certificate, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.certs, f.err = certs, err
+}
+
+func (f *fakeCertificates) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
 }
 
 // fakeSigner stands in for the agent's own consent window and card. It

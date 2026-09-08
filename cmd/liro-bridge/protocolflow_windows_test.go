@@ -91,25 +91,18 @@ func (w *recordingWindow) posted(kind string) []map[string]any {
 // leaves it in, without opening anything.
 func protocolWindowFor(t *testing.T, req api.SignRequest) *mainWindow {
 	t.Helper()
-	cfg := config.Default()
-	m := newMainWindow(cfg, "sr-Latn")
-	m.documentsSupplied = true
-	m.force = true
-	m.hashesOnly = req.Kind == api.SignDigests
-	m.suppliedStamp = req.Stamp
-	m.applySuppliedStamp()
-	m.remote = &remoteBatch{
-		req:           req,
-		job:           testJob(t, len(req.Digests)),
-		outcomes:      make([]api.SignOutcome, len(req.Digests)),
-		stopCountdown: make(chan struct{}),
-		expired:       make(chan struct{}),
-	}
-	for i, digest := range req.Digests {
-		label := protocolLabel(req, i)
-		m.inputs = append(m.inputs, interactiveInput{digest: digest, label: label})
-		m.remoteItems = append(m.remoteItems, jobs.Item{DisplayName: label, State: jobs.StateWaiting})
-	}
+	return protocolWindowWith(t, config.Default(), req)
+}
+
+// protocolWindowWith is the same, over a configuration the caller
+// chose. It goes through newProtocolWindow — the function the product
+// itself calls — rather than rebuilding what that function does, so a
+// difference between a protocol batch and a person's own batch cannot
+// exist here and not there (D-134's lesson: a test that supplies both
+// the input and the expectation measures its own consistency).
+func protocolWindowWith(t *testing.T, cfg config.Config, req api.SignRequest) *mainWindow {
+	t.Helper()
+	m := newProtocolWindow(cfg, "sr-Latn", req, testJob(t, len(req.Digests)))
 	m.win = &recordingWindow{}
 	return m
 }

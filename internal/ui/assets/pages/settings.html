@@ -116,6 +116,18 @@
     </label>
     <span class="liro-text-small liro-text-secondary" data-i18n="settings.document_signing_hint"></span>
 
+    <!-- GET /v2/certificates: which certificates this machine can sign
+         with. On by default, because an SDK that cannot enumerate
+         cannot offer the person a choice. It has a switch because on a
+         machine holding several clients' cards the listing tells an
+         application paired by one client the names on the others'
+         certificates, and nothing in a pairing implies that. -->
+    <label class="liro-check">
+      <input type="checkbox" id="certificate-listing" />
+      <span data-i18n="settings.certificate_listing"></span>
+    </label>
+    <span class="liro-text-small liro-text-secondary" data-i18n="settings.certificate_listing_hint"></span>
+
     <!-- F6 §6: the stamp has its own window; this is the way in from
          Settings, the other being the main window's summary line. -->
     <div class="actions-row">

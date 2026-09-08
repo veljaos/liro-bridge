@@ -57,8 +57,31 @@ main {
   min-height: 120px;
 }
 
+/* The row that says which application is asking. The name in it comes
+   from the pairing and can be the full consent.MaxDisplayLength — 120
+   characters (D-178) — while the label beside it is a fixed catalogue
+   string.
+
+   .liro-row gives every child min-width: 0 (intents.css) so that a long
+   value wraps instead of widening the window, and for these two that
+   let the wrong one give way: measured at 120 characters, the label was
+   squeezed to 33 points of the 50 it needs and clipped, in all three
+   locales — the caller's own text taking the space from the word that
+   says what it is. The label keeps its intrinsic width; the name wraps
+   inside whatever is left, and the certificate list gives the height
+   back (D-106). */
 .secondary-row {
   font-size: var(--liro-font-size-small);
+  align-items: baseline;
+}
+
+.secondary-row > :first-child {
+  flex: 0 0 auto;
+}
+
+#application-name {
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 #file-list {

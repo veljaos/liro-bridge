@@ -57,9 +57,21 @@ type Options struct {
 	// drawn by WebView2.
 	Signer Signer
 
+	// Certificates enumerates what this machine can sign with, for
+	// GET /v2/certificates. It is an interface for the same reason
+	// Signer is: internal/api must not import internal/cli.
+	Certificates CertificateSource
+
 	// AgentVersion is what /v2/health reports and what bridge.json
 	// carries.
 	AgentVersion string
+
+	// CertificateListingEnabled reports whether GET /v2/certificates is
+	// available. A function rather than a bool for the same reason
+	// DocumentSigningEnabled is one: the setting can change while the
+	// agent is running, and a listener that had to be restarted to
+	// notice would be a setting that silently did nothing.
+	CertificateListingEnabled func() bool
 
 	// DocumentSigningEnabled reports whether POST /v2/sign/pdf is
 	// available (F7 §6: optional at install time, and disableable in
@@ -83,9 +95,12 @@ type Server struct {
 	jobs     *jobs.Registry
 	signer   Signer
 
-	agentVersion    string
-	documentSigning func() bool
-	now             func() time.Time
+	certificates CertificateSource
+
+	agentVersion       string
+	documentSigning    func() bool
+	certificateListing func() bool
+	now                func() time.Time
 }
 
 // NewServer returns a Server over opts.
@@ -98,15 +113,21 @@ func NewServer(opts Options) *Server {
 	if documentSigning == nil {
 		documentSigning = func() bool { return true }
 	}
+	certificateListing := opts.CertificateListingEnabled
+	if certificateListing == nil {
+		certificateListing = func() bool { return true }
+	}
 	return &Server{
-		pairings:        opts.Pairings,
-		flow:            opts.Flow,
-		auth:            opts.Auth,
-		jobs:            opts.Jobs,
-		signer:          opts.Signer,
-		agentVersion:    opts.AgentVersion,
-		documentSigning: documentSigning,
-		now:             now,
+		pairings:           opts.Pairings,
+		flow:               opts.Flow,
+		auth:               opts.Auth,
+		jobs:               opts.Jobs,
+		signer:             opts.Signer,
+		certificates:       opts.Certificates,
+		agentVersion:       opts.AgentVersion,
+		documentSigning:    documentSigning,
+		certificateListing: certificateListing,
+		now:                now,
 	}
 }
 
@@ -116,6 +137,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v2/health", s.handleHealth)
 	mux.HandleFunc("/v2/pair/request", s.handlePairRequest)
 	mux.HandleFunc("/v2/pair/confirm", s.handlePairConfirm)
+	mux.HandleFunc("/v2/certificates", s.handleCertificates)
+	mux.HandleFunc("/v2/echo", s.handleEcho)
 	mux.HandleFunc("/v2/sign", s.handleSignDigests)
 	mux.HandleFunc("/v2/sign/pdf", s.handleSignDocuments)
 	mux.HandleFunc("/v2/jobs/{id}/events", s.handleJobEvents)
@@ -201,7 +224,7 @@ func statusFor(code errs.Code) int {
 	case errs.CodeNotPaired, errs.CodeAuthFailed, errs.CodePairingCodeIncorrect:
 		return http.StatusUnauthorized
 	case errs.CodePairingDenied, errs.CodePairingOriginMismatch, errs.CodeDocumentSigningDisabled,
-		errs.CodeConsentDenied, errs.CodeConsentTimeout:
+		errs.CodeCertificateListingDisabled, errs.CodeConsentDenied, errs.CodeConsentTimeout:
 		// The person did not authorise it — by saying no, or by not
 		// being there. Forbidden is what that is; there is nothing
 		// wrong with the request and nothing wrong with the agent.

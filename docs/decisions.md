@@ -13075,3 +13075,630 @@ own exact PIDs.
   and described above — but it is a layout decision about a window whose
   job is to be read carefully, and making it silently inside a change
   meant to repair three tests is how a design nobody chose ships.
+---
+
+## D-202 — The identity block is the pairing window's one scrolling region; a 120-character name now starts inside the window
+
+**Date:** 2026-09-08
+**Phase:** Pre-F8 fixes (Task 1)
+
+**Decision.** On both screens of the pairing window, the block that says
+who is asking — the application's name, the "wants to connect" line and,
+on the code screen, the origin card — is one `.identity` block, and it
+is the page's only scrolling region. `.origin-row` keeps its own layout
+and gives up the scrolling it used to do alone. The block shrinks and
+never grows (`flex: 0 1 auto` over `.liro-scroll-region`'s
+`min-height: 0; overflow-y: auto`), so an ordinary name and origin leave
+the code exactly where it was.
+
+The connected screen grows from 420×210 to 420×226 — see the defect at
+the end of this entry, which is the price the remedy would otherwise
+have charged for every ordinary name.
+
+**Why the name and not just the origin.** [[D-201]] measured this and
+recorded it rather than fixing it, correctly: the remedy is a design
+choice on a security screen. A pairing name reaches the window at up to
+`consent.MaxDisplayLength` — 120 characters — and at that length, in all
+three locales, the page overflowed its own window and `deny-btn.focus()`
+scrolled that overflow, putting the first line of the name above the top
+of the screen.
+
+That name is the one thing on the screen a person must read before
+typing a code into somebody else's application. An application calling
+itself 120 characters of padding followed by its real name puts the real
+name out of sight, and the person approves what they cannot see. SPEC
+§6.2's reason for showing the origin verbatim — so that somebody who
+sees `http://` where they expected `https://` can notice — applies to the
+name at least as strongly.
+
+Of the three remedies [[D-201]] listed, this is the one it recommended
+and the one that costs nothing: it hides nothing (everything is still
+reachable), it moves neither the code nor the buttons, and it stops the
+page itself from scrolling at all.
+
+**What it does, measured in a real window at each screen's own size, in
+all three locales — the numbers are identical in each.**
+
+| | code screen 420×330 | connected screen 420×226 |
+|---|---|---|
+| ordinary name | page 330 of 330; identity 123 of 123 — nothing scrolls; name 16..44; code at 177; Deny at 271 | page 226 of 226; identity 46 of 46 — nothing scrolls; name top 16; Close at 167 |
+| 120-character name | page 330 of 330; **identity 207 of 132, scrolls**; name **16**..128; code at 187; Deny at 271 | page 226 of 226; **identity 130 of 61, scrolls**; name top **16**; Close at 167 |
+
+Before, at 120 characters: the code screen's content was 354 in a
+330-point window and `#app-name` rendered at **−8**..104; the connected
+screen's was 279 in 210 and `#connected-name` at **−53**..59. Both
+first lines are now at 16.
+
+The one thing that moves is the code, ten points down the code screen,
+into space that was empty: the identity block grows into the slack
+between the code and the actions rather than pushing anything. Deny and
+Close do not move at all — `.actions` keeps `margin-top: auto`, so they
+are pinned to the bottom whatever the block above does.
+
+**The test.** `TestALongApplicationNameStaysReadableInThePairingWindow`
+posts a name of exactly 120 characters, through
+`consent.SanitizeDisplayText` and `TruncateMiddle` so it is the longest
+one that can reach this window at all, and asserts on both screens in
+all three locales that the page does not scroll, that the buttons are
+inside the window, and that the name's first line is inside it. Run
+against the page as it stood it reports the finding's own numbers back —
+"scrollHeight 354 exceeds clientHeight 330", "#app-name renders at
+-8..104 of a 330-point window", "#connected-name renders at -53..59 of a
+210-point window" — in each of the three locales.
+`TestALongOriginWrapsRatherThanWideningThePairingWindow` is unchanged
+except for the region it names.
+
+**The consent window has the same shape, and had the same defect one
+field over.** The application name above a signature comes from the
+pairing and is bound at the same 120 characters ([[D-178]]), so it was
+checked the same way. The page does not scroll and the buttons stay on
+screen — the certificate list gives way, which is what [[D-106]] built it
+to do — but `.liro-row` lets *every* child shrink, and at 120 characters
+the child that gave way was the **label**: "Aplikacija:" squeezed to 33
+points of the 50 it needs, and clipped, in all three locales. The
+caller's own text taking the space from the word that says what it is.
+The label now keeps its intrinsic width and the name wraps inside what
+is left. `TestALongApplicationNameFitsOnTheConsentScreen` covers it,
+including a check that no element anywhere on the page is wider than the
+space it has — which is what caught this.
+
+**A defect the remedy itself introduced, found by looking at the shipped
+window.** With the identity block scrollable, the connected screen at
+420×210 had **no slack**: measured, its content needed 46.19 points and
+the block was given 45.41, so it scrolled by eight tenths of a point and
+Windows drew a scrollbar beside an ordinary two-line company name. Every
+layout test passed — the page did not scroll, the buttons were on
+screen, the name was inside the window — and the shipped window had a
+scrollbar in it. That is [[D-167]]'s pattern for the third time and
+[[D-087]]/[[D-122]]/[[D-161]]/[[D-172]]'s for the sixth: **a green suite
+is not evidence about what a window shows.** It was found by starting
+the real binary, pairing with it from a real client and photographing
+the window.
+
+The fix is sixteen points of slack (210 → 226, one `--liro-space-4`, so
+a one-word label change does not put the scrollbar straight back) and,
+more importantly, the assertion that was missing:
+`TestAnOrdinaryNameLeavesTheIdentityBlockUnscrolled` measures the
+region's own `scrollHeight` against its `clientHeight` for an ordinary
+name, on both screens, in all three locales. At 210 it fails with
+"#state-connected .identity scrolls for an ordinary name — 45 of 46".
+
+**Rejected.**
+- **Clamping the name to a fixed number of lines with a visible
+  ellipsis.** [[D-201]]'s second option. It hides part of the one value
+  on the screen that must be read in full, and the part it hides is the
+  end — which is exactly where an application that pads its name puts
+  its real one.
+- **Making both windows taller for a case that is rare.** [[D-201]]'s
+  third. A 120-character name needs 354 points of content on a 330-point
+  screen; sizing for it means every ordinary pairing looks at a window
+  two thirds empty, and the next longer catalogue string starts the
+  argument again ([[D-106]]: widening is not a fix, it is a delay).
+- **Truncating the name in Go before it reaches the window.** It is
+  already truncated, at 120 characters, by the pairing itself
+  ([[D-178]]); truncating further would mean the value the person
+  approves and the value bound at pairing are different bytes, which is
+  the property [[D-178]] exists to hold.
+- **Leaving `.origin-row` as a second scrolling region inside the
+  identity block.** Two scrollbars in a 420-point window, one inside the
+  other, is the double-scrollbar defect [[D-106]] rules out by
+  construction.
+
+---
+
+## D-203 — `GET /v2/certificates`: the names, never the certificates; no new consent, and a Settings switch
+
+**Date:** 2026-09-08
+**Phase:** Pre-F8 fixes (Task 2)
+
+**Decision.** `GET /v2/certificates` is a new authenticated endpoint. It
+answers with one entry per certificate a person would be offered:
+
+```json
+{"certificates":[{"thumbprint":"52EA0BAB…","displayName":"Zoran Milovanović",
+  "issuer":"Halcom BG CA PL e-signature","purpose":"signing","qualified":true,
+  "usable":false,"notUsableReason":"CARD_NOT_PRESENT","isTestKey":false}]}
+```
+
+`internal/api` gains a `CertificateSource` interface, for the same
+reason it has `Signer`: SPEC §4.2 rule 4 forbids it importing
+`internal/cli`, and `cmd/liro-bridge` is the one place that knows a
+certificate comes from Windows CNG. The implementation
+(`gatheredCertificates`) is `cli.Gather` — the same enumeration
+`liro-bridge certs` prints and the same one the agent's own certificate
+step shows — narrowed by the same one rule every listing in this program
+goes through, `classify.Info.HiddenByDefault` ([[D-108]], [[D-149]]).
+Three copies of that rule is how a listing and a window come to disagree
+about what a machine holds.
+
+**Why it exists.** `/v2/sign` requires `certificateThumbprint` and
+PROTOCOL.md §5.1 explains why: the caller has already built a CMS around
+one signer certificate, so any other key produces a document that
+verifies against nothing ([[D-191]]). Nothing in the protocol told a
+caller where to get a thumbprint. That is a hole, and F8's SDK walks
+straight into it — an SDK must be able to offer the person a choice.
+
+**What is in it, and what the shape follows from.**
+
+*Nothing the classification layer strips.* A Serbian qualified
+certificate carries the holder's national identity number in its Subject
+DN and their email address in the DN or the SAN (SPEC §11.6).
+`internal/trust/classify` scrubs both before anything is displayed or
+logged, and this endpoint reports what that layer produced. There is no
+field on `api.Certificate` a Subject DN could travel in — the same
+allow-list guarantee `audit.Entry` gets its safety from ([[D-084]]),
+rather than a check on the way out.
+
+*`isTestKey`, because SPEC §16.6 is unconditional.* A soft-token
+signature must be visibly marked everywhere it appears, and a caller
+that could not tell one apart would be the one place it was not.
+
+*Not the validity dates.* The task named six things and this is not one
+of them; `notUsableReason: CERT_EXPIRED` already covers the case a
+caller can act on. SPEC §0's "do not invent requirements" applies to a
+field as much as to a feature.
+
+*`purpose`, even though every row a listing returns today says
+"signing".* The authentication twin every Serbian card carries is
+hidden by the rule above ([[D-149]]), so the value is currently
+constant. It is carried anyway because SPEC §11.5 requires every row to
+state the role KeyUsage gives it, and because a caller told "signing"
+has been told rather than left to assume.
+
+**The DER, decided rather than deferred.** A caller building a CMS needs
+the signer certificate itself — for `issuerAndSerialNumber`, for
+`signingCertificateV2`, and for the certificates set (SPEC §12.3). It is
+**not** here, and the reason is the first rule above: the DER *is* the
+national identity number and the email address, in full, wrapped in
+ASN.1. Putting it on a listing that is answered without any window, at
+any moment a paired application chooses, turns "which certificates
+exist" into "here is the identity document of the person at this
+machine". Whatever else is true, that cannot be the endpoint whose whole
+justification is letting an SDK show a name.
+
+**So the CMS path keeps a hole, and it is stated rather than glossed.**
+A caller that has never seen the certificate still cannot build a CMS
+around it; today it has to come from wherever the integration already
+gets it — a copy the person exported, or a document they have already
+signed. The answer is not to widen this endpoint but to make the
+certificate arrive with something the person approved: the smallest such
+change is for `/v2/sign`'s own result to carry the signer certificate,
+which is a signature the person pressed Approve for. That is a decision
+about the signing path, not about a listing, and it is recorded here for
+whoever takes it up rather than made in passing. PROTOCOL.md §5.5 says
+the same to an integrator.
+
+**Consent: no new pairing-time question, and a Settings switch.**
+
+*No pairing-time consent.* [[D-177]] is explicit that the pairing window
+has no Allow button because the code is the approval, and that a button
+beside it would be a second, weaker one. A permission checkbox there is
+worse than a button: it asks a person to evaluate a capability at the
+one moment they have no context for it, on the screen whose whole value
+is that it asks one thing.
+
+*A Settings switch, on by default* (`certificateListingEnabled`, read on
+every request the way `documentSigningEnabled` is, checked after
+authentication for the same reason [[D-195]] checks that one after it).
+The argument for a switch at all is SPEC §14.1's bookkeeper: on a
+machine holding several clients' cards, this listing tells an
+application paired by *one* client the names on the *other* clients'
+certificates. Nothing in a pairing implies that, and the person at the
+machine is who should be able to decline it.
+
+The argument for it being on by default is that an SDK which cannot
+enumerate cannot offer a choice, which is the endpoint's entire purpose;
+and switching it off costs nothing that is actually signed — on
+`/v2/sign/pdf` a caller never needed a thumbprint, and on `/v2/sign` it
+has already built a CMS around a certificate it therefore already knows.
+
+`errs.CodeCertificateListingDisabled` (`CERTIFICATE_LISTING_DISABLED`,
+403) is its own code rather than `NOT_PAIRED`, for [[D-181]]'s test: two
+conditions are one situation when they need the same thing from whoever
+receives them, and "you are not paired" would send an integrator to
+re-pair, which changes nothing. All three catalogues carry a message.
+
+**Verified against the built binary, with a client that shares no code
+with the agent** — a PowerShell script using .NET's own `SHA256` and
+`HMACSHA256`, its own canonical string and its own nonces, over a real
+loopback socket to `liro-bridge.exe tray` running under its own
+`%LOCALAPPDATA%`. Against this machine's real certificate store it
+returned exactly one row — a real Halcom signing certificate, `usable:
+false`, `notUsableReason: CARD_NOT_PRESENT`, with no card in the reader
+— which is the listing rule working: the machine's Windows-internal
+certificates and the authentication twin are not in it. No PEM, no `@`,
+no thirteen consecutive digits anywhere in the response, and no
+`Access-Control-Allow-Origin` header. Unauthenticated: `401
+AUTH_FAILED`. With `certificateListingEnabled` set to false in the
+configuration file while the agent was running: `403
+CERTIFICATE_LISTING_DISABLED`, and `200` again the moment it was set
+back — no restart, which is [[D-134]]'s rule.
+
+**Rejected.**
+- **Returning the DER or a PEM.** Above.
+- **Returning it only for a certificate the person has already approved
+  a signature with.** Closer to right, and still the wrong endpoint: it
+  makes a listing's answer depend on history, and the place for a
+  consented certificate is the consented operation.
+- **No switch at all.** Considered seriously, on the argument that a
+  pairing already grants more than this. It does not, on the machine
+  that matters: a pairing is one client's decision, and the listing
+  answers about all of them.
+- **Refusing rather than hiding the machine's internal certificates.**
+  Nothing to refuse — `HiddenByDefault` already answers exactly this
+  question for `certs`, for the certificate step and for the
+  Certificates window, and a fourth answer would be a fourth thing to
+  keep in step.
+
+---
+
+## D-204 — Both pairing calls carry `origin`, and the document now says so in prose
+
+**Date:** 2026-09-08
+**Phase:** Pre-F8 fixes (Task 3)
+
+**Decision.** `docs/PROTOCOL.md` §2.1 states, beside the confirm
+example, that both calls carry `origin`, that the two must be
+byte-for-byte equal, that it is a required field of the confirm body,
+and that a confirm which declares a different origin — or leaves it out
+— is answered `PAIRING_ORIGIN_MISMATCH` with the request still live. §2.2's
+rule is reworded from "confirm must come from the same origin as the
+request" to "confirm carries the same `origin` as the request, and it
+must match"; the error table's action becomes "send the same `origin`
+field in both calls (§2.1)"; and §9's walkthrough says the origin in
+step 5 is the same string as in step 3.
+
+**Why, and what was actually wrong.** The example already showed the
+field — this is not a case of the document omitting it. What it did not
+have was a sentence. The only prose was §2.2's "confirm must come from
+the same origin as the request", which reads as a statement about *where
+the call comes from* — a transport property, or the `Origin` header —
+rather than about a field in the body that the agent compares. The owner
+lost time on exactly this writing the first client, and the only other
+hint was the error table's "send the same origin in both calls", which
+an integrator reaches after they are already stuck.
+
+An example shows what a correct request looks like; it does not say
+which parts are required, what happens when one is missing, or that two
+of them have to be equal to each other. Those are the three things that
+cost the time, so those are what the prose now says. The §3.4 pointer is
+there because "origin" now means two different things on the same page —
+a body field the agent compares and an HTTP header a browser sets — and
+an integrator who conflates them looks for the bug in the wrong place.
+
+**Verified against the built binary, with the same independent client**
+that verified [[D-203]]: confirm with no `origin` answers `403
+PAIRING_ORIGIN_MISMATCH`, confirm with a different one answers the same,
+and confirm with the same one answers `200` — the behaviour the document
+now describes, in that order, against a real pairing whose six-digit
+code was read off the real window.
+
+**Rejected.**
+- **Making `origin` optional on confirm, defaulting to the request's.**
+  It would remove the mistake by removing the check, and the check is
+  half of what binds a pairing to an origin (SPEC §6.2). An integrator
+  who declares two different origins has a bug this answer tells them
+  about.
+- **Leaving it to the error table.** That is where it was.
+
+---
+
+## D-205 — `POST /v2/echo` returns the canonical string this agent built, and nothing else
+
+**Date:** 2026-09-08
+**Phase:** Pre-F8 fixes (Task 4)
+
+**Decision.** `POST /v2/echo` is a new endpoint, authenticated exactly
+like every other, that returns
+
+```json
+{"canonicalString": "POST\n/v2/echo\n1757260800\n9f2c…\n7f24…", "bodySha256": "7f24…"}
+```
+
+and nothing else. At most 64 KB of body. The body is hashed, never
+parsed: it must be declared as JSON like every other body, but it does
+not have to be valid JSON, so an integrator can send exactly the bytes
+they are about to sign.
+
+**Why.** Every way authentication can fail returns `401 AUTH_FAILED`
+with no detail. That is right — [[D-175]] settled it and it stands: a
+code that says "your nonce was reused" tells whoever is probing that the
+timestamp and the signature were both fine. The cost is that a first
+integration is a hunt. Writing the first client produced four failures
+in a row, each giving the same answer: a wrong field name, a missing
+origin, a body altered between hashing and sending, and a `Content-Type`
+.NET cannot put on a GET.
+
+[[D-176]] answered half of that — the agent's own log names which check
+refused each request, and PROTOCOL.md §3.3 points at it. This is the
+other half: the log says *which check*, and this says *what the agent
+hashed*. An integrator prints their own canonical string beside it and
+the difference is visible in one line. Each of those four failures would
+have taken a minute.
+
+**The reasoning was confirmed before it was implemented, not after.**
+
+- *It reveals nothing.* Every part of what it returns is something the
+  caller supplied moments earlier and still has: the method, the path,
+  the timestamp, the nonce and its own body. The signature is not
+  returned, and nothing here would let one be derived — that needs the
+  device secret, which this endpoint never touches.
+- *A request that reaches the handler has already authenticated.* The
+  string it echoes is the string of a request that was accepted, so a
+  caller that could not authenticate learns nothing here it could not
+  learn from any other endpoint. `TestEchoIsAuthenticatedLikeEveryOtherEndpoint`
+  asserts that a refused request is told nothing at all — no
+  `canonicalString` in a 401 body.
+- *It answers about the one request that carried it and nothing else.*
+  There is no way to ask it about somebody else's request, or about an
+  earlier one.
+- *A nonce is spent here as anywhere else*, so a replayed echo is
+  refused (`TestAnEchoIsNotReplayable`).
+
+`bodySha256` is repeated on its own even though it is the canonical
+string's last line, because the commonest single mistake is a body that
+changed between being hashed and being sent, and comparing one
+64-character value is easier than finding it inside a five-line string.
+
+**Verified against the built binary, with the independent client.** The
+client computed its own canonical string from the four header values and
+the bytes it sent; the agent's answer matched it character for
+character, and the body hash matched the client's own SHA-256. A request
+signed for one body and sent with another — the mistake the endpoint
+exists to make visible — was still refused `401 AUTH_FAILED`, which is
+the property that must not soften: this is a comparison tool, not a way
+past the gate.
+
+**Rejected.**
+- **Returning the signature the agent computed.** It would turn a
+  debugging aid into an oracle: a caller could then check a guessed
+  secret against a known canonical string offline.
+- **Returning which check refused a request.** That is [[D-175]]'s
+  answer and it does not change. An echo is only reachable by a request
+  that already passed every check.
+- **Echoing on a GET, so it can be called with no body at all.** The
+  mistake most worth catching is about a body, and a GET has none.
+  `/v2/echo` with an empty body still works and still reports
+  `EmptyBodySHA256`, which is the constant §3.1 states outright.
+- **A larger body limit.** 64 KB is generous for a `/v2/sign` request
+  naming five hundred digests, which is the body an integrator most
+  wants to compare, and nothing here holds a document.
+
+---
+
+## D-206 — A remembered stamp position never applies to a request that arrived over the protocol
+
+**Date:** 2026-09-08
+**Phase:** Pre-F8 fixes (Task 5)
+
+**Decision.** `newProtocolWindow` drops the remembered placement from
+the configuration this run uses — the corner falls back to
+`config.DefaultStampPosition` and the placed page and coordinates to
+zero — before anything else about the stamp is decided. Nothing is
+written to disk: the remembered position is the person's own standing
+answer and stays exactly as they left it.
+
+The method question is otherwise unchanged. A caller that supplied its
+own `stamp` still sees the approval and nothing else ([[D-124]]); a
+caller that did not still leaves the question with the person, who
+chooses in the window exactly as they do locally; and with no choice
+made, the default corner applies.
+
+**Why.** A saved position is an answer to "where on *this* document",
+given by a person who was looking at the page when they gave it
+([[D-140]], [[D-151]]). The documents in a protocol batch are not that
+document and nobody has looked at them: they arrived over a socket, from
+a program, possibly a hundred at a time.
+
+The owner's first protocol signature landed the stamp on top of the
+document's existing MUP signature. He saw it, because he looked. An ERP
+sending a hundred documents has nobody looking.
+
+**A second way the same error could arrive, closed with it.** With the
+placement dropped, the method screen preselects a corner rather than
+"choose the position" — but a person can still choose the first method
+deliberately. On a protocol batch there is no document on disk to open
+the picker on, and `placeStamp`'s no-path branch opens a *file chooser*:
+the person would have browsed for some other document and placed the
+stamp by looking at that. That is the same error one step further on, so
+`signAtAChosenPosition` refuses it the way F6b §5 already refuses a
+document the renderer cannot draw — it falls back to the corners and
+says why, through the existing `place.unavailable` message and the
+existing path.
+
+**Occupied-corner detection stays out of scope**, on the owner's own
+ruling: a person can see the page and will move the stamp themselves.
+Nothing here looks at what is already on a page.
+
+**Why the flow's construction moved into its own function.**
+`runProtocolFlow`'s setup — what makes a protocol batch differ from a
+person's own — was duplicated by the test helper that exercised it, so a
+difference could exist in one and not the other. That is [[D-134]]'s
+finding exactly: a test that supplies both the input and the expectation
+from the same value measures its own consistency. It is now
+`newProtocolWindow`, and the tests go through it.
+
+**Verified.** `TestAProtocolBatchNeverSignsAtTheRememberedPosition`
+gives the run a configuration with a real placed position (page 2, x
+371, y 79 — the shape a person actually leaves behind), asserts that a
+*local* batch with that configuration does sign at those coordinates
+(so the fixture is known to reproduce the defect), and then asserts that
+a protocol batch does not — `UseXY` false, no placed page, no
+coordinates — both with a stamp supplied and without one. Against the
+code as it stood it reports "a protocol batch signs at the remembered
+coordinates (page 2, 371, 79)".
+`TestAProtocolBatchWithNoStampOffersACornerNotAPlacedPosition` covers
+what the person is then offered, and
+`TestAProtocolBatchLeavesTheRememberedPositionOnDisk` covers the half
+that would be a worse defect than the one being fixed: the file is
+byte-identical afterwards.
+
+**Rejected.**
+- **Dropping it only when the request supplies no stamp.** The narrower
+  fix, and it leaves the placed page and coordinates in the run's
+  configuration for the supplied case too. They are unreachable there
+  today only because a supplied stamp always names a corner; a rule that
+  holds by accident is a rule waiting to stop holding.
+- **Making the placement picker work on a protocol batch's own
+  documents.** They are in memory and the picker reads a path, so this
+  is a real feature — showing a caller's document to the person and
+  letting them place a stamp on it — and it is not this pass's.
+- **Refusing a protocol batch that has no stamp answer at all.** It
+  would make an ERP's ordinary request fail for want of a corner nobody
+  asked it to choose.
+
+---
+
+## D-207 — One WebView2 environment, one apartment and one thread per process; measured before and after, and two of the three things it was meant to close do not reproduce
+
+**Date:** 2026-09-08
+**Phase:** Pre-F8 fixes (Task 6, J-6)
+
+**Decision.** `internal/ui` has one UI thread for the whole process
+(`uithread_windows.go`): one goroutine locked to one OS thread, one STA
+apartment taken with `OleInitialize` and never given back, one
+`ICoreWebView2Environment` created at the first window and kept, and one
+message loop that runs for the process's life. Every window is created
+on it, pumped by it, and torn down on it. `ui.NewWindow` hands a closure
+to that thread through a message-only window and waits.
+
+Everything else about the model is deliberately unchanged. Exactly one
+thread touches a controller and it is the thread that created it
+([[D-101]]'s ownership rule) — now the same thread for every window,
+which satisfies the rule more simply rather than less. `PostJSON`,
+`Eval`, `Navigate`, `Resize` and `Close` still marshal by posting
+`wmRunFunc` to their *own* window, so `wndProc`'s per-window
+`tearingDown` guard still decides whether a queued closure may run. No
+caller callback ever runs on it: `OnMessage`, `OnFilesDropped` and
+`OnClosed` are still delivered by one goroutine per window
+(`dispatchEvents`).
+
+Two things had to go with the per-window thread. `wmDestroy` no longer
+posts `WM_QUIT` — that would end the loop every other window depends on
+— and no longer shuts the apartment down, which would take the
+environment and any open window's controller with it. `closeWebView` no
+longer releases the environment: it is the process's, not the window's.
+
+**Why a message-only window rather than `PostThreadMessage`.** A thread
+message has no window to be dispatched to, so any nested modal loop that
+retrieves it discards it — and
+`ICoreWebView2Controller::Close` runs a nested loop ([[D-101]]). The
+closure it was announcing would never run and `NewWindow` would wait
+forever. A window message is routed to the work window's procedure by
+whichever loop retrieves it, nested or not.
+
+**The three measurements, on this machine, before and after.** Each
+number is from the same harness against the same pages, warm (one window
+opened and closed before the baseline, so no one-time cost is counted as
+a per-window one).
+
+| | before | after |
+|---|---|---|
+| **Window creation, warm** (30 creations) | mean **207 ms**, best 177, worst 434 | mean **214 ms**, best 186, worst 426 |
+| **Window creation, cold** (first three of a fresh process) | 411 ms, 202, 190 | 429 ms, 200, 197 |
+| **Kernel handles** across open/close cycles | 271 → 287 over **200** cycles (+16), wandering: 279, 285, 291, 301, 270, 278, 278, 290 | 276 → 320 over **200** cycles (+44), **flat**: 322 by cycle 25, then 324, 324, 324, 325, 325, 325, 325 |
+| **Creations that failed outright** | **0 of 600** | **0 of 600** |
+
+**Two of the three things J-6 was recorded to close do not reproduce on
+this machine today, and that is reported rather than smoothed over.**
+
+*Creation time was never the environment.* J-6's premise — "window
+creation costs what it costs because each window builds its own
+environment" — does not hold. WebView2 already deduplicates an
+environment per user-data folder, so the second
+`CreateCoreWebView2EnvironmentWithOptions` in a process was already
+cheap: the cold measurement shows the first window costing ~410 ms and
+the second ~200 ms *before* the change, and exactly the same after it.
+The ~200 ms is the controller and the navigation, and this change does
+not touch either. Anyone reading [[D-131]]'s "what would actually make
+it faster, recorded rather than done" should read this line with it: it
+would not have.
+
+*C-3's one-handle-per-window does not reproduce.* [[D-170]] measured
+0.97 handles per window and confirmed they did not come back after two
+minutes. Measured again here on the same instrument's newer sibling
+(`GetProcessHandleCount`, sampled after a GC and a two-second grace):
++16 over 200 cycles, wandering up and down as browser process groups
+came and went. Whether the difference is the WebView2 runtime, the
+instrument, or something about how the two harnesses opened their
+windows was not established — what is established is that the leak this
+change was supposed to close is not measurable here in either shape.
+
+*C-5's one-in-a-few-hundred failure does not reproduce either*: 0 of 600
+before and 0 of 600 after.
+
+**What the change does do, measured.** After it, handle growth is *flat*
+— +44 paid within the first 25 cycles and then 324→325 across the next
+175 — where before it wandered by tens with no settled value. The +44 is
+the UI thread, the environment and the browser process group behind it,
+and it is paid once. The browser processes themselves are not held:
+counted around one window, `msedgewebview2.exe` went 12 → 18 → 12, and
+stayed at 12 twenty seconds after the last window closed, with the
+environment still alive. It also removes an OS thread, a COM apartment
+and an environment from every window's lifetime, in a layer with four
+recorded lifetime defects ([[D-099]], [[D-101]], [[D-114]], [[D-129]]),
+and makes [[D-101]]'s ownership rule a statement about one thread rather
+than about many.
+
+**What it costs, stated because it is new.** One wedged window creation
+now stops every other window from being created, where before it stopped
+only its own. That is accepted on measurement rather than on faith: the
+hang [[D-099]] recorded was fixed by [[D-101]] and did not reappear in
+600 consecutive creations either side of this change. It is the price of
+the environment being shared at all, and it is why the alternative
+[[D-170]] rejected — sharing an environment without sharing the thread —
+is not available: an environment belongs to the apartment that created
+it.
+
+**Tests.** `internal/ui/uithread_windows_test.go` pins the property
+rather than the defect, because the property cannot exist in the old
+shape: two windows share one environment and one thread, closing a
+window leaves the environment for the next, a second window opens while
+the first is up, and closing one window leaves the others answering —
+that last being what `WM_QUIT` in `wmDestroy` would have broken.
+Every one of them opens at least two windows, because a per-instance
+cost is invisible to a fixture there is only one of ([[D-172]]).
+`TestOpeningAndClosingWindowsDoesNotLeakGDIObjects` and
+`TestEveryWindowSurvivesAHundredOpenAndCloseCycles` (behind
+`LIRO_WINDOW_CYCLES`) are unchanged and green; across seven windows and
+25 cycles each the handle count converges — 276, 299, 309, 311, 312,
+318, 320, 320 — and the last two subtests add nothing at all.
+
+**Rejected.**
+- **Reverting it because the numbers do not show what J-6 predicted.**
+  Considered, and it is the owner's call rather than this pass's to
+  reverse. What the measurements say is that the *reasons* recorded for
+  the change were wrong, not that the change is: flat is better than
+  wandering, one environment is what every WebView2 host does, and the
+  lifetime model is smaller than it was. The numbers are here so that
+  the decision can be made on them.
+- **Sharing the environment while keeping a thread per window.**
+  [[D-170]] rejected it and was right: `CreateCoreWebView2Controller`
+  must be called on the apartment that created the environment.
+- **A deadline on the wait in `uiThread.do`.** It would turn a wedge
+  into an error, which is what SPEC §12.8 asks for elsewhere — and it
+  needs a story about what the caller does next that this pass does not
+  have. Recorded as still open, exactly as [[D-099]] left it.
+- **Shutting the apartment down at process exit.** There is nothing to
+  gain: the operating system reclaims it, and any code that ran early
+  would be shutting it down under a window still using it.

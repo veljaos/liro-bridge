@@ -157,6 +157,25 @@ type Config struct {
 	// §4.3's most secure arrangement, and there is nothing to turn off
 	// about an endpoint that cannot see a document in the first place.
 	DocumentSigningEnabled bool `json:"documentSigningEnabled"`
+
+	// CertificateListingEnabled controls whether GET /v2/certificates —
+	// which tells a paired application which certificates this machine
+	// can sign with — is served. On by default, because an SDK that
+	// cannot enumerate cannot offer the person a choice, and offering
+	// the choice is the whole point of the endpoint.
+	//
+	// It has a switch for one reason, and the reason is SPEC §14.1's
+	// bookkeeper: on a machine holding several clients' cards, the
+	// listing tells an application paired by one client the names on
+	// the other clients' certificates. Nothing in a pairing implies
+	// that, so the person at the machine can decline it.
+	//
+	// Switching it off does not stop anything being signed. A caller on
+	// the whole-document path never needed a thumbprint (the agent
+	// builds the CMS and the person chooses in the window); a caller on
+	// the hash path has already built a CMS around a certificate it
+	// therefore already knows.
+	CertificateListingEnabled bool `json:"certificateListingEnabled"`
 }
 
 const (
@@ -186,6 +205,11 @@ const (
 	// integrators the protocol exists for. Switching it off is a
 	// deliberate narrowing, not a default.
 	defaultDocumentSigningEnabled = true
+
+	// defaultCertificateListingEnabled is on: an SDK that cannot
+	// enumerate certificates cannot offer the person a choice, which is
+	// what the endpoint exists for.
+	defaultCertificateListingEnabled = true
 )
 
 // StampPageFirst and StampPageLast are the two symbolic values
@@ -208,6 +232,12 @@ var validSignatureLevels = map[string]bool{
 // corner, but the exact place chosen in the placement window and kept
 // in StampX, StampY and StampPlacedPage (F6b §3).
 const StampPositionCustom = "custom"
+
+// DefaultStampPosition is SPEC §13.1's own default corner. It is
+// exported because a caller sometimes has to say "not the remembered
+// position, the corner a stamp goes in when nobody has chosen one" —
+// and naming it here keeps that answer and Default()'s the same value.
+const DefaultStampPosition = defaultStampPosition
 
 // validStampPositions are the four corners SPEC §13.1 names, plus the
 // placed position F6b §2 adds. Explicit x/y coordinates are still a
@@ -236,9 +266,10 @@ func Default() Config {
 		VisibleStamp:       defaultVisibleStamp,
 		StampPosition:      defaultStampPosition,
 
-		StampPage:              defaultStampPage,
-		ExplorerMenuEnabled:    defaultExplorerMenuEnabled,
-		DocumentSigningEnabled: defaultDocumentSigningEnabled,
+		StampPage:                 defaultStampPage,
+		ExplorerMenuEnabled:       defaultExplorerMenuEnabled,
+		DocumentSigningEnabled:    defaultDocumentSigningEnabled,
+		CertificateListingEnabled: defaultCertificateListingEnabled,
 	}
 }
 

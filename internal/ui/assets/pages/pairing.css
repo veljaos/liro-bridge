@@ -1,7 +1,7 @@
-/* The pairing window. Fixed height, one column, nothing scrolls: it
-   holds a name, an origin, six digits and one button, and every one of
-   them has to be on screen at once — a code half below the fold is a
-   code nobody can read out. */
+/* The pairing window. Fixed height, one column, and exactly one region
+   of it scrolls: it holds a name, an origin, six digits and one button,
+   and the code and the button have to be on screen at once — a code
+   half below the fold is a code nobody can read out. */
 body {
   padding: var(--liro-space-4);
 }
@@ -14,36 +14,58 @@ main {
   gap: var(--liro-space-4);
 }
 
-main > div > p {
+/* The identity block: who is asking, and from where. It is the page's
+   one scrolling region, and it is the identity block rather than the
+   origin card alone because *both* values in it are caller-supplied
+   and neither has a length this window controls — a name arrives at up
+   to consent.MaxDisplayLength (120 characters) and an origin at up to
+   api.MaxOriginLength (255).
+
+   Wrapping alone is not enough here, because this window has no list to
+   give the leftover height back to. Measured at 120 characters, in all
+   three locales, before this: the page overflowed its 330-point window
+   by 24 points, deny-btn.focus() scrolled that overflow, and the first
+   line of #app-name ended up at -8 — above the top of the window. The
+   name is the one thing on this screen a person has to read before
+   typing a code into somebody else's application, so it is the last
+   thing that may go off it (SPEC §6.2's reason for showing the origin
+   verbatim applies to the name at least as strongly).
+
+   Scrolling the identity block hides nothing, moves neither the code
+   nor the button, and stops the page itself from scrolling at all
+   (D-106's shape). It shrinks rather than grows: an ordinary one-line
+   name and origin leave the code exactly where it would have been. */
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-4);
+  /* .liro-scroll-region's flex-grow, overridden: this region takes
+     what is left over only in the sense of shrinking into it. */
+  flex: 0 1 auto;
+}
+
+.identity p {
   margin: 0;
 }
 
-/* The origin is caller-supplied and unbounded in length, so it wraps
-   rather than widening the window — the rule the batch fingerprint and
-   the audit log's chain-break line each had to learn once (D-096,
-   D-167).
+/* Neither value has a break opportunity guaranteed in it — an origin is
+   one unbroken token by nature, and a name may be — so both break
+   inside the word rather than widening the window (D-096). */
+#app-name,
+#connected-name,
+#app-origin {
+  overflow-wrap: anywhere;
+}
 
-   Wrapping alone is not enough here, because this window has no list to
-   give the leftover height back to: a 255-character origin wrapped to
-   six lines pushed Deny off the bottom, measured in a real window at
-   the size this window was first built at. So the origin card is the
-   one region on the page that scrolls (D-106's shape), and everything
-   else — the name, the code, the button — is fixed. It shrinks rather
-   than grows: an ordinary one-line origin leaves the code where it
-   would have been anyway. */
 .origin-row {
   align-items: baseline;
   gap: var(--liro-space-3);
-  flex: 0 1 auto;
-  min-height: 0;
-  max-height: 76px;
 }
 
 #app-origin {
   font-family: var(--liro-font-family-mono);
   color: var(--liro-color-text-secondary);
   text-align: right;
-  overflow-wrap: anywhere;
 }
 
 .code-block {

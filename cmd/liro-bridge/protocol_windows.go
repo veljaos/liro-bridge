@@ -70,12 +70,14 @@ func startProtocol(fallback config.Config, version string, pairings *api.Pairing
 		Auth:         api.NewAuthenticator(pairings, nonces, nil),
 		Jobs:         newJobRegistry(),
 		Signer:       newProtocolSigner(fallback),
+		Certificates: gatheredCertificates{},
 		AgentVersion: version,
 		// Read at the moment a request arrives, not captured here: a
 		// person who switches the whole-document path off in Settings
 		// must not have to restart the agent for it to take effect
 		// (D-134's rule — the file is the authority).
-		DocumentSigningEnabled: func() bool { return currentConfig(fallback).DocumentSigningEnabled },
+		DocumentSigningEnabled:    func() bool { return currentConfig(fallback).DocumentSigningEnabled },
+		CertificateListingEnabled: func() bool { return currentConfig(fallback).CertificateListingEnabled },
 	})
 
 	bridgePath := platform.DefaultBridgeFile()

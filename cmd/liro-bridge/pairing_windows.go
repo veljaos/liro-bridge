@@ -26,7 +26,15 @@ const (
 	// no origin on it, so it needs about two thirds of the height. The
 	// window shrinks to it rather than leaving half of itself empty
 	// under one sentence — measured, by looking at it.
-	pairingConnectedHeight = 210
+	//
+	// 226 rather than the 210 it was: at 210 the identity block was
+	// short of what its own content needs by eight tenths of a point,
+	// so it scrolled — an ordinary two-line name with a scrollbar
+	// beside it, which was visible in the shipped window and in no
+	// test. The extra sixteen points are one --liro-space-4 of slack,
+	// so a one-word label change in any of the three catalogues does
+	// not put the scrollbar straight back.
+	pairingConnectedHeight = 226
 )
 
 // pairingUI opens the agent's own pairing window (F7 §2.1). It is what

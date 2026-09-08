@@ -61,7 +61,8 @@ not in the response**, and never will be: if it were, an application could
 pair itself with nobody watching, and the window would prove nothing. The
 code travels through a person, which is the whole mechanism.
 
-The person reads the code out; the application submits it:
+The person reads the code out; the application submits it — **with the
+same `origin` again**:
 
 ```
 POST /v2/pair/confirm
@@ -69,6 +70,16 @@ Content-Type: application/json
 
 { "requestId": "4f4f...", "code": "681956", "origin": "https://erp.example.com" }
 ```
+
+**Both calls carry `origin`, and the two must be byte-for-byte equal.**
+It is a required field of the confirm body, not only of the request
+body: the agent compares what confirm declares against what the request
+declared, and a confirm that declares a different origin — or leaves it
+out — is answered `PAIRING_ORIGIN_MISMATCH` (403) with the pairing
+request still live, so the second call can be corrected without starting
+over. This is a comparison of the two strings your application sent, not
+of where the calls came from; see §3.4 for the separate rule about an
+`Origin` *header*.
 
 ```
 200 OK
@@ -92,7 +103,8 @@ Store it; there is no way to ask for it again.
 | Pairing requests open at one time | 1 |
 | Pairing requests per minute, per origin | 3 |
 
-- **Confirm must come from the same origin as the request.**
+- **Confirm carries the same `origin` as the request, and it must
+  match.** Both bodies have the field; the agent compares them.
 - **A request is spent once confirmed.** A second confirm is answered
   `PAIRING_EXPIRED`.
 - **The person can refuse.** The window has a Deny button, and closing it
@@ -279,6 +291,53 @@ If your client sends an `Origin` header, it must equal the origin bound at
 pairing. A server-side client normally sends none, and that is fine — it is
 where the device secret belongs.
 
+### 3.5 Checking your own canonical string — `POST /v2/echo`
+
+Every rejection above is the same answer, deliberately, and that leaves you
+with nothing to compare against. This endpoint is the comparison: send a
+request the way you would send any other, and the agent tells you the
+canonical string it built from it.
+
+```
+POST /v2/echo
+Content-Type: application/json
+
+{"anything":"you like"}
+```
+
+```json
+{
+  "canonicalString": "POST\n/v2/echo\n1757260800\n9f2c1e0b7a3d4c58\n7f24...",
+  "bodySha256": "7f24..."
+}
+```
+
+Print your own beside it, with the newlines escaped, and the difference is
+one line. The four mistakes this exists for are, in the order a first
+integration tends to hit them: a header spelled wrong, an `Origin` that does
+not match, a body that changed between being hashed and being sent
+(`bodySha256` differs), and a `Content-Type` your HTTP client cannot attach
+to a request with no body (§2.5).
+
+- It is authenticated exactly like every other endpoint, so a request that
+  reaches it has already authenticated — which is why it can say this much
+  and no more.
+- It returns nothing you did not send: the method, the path, the timestamp,
+  the nonce and your own body. **The signature is not returned**, and
+  nothing here would let one be derived; that needs the device secret,
+  which this endpoint never touches.
+- The body is hashed, never parsed. It does not have to be valid JSON, only
+  declared as JSON like every other body, so you can send exactly the bytes
+  you are about to sign.
+- At most 64 KB. Nothing here holds a document.
+
+The canonical string is per-path, so `POST /v2/echo` and `POST /v2/sign`
+differ in their second line and nowhere else. That is the point: if the
+rest matches, your signing is right.
+
+If it still does not, the agent's own log says which check refused each
+request (§3.3). Between the two there is nothing left to guess at.
+
 ---
 
 ## 4. Finding the agent
@@ -369,7 +428,8 @@ front of the same person.
 - **SHA-1 is refused outright**, named as such: `REQUEST_INVALID` with
   `details.field = "digestAlgorithm"`. Nothing in this project produces or
   accepts it.
-- **`certificateThumbprint` is required here**, and it is not a hint. You
+- **`certificateThumbprint` is required here**, and §5.5 is where you get
+  one. It is not a hint. You
   have already built a CMS around one signer certificate, so a signature
   made with any other key produces a document that verifies against
   nothing. The agent offers that certificate to the person and no other;
@@ -466,6 +526,85 @@ it back on in the agent's Settings window without restarting anything.
 
 `/v2/sign` has no such switch and never will. There is nothing to turn off
 about an endpoint that cannot see a document in the first place.
+
+### 5.5 Which certificates are here — `GET /v2/certificates`
+
+`/v2/sign` requires a thumbprint (§5.1), and this is where you get one. It
+is also what an SDK offers the person a choice from.
+
+```
+GET /v2/certificates
+```
+
+```json
+{
+  "certificates": [
+    {
+      "thumbprint": "7758D4D4B8973EA619B3225185EDE740B3D1ECCE",
+      "displayName": "ВЕЉКО СТАНОЈЕВИЋ",
+      "issuer": "MUPGradjaniCA4",
+      "purpose": "signing",
+      "qualified": true,
+      "usable": true,
+      "isTestKey": false
+    },
+    {
+      "thumbprint": "1B2C3D4E5F60718293A4B5C6D7E8F90102030405",
+      "displayName": "Zoran Milovanović",
+      "issuer": "Halcom CA PO 2",
+      "purpose": "signing",
+      "qualified": true,
+      "usable": false,
+      "notUsableReason": "CARD_NOT_PRESENT",
+      "isTestKey": false
+    }
+  ]
+}
+```
+
+| Field | What it is |
+|---|---|
+| `thumbprint` | The SHA-1 thumbprint, uppercase hex. Exactly what `certificateThumbprint` takes. |
+| `displayName` | The signer's name, built from `givenName` + `surname` — never parsed out of the common name. |
+| `issuer` | The issuing CA's common name. |
+| `purpose` | `signing`, `authentication` or `unknown`: the role the certificate's KeyUsage gives it. |
+| `qualified` | Whether the issuer is a Trusted List service that was granted at the time of asking. |
+| `usable` | Whether it can sign **right now**. |
+| `notUsableReason` | Absent when it can; otherwise `CARD_NOT_PRESENT`, `CERT_EXPIRED` or `CERT_NOT_USABLE`. |
+| `isTestKey` | A test certificate rather than a real one. If you show a certificate to a person, show this too. |
+
+A certificate that cannot sign right now is listed rather than hidden, with
+its reason: an absent card and an expired certificate are real choices
+temporarily unavailable, and leaving them out is what makes a card look
+broken. What is left out is what the agent's own window leaves out — the
+machine's internal certificates, and the authentication certificate every
+Serbian card carries beside its signing one, which has the same name on it
+and cannot sign.
+
+**No certificate is returned. Not the DER, not a PEM, not the public key.**
+A Serbian qualified certificate carries the holder's national identity
+number and email address inside it, and this listing is answered without any
+window, at any moment you choose. It reports what the agent shows a person,
+and nothing that was scrubbed out on the way there.
+
+That leaves a real gap, stated rather than glossed: if you build your own
+CMS you need the signer certificate itself, and you cannot get it here.
+Today it has to come from wherever your integration already gets it — a copy
+the person exported, or a document they have already signed. Making it
+arrive with something the person approved is work this protocol has not done
+yet.
+
+**It can be switched off.** On a machine holding several clients' cards — an
+accounting firm, which SPEC calls the ordinary case rather than an edge one
+— this listing tells an application paired by one client the names on the
+other clients' certificates, and nothing in a pairing implies that. The
+person at the machine can turn it off in Settings; `/v2/certificates` then
+answers `CERTIFICATE_LISTING_DISABLED`. Nothing else changes: on
+`/v2/sign/pdf` you never needed a thumbprint, and on `/v2/sign` you have
+already built a CMS around a certificate you therefore already know.
+
+Like `/v2/health` and the job endpoints, it is a GET with no body, so it
+sends no `Content-Type` (§2.5).
 
 ---
 
@@ -594,7 +733,7 @@ it was.
 | `AUTH_FAILED` | 401 | The request did not authenticate. | See §3.3. |
 | `PAIRING_CODE_INCORRECT` | 401 | Wrong six-digit code; the request is still live. `details.attemptsRemaining`. | Ask the person to read the code again. |
 | `PAIRING_DENIED` | 403 | The person refused the pairing, or closed the window. | Stop. This is an answer. |
-| `PAIRING_ORIGIN_MISMATCH` | 403 | Confirm came from a different origin than the request. | Send the same origin in both calls. |
+| `PAIRING_ORIGIN_MISMATCH` | 403 | The `origin` in the confirm body is not the one the request declared. | Send the same `origin` field in both calls (§2.1). |
 | `PAIRING_IN_PROGRESS` | 409 | Another application's pairing window is open. | Wait and try again. |
 | `PAIRING_EXPIRED` | 410 | The pairing request is gone: five minutes passed, five wrong codes voided it, it was already confirmed, or there is no such request. | Start a new pairing request. |
 | `RATE_LIMITED` | 429 | Too many pairing requests from this origin. `details.retryAfterSeconds`. | Wait that long. |
@@ -604,6 +743,7 @@ it was.
 | Code | HTTP | What it means | What to do |
 |---|---|---|---|
 | `DOCUMENT_SIGNING_DISABLED` | 403 | `/v2/sign/pdf` is switched off on this machine (§5.4). | Use `/v2/sign`, or ask the person to turn it on. |
+| `CERTIFICATE_LISTING_DISABLED` | 403 | `GET /v2/certificates` is switched off on this machine (§5.5). | Ask the person for the thumbprint, or ask them to turn it on. Signing is unaffected. |
 | `JOB_IN_PROGRESS` | 409 | This application already has a job running. | Wait for it. |
 | `JOB_NOT_FOUND` | 404 | No such job: it never existed, it belongs to another application, its result has been collected, or it expired. | Submit again. |
 
@@ -659,6 +799,7 @@ the person what happened and let them decide.
 | Timestamp skew | ±60 seconds |
 | A nonce is remembered for | 5 minutes |
 | Nonce length | 128 characters |
+| One `/v2/echo` body | 64 KB |
 | Consent | 120 seconds |
 | An uncollected result is kept for | 10 minutes |
 
@@ -688,21 +829,32 @@ Once, on the first run:
    POST /v2/pair/confirm  {"requestId":"4f4f...","code":"681956","origin":"https://erp.example.com"}
    -> 200 {"appId":"e1a2...","deviceSecret":"...","applicationName":"My ERP","origin":"..."}
 
+   The origin is the same string as in step 3, and it has to be.
+
+
 6. Store appId and deviceSecret on your server, and never anywhere else.
 
 Every time after that:
 
-7. POST /v2/sign  (or /v2/sign/pdf), with the four headers from §3
+7. GET /v2/certificates, if you need a thumbprint or want to offer a choice
+   -> 200 {"certificates":[{"thumbprint":"7758D4...","displayName":"...",
+            "usable":true, ...}]}
+
+8. POST /v2/sign  (or /v2/sign/pdf), with the four headers from §3
    -> 202 {"jobId":"...","batchFingerprint":"...","total":100,
            "eventsUrl":"...","resultUrl":"..."}
 
-8. Compare batchFingerprint against the one you computed. It is what the
+9. Compare batchFingerprint against the one you computed. It is what the
    person is looking at.
 
-9. GET the eventsUrl and read the stream, or poll the resultUrl. The
-   person approves in the agent's own window; you cannot skip that and
-   there is no header that does.
+10. GET the eventsUrl and read the stream, or poll the resultUrl. The
+    person approves in the agent's own window; you cannot skip that and
+    there is no header that does.
 
-10. GET the resultUrl once the job has finished, and keep what it gives
+11. GET the resultUrl once the job has finished, and keep what it gives
     you. It is delivered once.
+
+If step 8 is answered AUTH_FAILED and you cannot see why: POST the same
+body to /v2/echo and compare the canonical string it returns against
+your own (§3.5), then read the agent's log (§3.3).
 ```
