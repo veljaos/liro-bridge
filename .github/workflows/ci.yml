@@ -337,3 +337,83 @@ jobs:
         run: go test -tags softtoken ./... -count=1
         env:
           CGO_ENABLED: 0
+
+  # The TypeScript SDK. Its own job rather than steps on the ubuntu one,
+  # because it needs Node rather than Go and because a red SDK should
+  # say "SDK" rather than sending somebody to read a Go job's log.
+  #
+  # The committed build output is the load-bearing check here.
+  # `sdk/typescript/dist/` is what an integrator gets — installing from
+  # GitHub runs no build step — so a `dist/` that is not what `src/`
+  # produces ships silently. This project has already had one generated
+  # file drift from its generator, and running the generator would have
+  # deleted a block five screens depended on (docs/decisions.md D-183).
+  sdk-typescript:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The oldest Node this SDK supports (F8 §2) and the one it is
+          # therefore tested on: a suite that only ever runs on the
+          # newest Node is not evidence about the version the package
+          # says it accepts.
+          node-version: '18'
+
+      # `npm ci` rather than `npm install`: package-lock.json is
+      # committed and the compiler version is pinned, so the build in CI
+      # is the build a developer ran.
+      - name: install the build tools
+        run: npm ci
+
+      - name: the committed dist/ is what src/ produces
+        run: npm run check-build
+
+      - name: test
+        run: npm test
+
+      # Zero runtime dependencies is a property, not an aspiration: this
+      # package is installed into applications that handle a signing
+      # secret, and every dependency here would be one of theirs.
+      - name: no runtime dependencies
+        run: |
+          deps="$(node -p 'JSON.stringify({...require("./package.json").dependencies, ...require("./package.json").peerDependencies})')"
+          if [ "$deps" != "{}" ]; then
+            echo "the SDK has runtime dependencies: $deps"
+            exit 1
+          fi
+
+      # The end of the argument: pack the repository root exactly as npm
+      # would for `npm install github:veljaos/liro-bridge`, install the
+      # tarball into an empty project, and import '@liro/bridge' both
+      # ways. A package that passes its own tests and cannot be
+      # installed is this project's recurring failure mode, one layer
+      # over.
+      - name: install it the way an integrator does
+        working-directory: .
+        run: |
+          set -eu
+          work="$(mktemp -d)"
+          npm pack --silent --pack-destination "$work" . >/dev/null
+          cd "$work"
+          echo '{"name":"consumer","version":"1.0.0","type":"module","private":true}' > package.json
+          npm install --no-audit --no-fund --silent ./liro-bridge-*.tgz
+          echo "import { LiroBridge, FileSecretStore, LiroError } from '@liro/bridge';
+          if (typeof LiroBridge.connect !== 'function') { throw new Error('no LiroBridge'); }
+          if (typeof FileSecretStore !== 'function') { throw new Error('no FileSecretStore'); }
+          if (typeof LiroError !== 'function') { throw new Error('no LiroError'); }
+          console.log('esm ok');" > use.mjs
+          node use.mjs
+          echo "const m = require('@liro/bridge');
+          if (typeof m.LiroBridge.connect !== 'function') { throw new Error('no LiroBridge'); }
+          console.log('cjs ok');" > use.cjs
+          node use.cjs
+          installed="$(ls node_modules | grep -v '^\.' | tr '\n' ' ')"
+          if [ "$installed" != "@liro " ]; then
+            echo "installing this package brought other packages with it: $installed"
+            exit 1
+          fi

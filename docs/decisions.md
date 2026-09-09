@@ -14173,3 +14173,657 @@ leading over the box and read as a paragraph rather than a stamp.
 - **Grouping the serial from the right,** so the short group leads. Card
   numbers and IBANs group from the left, and a leading short group reads
   as a prefix rather than as the beginning of the number.
+
+---
+
+## D-210 — The repository root is the npm package; `sdk/typescript/dist` is committed, and a CI step proves it is what `src/` produces
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** There is a `package.json` at the repository root. It is
+named `@liro/bridge`, its `exports` point into
+`sdk/typescript/dist/{esm,cjs,types}`, and its `files` list carries the
+SDK's built output, its source, its README and `docs/PROTOCOL.md`. The
+SDK's own `sdk/typescript/package.json` is unchanged in intent — same
+name, same version, same exports relative to itself — and is what a
+developer works in.
+
+`sdk/typescript/dist/` is committed. `npm run check-build` rebuilds into
+a scratch directory and diffs the two file by file; CI runs it, and
+`test/package.test.mjs` runs it again from the test suite.
+
+**Why the root and not `sdk/typescript`.** F8 §2 gives the install
+command — `npm install github:veljaos/liro-bridge#main` — and npm has no
+way to install a subdirectory of a GitHub repository. What that command
+installs is the repository's *root*, so the manifest that describes the
+package has to be there. The alternative is telling every integrator to
+clone and point a `file:` dependency at a subdirectory, which is not
+what F8 asked for and is not what anybody does.
+
+Two things make the root manifest honest rather than a trick. `files`
+lists exactly what a consumer needs, so `npm pack` produces a 97 KB
+tarball rather than the whole repository — measured. And
+`TestTheRepositoryRootIsInstallableAs@liro/bridge`'s equivalent
+(`test/package.test.mjs`) reads every path the root manifest names and
+fails if one of them is not there, so a manifest that points at output
+somebody deleted cannot ship.
+
+**Why `dist/` is committed.** Installing from GitHub runs no build step;
+there is no `prepare` script that could run one, because a `prepare`
+would need the TypeScript compiler in the integrator's own install. So
+what is committed is what an integrator gets, exactly.
+
+**Why the check matters more than the convention.** This project has
+already had one generated file drift from its generator, and running the
+generator would have silently deleted a block five screens depended on
+([[D-183]]). A committed artefact nobody regenerates is a committed
+artefact in name only. `check-build` is what makes "do not edit `dist/`
+by hand" true rather than hopeful, and it is confirmed to fire: run
+against a `dist/` with one character changed it names the file and both
+byte counts.
+
+**Verified end to end, because a package that passes its own tests and
+cannot be installed is this project's recurring failure mode one layer
+over.** `test/package.test.mjs` packs the repository root exactly as npm
+would, installs the tarball into an empty project, and imports
+`@liro/bridge` both ways:
+
+```
+esm: typeof LiroBridge.connect === 'function'   ✓
+cjs: require('@liro/bridge').LiroBridge         ✓
+node_modules after installing: @liro            (and nothing else)
+```
+
+CI does the same on a clean runner.
+
+**Rejected.**
+- **A `package.json` only in `sdk/typescript`.** The natural place, and
+  it makes F8 §2's own install command not work.
+- **npm workspaces at the root.** Workspaces are for developing several
+  packages together; they do nothing for a consumer installing this one
+  from GitHub, because what they install is still the root.
+- **Building on install with a `prepare` script.** It would keep `dist/`
+  out of the repository, and it would put a TypeScript compiler into
+  every integrator's dependency tree — in a package whose whole
+  discipline is that it adds nothing to theirs.
+- **Publishing to npm.** The owner's decision, recorded in F8 §0: not
+  publishing removes a class of risk (name squatting, an abandoned
+  package taken over) that a signing SDK should not carry.
+
+---
+
+## D-211 — `secretStore` is required with no default; the secret is in a `WeakMap`, and `JSON.stringify` of a pairing leaves a marker that names the fix
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** `LiroBridge.connect` refuses without a `secretStore`, and
+there is no default path anywhere in the SDK. `StoredPairing` keeps the
+device secret in a module-level `WeakMap` keyed by the instance, not in
+a field; `toJSON()` puts `REDACTED_SECRET` where the secret would be;
+`util.inspect` and `toString` are given their own implementations;
+`serialise()` is the one way the bytes come out, and
+`StoredPairing.deserialise()` the one way back.
+
+`FileSecretStore` writes one JSON file at a caller-named path,
+atomically, and restricts it: `0600` on POSIX, and on Windows one
+`icacls` call that breaks inheritance, grants this user full control,
+and removes Everyone, Authenticated Users, Users and Interactive — by
+SID, not by name, because those groups are localised and this product's
+users are on Serbian Windows. A failure to restrict is an error, not a
+warning.
+
+**Why no default.** F8 §3 is explicit and the reasoning is not
+stylistic: the device secret is an application's whole authority to ask
+for a signature, and a library that picks a location has made that
+decision in every deployment that never thought about it. The type
+system is what makes somebody decide.
+
+**Why a `WeakMap` rather than a `#private` field.** A `#private` field
+is still a property: some Node versions print them under
+`util.inspect(..., { showHidden: true })`, and the set of things that
+can reach one has grown before. Nothing outside this module can reach a
+`WeakMap` entry at all, and no future change to how Node prints objects
+can make it visible. Measured across four `inspect` depths with
+`showHidden` and `getters` both on, and through `JSON.stringify` nested
+two objects deep.
+
+**Why a marker rather than silence.** A `SecretStore` implementation
+that persists `JSON.stringify(pairing)` — the first thing anybody writes
+— would otherwise store a record with no secret in it, and the failure
+would surface later as `AUTH_FAILED`, which is the least diagnosable
+answer this protocol has by design ([[D-175]]). `deserialise` recognises
+the marker and throws `SECRET_STORE_INVALID` with a sentence naming
+`serialise()`, at `connect()`, on the next run. `test/pairing.test.mjs`
+drives exactly that sequence through a deliberately naive store.
+
+**What the Windows half actually guarantees, stated precisely.**
+Measured on Windows 11 26200, with the Users group granted on the
+containing directory so the file genuinely inherits access for other
+accounts: after the call the file has exactly one ACL entry, this user.
+That is stronger than what is claimed. What is *claimed* — and what
+holds from a zero exit code without parsing anything — is that
+inheritance is broken and those four well-known SIDs have no access.
+`icacls /inheritance:r` was measured to convert inherited entries to
+explicit ones when used alone, and to remove them when a `/remove` is
+present in the same call; relying on that quirk would be relying on
+undocumented option ordering, so the claim is the narrower one.
+
+SYSTEM and Administrators may survive on a machine whose directory grants
+them, and that is not worth chasing: an administrator can take ownership
+of any file whatever its DACL says.
+
+**Rejected.**
+- **A default under `%LOCALAPPDATA%` or `~/.liro`.** Convenient, and it
+  is the decision F8 §3 says the SDK does not get to make.
+- **Throwing from `toJSON()` so the mistake is louder.** It would make
+  `JSON.stringify({ context: { pairing } })` throw inside somebody's
+  logger, which takes down a request handler for a logging call. The
+  marker is loud enough and lands at `connect()`.
+- **Storing the secret in a `#private` field.** Above.
+- **Warning rather than failing when the permissions cannot be set.** A
+  signing secret in a world-readable file is the outcome this class
+  exists to prevent, and SPEC §14.1 names the multi-user machine as
+  ordinary rather than exceptional.
+- **Removing SYSTEM and Administrators explicitly.** Above.
+
+---
+
+## D-212 — `LiroError.code` is an exhaustive union, and a code newer than this SDK is `UNKNOWN` with the agent's own string beside it
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** One error class, `LiroError`, with `code` typed as a union
+of every code `internal/errs` declares, plus eight the SDK raises
+itself, plus `UNKNOWN`. `agentCode` always carries the exact string that
+arrived. A `switch` over `code` with a `never` default is checked by the
+compiler, which is what F8 §6 asks for.
+
+**Why one class and not thirty-nine.** F8 §6's own example is
+`e instanceof LiroError && e.code === 'CARD_NOT_PRESENT'`. A class per
+code would make that read `e instanceof CardNotPresentError`, which is
+more to import, more to remember, and no more checkable.
+
+**Why `UNKNOWN` exists.** `PROTOCOL.md` §7 says codes are stable and new
+situations get new ones — and adding a code does not change the protocol
+version, because a caller written against the old one still works. So an
+agent newer than this SDK can answer with a code the union does not
+name. The SDK does not guess and does not fold it into `INTERNAL`, which
+would mislabel a condition the caller might well know about: `code` is
+`UNKNOWN`, `agentCode` is verbatim, and the message says the agent is
+probably newer.
+
+**The union is checked against the agent's own source, not against a
+list somebody keeps in step.** `test/errors.test.mjs` parses
+`internal/errs/errs.go` for every `Code = "…"` constant and requires the
+two sets to be equal in both directions — a code the agent can send that
+this SDK does not name, and a code this SDK names that the agent does
+not declare, are both failures. That is [[D-158]]'s method applied
+across the language boundary, and it is the check that stops a new agent
+code reaching an integrator as `UNKNOWN` with no sentence.
+
+**Two messages are load-bearing rather than descriptive**, and both have
+their own test. `AUTH_FAILED` names the agent's own log, the seven
+reasons that log records, and `POST /v2/echo` — because the response
+says nothing and always will ([[D-175]]), and those two are what is
+left. `PIN_INCORRECT` says never to retry, and why. A third test asserts
+that *no other* message claims to know which authentication check
+failed, so the SDK cannot start leaking through its own prose what the
+protocol withholds.
+
+**Rejected.**
+- **An error class per code.** Above.
+- **Folding an unknown code into `INTERNAL`.** It reads as "the agent
+  broke", which is exactly what `INTERNAL` means and exactly what a new
+  code most likely is not.
+- **Typing `code` as `string`.** Then `switch` is not checkable, which
+  is the one thing F8 §6 asks for.
+
+---
+
+## D-213 — What this SDK retries is a short list with a reason each, and a submission is not on it
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** `Transport.send` retries only when the caller marked the
+request `retryable`, and only for a failure that left no response at all
+or a `5xx`. Three requests are marked: `GET /v2/health`,
+`GET /v2/certificates`, `POST /v2/echo`. Everything else is sent once.
+Three attempts, 200 ms then 600 ms apart. **Every attempt builds a new
+nonce and a new timestamp**, from `crypto.randomUUID()`.
+
+**Why the default is not to retry.** A retry is a decision about what a
+repeat costs, and the costs here are not symmetric:
+
+| Not retried | What a repeat costs |
+|---|---|
+| any `401` | Nothing gained: a request that did not authenticate does not authenticate the second time, and every authentication failure looks identical from the outside ([[D-175]]), so the caller learns nothing new either. |
+| `POST /v2/sign`, `POST /v2/sign/pdf` | A submission that timed out may already have created a job. A second one is a hundred documents signed twice, and a second window in front of a person for a batch they have already approved. |
+| `POST /v2/pair/request` | A second window on somebody's screen, or `PAIRING_IN_PROGRESS` from the first — and the pairing rate limit counts refused requests too. |
+| `POST /v2/pair/confirm` | One of five code attempts, spent for a code that may already have been accepted. |
+| `GET /v2/jobs/{id}/result` | It is delivered once and the job is then forgotten. |
+
+**Why a new nonce every attempt.** A reused one is `AUTH_FAILED` — so a
+retry meant to recover from a hiccup instead produces the least
+diagnosable answer the protocol has. `test/retries.test.mjs` asserts
+three distinct nonces and three distinct signatures across three
+attempts, against an agent that verifies both.
+
+**Why the backoff is short.** This is a loopback socket. A request that
+is going to connect connects in well under a millisecond; the only
+things worth waiting out are a listener a moment mid-restart and a
+transient `5xx`. F3's TSA client waits 1 s then 3 s ([[D-045]]) because
+it is talking to a timestamp authority over the internet, which is a
+different question.
+
+**`PIN_INCORRECT` is never retried by anything here**, and the SDK has
+no code path that could: it arrives as a job failure, `signPdf` throws,
+and nothing above catches it. The README says so in the strongest terms
+the language allows, because three wrong entries block a card and
+unblocking a national identity card means a visit to the Ministry.
+
+**Rejected.**
+- **Retrying everything idempotent-looking.** `GET /v2/jobs/{id}/result`
+  looks idempotent and is not, by design.
+- **Retrying a submission after a timeout with the same nonce, so the
+  agent's replay cache would refuse the duplicate.** It would work,
+  and it makes the SDK's correctness depend on the agent's nonce cache
+  still holding the entry — a five-minute window that a slow batch can
+  outlast, and a coupling the SDK has no business having.
+
+---
+
+## D-214 — The default origin is `"local"`
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** `ConnectOptions.origin` defaults to the string `"local"`.
+
+**Why there is a default at all.** F8 §1's target integration is
+`LiroBridge.connect({ applicationName: 'Moj ERP' })`, and `origin` is a
+required field of both pairing calls. Something has to be sent.
+
+**Why `"local"` and not something more specific.** The origin is shown
+**verbatim** on the pairing window so that a person can judge it — SPEC
+§6.2's reason is that somebody who sees `http://` where they expected
+`https://` must be able to notice. What is truthful to show for a
+program on the machine with no web origin of its own is that it is a
+program on the machine. Three candidates were weighed and each says
+something false or nothing:
+
+- **The application name**, so the window would read "Moj ERP" twice.
+  It says nothing the row above it does not.
+- **`local:<application name>`**, which the agent refuses outright the
+  moment the name contains a space — and "Moj ERP" does. Mangling the
+  name to fit would be altering a value on its way to a screen, which
+  is the thing §6.2 is about.
+- **A synthesised URL** such as `app://moj-erp`. It looks like an origin
+  and is not one; a person reading it would be judging a fiction.
+
+`"local"` gives no separation between two applications that both take
+the default, and that is fine: what separates them is the `appId` and
+the device secret. The origin is for the person, and for an application
+that has a real one the README says to pass it.
+
+**Rejected.** All three above, and leaving `origin` required — which
+would make F8 §1's three-line target impossible for exactly the callers
+it is aimed at.
+
+---
+
+## D-215 — `console.log(bridge)` printed a device secret, and the fix is that a `LiroBridge` is not a path to the store
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** `LiroBridge` has its own `util.inspect` implementation and
+its own `toJSON()`, both showing the application name, the origin, the
+`appId`, the agent version and the protocol version, and nothing else.
+
+**Why — measured, not anticipated.** F8 §4.2 asks for a test that pairs,
+exercises every error path and greps every string the SDK produced. The
+first run of that test failed, on a path nothing had been written to
+guard:
+
+```
+the device secret reached the bridge object (as an encoding)
+  ...secretStore: MemoryStore { records: Map(1) { 'Moj ERP' =>
+  { appId: '…', applicationName: 'Moj ERP', origin: 'local',
+    deviceSecret: 'bGlyby1zZGstbGVhay10ZXN0LXNlY3JldC0zMmJ5dGU=' } } }...
+```
+
+`StoredPairing` was already careful ([[D-211]]) and printed
+`deviceSecret: <32 bytes, withheld>` exactly as intended. The leak was
+one object further out: a `LiroBridge` holds the caller's own
+`SecretStore`, a store holds device secrets — that is its whole job —
+and Node's inspector walks object graphs. One `console.log(bridge)` put
+a base64 device secret on screen.
+
+Nothing about that is the store's fault, and nothing about it is
+avoidable from the store's side. What is avoidable is this object being
+the path to it.
+
+**What this does not claim.** A caller who logs *their own store* still
+logs whatever it holds. That is theirs, and the `SecretStore`
+documentation says what a store contains. What is fixed is that the SDK
+does not hand it to them by accident.
+
+**The general shape, because it is the third time this project has met
+it.** [[D-084]] and [[D-062]] both record scoping a secret-scan to the
+bytes that are actually meaningful. This is the opposite error: a scan
+scoped too *narrowly*, at the object everyone expected to be the risk,
+while the risk was one reference away. The test that found it walks
+`String`, `util.inspect` at infinite depth with hidden properties and
+getters, `JSON.stringify` over every own property name, `message`,
+`stack` and the whole `cause` chain, for forty-odd error paths — and
+captures everything written to stdout and stderr for the whole run
+besides. It also asserts that the same search over the secret itself
+*does* find it, so a fixture that could never fail would fail.
+
+**Rejected.**
+- **Making `options.secretStore` non-enumerable on the bridge.** It
+  works for `inspect` and not for `JSON.stringify` with an own-property
+  allow-list, and it is a property of one field rather than a statement
+  about what the object shows.
+- **Documenting "do not log the bridge".** A rule an integrator has to
+  remember, protecting the thing they are most likely to log while
+  debugging.
+
+---
+
+## D-216 — Node 18 is the floor, `@types/node` is a development dependency, and no Node type reaches the public surface
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** `engines.node` is `>=18.0.0` and `connect()` refuses an
+older one with a sentence naming the version it found. The package has
+exactly two development dependencies, both pinned to an exact version:
+`typescript` and `@types/node`. It has no runtime dependencies, no peer
+dependencies and no optional ones, and a test asserts all three are
+empty.
+
+Nothing in the generated `.d.ts` files names `Buffer`, `NodeJS.*` or a
+`node:` import — a test reads every declaration file and fails if one
+does. A document is a `Uint8Array` throughout the public API.
+
+**Why 18.** F8 §2 names it, and it is where `fetch`, web streams and
+`crypto.randomUUID` are all present without a flag. The SDK uses all
+three.
+
+**Why the version check is at `connect()` and not at import.** A module
+that throws while being imported takes down a process at load, before a
+`try` can catch it, and the message ends up in a stack trace with no
+context. `connect()` is the first thing anybody calls and is already
+`async`, so the refusal arrives as a rejected promise a caller can
+handle — with `UNSUPPORTED_ENVIRONMENT` and the version it found.
+
+**Why `@types/node` is acceptable and a runtime dependency would not
+be.** F8 §2's rule is about what ends up in the integrator's
+application: "Every dependency added here is a dependency in the
+integrator's application, in a package that handles a signing secret."
+A development dependency is not installed transitively — proven, not
+assumed: the CI step and `test/package.test.mjs` both install the packed
+tarball into an empty project and assert `node_modules` contains
+`@liro` and nothing else.
+
+The reason the *public surface* is kept free of Node types is separate
+and is the one that matters to a consumer: a `.d.ts` that referred to
+`NodeJS.ErrnoException` would make `@types/node` a compile-time
+requirement for anybody type-checking against this package.
+
+**Rejected.**
+- **Hand-writing declarations for the `node:` builtins to avoid
+  `@types/node` entirely.** Considered, and it would work. Rejected as a
+  few hundred lines of type surface this project would then own and
+  would have to keep true against a Node it does not control — for a
+  dependency that ships to nobody.
+- **Testing only on the newest Node.** The CI job pins Node 18, because
+  a suite that only runs on the newest one is not evidence about the
+  version the package says it accepts.
+
+---
+
+## D-217 — `echo()` is on the SDK's surface, and it is the only thing there F8 §5 does not list
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** `LiroBridge` has one method beyond F8 §5's list:
+`echo(body)`, which is `POST /v2/echo` and returns the canonical string
+the agent built plus the body hash.
+
+**Why, given SPEC §0's instruction not to invent requirements.** F8 §6
+requires the `AUTH_FAILED` message to point at `/v2/echo`. An SDK whose
+error message names an endpoint its user then has to hand-roll — the
+canonical string, the four headers, the HMAC — has told them where to
+look and left them to build the torch. Fifteen lines close that.
+
+**What it is honestly for.** Not for users of this SDK's happy path:
+this SDK builds the canonical string itself and a caller of `signPdf`
+will never need it. It is for the two cases where somebody is debugging
+across an implementation boundary — writing a second client in another
+language beside a working one, or chasing a machine clock — and for
+making §6's own advice actionable from inside the package.
+
+It is authenticated like every other call, so it answers only for a
+request that already authenticated. It diagnoses a body hash or a path,
+never a wrong secret; the agent's log is what covers that half
+([[D-176]]).
+
+**Rejected.**
+- **Leaving it out and letting the message point at an endpoint the SDK
+  does not expose.** Defensible, and it is the reading of SPEC §0 that
+  keeps the surface smallest. Rejected because the message is required
+  to name the endpoint either way, and a named endpoint with no way to
+  reach it is worse surface than a small method.
+- **Exposing the raw transport so a caller could build any request.**
+  That is a general escape hatch, which is a much larger thing than one
+  documented diagnostic, and it would let a caller construct requests
+  this SDK's retry and nonce rules do not cover.
+
+---
+
+## D-218 — Five of the seven examples were run against a real agent and a real signature; Java and PHP were not, and the folder says so
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** `sdk/examples/` holds seven clients:
+`sign-with-sdk.mjs`, `liro-test-client.ps1` (moved from the repository
+root, as F8 §8 asks), `sign.py`, `sign.go`, `Sign.cs`, `Sign.java` and
+`sign.php`. The README's ~20-line fragments are extracts of those files,
+and a test compares each fragment against the region its file marks, so
+the two cannot drift.
+
+**Five were run against a real agent, end to end, including a real
+signature.** A build of `liro-bridge tray` with the `softtoken` tag, a
+loopback socket, a real pairing window on screen, a real consent window,
+and a person pressing Approve. Every one of them received a signed PDF
+back, and this project's own independent verifier
+(`internal/pades/verify`) says every one of the five documents carries a
+valid signature — `ByteRangeDigestOK`, `SignatureOK` and
+`SigningCertificateOK` all true, no errors:
+
+| Example | Signed document |
+|---|---|
+| `sign-with-sdk.mjs` | 104 888 bytes, B-B |
+| `sign.py` | 104 888 bytes, B-B |
+| `sign.go` | 104 888 bytes, B-B |
+| `Sign.cs` | 104 888 bytes, B-B |
+| `liro-test-client.ps1` | 104 890 bytes, B-B |
+
+B-B because the agent was given no timestamp authority, which since
+[[D-067]] is reported rather than silently downgraded.
+
+**Two were not run, and that is stated where somebody opening the folder
+sees it.** This machine has no JDK and no PHP. F8 §8 asks for four
+languages *and* says every example must be run before it is committed;
+on this machine those two instructions cannot both be satisfied for Java
+and PHP. Raised with the owner rather than decided quietly, and the
+owner's ruling was to ship them with specific labelling.
+`sdk/examples/README.md` therefore carries a table saying which examples
+were executed, what they produced, and that `Sign.java` and `sign.php`
+were written from `docs/PROTOCOL.md` and never executed — not in a
+decision entry alone.
+
+**Running them found three defects that reading them did not.** This is
+the point of F8 §8's rule and it earned itself immediately:
+
+1. **`sign.py` died on a Serbian name.** `UnicodeEncodeError: 'charmap'
+   codec can't encode character 'ć'` — printing `Milovanović` to a
+   Windows console under cp1252, on the certificate listing, first run.
+   Every real certificate has such a name; the example would have failed
+   for every user of this product. Fixed by reconfiguring `sys.stdout`,
+   and the same one-line fix applied to `Sign.cs` and `Sign.java` where
+   the symptom is question marks rather than a crash.
+2. **`Sign.cs` looked for the discovery file in the wrong place.** It
+   used `Environment.GetFolderPath(SpecialFolder.LocalApplicationData)`,
+   the shell's known folder; the agent writes to the `LOCALAPPDATA`
+   *environment variable* (`internal/platform/paths.go`). The two are
+   not always the same path, and the example found nothing. Fixed, and a
+   test now asserts all six hand-written clients read the environment
+   variable.
+3. **`Sign.cs` needed C# 7.1 for an `async Main`.** The compiler that
+   ships inside every Windows installation is C# 5. Rewritten with a
+   synchronous entry point that waits on the asynchronous one — which is
+   also the better example, because a Serbian ERP is as likely to be on
+   .NET Framework as on .NET 8.
+
+`sign.go` and `sign.php` write UTF-8 straight out, which a legacy
+console renders as mojibake rather than refusing. Neither carries a
+platform-specific workaround: `chcp 65001` is the console's business,
+and the examples' subject is the protocol. Said in the folder's README
+rather than fixed.
+
+**Rejected.**
+- **Leaving Java and PHP out entirely**, following "an example that does
+  not run is worse than no example" literally. Put to the owner as one
+  of three options; they chose to ship them labelled, and a Java
+  integration is a real audience for this product.
+- **Installing a JDK and PHP to run them.** Offered and declined: it
+  cuts against leaving the machine as it was found, for two files.
+- **Writing the README fragments by hand.** They would drift from the
+  files beside them, which is [[D-183]]'s finding, and a fragment that
+  has drifted is worse than none: the reader copies it, it does not
+  work, and they have lost more than writing it themselves would cost.
+
+---
+
+## D-219 — What F8 changed about where defects were looked for, and the one gap this phase leaves
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision, recorded because the phase turned on it.** Five defects were
+found in this phase. **Two were found by a test that had just been
+written to look for exactly that thing, and three were found by running
+a program against a real agent.** None was found by a test that already
+existed, because none of this existed before.
+
+| Found by | Defect |
+|---|---|
+| the secret-grep test's first run | `console.log(bridge)` printed a device secret out of the caller's own store ([[D-215]]) |
+| the ACL test, run against a directory that granted `Users` | (none — the fixture was built to be capable of failing and the code passed it) |
+| running `sign.py` against the real agent | a Serbian name killed it, on the certificate listing ([[D-218]]) |
+| running `Sign.cs` against the real agent | it read the shell's known folder and looked in the wrong place ([[D-218]]) |
+| compiling `Sign.cs` with the compiler Windows ships | `async Main` is C# 7.1 ([[D-218]]) |
+
+The first is the one worth keeping. Every test in the suite passed
+before it was written, including the ones about `StoredPairing`, which
+was careful and correct. The leak was one object reference further out
+than anybody had looked — and it was found because F8 §4.2 asked for a
+*grep of every string the SDK produced*, not for a check of the object
+everyone expected to be the risk. **A secret-scan scoped to the thing
+you thought of is a scan that finds what you thought of.**
+
+The three from running are [[D-161]]'s and [[D-122]]'s lesson in a new
+language: a green suite is not evidence about what a program does when
+somebody runs it. What is new is only the shape of the evidence — this
+phase's fake agent (`test/fake-agent.mjs`) speaks the protocol from the
+document with its own HMAC and its own canonical string, deliberately
+sharing no code with the SDK ([[D-044]]'s rule for verifiers), and it
+still could not have caught any of the three, because none of them is
+about the protocol.
+
+**The gap this phase leaves, stated rather than glossed.** The
+multi-document path was proved against a protocol-accurate fake agent at
+two and three documents, and against the *real* agent at one. Every
+batch needs a person to approve it, and asking for six approvals had
+already been asked for once; a hundred-document batch through the real
+agent is the case an ERP actually has, and it has not been run. What
+stands in for it: `internal/api`'s and `internal/jobs`' own tests
+already sign a hundred documents through the real runner (F7), and the
+SDK's count and ordering checks — `SignedDocument[]` never closing up
+over a failure, the returned count matching the sent count — are
+asserted at 2 and 3 against an agent that verifies every signature.
+
+**Rejected.**
+- **Reporting the five as ordinary bugs without this entry.** Four
+  previous entries record the same lesson about looking rather than
+  asserting ([[D-087]], [[D-122]], [[D-161]], [[D-172]]); what this one
+  adds is that a security check's *scope* is part of its fixture, and
+  that scoping one to the obvious object is how it passes while the
+  thing it protects is on screen.
+
+---
+
+## D-220 — Three things `docs/PROTOCOL.md` does not say that an implementation needs; recorded rather than changed
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**Decision.** F8 forbids changing the agent and asks for anything in
+`PROTOCOL.md` that turned out to be wrong, missing or misleading when
+something other than PowerShell tried to use it. Three things, all
+gaps rather than errors, none of them fixed here because a protocol
+document is not this phase's to edit.
+
+**1. A failed document's shape on `/v2/sign/pdf` is undocumented.**
+§5.1 is explicit about the digests path: `signatures` has one entry per
+digest, a failure is `null` in place, and the array never closes up.
+§5.2 shows only a fully successful `documents` array and an empty
+`failures`, and never says what an entry looks like for a document that
+did not sign. The agent omits `content` and `achievedLevel` and adds a
+`failures` entry with the index — read out of
+`internal/api/jobhandlers.go`'s `signedDocumentBody`, not out of the
+document. An integrator who assumed `content` is always present would
+write `Buffer.from(doc.content, 'base64')` and get a crash on the one
+path that matters. **Suggested:** one sentence in §5.2 and a `failures`
+entry in its example.
+
+**2. `minimumClientVersion` has no stated format.** §4.1 says to compare
+your own version against it and tell the person to update the agent if
+yours is lower. It does not say the comparison is semver, and `"0.0.0"`
+only suggests it. This SDK carries its own version and does not compare,
+because a comparison rule this SDK invented would be a rule the agent
+had not agreed to. **Suggested:** say "semantic version, compared by
+precedence", or say what else it is.
+
+**3. §4 gives only the Windows discovery path.** SPEC §14 gives all
+three, and they differ from what a naive reading would guess on Linux
+(`$XDG_RUNTIME_DIR/liro/`, not `~/.config`). The SDK implements SPEC
+§14's three. Harmless today, since the agent is Windows-only until F12;
+worth a line when it is not.
+
+**A fourth thing, which is a compliment rather than a gap.** §2.5's
+paragraph about not sending `Content-Type` on a request with no body is
+the single most valuable sentence in the document for somebody writing a
+client, and it was written because a real .NET client could not obey the
+opposite rule ([[D-197]]). Two of the seven examples in `sdk/examples/`
+would have been wrong without it.
+
+**Rejected.**
+- **Fixing §5.2 while here.** F8 is explicit: "no changes to the agent's
+  own behaviour. If the SDK cannot do something because the protocol
+  will not let it, that is a finding to report — not a licence to change
+  the protocol." A documentation gap is the same shape of thing, and the
+  document is the specification this phase implements *against*.
+- **Guessing a semver comparison and implementing it.** It would be
+  right, and it would be a rule this SDK invented on behalf of an agent
+  that has not stated one — which is how two implementations come to
+  disagree about the same field.

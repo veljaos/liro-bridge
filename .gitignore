@@ -39,3 +39,11 @@ Thumbs.db
 # that made them ends — D-100's pattern, with a guard so an accidental
 # `git add -A` cannot commit one.
 /local/
+
+# Node, for the TypeScript SDK. sdk/typescript/dist IS committed — an
+# integrator installs this repository straight from GitHub, so there is
+# no publish step to run a build, and `npm run check-build` is what
+# proves the committed output is what the source produces.
+node_modules/
+sdk/typescript/.dist-check/
+*.tgz

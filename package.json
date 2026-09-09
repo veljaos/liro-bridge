@@ -1,0 +1,42 @@
+{
+  "name": "@liro/bridge",
+  "version": "1.0.0",
+  "description": "TypeScript SDK for Liro Bridge, the local qualified-signature agent.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veljaos/liro-bridge.git"
+  },
+  "homepage": "https://github.com/veljaos/liro-bridge/tree/main/sdk/typescript#readme",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "main": "./sdk/typescript/dist/cjs/index.js",
+  "module": "./sdk/typescript/dist/esm/index.js",
+  "types": "./sdk/typescript/dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./sdk/typescript/dist/types/index.d.ts",
+      "import": "./sdk/typescript/dist/esm/index.js",
+      "require": "./sdk/typescript/dist/cjs/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "sdk/typescript/dist",
+    "sdk/typescript/src",
+    "sdk/typescript/README.md",
+    "docs/PROTOCOL.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "liro",
+    "liro-bridge",
+    "pades",
+    "qualified-electronic-signature",
+    "eidas",
+    "serbia"
+  ],
+  "dependencies": {}
+}
