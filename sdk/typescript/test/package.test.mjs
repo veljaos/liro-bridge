@@ -11,6 +11,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -22,10 +23,40 @@ import test from 'node:test';
  *
  * `execFileSync('npm', args, { shell: true })` works and concatenates
  * its arguments into a command line without escaping them, which is a
- * habit not worth having in a repository about signing. `npm-cli.js`
- * ships beside the node binary on every installation.
+ * habit not worth having in a repository about signing.
+ *
+ * Where `npm-cli.js` sits depends on the platform. On Windows it is
+ * beside the node binary, in `<prefix>/node_modules/npm/bin`. On POSIX —
+ * `actions/setup-node` on ubuntu-latest included — node is in
+ * `<prefix>/bin` and npm is in `<prefix>/lib/node_modules/npm/bin`, one
+ * directory up and across. Assuming the Windows layout is what made this
+ * test pass on the windows runner and fail on ubuntu-latest (D-221). So
+ * ask npm first — it sets `npm_execpath` for the scripts it runs, and CI
+ * runs this suite through `npm test` — and only then guess.
  */
-const NPM_CLI = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+const npmCliCandidates = () => {
+  const fromEnv = process.env.npm_execpath;
+  const prefix = dirname(process.execPath);
+  return [
+    ...(fromEnv && fromEnv.endsWith('.js') ? [fromEnv] : []),
+    join(prefix, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(dirname(prefix), 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ];
+};
+
+const resolveNpmCli = () => {
+  const tried = npmCliCandidates();
+  const found = tried.find((path) => existsSync(path));
+  if (!found) {
+    // A resolution failure has to say where it looked. The alternative
+    // is the MODULE_NOT_FOUND this replaced, which named a path that
+    // appeared nowhere in the test's output.
+    throw new Error(`npm-cli.js was not found. Tried:\n${tried.map((p) => `  ${p}`).join('\n')}`);
+  }
+  return found;
+};
+
+const NPM_CLI = resolveNpmCli();
 const npm = (args, options) => execFileSync(process.execPath, [NPM_CLI, ...args], options);
 
 import { SDK_VERSION } from '../dist/esm/index.js';

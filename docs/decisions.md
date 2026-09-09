@@ -14827,3 +14827,119 @@ would have been wrong without it.
   right, and it would be a rule this SDK invented on behalf of an agent
   that has not stated one — which is how two implementations come to
   disagree about the same field.
+
+---
+
+## D-221 — `npm-cli.js` sits beside the node binary only on Windows; the packaging test assumed that everywhere, and only the Windows job ever ran it
+
+**Date:** 2026-09-09
+**Phase:** F8
+
+**The defect.** `sdk/typescript/test/package.test.mjs` runs npm as a
+script through this Node rather than through a shell — `execFileSync('npm',
+args, { shell: true })` concatenates its arguments into a command line
+without escaping them, which is not a habit to have in a repository about
+signing. That part was right. What was wrong was how it found the script:
+
+```js
+const NPM_CLI = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+```
+
+under a comment that stated as fact that "`npm-cli.js` ships beside the
+node binary on every installation". It does not. There are two layouts:
+
+| Platform | node | `npm-cli.js` |
+|---|---|---|
+| Windows | `<prefix>\node.exe` | `<prefix>\node_modules\npm\bin\npm-cli.js` |
+| POSIX, including `actions/setup-node` on `ubuntu-latest` | `<prefix>/bin/node` | `<prefix>/lib/node_modules/npm/bin/npm-cli.js` |
+
+On POSIX the constant therefore resolved to
+`<prefix>/bin/node_modules/npm/bin/npm-cli.js`, one directory too deep and
+on the wrong branch. `execFileSync` failed with `MODULE_NOT_FOUND`.
+104 of the 105 tests passed; the one that failed was *installing the
+repository the way the README says produces a working import* — the one
+test that proves the whole packaging argument, and the reason the
+`sdk-typescript` job exists at all. Because the job died there, the two
+steps after it — the runtime-dependency check and the pack-and-install
+check at the repository root — never ran either.
+
+**The fix.** Resolve `npm-cli.js` instead of assuming a layout, in three
+steps, and say where you looked if none of them is there:
+
+1. `process.env.npm_execpath`, when it is set and names an existing `.js`
+   file. This is npm's own answer to the question, and CI runs the suite
+   through `npm test`, so it is set exactly where it matters.
+2. The Windows layout.
+3. The POSIX layout.
+
+Failing all three, throw an error naming every path that was tried. The
+`MODULE_NOT_FOUND` this replaces named a path that appeared nowhere in
+the test's own output, assembled from a constant nobody had read; a
+resolution failure has to say where it looked.
+
+**Why this was invisible, which is [[D-219]]'s lesson one layer out.**
+Before the `sdk-typescript` job existed, this suite had run in exactly
+one place: a Windows development machine. It was written there, run
+there, and reviewed there, and every one of those observations was
+consistent with a constant that is wrong on every other operating
+system. The first time it ran anywhere else, it failed. **A check that
+only ever runs where it was written is not evidence about where it will
+run.** D-219 recorded that a secret-scan scoped to the object you
+thought of finds what you thought of; this is the same defect along the
+axis of *platform* rather than *scope*. What makes it worth its own
+entry is that the check in question was the packaging check — the one
+whose entire job is to answer "does this work somewhere other than
+here?" — and it was the one carrying a here-only assumption.
+
+**A gap this leaves, stated rather than glossed.** The repository's
+`windows` job runs Go only: `go vet` and `go test -tags softtoken`. No
+CI job runs the TypeScript suite on Windows. Both layouts are now
+resolved and both were verified by hand for this entry, but a future
+Windows-only regression in `sdk/typescript` would be found by a
+developer, not by CI — which is the same shape of gap this entry is
+about, pointing the other way. Adding a Node step to the `windows` job
+would close it and is not done here.
+
+**Verified, on both operating systems and through every branch.**
+
+| Where | What ran | Result |
+|---|---|---|
+| Windows, Node 24.11.1 / npm 11.6.2 | all four `sdk-typescript` steps, transcribed from `ci.yml` | `check-build` green, 105/105, no runtime dependencies, `esm ok` / `cjs ok` |
+| Linux (x86-64, Node 18.20.8 / npm 10.8.2 — the Node the CI job pins) | the same four steps | `check-build` green, `# pass 105 / # fail 0`, no runtime dependencies, `esm ok` / `cjs ok` |
+
+Each resolution step was reached on purpose rather than incidentally:
+`npm_execpath` on both, since `npm test` sets it; the Windows layout by
+running the suite on Windows with `npm_execpath` unset; the POSIX layout
+by running it on Linux with `npm_execpath` unset, where
+`<prefix>/bin/node_modules` does not exist, so nothing but the third
+candidate can have answered. The failure path was exercised too, by
+running the suite under a `node` copied into a directory with no npm
+beneath it: it names both paths it tried and stops, which is the whole
+point of the change.
+
+One honest note about the evidence: the Linux leg ran on a musl x86-64
+Linux rather than on `ubuntu-latest`'s glibc, because no glibc Linux was
+available on the machine this was fixed on. The axis under test is the
+directory layout, which is the same on both — `<prefix>/bin/node` and
+`<prefix>/lib/node_modules/npm/bin/npm-cli.js`, exactly what
+`actions/setup-node` unpacks — and the two steps that had never run
+before, the runtime-dependency check and the root pack-and-install, ran
+there and passed. The first `ubuntu-latest` run of the job is still the
+thing that closes this.
+
+**Rejected.**
+- **`shell: true`.** The comment above the constant already explains why
+  not, and it is still the reason: unescaped concatenation of paths into
+  a command line, in this repository, on a test whose arguments include a
+  temporary directory name.
+- **Skipping the test on POSIX, or on any platform.** The test's entire
+  claim is that an integrator can install this package. An integrator on
+  Linux is the common case, not the exotic one; a skip there would make
+  the suite quieter and the claim smaller without making it truer.
+- **Hardcoding the POSIX layout and keeping Windows as the special
+  case.** That is the same defect with the platforms exchanged. Both
+  layouts are guesses; `npm_execpath` is an answer, and it goes first.
+- **Calling `npm` off `PATH` with `execFileSync` and no shell.** It works
+  on POSIX and fails on Windows, where `npm` is `npm.cmd` and needs a
+  shell to be found — which is the rejected option above wearing a
+  different hat.
