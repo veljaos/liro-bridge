@@ -16573,7 +16573,7 @@ cross-compiling it and stopping.
 
 ---
 
-## D-236 — What `sign` does on a machine with no reader: the window opens first and says which of the three kinds of nothing this is
+## D-236 — What `sign` does on a machine with no reader: the window opens first, and it says which kind of nothing this is
 
 **Date:** 2026-09-10
 **Phase:** F10 — pre-phase fix
@@ -16620,8 +16620,8 @@ yet, double-clicks a PDF and gets a second of nothing. It is also every
 developer's first run. A console message would help only somebody who
 started this from a console, and nobody double-clicking a PDF did.
 
-**Decision. The window opens first, and it says which of the three
-states this machine is in.**
+**Decision. The window opens first, and it says which state this
+machine is in.**
 
 *(a) The window is created before the enumeration is asked about, not
 after.* `runSigningFlow` starts the listing on its own goroutine and
@@ -16648,8 +16648,10 @@ The codes are SPEC §7's, not new ones. Two of them — `NO_READER` and
 travelled as a bare wrapped error and every caller above it saw an
 unclassified failure. `cli.Gather` classifies it now
 (`readerListingError`), and `cli.Report.NothingUsableReason` answers the
-rest — one function, so the `certs` command and the window cannot answer
-the same question two ways ([[D-108]], [[D-124]], [[D-138]]).
+rest — one function on the report, where the reader states and the
+hidden-row rule already are, so that the next screen with an empty list
+to explain answers this the same way rather than a second way ([[D-108]],
+[[D-124]], [[D-138]]).
 
 The other front doors get the same answer for free, because it is the
 same function. The tray window's certificate step says which state the

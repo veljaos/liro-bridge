@@ -201,11 +201,13 @@ func readerListingError(err error) error {
 //	                    for the same reason — CERT_EXPIRED, say
 //	CERT_NOT_USABLE    offered, unusable, and not all for one reason
 //
-// It is here rather than in the window because the same question is the
-// `certs` command's and the window's, and a question answered in two
-// places is one that can be answered two ways (D-108, D-124, D-138).
-// Hidden rows are not offered to anybody, so they are not evidence that
-// there is something to sign with.
+// It is a method on the report rather than a function in the window
+// because everything it needs is here — the reader states and Hidden(),
+// which is the same rule the window's own list is built from — and
+// because the next screen that has to explain an empty list should
+// answer this question the same way rather than a second way (D-108,
+// D-124, D-138). Hidden rows are not offered to anybody, so they are not
+// evidence that there is something to sign with.
 func (r Report) NothingUsableReason() errs.Code {
 	offered := make([]CertRow, 0, len(r.Certificates))
 	for _, row := range r.Certificates {
