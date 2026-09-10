@@ -344,15 +344,20 @@ func (m *mainWindow) postCertificateStep() {
 }
 
 // certificateNotice is the sentence the certificate step shows when
-// there is nothing on it to choose. Empty when there is.
+// there is nothing on it to choose. Empty when there is something, and
+// empty when the list itself can explain.
 //
-// The three whole-machine states get their own sentence, because they
-// are the three a person can do something about and they are not the
-// same thing: no reader is a cable, no card is a card, and a stopped
-// Windows service is neither. A row-level reason — an expired
-// certificate, one whose card is out — is already printed under the row
-// it belongs to, so the summary line above stays general rather than
-// repeating one row's reason as if it were the machine's.
+// The whole-machine states get a sentence because they are the ones a
+// person can do something about and they are not the same thing: no
+// reader is a cable, no card is a card, and a stopped Windows service is
+// neither.
+//
+// A list with rows on it says nothing here at all. Every unusable row
+// already carries its own reason underneath it, and a summary above
+// saying the same words again is what a photograph of the real window
+// showed: one certificate whose card was out, with "Ubacite karticu u
+// čitač." printed twice on one screen. The rows are more specific than
+// any summary could be, so they are left to it (D-236).
 func (m *mainWindow) certificateNotice() string {
 	if m.listing != nil {
 		// The enumeration has not answered yet. Without this the screen
@@ -360,13 +365,14 @@ func (m *mainWindow) certificateNotice() string {
 		// which is a statement about a question nobody has answered.
 		return m.c.T("consent.looking_for_certificates")
 	}
+	if len(m.certInfos) > 0 {
+		return ""
+	}
 	switch m.certReason {
 	case "":
 		return ""
 	case errs.CodeCertNotFound:
 		return m.c.T("consent.no_certificate_found")
-	case errs.CodeCertNotUsable, errs.CodeCertExpired:
-		return m.c.T("consent.no_usable_certificate")
 	default:
 		return m.c.T(i18n.CodeKey(m.certReason))
 	}

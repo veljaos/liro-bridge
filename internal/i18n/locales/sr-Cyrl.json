@@ -72,7 +72,6 @@
   "consent.local_application": "Овај рачунар",
   "consent.looking_for_certificates": "Тражим ваш сертификат…",
   "consent.no_certificate_found": "На овој картици није пронађен сертификат за потписивање.",
-  "consent.no_usable_certificate": "Ниједан сертификат на овој картици се не може користити за потписивање.",
   "consent.output_exists_explain": "Ништа није преписано. Изаберите шта да се уради са потписаним документом.",
   "consent.output_exists_overwrite": "Препиши",
   "consent.output_exists_path_label": "Постојећи фајл",

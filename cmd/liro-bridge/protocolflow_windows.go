@@ -111,8 +111,17 @@ func (b *remoteBatch) result() api.SignResult {
 func runProtocolFlow(ctx context.Context, cfg config.Config, locale string, req api.SignRequest, job *jobs.Job) api.SignResult {
 	m := newProtocolWindow(cfg, locale, req, job)
 
-	if !m.gatherCertificatesBeforeOpening(ctx) {
-		return api.SignResult{Code: errs.CodeInternal}
+	if err := m.gatherCertificatesBeforeOpening(ctx); err != nil {
+		// The caller is told what happened, not INTERNAL. This used to
+		// be a hardcoded errs.CodeInternal, which meant
+		// SMART_CARD_SERVICE_DOWN — a code docs/PROTOCOL.md documents,
+		// with a 422 and a remedy of its own ("a service to start, not
+		// hardware to plug in") — could not be produced by any request
+		// this agent has ever served (D-236).
+		code := codeOfInteractive(err)
+		slog.Info("protocol: the certificate listing failed for a request",
+			"jobId", job.ID, "code", string(code))
+		return api.SignResult{Code: code}
 	}
 	certs, err := certificatesOfferedFor(m.certInfos, req.Thumbprint)
 	if err != nil {

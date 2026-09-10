@@ -73,7 +73,7 @@
     // in it, and whether the Windows service that answers any of those
     // questions is running at all.
     var notice = model.certNoticeText || "";
-    var noticeEl = document.getElementById("no-usable-cert");
+    var noticeEl = document.getElementById("cert-notice");
     window.liroSetText(noticeEl, notice);
     noticeEl.hidden = notice === "";
     document.getElementById("select-prompt").hidden = !anyUsable;

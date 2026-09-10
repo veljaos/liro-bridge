@@ -304,14 +304,14 @@ func newMainWindow(cfg config.Config, locale string) *mainWindow {
 // one: a protocol request, which is answered with a code (SPEC §7).
 // Nothing a person started comes through here — `sign` opens its window
 // first and lets the answer arrive into it (D-236).
-func (m *mainWindow) gatherCertificatesBeforeOpening(ctx context.Context) bool {
+func (m *mainWindow) gatherCertificatesBeforeOpening(ctx context.Context) error {
 	report, err := m.gather(ctx)
 	if err != nil {
 		slog.Error("signing flow: listing certificates failed", "error", err)
-		return false
+		return err
 	}
 	m.applyListing(certificateListing{report: report})
-	return true
+	return nil
 }
 
 // applyListing records one enumeration: what to offer, and — when there
@@ -545,6 +545,19 @@ func (m *mainWindow) loop(ctx context.Context) {
 			// ever, so clearing the field is what takes this case out
 			// of the select once the one answer has arrived.
 			m.listing = nil
+			select {
+			case <-m.closed:
+				// The window went away while the machine was still
+				// being asked. Nobody was told anything and nobody
+				// refused anything, so the answer is dropped rather
+				// than applied — and, in particular, not posted into a
+				// closed window, which would log an ERROR about a race
+				// that is ordinary. Measured on the runner, where
+				// closing the window the instant it appears is exactly
+				// what the regression test does.
+				return
+			default:
+			}
 			m.applyListing(l)
 			if m.step == stepCertificate && !m.showingReport && !m.failed {
 				m.postCertificateStep()

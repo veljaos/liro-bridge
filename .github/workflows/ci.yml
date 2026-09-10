@@ -364,30 +364,6 @@ jobs:
       - name: go vet
         run: go vet -unsafeptr=false ./...
 
-      # TEMPORARY, branch probe/consent-ci only. Measurement, not a check:
-      # it asserts nothing and cannot fail the job. Removed before this
-      # reaches master.
-      - name: probe — what the certificate path and `sign` actually do here
-        shell: bash
-        run: |
-          go test -tags softtoken -count=1 -v -run 'TestProbe' ./cmd/liro-bridge > probe.txt 2>&1
-          echo "go-test-exit=$?" >> probe.txt
-          cat probe.txt
-          mkdir -p ci-probe && cp probe.txt ci-probe/
-          msg=$(grep -E '^(PROBE|go-test-exit)' probe.txt | tr -d '\r' | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::warning title=probe::$msg"
-        env:
-          CGO_ENABLED: 0
-          LIRO_DEBUG: 1
-
-      - name: upload the probe output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: liro-probe-windows
-          path: ci-probe
-          if-no-files-found: warn
-
       - name: test (real WebView2 windows, no hardware)
         # -tags softtoken so the interactive consent/sign path
         # (cmd/liro-bridge's *_windows_test.go) can exercise a real

@@ -293,6 +293,44 @@ func consentSixCertificates(t *testing.T, locale string) {
 	assertButtonsVisible(t, win, "consent (details open) "+locale, "#cert-list")
 }
 
+// TestConsentWindowFitsWithEveryNoCertificateNotice: the line that says
+// why there is nothing to choose (D-236) is a whole sentence where a
+// short prompt used to be, and it appears exactly when the certificate
+// list is empty — so it is the one case where the fixed region above the
+// list grows and the list has nothing to give way with.
+//
+// Every sentence, in every locale, because the longest of them is not
+// the same one in all three.
+func TestConsentWindowFitsWithEveryNoCertificateNotice(t *testing.T) {
+	notices := []string{
+		"error.no_reader",
+		"error.card_not_present",
+		"error.smart_card_service_down",
+		"consent.no_certificate_found",
+		"consent.looking_for_certificates",
+	}
+	for _, locale := range everyLocale {
+		t.Run(locale, func(t *testing.T) {
+			c := i18n.Load(locale)
+			win, _ := sharedConsentWindow(t)
+			for _, key := range notices {
+				vm := consent.BuildViewModel(consent.ApplicationLocal,
+					[][]byte{{1}}, []string{"ugovor.pdf"}, nil)
+				if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm, c.T(key)))); err != nil {
+					t.Fatalf("PostJSON: %v", err)
+				}
+				where := "consent (" + key + ") " + locale
+				assertPageDoesNotScroll(t, win, where, "#cert-list")
+				assertButtonsVisible(t, win, where, "#cert-list")
+
+				openConsentDetails(t, win)
+				assertPageDoesNotScroll(t, win, where+" details open", "#cert-list", "#file-list")
+				assertButtonsVisible(t, win, where+" details open", "#cert-list")
+			}
+		})
+	}
+}
+
 // TestConsentWindowFitsWithTenLongFileNames is SPEC §6.6's own reason
 // for capping the visible file list at ten names: "so a long name
 // cannot push the Approve/Cancel buttons off screen". Ten names, each

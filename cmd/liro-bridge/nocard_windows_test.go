@@ -219,14 +219,62 @@ func TestTheCertificateStepNeverAssertsACardBeforeItHasLooked(t *testing.T) {
 	})
 	t.Cleanup(func() { close(release) })
 
-	got := evalString(t, m.win, "document.getElementById('no-usable-cert').textContent")
+	got := evalString(t, m.win, "document.getElementById('cert-notice').textContent")
 	if got != c.T("consent.looking_for_certificates") {
 		t.Errorf("while the listing was still running the screen said %q, want %q",
 			got, c.T("consent.looking_for_certificates"))
 	}
-	if evalBool(t, m.win, "document.getElementById('no-usable-cert').hidden") {
+	if evalBool(t, m.win, "document.getElementById('cert-notice').hidden") {
 		t.Error("the screen says nothing at all while it looks")
 	}
+}
+
+// TestALiveListSaysNothingAboveItself: a list with rows on it explains
+// itself row by row, and a summary above repeating one row's reason is
+// what a photograph of the real window caught — "Ubacite karticu u
+// čitač." printed twice on one screen, once as the machine's verdict and
+// once as the certificate's own.
+func TestALiveListSaysNothingAboveItself(t *testing.T) {
+	tempConfigHome(t)
+	unusable := stampTestCertificate()
+	unusable.Usable = false
+	unusable.NotUsableReason = errs.CodeCardNotPresent
+
+	m, _ := openSigningFlowForTest(t, "sr-Latn", func(context.Context) (cli.Report, error) {
+		return cli.Report{
+			Readers:      []platform.ReaderState{{Name: "Reader 0"}},
+			Certificates: []cli.CertRow{{OnHardware: true, Info: unusable}},
+		}, nil
+	})
+
+	// The row is there and says why it cannot be chosen...
+	waitForCertRows(t, m, 1)
+	if got := evalString(t, m.win, "document.querySelector('.cert-reason').textContent"); got == "" {
+		t.Error("the unusable row carries no reason of its own")
+	}
+	// ...and nothing above it says the same thing again.
+	if got := evalString(t, m.win, "document.getElementById('cert-notice').textContent"); got != "" {
+		t.Errorf("the screen repeats the row's own reason above the list: %q", got)
+	}
+	if !evalBool(t, m.win, "document.getElementById('approve-btn').disabled") {
+		t.Error("Approve is pressable with no usable certificate on the list")
+	}
+}
+
+// waitForCertRows waits for the list to hold n rows, which is how this
+// test knows the listing has landed without timing anything.
+func waitForCertRows(t *testing.T, m *mainWindow, n int) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	var got float64
+	for time.Now().Before(deadline) {
+		got = evalNumber(t, m.win, "document.querySelectorAll('.liro-cert-row').length")
+		if int(got) == n {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("the certificate list holds %v rows, want %d", got, n)
 }
 
 // TestAUsableCertificateStillGetsNoNotice: the line exists for the
@@ -244,6 +292,46 @@ func TestAUsableCertificateStillGetsNoNotice(t *testing.T) {
 	waitForConsentNotice(t, m, "")
 	if evalBool(t, m.win, "document.getElementById('select-prompt').hidden") {
 		t.Error("a screen with a usable certificate does not ask the person to choose one")
+	}
+}
+
+// TestAProtocolRequestIsToldWhichKindOfNothingThisIs: the other front
+// door does not open a window at a person to explain a program's
+// problem — it answers the program with a code (SPEC §7). It was
+// answering `INTERNAL` for every listing failure, hardcoded, which meant
+// `SMART_CARD_SERVICE_DOWN` — a code docs/PROTOCOL.md documents with its
+// own status and its own remedy — could not be produced by any request
+// this agent has ever served.
+func TestAProtocolRequestIsToldWhichKindOfNothingThisIs(t *testing.T) {
+	tempConfigHome(t)
+	for _, tc := range []struct {
+		name    string
+		listing func(context.Context) (cli.Report, error)
+		want    errs.Code
+	}{
+		{
+			name: "no smart card service",
+			listing: func(context.Context) (cli.Report, error) {
+				return cli.Report{}, errs.New(errs.CodeSmartCardServiceDown, errors.New("no service"))
+			},
+			want: errs.CodeSmartCardServiceDown,
+		},
+		{
+			name: "something nobody classified",
+			listing: func(context.Context) (cli.Report, error) {
+				return cli.Report{}, errors.New("winscard is on fire")
+			},
+			want: errs.CodeInternal,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			swapGather(t, tc.listing)
+			req := digestRequest(1, "")
+			got := runProtocolFlow(context.Background(), config.Default(), "sr-Latn", req, testJob(t, 1))
+			if got.Code != tc.want {
+				t.Errorf("the caller was told %q, want %q", got.Code, tc.want)
+			}
+		})
 	}
 }
 
@@ -309,7 +397,7 @@ func waitForConsentNotice(t *testing.T, m *mainWindow, want string) {
 	deadline := time.Now().Add(60 * time.Second)
 	var got string
 	for time.Now().Before(deadline) {
-		got = evalString(t, m.win, "document.getElementById('no-usable-cert').textContent")
+		got = evalString(t, m.win, "document.getElementById('cert-notice').textContent")
 		if got == want {
 			return
 		}

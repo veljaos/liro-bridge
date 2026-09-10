@@ -16640,7 +16640,7 @@ remedies, and a person needs to know which one they are in:
 | A reader, and no card in it | `CARD_NOT_PRESENT` | "Insert your card into the reader." |
 | The Windows service is not running | `SMART_CARD_SERVICE_DOWN` | "The Windows Smart Card service is not running." |
 | A card, and nothing on it | `CERT_NOT_FOUND` | "No signing certificate was found on this card." |
-| Certificates, none of them usable | `CERT_NOT_USABLE` | unchanged — each row already carries its own reason |
+| Certificates, none of them usable | (row's own) | nothing above the list; each row already carries its own reason |
 
 The codes are SPEC §7's, not new ones. Two of them — `NO_READER` and
 `SMART_CARD_SERVICE_DOWN` — had been in `internal/errs` since F1 and were
@@ -16658,6 +16658,17 @@ reached when the enumeration itself fails — now renders
 `error.smart_card_service_down` in the person's own language instead of
 the untranslated developer sentence `errMessage` falls back to for an
 error with no code on it.
+
+*And a list with rows on it says nothing above itself.* This is the one
+thing the tests had right and the product wrong, and only a photograph of
+the real window showed it: with the card out of the reader, the screen
+printed *"Ubacite karticu u čitač."* twice — once as the machine's
+verdict above the list and once as the certificate's own reason under its
+name. The rows are more specific than any summary can be, so the summary
+is not drawn when there are rows. `consent.no_usable_certificate`, the
+string this began as, now has no reader at all and is deleted from all
+three catalogues; the element it lived in is `cert-notice` rather than
+`no-usable-cert`, because that is what it is.
 
 *(c) `sign` still exits non-zero.* A person sees a window and a
 sentence; a script sees only the exit code, and a machine with nothing to
@@ -16698,11 +16709,16 @@ question nobody has answered yet.
   is for a batch that went wrong, and it is a dead end. "Plug the reader
   in" is not a failure of this batch; it is a state of this machine, and
   it belongs on the step it is about.
-- **Changing the protocol path to match.** It stays as it is,
-  deliberately: a request from a paired application is answered with a
-  code, and opening a window at a person to tell them a program's request
-  could not be served is worse than answering the program
-  (`runProtocolFlow`, SPEC §7).
+- **Opening a window on the protocol path too.** It keeps answering with
+  a code and no window: a request from a paired application is a
+  program's problem, and putting a window in front of a person to explain
+  it is worse than telling the program (`runProtocolFlow`, SPEC §7).
+  What did change there is *which* code — it returned a hardcoded
+  `errs.CodeInternal` for every listing failure, which meant
+  `SMART_CARD_SERVICE_DOWN`, a code `docs/PROTOCOL.md` documents with a
+  422 and a remedy of its own, could not be produced by any request this
+  agent has ever served.
+  (`TestAProtocolRequestIsToldWhichKindOfNothingThisIs`.)
 
 **Tests.**
 - `internal/cli`: `TestTheReportSaysWhyItHasNothingToSignWith` (seven
@@ -16718,7 +16734,11 @@ question nobody has answered yet.
   window over each of the four listings and reads the sentence off the
   page.
   `TestTheCertificateStepNeverAssertsACardBeforeItHasLooked` and
-  `TestAUsableCertificateStillGetsNoNotice` cover the two ends, and
+  `TestALiveListSaysNothingAboveItself` is the photograph's own
+  regression test, `TestConsentWindowFitsWithEveryNoCertificateNotice`
+  puts every one of the sentences through the layout assertions in all
+  three locales,
+  `TestAUsableCertificateStillGetsNoNotice` covers the other end, and
   `TestSignExitsNonZeroWhenThereIsNothingToSignWith` covers what a script
   sees.
 - The states are reachable in a test because the enumeration is a field
@@ -16727,6 +16747,28 @@ question nobody has answered yet.
   cannot be put into any of those states; a check that could only run
   where the hardware is absent would be [[D-221]] again with the
   platforms swapped.
+
+**Measured on the runner after the change**, by the same probe:
+
+```
+PROBE gather    elapsed=688ms rows=0 visible=0
+                err=SMART_CARD_SERVICE_DOWN: listing smart card readers: ...
+PROBE sign      window-appeared=true after=5.644s
+```
+
+and the Windows job's Go step went from a ninety-second timeout and a
+red build to 77 seconds and a green one.
+
+**5.6 seconds is not "within a second or two", and it is worth being
+exact about what it is.** All of it is `ui.NewWindow` — the agent's own
+log puts "liro-bridge starting" at 11:16:06.008 and the window's first
+drop-target registration at 11:16:11.637, with the enumeration long
+since finished at 688ms and waiting. That is a cold Edge and no GPU on a
+CI runner; the same window measured 0.86s here. Nothing in this change is
+in that path, and nothing was made slower by it — but the claim that
+holds everywhere is "the window is not waiting on the card", not "a
+window inside two seconds", and a machine slow enough to make WebView2
+take six seconds will take six seconds.
 
 **Measured against the pre-fix trees.** At 58a6a23, in a worktree, the
 regression test still fails — and now fails in 0.04s with the reason

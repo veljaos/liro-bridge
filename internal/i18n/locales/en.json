@@ -72,7 +72,6 @@
   "consent.local_application": "This computer",
   "consent.looking_for_certificates": "Looking for your certificate…",
   "consent.no_certificate_found": "No signing certificate was found on this card.",
-  "consent.no_usable_certificate": "None of the certificates on this card can be used for signing.",
   "consent.output_exists_explain": "Nothing has been overwritten. Choose what to do with the signed document.",
   "consent.output_exists_overwrite": "Overwrite",
   "consent.output_exists_path_label": "Existing file",
