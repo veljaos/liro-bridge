@@ -24,6 +24,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -110,6 +111,29 @@ func TestTheSignWindowIsOnScreenBeforeTheCertificateListIs(t *testing.T) {
 	}
 }
 
+// TestSignExitsNonZeroWhenThereIsNothingToSignWith: a person sees a
+// window and a sentence. A script sees only the exit code, and a machine
+// with nothing to sign with is a failed `sign` rather than a refused one.
+//
+// The window is closed only after the sentence is on it, because closing
+// it before the listing has landed is a different thing — that is a
+// person who changed their mind, and it is not a failure.
+func TestSignExitsNonZeroWhenThereIsNothingToSignWith(t *testing.T) {
+	tempConfigHome(t)
+	c := i18n.Load("sr-Latn")
+
+	m, exit := openSigningFlowForTest(t, "sr-Latn", func(context.Context) (cli.Report, error) {
+		return cli.Report{}, nil // no readers: NO_READER
+	})
+	waitForConsentNotice(t, m, c.T("error.no_reader"))
+
+	const wmClose = 0x0010
+	_, _, _ = procPostMessageT.Call(m.win.Handle(), wmClose, 0, 0)
+	if code := exit(); code == 0 {
+		t.Error("sign reported success on a machine with no card reader")
+	}
+}
+
 // TestTheCertificateStepSaysWhichKindOfNothingThisIs: the three states a
 // person can act on are three different remedies — a cable, a card, a
 // Windows service — and the screen has to say which one they are in.
@@ -163,7 +187,7 @@ func TestTheCertificateStepSaysWhichKindOfNothingThisIs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tempConfigHome(t)
-			m := openSigningFlowForTest(t, locale, tc.listing)
+			m, _ := openSigningFlowForTest(t, locale, tc.listing)
 
 			waitForConsentNotice(t, m, tc.want)
 
@@ -189,7 +213,7 @@ func TestTheCertificateStepNeverAssertsACardBeforeItHasLooked(t *testing.T) {
 	c := i18n.Load(locale)
 
 	release := make(chan struct{})
-	m := openSigningFlowForTest(t, locale, func(context.Context) (cli.Report, error) {
+	m, _ := openSigningFlowForTest(t, locale, func(context.Context) (cli.Report, error) {
 		<-release
 		return cli.Report{}, nil
 	})
@@ -210,7 +234,7 @@ func TestTheCertificateStepNeverAssertsACardBeforeItHasLooked(t *testing.T) {
 // that does.
 func TestAUsableCertificateStillGetsNoNotice(t *testing.T) {
 	tempConfigHome(t)
-	m := openSigningFlowForTest(t, "sr-Latn", func(context.Context) (cli.Report, error) {
+	m, _ := openSigningFlowForTest(t, "sr-Latn", func(context.Context) (cli.Report, error) {
 		return cli.Report{
 			Readers:      []platform.ReaderState{{Name: "Reader 0", CardPresent: true}},
 			Certificates: []cli.CertRow{{OnHardware: true, Info: usableTestCertificateInfo()}},
@@ -231,7 +255,10 @@ func TestAUsableCertificateStillGetsNoNotice(t *testing.T) {
 // there — rather than reproducing it, which is how a settings window
 // came to be checked against the value it was handed instead of the one
 // on disk (D-134).
-func openSigningFlowForTest(t *testing.T, locale string, gather func(context.Context) (cli.Report, error)) *mainWindow {
+// The returned function waits for the flow to end and yields its exit
+// code; it is called by the test's own cleanup too, so calling it is
+// optional and calling it twice is the same as calling it once.
+func openSigningFlowForTest(t *testing.T, locale string, gather func(context.Context) (cli.Report, error)) (*mainWindow, func() int) {
 	t.Helper()
 	in := blankPDFIn(t, t.TempDir())
 	input, err := newInteractiveInput(in)
@@ -245,16 +272,24 @@ func openSigningFlowForTest(t *testing.T, locale string, gather func(context.Con
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.startListing(ctx)
-	exit := make(chan int, 1)
-	go func() { exit <- m.open(ctx, nil, stepCertificate) }()
+	exited := make(chan int, 1)
+	go func() { exited <- m.open(ctx, nil, stepCertificate) }()
 
+	var once sync.Once
+	var code int
+	wait := func() int {
+		once.Do(func() {
+			select {
+			case code = <-exited:
+			case <-time.After(30 * time.Second):
+				t.Error("the signing window never closed")
+			}
+		})
+		return code
+	}
 	t.Cleanup(func() {
 		cancel()
-		select {
-		case <-exit:
-		case <-time.After(30 * time.Second):
-			t.Error("the signing window never closed")
-		}
+		wait()
 	})
 
 	select {
@@ -262,7 +297,7 @@ func openSigningFlowForTest(t *testing.T, locale string, gather func(context.Con
 	case <-time.After(60 * time.Second):
 		t.Fatal("the signing window never opened")
 	}
-	return m
+	return m, wait
 }
 
 // waitForConsentNotice waits for the notice line to say want. It waits

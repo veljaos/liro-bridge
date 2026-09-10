@@ -16651,14 +16651,29 @@ unclassified failure. `cli.Gather` classifies it now
 rest — one function, so the `certs` command and the window cannot answer
 the same question two ways ([[D-108]], [[D-124]], [[D-138]]).
 
-*(c) The screen does not assert a card before it has looked.* The line
+The other front doors get the same answer for free, because it is the
+same function. The tray window's certificate step says which state the
+machine is in rather than asserting a card, and its failure screen —
+reached when the enumeration itself fails — now renders
+`error.smart_card_service_down` in the person's own language instead of
+the untranslated developer sentence `errMessage` falls back to for an
+error with no code on it.
+
+*(c) `sign` still exits non-zero.* A person sees a window and a
+sentence; a script sees only the exit code, and a machine with nothing to
+sign with is a failed `sign` rather than a refused one — which is what
+the old path returned and what would otherwise have been lost in the
+change. Closing the window *before* the listing has landed is a
+different thing and stays 0: that is somebody who changed their mind.
+
+*(d) The screen does not assert a card before it has looked.* The line
 that carries all this used to be a static label the page resolved for
 itself: `consent.no_usable_certificate`, "None of the certificates on
 this card can be used for signing" — a claim about a card that may not
 exist, shown whenever the list was empty for any reason, and never once
 asserted by a test. It is Go's sentence now
 (`jsConsentModel.CertNoticeText`), because only Go knows which of the
-rows above applies; and while the listing is still running it says
+rows in (b) applies; and while the listing is still running it says
 `consent.looking_for_certificates` instead of delivering a verdict on a
 question nobody has answered yet.
 
@@ -16703,7 +16718,9 @@ question nobody has answered yet.
   window over each of the four listings and reads the sentence off the
   page.
   `TestTheCertificateStepNeverAssertsACardBeforeItHasLooked` and
-  `TestAUsableCertificateStillGetsNoNotice` cover the two ends.
+  `TestAUsableCertificateStillGetsNoNotice` cover the two ends, and
+  `TestSignExitsNonZeroWhenThereIsNothingToSignWith` covers what a script
+  sees.
 - The states are reachable in a test because the enumeration is a field
   on the window with a package variable behind it (`interactiveGather`),
   the same seam `auditStore` already is. This machine has a reader and

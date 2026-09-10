@@ -299,10 +299,11 @@ func newMainWindow(cfg config.Config, locale string) *mainWindow {
 	}
 }
 
-// gatherCertificatesBeforeOpening enumerates for a run that starts at
-// the certificate step, where there is no earlier step to do it on the
-// way out of. A failure here is fatal rather than a screen: there is no
-// window yet to put one on.
+// gatherCertificatesBeforeOpening enumerates before there is a window,
+// for the one caller that has to be able to answer without ever showing
+// one: a protocol request, which is answered with a code (SPEC §7).
+// Nothing a person started comes through here — `sign` opens its window
+// first and lets the answer arrive into it (D-236).
 func (m *mainWindow) gatherCertificatesBeforeOpening(ctx context.Context) bool {
 	report, err := m.gather(ctx)
 	if err != nil {
@@ -321,11 +322,27 @@ func (m *mainWindow) applyListing(l certificateListing) {
 		m.certs = cli.Report{}
 		m.certInfos = nil
 		m.certReason = codeOfInteractive(l.err)
+		m.exit = exitFor(m.certReason)
 		return
 	}
 	m.certs = l.report
 	m.certInfos = visibleCertificates(l.report)
 	m.certReason = l.report.NothingUsableReason()
+	m.exit = exitFor(m.certReason)
+}
+
+// exitFor is the process exit code a run ends with when it ends here: a
+// machine with nothing to sign with is a failed `sign`, not a refused
+// one, and a script has to be able to tell those apart from a signature.
+//
+// Assigned in both directions rather than only set, because a run that
+// reaches the certificate step twice — no card, Back, card in, forward —
+// must not carry the first answer's verdict into the second's.
+func exitFor(reason errs.Code) int {
+	if reason == "" {
+		return 0
+	}
+	return 1
 }
 
 // runMainWindowWatching is runMainWindow with an inbox to keep draining
