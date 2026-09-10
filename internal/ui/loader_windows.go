@@ -149,11 +149,15 @@ func detectRuntime() (available bool, version string, err error) {
 	return true, stringFromLPWSTR(versionPtr), nil
 }
 
-// showRuntimeMissingMessage implements ShowRuntimeMissingMessage
-// (window.go) on Windows: a native MessageBox, since no WebView2
-// window can exist yet on this path.
-func showRuntimeMissingMessage(title, body string) {
-	messageBoxWarning(title, body)
+// showNativeMessage implements ShowWarning and ShowNotice (window.go)
+// on Windows: a native MessageBox, since on both of those paths there
+// is no WebView2 window to say anything in.
+func showNativeMessage(title, body string, informational bool) {
+	icon := uintptr(mbIconWarning)
+	if informational {
+		icon = mbIconInformation
+	}
+	messageBox(title, body, icon)
 }
 
 // createEnvironment issues CreateCoreWebView2EnvironmentWithOptions and

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/api"
@@ -48,22 +49,24 @@ const webView2ExitGrace = 400 * time.Millisecond
 // what made a saved language come back as the old one: the value
 // reached disk correctly and was then never read again.
 func runTray(cfg config.Config, version string) int {
-	c := i18n.Load(currentConfig(cfg).Locale)
-
 	// One pairing store for the life of the process (see openPairings):
 	// the settings window revokes through it, and the protocol
 	// authenticates against it, and F7 2.4 makes revoking immediate.
 	pairings := openPairingsOrNil()
 	quit := make(chan struct{})
+	// Closed from two places — the tray's Quit item and the update
+	// check, when it has just launched an installer that is about to
+	// replace this binary — so closing it twice must not panic.
+	quitOnce := sync.OnceFunc(func() { close(quit) })
 	openedAWindow := false
 
 	// F6 §2: the entry is on by default, so it is registered when the
 	// agent starts rather than only when Settings is opened and saved.
 	// Registering is idempotent and also refreshes the label after a
-	// language change.
-	if err := applyExplorerMenu(cfg, c); err != nil {
-		slog.Warn("tray: could not apply the Explorer context menu setting", "error", err)
-	}
+	// language change. The autostart entry goes with it (F10 §3.1):
+	// until now nothing applied that one at any point except a Save,
+	// so StartWithWindows defaulting to true meant nothing.
+	applyStartupRegistrations(cfg)
 
 	// F7 §4: the loopback listener, the discovery file and the
 	// protocol's own routes. It lives here because the tray is the
@@ -119,13 +122,18 @@ func runTray(cfg config.Config, version string) int {
 				slog.Warn("tray: audit log window failed", "error", err)
 			}
 		},
-		OnQuit: func() { close(quit) },
+		OnQuit: func() { quitOnce() },
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "liro-bridge: tray:", err)
 		return 1
 	}
 	defer func() { _ = t.Close() }()
+
+	// SPEC §15.2's daily check. It runs for the life of the tray, it
+	// never installs anything, and the only thing it can do on its own
+	// is open the window that asks (F10 §5).
+	go watchForUpdates(cfg, quit, quitOnce)
 
 	<-quit
 	if openedAWindow {
@@ -338,15 +346,18 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		}
 		return false
 	case "checkUpdatesNow":
-		// SPEC §15.2's update channel — the embedded public key, the
-		// GitHub Releases check, the signature verification and the
-		// "ask before installing" prompt — is built in F10 with the
-		// packaging it belongs to. Until then the button says exactly
-		// that, on screen, in the user's own language: a button that
-		// looks enabled and produces no response reads as a broken
-		// program, which is the whole finding this replaces.
-		slog.Info("settings: check-for-updates requested (the update channel arrives with packaging, F10)")
-		postWindowStatus(win, c.T("settings.updates_not_available"), ui.IntentWarning)
+		// SPEC §15.2's check, on demand. It is the same check the daily
+		// one runs and it has the same power: it can open the window
+		// that asks, and nothing else.
+		//
+		// On a goroutine, and the button says so first. A check is one
+		// or two HTTP requests with a 20-second ceiling on each, and
+		// running it on this loop would freeze the settings window for
+		// as long as a slow server took — the exact defect D-129
+		// recorded, where a window that stops answering reads as a
+		// program that has died.
+		postWindowStatus(win, c.T("settings.update_checking"), ui.IntentCaution)
+		go checkForUpdatesFromSettings(win, c, cfg)
 		return false
 	default:
 		return false

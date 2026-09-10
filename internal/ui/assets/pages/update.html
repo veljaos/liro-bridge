@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://liro.invalid/tokens.css" />
+<link rel="stylesheet" href="https://liro.invalid/intents.css" />
+<link rel="stylesheet" href="https://liro.invalid/pages/update.css" />
+</head>
+<body class="liro-page">
+
+<!-- The update window (SPEC §15.2, F10 §5).
+
+     This window is the whole of "asks the user". There is no flag, no
+     configuration key and no environment variable that installs a
+     release without it, and the daily check's only power is to open
+     it.
+
+     Nothing here is a link the page follows: the release page's
+     address is text, because a page in this program never navigates
+     anywhere and a button that opened a browser would be this window
+     doing something the person did not ask for. -->
+<main id="state-available">
+  <p class="liro-display" data-i18n="update.available_title"></p>
+
+  <div class="lines liro-scroll-region">
+    <p class="field-value" id="version-line"></p>
+    <p class="liro-text-small liro-text-secondary" id="released-line"></p>
+    <p class="liro-text-small liro-text-secondary" data-i18n="update.what_happens"></p>
+  </div>
+
+  <div class="actions">
+    <button id="later-btn" class="liro-btn liro-btn-quiet" data-i18n="update.later"></button>
+    <button id="install-btn" class="liro-btn liro-btn-primary" data-i18n="update.install"></button>
+  </div>
+</main>
+
+<!-- While the installer is being fetched and its digest checked
+     against the signed manifest. No buttons: there is nothing to
+     decide, and a Cancel that left a half-downloaded file behind would
+     be a button that does something worse than nothing. -->
+<main id="state-working" hidden>
+  <p class="liro-display" data-i18n="update.working"></p>
+  <div class="liro-progress-indeterminate" role="progressbar" aria-label="working"></div>
+</main>
+
+<!-- And the answer when it did not work. It says what did not happen
+     ("nothing was changed") before it says where to go, because that
+     is the question a person has first. -->
+<main id="state-failed" hidden>
+  <p class="liro-display" data-i18n="update.failed_title"></p>
+  <div class="lines liro-scroll-region">
+    <p class="field-value" id="failed-body"></p>
+  </div>
+  <div class="actions">
+    <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="update.close"></button>
+  </div>
+</main>
+
+<script src="https://liro.invalid/bridge.js"></script>
+<script src="https://liro.invalid/pages/update.js"></script>
+</body>
+</html>

@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Liro Bridge installer (SPEC §15, F10 §1).
+
+  One source, two packages. -dScope=perUser builds the primary
+  artefact: a per-user install into %LOCALAPPDATA%\Programs that needs
+  no administrator rights, because an accountant in an office very
+  often is not a local administrator and an installer that demands
+  elevation is an installer that does not get run. -dScope=perMachine
+  builds the artefact a domain administrator deploys by Group Policy.
+
+  Two packages rather than one with a property: Group Policy software
+  installation assigns per-machine packages, and a dual-purpose package
+  (ALLUSERS=2 plus MSIINSTALLPERUSER) is where Windows Installer gets
+  subtle in exactly the place this project cannot verify from here. The
+  two also differ in more than a property — the install directory, the
+  registry hive the shortcuts live under, and whether the per-user
+  registrations the agent makes for itself are the installer's business
+  at all. See build/msi/README.md.
+
+  There are no authored dialogs. Windows' own basic UI does the
+  talking, which means the progress bar and every error box a person
+  sees are in the language their Windows is in — better than this
+  project could translate, and one fewer thing to keep in step with the
+  three catalogues. The two things Windows cannot say for us are the
+  launch conditions below and the uninstall notice, and those are
+  handled where they can be.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <?if $(var.Scope) = perUser ?>
+    <?define PackageScope = "perUser" ?>
+    <?define Privileges = "limited" ?>
+    <?define ProductSuffix = "" ?>
+    <?define RegRoot = "HKCU" ?>
+  <?else?>
+    <?define PackageScope = "perMachine" ?>
+    <?define Privileges = "elevated" ?>
+    <?define ProductSuffix = " (per-machine)" ?>
+    <?define RegRoot = "HKLM" ?>
+  <?endif?>
+
+  <!--
+    Codepage 1250 (Central European) rather than the 1252 WiX defaults
+    to: 1252 has no c-acute, c-caron, s-caron, z-caron or d-stroke, so
+    every Serbian sentence in this file is unrepresentable in it. The
+    Language stays 1033 because it is about which language transform
+    applies, and this package has none; the codepage is what decides
+    whether the strings can be stored at all.
+  -->
+  <Product Id="*"
+           Name="Liro Bridge$(var.ProductSuffix)"
+           Language="1033"
+           Codepage="1250"
+           Version="$(var.Version)"
+           Manufacturer="Liro"
+           UpgradeCode="F58F38D6-71FA-4820-A02C-D326F1E95AEE">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             SummaryCodepage="1250"
+             InstallScope="$(var.PackageScope)"
+             InstallPrivileges="$(var.Privileges)"
+             Description="Liro Bridge — potpisivanje PDF dokumenata kvalifikovanim elektronskim sertifikatom"
+             Manufacturer="Liro" />
+
+    <!--
+      An upgrade replaces the previous version in place. Scheduled
+      afterInstallExecute so the new files are laid down before the old
+      product is removed, which is what keeps a failed upgrade from
+      leaving a machine with neither.
+
+      AllowSameVersionUpgrades so that re-running the same version's
+      installer repairs rather than installing a second copy beside the
+      first.
+    -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="Na ovom računaru je već instalirana novija verzija Liro Bridge-a. / A newer version of Liro Bridge is already installed on this computer." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!--
+      There is deliberately no ALLUSERS and no MSIINSTALLPERUSER here
+      for the per-user package, and this comment is what that decision
+      is made of, because it was measured rather than reasoned about.
+
+      InstallScope="perUser" marks the package as needing no elevation
+      (the "UAC compliant" bit in the Word Count summary). Windows
+      Installer then treats ALLUSERS and MSIINSTALLPERUSER as
+      meaningless and says so in the log, verbatim:
+
+        PROPERTY CHANGE: Deleting ALLUSERS property. Its current value is '2'.
+        MSIINSTALLPERUSER property is not valid for UAC compliant
+        package. Ignoring the MSIINSTALLPERUSER property.
+
+      Both were authored here first, on the reasoning that the scope
+      should not depend on who is installing. They were removed once
+      the log showed they cannot: two properties that are deleted
+      before they are read are surface with nothing behind it.
+
+      What the install actually is, read out of the registry rather
+      than inferred: the product registers under
+      Installer\UserData\<this user's SID> and
+      HKCU\Software\Microsoft\Installer\Products — a per-user unmanaged
+      install. Its Add/Remove Programs display entry lands under HKLM,
+      which is where Windows Installer puts the display data for a
+      UAC-compliant per-user package; the product itself belongs to one
+      person.
+
+      And it installs with no administrator rights. Measured, not
+      assumed: under a token with SeChangeNotifyPrivilege and nothing
+      else, with Administrators deny-only and elevation off, msiexec
+      exited 0 and the files were there (D-234's technique, because
+      this account is an administrator with a filtered token and
+      installing as it would have measured the wrong thing).
+    -->
+
+    <!-- ================================================================
+         F10 §2: the WebView2 runtime.
+
+         Every window this program has is WebView2, so a machine
+         without the Evergreen Runtime is a machine on which this
+         program can do nothing at all. Windows 11 ships it; a Windows
+         10 machine may not, and a machine kept off the internet by
+         policy may not either.
+
+         Detected by the presence of the runtime's own version value
+         under the EdgeUpdate client key for
+         {F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}, which is the GUID
+         Microsoft assigns the Evergreen Runtime. Three places are
+         searched because there are three ways it can be installed:
+         per-machine on a 64-bit system (the WOW6432Node view, which is
+         where the 32-bit EdgeUpdate writes), per-machine in the native
+         view, and per-user under HKCU.
+
+         The install refuses rather than continuing, and the message
+         names the address to get it from. An install that succeeds and
+         produces a program that does nothing at all is the failure
+         this whole phase exists to remove, and the moment to find out
+         is while the person is still in front of a browser — they have
+         just downloaded this file.
+
+         The agent checks again at run time, because the installer's
+         check and the runtime's presence drift: a runtime can be
+         removed after this ran.
+    ================================================================ -->
+    <Property Id="WEBVIEW2MACHINE32" Secure="yes">
+      <RegistrySearch Id="WebView2Machine32" Root="HKLM"
+                      Key="SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+                      Name="pv" Type="raw" />
+    </Property>
+    <Property Id="WEBVIEW2MACHINE64" Secure="yes">
+      <RegistrySearch Id="WebView2Machine64" Root="HKLM"
+                      Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+                      Name="pv" Type="raw" Win64="yes" />
+    </Property>
+    <Property Id="WEBVIEW2USER" Secure="yes">
+      <RegistrySearch Id="WebView2User" Root="HKCU"
+                      Key="Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+                      Name="pv" Type="raw" />
+    </Property>
+
+    <Condition Message="Liro Bridge-u je potreban Microsoft Edge WebView2 Runtime, a on nije instaliran na ovom računaru. Preuzmite ga sa https://go.microsoft.com/fwlink/p/?LinkId=2124703 i pokrenite ovu instalaciju ponovo.&#13;&#10;&#13;&#10;Liro Bridge needs the Microsoft Edge WebView2 Runtime, which is not installed on this computer. Install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703 and run this installer again.">
+      <![CDATA[Installed OR WEBVIEW2MACHINE32 OR WEBVIEW2MACHINE64 OR WEBVIEW2USER OR SKIPWEBVIEW2CHECK]]>
+    </Condition>
+
+    <!-- ================================================================
+         F10 §3.2: an upgrade must not interrupt a signature.
+
+         The agent marks a batch in flight in the registry from the
+         moment the card session opens until the report (see
+         internal/platform/signingflag.go). This reads that mark and
+         refuses.
+
+         Refusing rather than waiting or asking, for one reason:
+         Windows Installer's own answer to a file in use is Restart
+         Manager, which asks a GUI application to close by posting
+         WM_QUERYENDSESSION to its visible top-level windows. The
+         tray's window is message-only, so there is nothing to ask and
+         the fallback is TerminateProcess — the card session gone
+         mid-batch. A refusal costs the person the seconds their batch
+         has left to run; the alternative costs them the batch.
+
+         The mark is cleared by the agent when the batch ends, and by
+         the next agent to start if the process that set it died.
+    ================================================================ -->
+    <Property Id="LIROSIGNING" Secure="yes">
+      <RegistrySearch Id="LiroSigningInProgress" Root="HKCU"
+                      Key="Software\Liro\Bridge" Name="SigningInProgress" Type="raw" />
+    </Property>
+
+    <Condition Message="Liro Bridge upravo potpisuje dokumente. Sačekajte da završi i pokrenite instalaciju ponovo.&#13;&#10;&#13;&#10;Liro Bridge is signing documents right now. Wait for it to finish and run this installer again.">
+      <![CDATA[NOT LIROSIGNING]]>
+    </Condition>
+
+    <!-- What Programs and Features shows. -->
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/veljaos/liro-bridge" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/veljaos/liro-bridge/blob/master/docs/guide/README.md" />
+    <Property Id="ARPPRODUCTICON" Value="LiroIcon" />
+    <Property Id="ARPCOMMENTS" Value="Dnevnik revizije ostaje na računaru i posle uklanjanja programa. / The audit log stays on this computer after the program is removed." />
+    <Icon Id="LiroIcon" SourceFile="$(var.IconFile)" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <?if $(var.Scope) = perUser ?>
+        <Directory Id="LocalAppDataFolder">
+          <Directory Id="ProgramsFolder" Name="Programs">
+            <Directory Id="INSTALLFOLDER" Name="Liro Bridge" />
+          </Directory>
+        </Directory>
+      <?else?>
+        <Directory Id="ProgramFiles64Folder">
+          <Directory Id="INSTALLFOLDER" Name="Liro Bridge" />
+        </Directory>
+      <?endif?>
+
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="Liro Bridge" />
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="LiroBridgeExe" Guid="*">
+        <File Id="LiroBridgeExeFile" Name="liro-bridge.exe" Source="$(var.ExeFile)" KeyPath="yes" />
+      </Component>
+
+      <Component Id="UserGuide" Guid="*">
+        <File Id="UserGuideFile" Name="Uputstvo.html" Source="$(var.GuideFile)" KeyPath="yes" />
+      </Component>
+
+      <!--
+        Take the install directory away again on uninstall. MSI removes
+        directories it created only when it is told to for one in a
+        user profile (ICE64, which is what pointed this out), and
+        %LOCALAPPDATA%\Programs\Liro Bridge is exactly that. The
+        Programs directory above it is deliberately not removed: other
+        per-user applications live there and it is not this
+        installer's.
+      -->
+      <Component Id="InstallFolderCleanup" Guid="7E32F5CF-8320-49BB-8AB2-2B23C7510509">
+        <RegistryValue Root="$(var.RegRoot)" Key="Software\Liro\Bridge" Name="InstalledFolder" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcuts" Guid="AB3FC24A-18ED-4098-BC4C-AA524DA0DF9C">
+        <Shortcut Id="AppShortcut"
+                  Name="Liro Bridge"
+                  Description="Potpišite PDF dokumente kvalifikovanim elektronskim sertifikatom"
+                  Target="[#LiroBridgeExeFile]"
+                  Arguments="open"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut Id="GuideShortcut"
+                  Name="Liro Bridge — uputstvo"
+                  Description="Uputstvo za korisnike"
+                  Target="[#UserGuideFile]"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+        <?if $(var.Scope) = perUser ?>
+          <!--
+            A per-user shortcut is per-user data and its component's
+            keypath has to be too (ICE43), so it is one registry value
+            under HKCU.
+          -->
+          <RegistryValue Root="HKCU" Key="Software\Liro\Bridge" Name="InstalledShortcuts" Type="integer" Value="1" KeyPath="yes" />
+        <?else?>
+          <!--
+            A per-machine install puts the shortcut in the All Users
+            Start menu, which is per-machine data. An HKCU keypath here
+            would be the mistake ICE57 names: per-user and
+            per-machine data in one component, so the keypath is the
+            folder itself, which is what CreateFolder makes it.
+          -->
+          <CreateFolder />
+        <?endif?>
+      </Component>
+    </DirectoryRef>
+
+    <?if $(var.Scope) = perUser ?>
+    <!--
+      The agent registers these two for itself at every start, from
+      os.Executable(), so they always point at whatever binary is
+      actually running (F10 §3.1). What the installer does is take them
+      away again, which is the half the agent cannot do once its own
+      binary has been deleted.
+
+      RemoveRegistryValue and RemoveRegistryKey rather than
+      RegistryValue: creating them here would mean a repair or an
+      upgrade putting back an autostart entry the person had turned off
+      in Settings. Removal has no such failure mode.
+
+      Only in the per-user package. A per-machine deployment installs
+      for everybody, and the per-user registrations belong to each
+      person who runs it — an uninstall running as one of them cannot
+      reach the others', and pretending otherwise would be worse than
+      leaving them to the agent's own settings.
+    -->
+    <DirectoryRef Id="TARGETDIR">
+      <Component Id="RemovePerUserRegistrations" Guid="33CAE9F4-9392-4A08-941F-B781A9116FF5">
+        <RegistryValue Root="HKCU" Key="Software\Liro\Bridge" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveRegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="LiroBridge" />
+        <RemoveRegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.pdf\shell\LiroBridgeSign" Action="removeOnUninstall" />
+      </Component>
+    </DirectoryRef>
+    <?endif?>
+
+    <Feature Id="Complete" Title="Liro Bridge" Level="1" Display="expand" ConfigurableDirectory="INSTALLFOLDER">
+      <ComponentRef Id="LiroBridgeExe" />
+      <ComponentRef Id="UserGuide" />
+      <ComponentRef Id="InstallFolderCleanup" />
+      <ComponentRef Id="StartMenuShortcuts" />
+      <?if $(var.Scope) = perUser ?>
+      <ComponentRef Id="RemovePerUserRegistrations" />
+      <?endif?>
+    </Feature>
+
+    <!-- ================================================================
+         Uninstall: clear what the agent extracted for itself, and say
+         what is being kept.
+
+         Both run the installed binary, before RemoveFiles takes it
+         away. The quiet one runs whatever the UI level; the one that
+         shows a message box runs only when somebody is watching, so a
+         silent or Group Policy uninstall removes the same files and
+         shows nothing.
+
+         Return="ignore": an uninstall that fails because a log file
+         was open would be worse than one that leaves a log file
+         behind.
+    ================================================================ -->
+    <CustomAction Id="UninstallCleanupQuiet"
+                  FileKey="LiroBridgeExeFile"
+                  ExeCommand="uninstall-notice --quiet"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="UninstallCleanupNotice"
+                  FileKey="LiroBridgeExeFile"
+                  ExeCommand="uninstall-notice"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+
+    <!--
+      And start the agent once the install finishes, so the person's
+      first sight of the program is the program rather than an empty
+      Start menu. asyncNoWait because the tray agent does not exit:
+      waiting for it would hang the installer for as long as they use
+      it.
+    -->
+    <CustomAction Id="LaunchAgent"
+                  FileKey="LiroBridgeExeFile"
+                  ExeCommand="tray"
+                  Execute="immediate" Impersonate="yes" Return="asyncNoWait" />
+
+    <InstallExecuteSequence>
+      <Custom Action="UninstallCleanupQuiet" Before="RemoveFiles">
+        <![CDATA[REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND UILevel < 4]]>
+      </Custom>
+      <Custom Action="UninstallCleanupNotice" Before="RemoveFiles">
+        <![CDATA[REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND UILevel >= 4]]>
+      </Custom>
+      <Custom Action="LaunchAgent" After="InstallFinalize">
+        <![CDATA[NOT Installed AND NOT REMOVE AND UILevel >= 3]]>
+      </Custom>
+    </InstallExecuteSequence>
+  </Product>
+</Wix>

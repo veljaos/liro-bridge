@@ -1011,6 +1011,15 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 		}
 	}
 
+	// From here to the report, an upgrade must not interrupt this
+	// (F10 §3.2). The mark goes up before the card session rather than
+	// before the questions above: a person sitting on the timestamp
+	// question for five minutes is not a signature in progress, and
+	// blocking somebody's installer for it would be a guard that cries
+	// wolf. Everything after this point is the card, the PIN dialog and
+	// the documents, which is exactly what must not be interrupted.
+	defer endSigningGuard(beginSigningGuard())
+
 	// Either question above puts its own screen up. Whichever way they
 	// were answered, the progress screen is what covers the card being
 	// opened — the slowest thing that happens with nothing to show for

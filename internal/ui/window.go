@@ -215,16 +215,28 @@ func DetectRuntime() (available bool, version string, err error) {
 	return detectRuntime()
 }
 
-// ShowRuntimeMissingMessage shows a native, blocking message box
-// explaining that the WebView2 runtime is not installed (F5 §2.2's
-// "must not crash and must not fail silently" requirement) — deliberately
-// not a WebView2 window, which by definition cannot exist yet on this
-// path. title and body are supplied already localised by the caller
+// ShowWarning shows a native, blocking message box about something
+// that is wrong — the WebView2 runtime not being installed (F5 §2.2's
+// "must not crash and must not fail silently" requirement), which is
+// deliberately not reported in a WebView2 window, since by definition
+// none can exist on that path.
+//
+// title and body are supplied already localised by the caller
 // (cmd/liro-bridge, via internal/i18n): this package has no i18n
 // dependency of its own, matching SPEC §4.2 rule 4's independence
 // between internal/ui, internal/api and internal/cli.
-func ShowRuntimeMissingMessage(title, body string) {
-	showRuntimeMissingMessage(title, body)
+func ShowWarning(title, body string) {
+	showNativeMessage(title, body, false)
+}
+
+// ShowNotice is the same box for something that is not wrong: what an
+// uninstall left behind and where (F10 §3.3). Two functions rather
+// than one with a flag, because the two say different things to a
+// person and the icon is part of what they say — a warning triangle
+// over "your audit log is still here" would report good news as a
+// problem.
+func ShowNotice(title, body string) {
+	showNativeMessage(title, body, true)
 }
 
 // ChooseFolder shows the OS folder chooser parented to the window

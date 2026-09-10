@@ -120,9 +120,10 @@ const (
 
 	idcArrow = 32512 // IDC_ARROW, a MAKEINTRESOURCE ordinal
 
-	mbOK          = 0x00000000
-	mbIconWarning = 0x00000030
-	mbTopMost     = 0x00040000
+	mbOK              = 0x00000000
+	mbIconWarning     = 0x00000030
+	mbIconInformation = 0x00000040
+	mbTopMost         = 0x00040000
 
 	// wmRunFunc is a private WM_APP message used to marshal a Window
 	// method call (PostJSON, Close) onto the OS thread that owns the
@@ -332,17 +333,21 @@ func registerWindowClass() {
 	})
 }
 
-// messageBoxWarning shows a native, blocking MessageBox — used only for
-// the WebView2-runtime-absent path (F5 §2.2), which by definition
-// cannot use a WebView2 window to explain itself. title and text are
-// pre-localised by the caller (see ShowRuntimeMissingMessage in
-// window.go): internal/ui has no i18n dependency, matching SPEC §4.2
-// rule 4's independence between internal/ui, internal/api and
-// internal/cli.
-func messageBoxWarning(title, text string) {
+// messageBox shows a native, blocking MessageBox. It is what this
+// package has to say something with when it cannot open a window of
+// its own: the WebView2-runtime-absent path (F5 §2.2), which by
+// definition cannot use a WebView2 window to explain itself, and the
+// uninstall notice (F10 §3.3), which runs while the installer is
+// removing the program.
+//
+// title and text are pre-localised by the caller (see ShowWarning and
+// ShowNotice in window.go): internal/ui has no i18n dependency,
+// matching SPEC §4.2 rule 4's independence between internal/ui,
+// internal/api and internal/cli.
+func messageBox(title, text string, icon uintptr) {
 	t, _ := windows.UTF16PtrFromString(title)
 	b, _ := windows.UTF16PtrFromString(text)
-	_, _, _ = procMessageBoxW.Call(0, uintptr(unsafe.Pointer(b)), uintptr(unsafe.Pointer(t)), mbOK|mbIconWarning|mbTopMost)
+	_, _, _ = procMessageBoxW.Call(0, uintptr(unsafe.Pointer(b)), uintptr(unsafe.Pointer(t)), mbOK|icon|mbTopMost)
 }
 
 // setDragAcceptFiles marks hwnd as willing to receive files dropped

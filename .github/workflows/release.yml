@@ -1,0 +1,142 @@
+name: Release
+
+# A release is a tag and nothing else. Pushing v1.2.3 builds the three
+# artefacts, signs the manifest with the release key, verifies it the
+# way the agent will, and publishes them to GitHub Releases (SPEC §15).
+#
+# workflow_dispatch does everything except publish, so the whole
+# pipeline can be exercised without a tag and without a release page
+# full of test versions.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (no leading v). Nothing is published."
+        required: true
+        default: "0.0.0"
+
+# The signing job must not be reachable from a fork's pull request
+# (F10 §4.1). Two things make that true, and only one of them is this
+# file:
+#
+#   1. GitHub never exposes repository secrets to a workflow triggered
+#      by pull_request from a fork. That is the guarantee that actually
+#      holds, and it holds whatever this file says.
+#   2. This workflow has no pull_request trigger at all, and the job
+#      below additionally refuses to run anywhere but this repository —
+#      so a fork that pushes a tag builds nothing, rather than building
+#      something unsigned and calling it a release.
+#
+# The Authenticode step (build/msi/sign-authenticode.ps1) is inside the
+# build and reads its own secrets the same way. It is a no-op today
+# because there is no code-signing certificate (SPEC §15.1).
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    if: github.repository == 'veljaos/liro-bridge'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The version comes from the tag, and nowhere else. `liro-bridge
+      # --version` has to report exactly what a person can match
+      # against a release page (F10 §1.1), so the one place that decides
+      # it is the ref that triggered this.
+      - name: work out the version
+        id: version
+        shell: bash
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "push" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="${{ github.event.inputs.version }}"
+          fi
+          case "$v" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::'$v' is not a MAJOR.MINOR.PATCH version"; exit 1 ;;
+          esac
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "building $v"
+
+      - name: build the artefacts
+        shell: pwsh
+        env:
+          # Present, and empty until there is a certificate. The step
+          # inside the build says so out loud rather than being absent
+          # (SPEC §15.1).
+          LIRO_AUTHENTICODE_PFX_BASE64: ${{ secrets.LIRO_AUTHENTICODE_PFX_BASE64 }}
+          LIRO_AUTHENTICODE_PASSWORD: ${{ secrets.LIRO_AUTHENTICODE_PASSWORD }}
+        run: ./build/msi/build.ps1 -Version "${{ steps.version.outputs.version }}" -Out dist/release
+
+      # The version the binary reports is checked against the tag rather
+      # than assumed from the -ldflags line that produced it. A release
+      # whose binary says something else is a release nobody can match
+      # against the page it came from, and it is exactly the kind of
+      # thing that is obvious afterwards and invisible before.
+      - name: the binary reports the tag
+        shell: bash
+        run: |
+          set -eu
+          v="${{ steps.version.outputs.version }}"
+          got="$(./dist/release/liro-bridge-$v-x64.exe --version)"
+          echo "$got"
+          case "$got" in
+            "liro-bridge $v "*) echo "OK" ;;
+            *) echo "::error::the binary reports '$got', which does not begin with 'liro-bridge $v'"; exit 1 ;;
+          esac
+
+      # SPEC §15.2: the agent embeds a public key and every release is
+      # signed with the private half. The key arrives in the
+      # environment, never on a command line, where every other process
+      # on the machine could read it (D-224).
+      #
+      # signrelease refuses to run without it. There is deliberately no
+      # "skip signing" path: an unsigned release is one no agent will
+      # ever accept, so producing one quietly is worse than failing the
+      # build that tried.
+      - name: sign the release manifest
+        shell: bash
+        env:
+          LIRO_RELEASE_SIGNING_KEY: ${{ secrets.LIRO_RELEASE_SIGNING_KEY }}
+        run: go run ./scripts/signrelease --dir dist/release --version "${{ steps.version.outputs.version }}"
+
+      # And verify it exactly as an installed agent will, against the
+      # keys this build embeds. A release that the agent would refuse
+      # must not reach the page: the whole point of the update channel
+      # is that nothing is trusted without this check, and the build is
+      # where a failure costs nobody an afternoon.
+      - name: the agent's own verifier accepts it
+        shell: bash
+        run: go run ./scripts/verifyrelease --dir dist/release
+
+      - name: publish
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Liro Bridge ${{ steps.version.outputs.version }}" \
+            --notes-file docs/release-notes-template.md \
+            dist/release/*
+
+      # A build with no tag still keeps what it made, so the pipeline
+      # can be looked at without publishing anything.
+      - name: keep the artefacts
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-bridge-${{ steps.version.outputs.version }}
+          path: dist/release
+          retention-days: 7

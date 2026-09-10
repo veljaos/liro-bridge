@@ -17,6 +17,7 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
@@ -48,6 +49,12 @@ func run(args []string, out io.Writer) int {
 	}
 	logger.Info("liro-bridge starting", slog.String("version", version), slog.String("commit", commit))
 
+	// A mark left behind by a process that died mid-batch would refuse
+	// this user's next upgrade for ever (F10 §3.2). Clearing it is a
+	// registry read on every invocation and a write on almost none: it
+	// only ever clears a mark whose owning process is gone.
+	clearStaleSigningGuard()
+
 	if len(args) > 0 && args[0] == "certs" {
 		return runCerts(args[1:], out, cfg.Locale)
 	}
@@ -59,6 +66,9 @@ func run(args []string, out io.Writer) int {
 	// used to be what made the difference; it is not a distinction any
 	// more, and parseSignArgs says so to anyone who still passes it.
 	if len(args) > 0 && args[0] == "sign" {
+		if !requireWebView2(i18n.Load(cfg.Locale)) {
+			return 1
+		}
 		return runSignCommand(context.Background(), args[1:], out, cfg.Locale, cfg)
 	}
 	// The paths with no window, present only in a build made with the
@@ -70,12 +80,18 @@ func run(args []string, out io.Writer) int {
 	// F6 §1: the main window, opened directly. Also how the tray's Open
 	// item and the Explorer context menu reach it.
 	if len(args) > 0 && args[0] == "open" {
+		if !requireWebView2(i18n.Load(cfg.Locale)) {
+			return 1
+		}
 		return runOpen(context.Background(), args[1:], out, cfg)
 	}
 	// F6 §2: one invocation per selected file, from Explorer. Every
 	// invocation hands its file over; exactly one of them opens a
 	// window for the whole selection.
 	if len(args) > 0 && args[0] == platform.ShellMenuVerbFlag {
+		if !requireWebView2(i18n.Load(cfg.Locale)) {
+			return 1
+		}
 		return runShellVerb(context.Background(), args[1:], cfg)
 	}
 	if len(args) > 0 && args[0] == "tray" {
@@ -83,7 +99,18 @@ func run(args []string, out io.Writer) int {
 		// the bare-invocation behaviour (which stays usage-and-exit,
 		// SPEC/F0's own tested contract) — an explicit subcommand, the
 		// simplest option for something F5 does not itself name (D-0xx).
+		if !requireWebView2(i18n.Load(cfg.Locale)) {
+			return 1
+		}
 		return runTray(cfg, version)
+	}
+	// F10 §3.3: the installer's last act before it removes the binary.
+	// It clears what the agent extracted for itself and says, in the
+	// person's own language, that the audit log is still there — the
+	// one sentence Windows' own uninstall UI cannot say, because it is
+	// about this program.
+	if len(args) > 0 && args[0] == "uninstall-notice" {
+		return runUninstallNotice(args[1:], out, cfg)
 	}
 
 	fs := flag.NewFlagSet("liro-bridge", flag.ContinueOnError)
@@ -151,6 +178,7 @@ var topLevelCommands = []command{
 	{"sign", "Sign a PDF file"},
 	{"open", "Open the main window to sign documents"},
 	{"tray", "Run the agent in the system tray"},
+	{"uninstall-notice", "Clear what this agent extracted and say what an uninstall keeps (run by the installer)"},
 }
 
 // topLevelUsage returns fs.Usage for the top-level flag set: an English

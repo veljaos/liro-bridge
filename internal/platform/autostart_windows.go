@@ -80,5 +80,5 @@ func (a windowsAutostart) SetEnabled(enabled bool, exePath string) error {
 		return err
 	}
 	defer func() { _ = k.Close() }()
-	return k.SetStringValue(runValueName, `"`+exePath+`"`)
+	return k.SetStringValue(runValueName, AutostartCommand(exePath))
 }

@@ -1,0 +1,58 @@
+/* The update window (SPEC §15.2). Fixed height, one column, the page
+   itself does not scroll, and the one region that can is the block of
+   sentences — the two buttons stay where they are whatever the version
+   numbers and the release date turn out to be. */
+body {
+  padding: var(--liro-space-4);
+}
+
+main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-3);
+}
+
+/* The sentences. Shrinks rather than grows (.liro-scroll-region's
+   flex-grow overridden), so an ordinary release leaves the actions
+   exactly where they would have been and a long one gives way rather
+   than pushing them off the bottom — the shape D-106 built and D-202
+   reused. */
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+  flex: 0 1 auto;
+}
+
+.lines p {
+  margin: 0;
+}
+
+/* A version number has no break opportunity in it and a release page's
+   address has almost none, so both break inside the word rather than
+   widening the window (D-096). */
+.field-value {
+  font-size: var(--liro-font-size-body);
+  color: var(--liro-color-text-primary);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+/* Not now on the left and quiet, Install now on the right and primary:
+   the weights say which is the act and which is the way out, and the
+   way out is what the keyboard lands on (update.js). */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--liro-space-2);
+  margin-top: auto;
+}
+
+/* While the download runs. The bar is the shared indeterminate one:
+   nothing here knows how long a release takes to fetch, and a
+   percentage that was really a guess is the number D-030 forbids. */
+.liro-progress-indeterminate {
+  width: 100%;
+}

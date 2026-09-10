@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/config"
-	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
@@ -50,9 +49,11 @@ func runOpen(ctx context.Context, args []string, out io.Writer, cfg config.Confi
 	// have found no entry to right-click, which is a chicken and egg
 	// the entry cannot solve for itself. Registering is idempotent and
 	// costs two registry writes.
-	if err := applyExplorerMenu(cfg, i18n.Load(cfg.Locale)); err != nil {
-		slog.Warn("open: could not apply the Explorer context menu setting", "error", err)
-	}
+	//
+	// The autostart entry is applied alongside it for the same reason
+	// and, until F10, for a worse one: nothing applied it at all
+	// (applyAutostart).
+	applyStartupRegistrations(cfg)
 
 	return runMainWindow(ctx, cfg, cfg.Locale, nil)
 }
