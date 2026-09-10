@@ -116,6 +116,10 @@ func auditBreakReasonText(c *i18n.Catalogue, r audit.BreakReason) string {
 		return c.T("settings.export_break_unparseable")
 	case audit.BreakUnreachable:
 		return c.T("settings.export_break_unreachable")
+	case audit.BreakUnsound:
+		return c.T("settings.export_break_unsound")
+	case audit.BreakUnguarded:
+		return c.T("settings.export_break_unguarded")
 	default:
 		return string(r)
 	}

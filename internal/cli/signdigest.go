@@ -1,3 +1,35 @@
+//go:build softtoken
+
+// sign-digest signs a bare digest with a certificate already on this
+// machine, and shows nobody anything before it does. It exists only in
+// a build made with the "softtoken" tag, beside the other signing path
+// with no consent window (sign_noconsent.go).
+//
+// Why it is not in a release binary (D-227). A digest is not a lesser
+// thing than a document: the digest a PAdES signature is computed over
+// is a SHA-256 of a /ByteRange, so a signature over an attacker-chosen
+// digest is a signature over an attacker-chosen document. SPEC §6.5
+// forecloses the obvious reassurance — the card caches the PIN in its
+// own state independently of which process is talking to it, so a
+// second process signs silently for as long as the session lives. That
+// is the whole reason the consent window exists, and SPEC §18.2 admits
+// no exception to it.
+//
+// And a consent screen in front of a bare digest cannot be built:
+// SPEC §6.6 says what the screen shows — a document count, a batch
+// fingerprint and the list of file names — and a digest has none of the
+// three. The hash-only use case already has a better front door in
+// POST /v2/sign, with pairing, origin binding and a real consent
+// screen; SPEC §4.3 does not list a CLI digest command among the four
+// entry points at all. A release binary loses nothing.
+//
+// What it keeps is the developer's build check it was written for: F2
+// §6.1's recipe, where a signature over a digest is verified with
+// OpenSSL, a tool sharing no code with this project. That is a test
+// build's need, so it lives behind the tag that already means "this is
+// a test build" (SPEC §16.6). The tag adds the soft token; it does not
+// take CNG away, so the same recipe still runs against a real card.
+
 package cli
 
 import (

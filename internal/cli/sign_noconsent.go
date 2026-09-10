@@ -231,11 +231,37 @@ func RunSignWithoutConsent(ctx context.Context, args []string, stdout, stderr io
 	// per document, which is 33 minutes on a hundred-document batch.
 	revocationMemory := dss.NewEndpointMemory()
 
+	// No document's signature may be written over another document in
+	// this same batch. It is reachable here only with --resign, since
+	// partitionAlreadySigned drops the "…-signed.pdf" siblings by
+	// default — but with it, `--in *.pdf --resign --force` over a folder
+	// holding faktura.pdf and faktura-signed.pdf signs the sibling and
+	// then replaces it with the original's signature. Refused rather
+	// than renamed: the request is ambiguous, and a file appearing under
+	// a name the caller did not choose is a worse answer to that than
+	// saying so (jobs.CollidingOutputs).
+	//
+	// It counts as this document's failure, so the run reports "signed
+	// 1/2" and names the one it would not write. It does not fail the
+	// run: F3 §12.10's batch policy is skip-and-continue, and a
+	// collision is not a better reason to abandon the other
+	// ninety-nine documents than any other per-document failure is.
+	outs := make([]string, len(files))
+	for i, in := range files {
+		outs[i] = *outPath
+		if outs[i] == "" {
+			outs[i] = defaultOutputPath(in)
+		}
+	}
+	colliding := jobs.CollidingOutputs(files, outs)
+
 	failures := 0
-	for _, in := range files {
-		out := *outPath
-		if out == "" {
-			out = defaultOutputPath(in)
+	for i, in := range files {
+		out := outs[i]
+		if colliding[i] {
+			failures++
+			fprintln(stderr, "liro-bridge: sign-no-consent:", in+":", c.T("sign.output_is_another_input"))
+			continue
 		}
 		if err := signOneFile(ctx, in, out, *force, session, client, requestedLevel, abortOnTSAFailure, *reserve, *maxRevocationSize, revocationMemory, deps.TrustStore, stampOpts, stdout, stderr, c); err != nil {
 			failures++

@@ -8,12 +8,21 @@ import (
 	"testing"
 )
 
-// noConsentSymbol is the signing path that asks nobody. A release
-// binary must not contain it — SPEC §18.2 — and this proves it by
+// noConsentSymbols are the signing paths that ask nobody. A release
+// binary must not contain either — SPEC §18.2 — and this proves it by
 // inspecting the binary rather than by trusting the build tag, exactly
 // as F2 §7.3 and SPEC §16.6 are already proved for the soft token
 // itself (D-031).
-const noConsentSymbol = "internal/cli.RunSignWithoutConsent"
+//
+// RunSignDigest is here from F9b. It was in a release binary until
+// then, and it is the same defect as RunSignWithoutConsent was, one
+// command over: a signature over an attacker-chosen digest is a
+// signature over an attacker-chosen document, and SPEC §6.5 forecloses
+// the reassurance that the card's own PIN dialog would stop it (D-227).
+var noConsentSymbols = []string{
+	"internal/cli.RunSignWithoutConsent",
+	"internal/cli.RunSignDigest",
+}
 
 // softTokenPackage is the other thing that must be absent, checked here
 // too so this one test answers the whole question "is this binary
@@ -41,7 +50,7 @@ func TestTheNoConsentPathIsAbsentFromAReleaseBinary(t *testing.T) {
 	releaseSyms := symbols(t, release)
 	taggedSyms := symbols(t, tagged)
 
-	for _, want := range []string{noConsentSymbol, softTokenPackage} {
+	for _, want := range append(append([]string{}, noConsentSymbols...), softTokenPackage) {
 		if strings.Contains(releaseSyms, want) {
 			t.Errorf("a release-shaped binary contains %q", want)
 		}

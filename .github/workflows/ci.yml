@@ -100,6 +100,7 @@ jobs:
       #
       #   internal/keysource/softtoken   F2 §7.3 / SPEC §16.6
       #   internal/cli.RunSignWithoutConsent
+      #   internal/cli.RunSignDigest
       #                                  SPEC §18.2: no signature without
       #                                  human approval, and no flag,
       #                                  configuration or header bypasses
@@ -111,15 +112,21 @@ jobs:
       # goes red for the reason it is wrong, not for a symbol that
       # happens to travel with it.
       #
+      # The third is the same defect one command over (D-227): a
+      # signature over an attacker-chosen digest is a signature over an
+      # attacker-chosen document, and SPEC §6.6's consent screen cannot
+      # be built in front of a digest, which has no document count, no
+      # file names and no batch to fingerprint.
+      #
       # Both directions are checked. A check that only looks for absence
       # passes for the wrong reason the moment the build tag itself
       # breaks: a typo turning `//go:build softtoken` into an ordinary
       # comment would make the symbols vanish even WITH the tag, and the
       # "absent" half would stay green forever.
-      - name: the soft token and the no-consent signing path are absent from a release build
+      - name: the soft token and the no-consent signing paths are absent from a release build
         run: |
           set -eu
-          symbols='internal/keysource/softtoken internal/cli.RunSignWithoutConsent'
+          symbols='internal/keysource/softtoken internal/cli.RunSignWithoutConsent internal/cli.RunSignDigest'
 
           go build -o dist/liro-bridge-no-softtoken ./cmd/liro-bridge
           go tool nm dist/liro-bridge-no-softtoken > dist/nm-release.txt
@@ -146,6 +153,10 @@ jobs:
       # This is F2's exit condition (F2 §6.1): a signature produced by
       # sign-digest verifies with OpenSSL, a tool that shares no code
       # with this project, with no hardware present at all.
+      #
+      # It runs against the softtoken build, which since F9b is the only
+      # build that has `sign-digest` at all (D-227). Nothing about this
+      # step changed: it already built and used dist/liro-bridge-softtoken.
       - name: sign-digest verifies with OpenSSL against the soft token
         run: |
           go build -tags softtoken -o dist/liro-bridge-softtoken ./cmd/liro-bridge

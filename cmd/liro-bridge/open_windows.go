@@ -11,7 +11,6 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/config"
@@ -20,18 +19,30 @@ import (
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
 
-// runOpen opens the main window, seeded with any paths given on the
-// command line. Every remaining argument is a path; there are no flags,
-// because there is nothing here to configure that Settings does not
-// already own.
+// runOpen opens the main window. It takes no arguments at all.
+//
+// It used to seed the window with paths given after the command, and
+// nothing ever called it that way — not the tray's Open item, which
+// reaches the window in this process, not the Explorer context menu,
+// which has its own verb (platform.ShellMenuVerbFlag), and not the
+// --help text, which has never mentioned an argument.
+//
+// It is gone because it was the one place two commands answered the
+// same question differently (F9b §3b). "Which documents" is `sign
+// --in`, which expands a pattern — `sign --in "C:\docs\*.pdf"` is the
+// ordinary case on Windows, where the shell does not expand one — and
+// `open x.pdf` did not, so the same intent typed two ways gave two
+// answers. That is the disagreement D-138 removed for the stamp margin
+// and D-108 for the certificate filter, and the cheapest place to
+// remove it here is the surface nobody used.
+//
+// What is left is two commands that do not overlap: `open` is the
+// window with nothing in it, and `sign --in` is a batch. There is no
+// third way to say either.
 func runOpen(ctx context.Context, args []string, out io.Writer, cfg config.Config) int {
-	var paths []string
-	for _, a := range args {
-		if strings.HasPrefix(a, "-") {
-			fprintln(out, "liro-bridge: open: unrecognised argument", a)
-			return 2
-		}
-		paths = append(paths, a)
+	if len(args) > 0 {
+		fprintln(out, "liro-bridge: open takes no arguments; to sign named documents use: liro-bridge sign --in <file or pattern>")
+		return 2
 	}
 	// F6 §2: the entry is on by default, and only the tray applied it.
 	// A person who reaches the agent any other way — this command, a
@@ -43,7 +54,7 @@ func runOpen(ctx context.Context, args []string, out io.Writer, cfg config.Confi
 		slog.Warn("open: could not apply the Explorer context menu setting", "error", err)
 	}
 
-	return runMainWindow(ctx, cfg, cfg.Locale, paths)
+	return runMainWindow(ctx, cfg, cfg.Locale, nil)
 }
 
 // runShellVerb handles one invocation of the Explorer context menu.

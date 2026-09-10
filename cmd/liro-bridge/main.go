@@ -1,11 +1,12 @@
 // Command liro-bridge is the entry point for the Liro Bridge desktop
-// signing agent: certs, sign, sign-digest and tray (see topLevelUsage
-// for the one-line description of each, also shown by --help).
+// signing agent: certs, sign, open and tray (see topLevelUsage for the
+// one-line description of each, also shown by --help). A build made
+// with the "softtoken" tag has two more, both of them signing paths
+// with no consent window; see noconsent_softtoken.go.
 package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,8 +17,6 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
-	"github.com/veljaos/liro-bridge/internal/errs"
-	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
@@ -52,9 +51,6 @@ func run(args []string, out io.Writer) int {
 	if len(args) > 0 && args[0] == "certs" {
 		return runCerts(args[1:], out, cfg.Locale)
 	}
-	if len(args) > 0 && args[0] == "sign-digest" {
-		return runSignDigest(context.Background(), args[1:], out, os.Stderr, cfg.Locale)
-	}
 	// There is one `sign` and it shows the consent window. SPEC §18.2
 	// admits no exception — "No signature without human approval. No
 	// flag, no configuration, no header bypasses the consent screen" —
@@ -65,9 +61,9 @@ func run(args []string, out io.Writer) int {
 	if len(args) > 0 && args[0] == "sign" {
 		return runSignCommand(context.Background(), args[1:], out, cfg.Locale, cfg)
 	}
-	// The path with no window, present only in a build made with the
-	// "softtoken" tag, under its own name. In a release build this
-	// returns handled=false and the command does not exist at all.
+	// The paths with no window, present only in a build made with the
+	// "softtoken" tag, under their own names. In a release build this
+	// returns handled=false and neither command exists at all.
 	if code, handled := runBuildOnlyCommand(context.Background(), args, out, os.Stderr, cfg); handled {
 		return code
 	}
@@ -137,33 +133,6 @@ func runCerts(args []string, out io.Writer, locale string) int {
 	return cli.RunCerts(context.Background(), args, out, locale, deps)
 }
 
-// runSignDigest wires the real Windows CNG source — and, only in a
-// binary built with the "softtoken" tag, the soft token too (F2 §3) —
-// into internal/cli.RunSignDigest. This is the only place a concrete
-// keysource.Source is chosen for signing.
-func runSignDigest(ctx context.Context, args []string, stdout, stderr io.Writer, locale string) int {
-	cngSource := windowscng.NewSource()
-	softSource := softTokenSource() // nil unless built with the "softtoken" tag
-
-	open := func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, error) {
-		sess, err := cngSource.Open(ctx, thumbprint)
-		if err == nil {
-			return sess, nil
-		}
-		// Fall back to the soft token only when the CNG store genuinely
-		// has no such certificate — any other error (card removed, PIN
-		// blocked, ...) is real and must not be masked by a confusing
-		// second attempt against an unrelated backend.
-		var e *errs.Error
-		if softSource != nil && errors.As(err, &e) && e.Code == errs.CodeCertNotFound {
-			return softSource.Open(ctx, thumbprint)
-		}
-		return nil, err
-	}
-
-	return cli.RunSignDigest(ctx, args, stdout, stderr, locale, cli.SignDeps{Open: open})
-}
-
 // command is one subcommand and its one-line description.
 type command struct{ name, desc string }
 
@@ -180,7 +149,6 @@ type command struct{ name, desc string }
 var topLevelCommands = []command{
 	{"certs", "List available signing certificates"},
 	{"sign", "Sign a PDF file"},
-	{"sign-digest", "Sign a pre-computed digest (advanced/integration use)"},
 	{"open", "Open the main window to sign documents"},
 	{"tray", "Run the agent in the system tray"},
 }

@@ -1,3 +1,7 @@
+//go:build softtoken
+
+// Tests for sign-digest, which exists only in a build made with the
+// "softtoken" tag (D-227).
 package cli
 
 import (

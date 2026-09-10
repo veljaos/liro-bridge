@@ -228,6 +228,10 @@
     already.hidden = !payload.alreadySigned;
     window.liroSetText(already, payload.alreadySigned || "");
 
+    var collision = document.getElementById("report-output-collision");
+    collision.hidden = !payload.outputCollision;
+    window.liroSetText(collision, payload.outputCollision || "");
+
     var auditNotice = document.getElementById("report-audit-notice");
     auditNotice.hidden = !payload.auditNotice;
     window.liroSetText(auditNotice, payload.auditNotice || "");

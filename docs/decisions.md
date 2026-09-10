@@ -15574,3 +15574,999 @@ is exactly what the tag is for.
   about the audit chain applies here with equal force: do not fix it
   silently.
 
+---
+
+## D-228 — `sign-digest` moves behind the `softtoken` tag; a release binary now contains no signing path that asks nobody, and the binary is read to prove it
+
+**Date:** 2026-09-10
+**Phase:** F9b
+
+**Decision.** [[D-227]] set out two answers and said which the evidence
+pointed at. This is that one, taken.
+
+*(a) `internal/cli/signdigest.go` carries `//go:build softtoken`*, beside
+`sign_noconsent.go`, and so does its test file. Nothing about what the
+command does changed — the same flags, the same output, the same
+`SignDeps`.
+
+*(b) `cmd/liro-bridge` reaches it only through `runBuildOnlyCommand`*,
+the softtoken-only dispatch [[D-222]] built for `sign-no-consent`.
+`sign-digest` is gone from `topLevelCommands` and appears in
+`buildOnlyCommands`, so a build that has it says so in `--help` and a
+build that does not never mentions it.
+
+*(c) A release binary contains neither `internal/cli.RunSignDigest` nor
+`internal/cli.RunSignWithoutConsent` nor `internal/keysource/softtoken`*,
+proved by reading the symbol table.
+`TestTheNoConsentPathIsAbsentFromAReleaseBinary` now names all three, in
+both directions, and so does CI's own binary-inspection step. Measured
+against the two binaries this phase built:
+
+```
+internal/cli.RunSignDigest                 release=0 tagged=2
+internal/cli.RunSignWithoutConsent         release=0 tagged=2
+internal/keysource/softtoken               release=0 tagged=14
+```
+
+**The reasoning, recorded rather than assumed.** A consent screen in
+front of a bare digest cannot show what SPEC §6.6 requires it to show —
+a document count, a batch fingerprint and the list of file names —
+because a digest has none of the three. It is not that the screen would
+be inconvenient to build; there is nothing for it to say. And the
+hash-only use case already has a better front door: `POST /v2/sign`,
+with pairing, origin binding and a real consent screen, which is where
+SPEC §4.3 puts it. SPEC §4.3 does not list a CLI digest command among
+the four entry points at all. A release binary loses nothing.
+
+What it keeps is what the command was written for: F2 §6.1's recipe, a
+signature over a digest verified with OpenSSL, a tool sharing no code
+with this project. That is a developer checking a build, and a
+developer's build is what the tag is for (SPEC §16.6).
+
+**The tag adds the soft token; it does not take CNG away.** Said here
+because the README's recipe is the manual acceptance step against real
+hardware and somebody will otherwise assume a tagged build cannot see a
+card. `openCardOrSoftToken` opens the CNG store first and falls back to
+the soft token only on `CERT_NOT_FOUND` ([[D-033]]), in every build that
+has it. The README now says so where the recipe is, and its commands
+build with the tag.
+
+**Verified by running the binaries, not only by testing.** Both built
+from this tree, with `LOCALAPPDATA` pointed at a scratch directory:
+
+```
+> f9b-release.exe sign-digest --thumbprint ABCD --digest <64 hex>
+liro-bridge: sign-digest is not in a release build: it signs whatever
+digest it is handed, with no consent window (SPEC §18.2).
+  A local batch: liro-bridge sign --in <file>. An application:
+  POST /v2/sign (see docs/PROTOCOL.md).
+exit=2
+
+> f9b-tagged.exe sign-digest --thumbprint 95AB…2882 --digest <64 hex> --out sig.bin
+TEST POTPIS — napravljen softverskim tokenom, ne pravom karticom.
+exit=0
+> openssl dgst -sha256 -verify pub.pem -signature sig.bin input.txt
+Verified OK
+```
+
+`sign-no-consent` was run from the same tagged binary against
+`testdata/pdfs/blank.pdf` and produced a B-B signature, so F3's exit
+condition is unaffected by the rearrangement.
+
+**A release binary refuses `sign-digest` by name.**
+`runBuildOnlyCommand` in `noconsent_release.go` prints one sentence
+saying the command is not in a release build, names the two things to
+use instead, and returns 2.
+
+This is the one place this phase adds something rather than removing it,
+and the reason is a trap it would otherwise have created. An unknown
+subcommand in this program prints the usage text and exits **0** — so a
+script that had been calling `sign-digest` would have gone on reporting
+success while producing no signature. That is worse than the removal it
+would be hiding. It is the same answer [[D-222]] gave `sign
+--interactive`: say what happened, in a sentence, and fail.
+
+Knowing the name is not knowing the path: the string is in the binary
+and `internal/cli.RunSignDigest` is not, which is the property (c) reads
+the symbol table to establish.
+
+**Tests.**
+- `TestTheCommandsWithNoConsentWindowAreListedExactlyWhenTheyExist`
+  compares `--help` against a `hasNoConsentPaths` constant that each of
+  `noconsent_release.go` and `noconsent_softtoken.go` defines for
+  itself. One test, asserting the right thing in both build
+  configurations — rather than two tests each asserting half of it in a
+  build the other never sees. The Windows CI job builds this suite
+  **with** the tag, so a check that only compiled without it would never
+  run there ([[D-221]], [[D-222]]).
+- `TestAReleaseBuildRefusesSignDigestByNameRatherThanPrintingUsage`
+  pins the exit code, because 0 is what it would otherwise be.
+- The symbol-table test above, extended.
+
+**One mechanical consequence, recorded so it is not read as scope
+creep.** `softTokenSource`'s only untagged, platform-independent caller
+was `runSignDigest` in `main.go`. With `runSignDigest` behind the tag,
+the plain `GOOS=linux` view of `cmd/liro-bridge` had a function nothing
+could reach, and `golangci-lint`'s `unused` said so — the same shape of
+consequence [[D-222]] recorded for `caCertificatesFromTSL`, and
+`//nolint` is the wrong answer to it for the reason [[D-111]] gives.
+
+The fix is the one [[D-222]] used: put the thing where it belongs. Three
+copies of one rule — "open the CNG store, and fall back to the soft
+token only when the certificate is genuinely not there" — lived in
+`main.go`, `noconsent_softtoken.go` and `interactive_windows.go`. They
+agreed, which is the only reason it was not already a defect; three
+copies of a rule is how they stop agreeing ([[D-108]], [[D-124]],
+[[D-138]]). They are now one function, `openCardOrSoftToken(hwnd)`, in
+`keysources.go`, constrained to `windows || softtoken` — which is
+exactly the set of builds that have a signing path at all: Windows,
+where the window flow signs, and any tagged build, whose two headless
+commands are what CI signs with on an Ubuntu runner. `softTokenSource`'s
+`!softtoken` half moves to a `windows`-constrained file for the same
+reason, since in an untagged build its only caller is the window flow.
+All four views — {Windows, Linux} × {tagged, untagged} — build, vet and
+lint clean.
+
+**Rejected.**
+- **Giving `sign-digest` a consent screen of its own and keeping it in a
+  release binary.** [[D-227]]'s second answer. It needs an answer to
+  what that screen shows, and there is none: SPEC §6.6's three items do
+  not exist for a digest. A screen that says "a program wants to sign 32
+  bytes" is a screen that trains people to click Approve.
+- **Leaving it, on the grounds that only a developer uses it.** Who uses
+  it is not a property of the binary. SPEC §6.5 is the standing answer:
+  the card caches the PIN in its own state, so any process on the
+  machine can sign for as long as a session lives, and the consent
+  window is the only real gate.
+- **Renaming the file `signdigest_softtoken.go`.** The name says what
+  the file is; the tag says which builds have it. `sign_noconsent.go`
+  set that convention one phase ago and it needs no second form.
+- **Letting a release binary print the usage text for `sign-digest` like
+  any other unknown command.** Above: exit 0 for a command that used to
+  sign is a trap, and this is the one command that had callers.
+- **Fixing the general "unknown subcommand exits 0" behaviour.** A real
+  defect, and not this phase's. It applies to every misspelling, not
+  only to the one name this phase removed, and changing it changes what
+  `liro-bridge frobnicate` does — which nothing here has been asked to
+  decide.
+
+---
+
+## D-229 — The audit chain is guarded by a named mutex over its own directory, held across the whole of Append; what it does when it cannot be had, and what it does when the last writer died
+
+**Date:** 2026-09-10
+**Phase:** F9b
+
+**The defect.** [[D-223]] established it and deliberately left it: two
+processes appending to one hash chain both read the same last entry,
+both compute the same `Sequence` and `PrevHash`, and the chain forks —
+after which the log reports itself as tampered with, from the fork
+onwards, for ever. Nothing guarded it. `audit.Store`'s only lock was a
+`sync.Mutex` on the *Store value*, which its own comment described
+accurately as "atomic-from-this-process".
+
+**Decision: a named mutex over the audit directory, held across the
+whole of `Append`.**
+
+*(a) The whole of Append, not the write.* `platform.DirLock` is taken
+before `s.chains()` and released after the line is written. The read is
+half of what forks — two processes that read the same last entry have
+already lost, whatever they do next.
+
+*(b) The name comes from the directory, never from the session.*
+`Global\LiroBridge.Dir.<first 8 bytes of SHA-256 of the cleaned,
+lower-cased path>`. `Local\` — which is what this project's only other
+named mutex uses ([[D-119]]'s `ShellBatchLeaderName`) — is per logon
+session, and the audit directory is per *user* (`platform.ConfigDir`).
+One user with a console session and an RDP session, or an interactive
+agent and a scheduled task running as the same user in session 0,
+resolves one directory from two sessions and would not share a `Local\`
+name. Hashed rather than embedded because a Windows object name cannot
+contain a backslash and a path is mostly backslashes.
+
+*(c) `WAIT_ABANDONED` is a signal about the data, not a kind of
+acquisition.* When it comes back, `Append` checks whether the entry it
+is about to chain from is *sound* — its own hash recomputes, and its
+`PrevHash` is the previous entry's `Hash` — and if it is not, leaves the
+chain exactly where it is and starts a new one beside it whose first
+entry records `unsound`. That reaches [[D-166]]'s machinery rather than
+duplicating it: the same `Discontinuity`, the same "the old file is
+never touched", the same "the person is told once", one more
+`BreakReason`.
+
+*(d) The wait is bounded, and expiry starts a new chain rather than
+refusing to sign.* `AppendLockTimeout` is ten seconds. On expiry the
+entry goes into a chain of its own, created with `O_EXCL`, whose first
+entry records `unguarded`. SPEC §6.7 already settles the direction for
+the unreachable case in as many words — "blocking a bookkeeper's
+afternoon over a log is worse than recording that the log moved" — and
+this is the same trade with a different cause.
+
+**Why a named mutex rather than `LockFileEx` or one owning process.**
+[[D-223]] listed three shapes and did not choose. The reason for this
+one is a property none of the three descriptions states: **on Windows a
+mutex whose owner died returns `WAIT_ABANDONED` to the next waiter and
+grants it ownership.** That is not merely "it does not deadlock" — it
+*tells the acquirer that the previous writer died mid-write*, which is
+[[D-166]]'s situation exactly. `LockFileEx` releases on process death
+too, but silently: the next writer gets the lock and cannot tell whether
+the last line on disk is whole. One process owning the log is the better
+architecture and is not this phase's to build; it belongs with the batch
+hand-off, when the program's arrangement is being changed anyway.
+
+**A limit of the abandoned signal, stated rather than glossed.** A named
+object exists only while some handle to it is open. If the process that
+died was the only holder, the object simply ceases to exist and the next
+process creates a fresh, unowned one and is told nothing. So the signal
+is observable exactly when somebody else was already waiting — which is
+the contended case, the one this whole change is about — and a
+long-lived tray agent holding a handle is what makes it observable more
+widely. The uncontended case is not left uncovered: a torn last line
+does not parse, and [[D-166]]'s existing machinery catches that on every
+read. `unsound` covers the remaining gap, a line that reads perfectly
+and is not sound.
+
+**Measured: `Global\` needs no privilege here, and the fallback if it
+ever does.** Creating an object in the global namespace is documented as
+requiring `SeCreateGlobalPrivilege`. Measured on this machine, Windows
+11 Pro 26200, with a filtered administrator token — `whoami /priv` lists
+exactly five privileges and that is not one of them — `CreateMutexW` on
+a `Global\` name **succeeds**. That is one machine, and a policy that
+denies it is possible, so `ERROR_ACCESS_DENIED` falls back to the
+session-scoped `Local\` name and says so once at `Warn`. That still
+guards the case [[D-223]] actually measured, an agent and a `sign` in
+one session; it does not guard two sessions. Recorded here rather than
+hidden because it is a real difference between two machines.
+
+**The goroutine is pinned to its OS thread for the hold.** A Windows
+mutex is owned by the *thread* that waited on it, and a goroutine may
+move between threads at any function call, so `ReleaseMutex` could
+otherwise run on a thread that does not own it, fail with
+`ERROR_NOT_OWNER`, and leave the lock held until the process exits.
+`runtime.LockOSThread` in `Lock`, `UnlockOSThread` in `Unlock` and on
+every failure path.
+
+**Non-Windows is `flock` on a `.lock` file inside the directory**, with
+a bounded retry. It never reports abandoned, which is the difference
+being described above, and that costs nothing today: the agent is
+Windows-only until phase 13. It exists so `internal/audit` has one
+behaviour on every platform its tests run on rather than two — CI's
+Ubuntu job runs this package's whole suite, and a no-op lock there would
+have made the reproduction test below pass for the wrong reason on the
+one platform CI actually runs it on. Both suites were run on a real
+Linux kernel from this tree, not only cross-compiled.
+
+**What ten seconds costs, and where.** `recordInteractiveAudit` runs on
+the flow goroutine, not on the UI thread — `internal/ui`'s own model is
+that nothing a caller supplied ever runs on the UI thread ([[D-207]]) —
+so a wait delays the report screen and does not freeze the window. And
+the signature has already happened by then. Ten rather than one because
+the cost of waiting is a report that appears late and the cost of giving
+up is a permanent extra chain in the audit log, which a person sees for
+the rest of the log's life.
+
+**Measured, with real processes and built binaries.** A throwaway
+harness inside the module, created and deleted in the same session
+([[D-100]]), built as an `.exe` and run as eight separate processes over
+one audit directory, all released by one gate file.
+
+*Against the tree this phase started from:*
+
+```
+entries=8 chains=1 storeOK=false brokenAt=1
+  seq=0 app=proc-7  prev= hash=19dfdded
+  seq=0 app=proc-0  prev= hash=0bb48b1d
+  seq=0 app=proc-6  prev= hash=9835c27e
+  … five more, every one of them sequence 0
+```
+
+*Against this one:*
+
+```
+entries=8 chains=1 storeOK=true brokenAt=-1
+  seq=0 app=proc-6  prev=          hash=14c3eba8
+  seq=1 app=proc-7  prev=14c3eba8  hash=8e640882
+  seq=2 app=proc-4  prev=8e640882  hash=eee372e1
+  … through seq=7, one unbroken chain
+```
+
+*What it does when the lock cannot be had* — a second process holds it
+and does not let go:
+
+```
+10:47:58.264
+WARN audit: the log's lock could not be taken; starting a new chain
+  rather than refusing to record the batch waited=10s
+  lock=Global\LiroBridge.Dir.dd3a73cdcaa6613f
+blocked pid=17720 seq=0 discontinuity=&{1 2026-09-001.jsonl 0 true 0 unguarded}
+10:48:08.338
+
+entries=2 chains=2 storeOK=true brokenAt=-1
+  chain 1: entries=1 ok=true
+  chain 2: entries=1 ok=true started because chain 1 could not be continued (unguarded)
+```
+
+Ten seconds, then a chain of its own that says why, and both chains
+intact.
+
+*What it does when the writer died* — the holder killed by exact PID
+while holding the lock, over the forked log the pre-fix binary produced
+above:
+
+```
+WARN audit: the previous writer died mid-append and the chain's last
+  entry is not sound; starting a new chain chain=1 entries=8
+after-death pid=13792 seq=0 discontinuity=&{1 2026-09-001.jsonl 0 true 0 unsound}
+
+entries=9 chains=2 storeOK=false brokenAt=1
+  chain 1: entries=8 ok=false
+  chain 2: entries=1 ok=true started because chain 1 could not be continued (unsound)
+```
+
+The damaged chain still has its eight entries and is still reported as
+damaged, which is what it is. Over a *sound* log the same kill produces
+no new chain at all — the wait returns immediately, ownership is
+granted, and the entry chains from its predecessor at sequence 1.
+
+**Tests.**
+
+- `TestTwoStoresOnOneDirectoryDoNotForkTheChain` is [[D-223]]'s
+  four-line reproduction, committed. Two `NewStore` calls on one
+  directory, an `Append` on each from two goroutines released together,
+  then `Verify`. **Confirmed to fail against the tree this phase started
+  from**, in a worktree at `58a6a23`, on both Windows and Linux:
+  "sequences = 0, 0; want 0, 1" and "the log verifies as tampered with
+  at entry 1". Two Stores in one process rather than two processes on
+  purpose: the guard that was there was per-Store, so this is the shape
+  that isolates the defect with no scheduling to arrange.
+- `TestManyAppendsFromManyStoresStayOneUnbrokenChain` is the same at
+  F6's own scale, twenty writers, because Explorer starts one process
+  per selected file ([[D-119]]) and a lock that holds for two and not
+  for twenty passes the test above and fails in a person's hands.
+- `TestASecondProcessCannotAppendWhileThisOneHoldsTheLog` is the
+  cross-process half, and it is what makes the two tests above mean
+  anything: a `sync.Mutex` passes them and fails this. A second real
+  process — the test binary re-executed — takes the lock, says so on
+  stdout, and holds it until its stdin is closed.
+- `TestALogReleasedByADeadWriterIsPickedUpAndContinued` and
+  `TestADeadWriterOverAnUnsoundChainStartsANewOneRatherThanExtendingIt`
+  kill that process instead, by its own handle, never by image name.
+- `TestAnUnsoundChainIsExtendedWhenNobodyDied` is the control. Same
+  directory, same forked chain, same append, no dead writer — and the
+  entry goes onto the chain. Without it the test above would pass just
+  as happily if the soundness check ran unconditionally, and the
+  abandoned signal would be proving nothing.
+- `internal/platform`'s own four, including that a held lock's wait
+  expires rather than blocking for ever, and that two directories are
+  two locks.
+
+**Could the two-real-processes measurement be made a deterministic
+test?** The collision itself, no. Two independent schedulers cannot be
+made to enter one critical section on the same tick, and a test built
+around arranging it would be timing how fast the machine is rather than
+observing what this program does — which is exactly what [[D-201]]
+forbids and why this is said here rather than a `time.Sleep` being
+written. What *can* be made deterministic is the property the collision
+was evidence about — that one process holding the log stops another from
+reading and extending it — and that is what the three cross-process
+tests above observe, with a real second process, a real kill, and
+assertions on the resulting chain structure rather than on any duration.
+
+**What is not locked, and why.** `All`, `Chains`, `Verify`,
+`LatestChainFile` and `Export` take the process mutex and not the
+directory lock. They are tolerant of a chain that cannot be read to the
+end by construction, so the worst a concurrent append does to a reader
+is hide the line being written at that instant — while taking the lock
+would make the audit window wait on a signing batch, which buys the
+reader nothing.
+
+**Two new `BreakReason` values**, `unsound` and `unguarded`, with their
+sentences in all three catalogues and in both places a reason becomes
+words (`tray_windows.go`'s export summary and `auditlog_windows.go`'s
+list).
+
+**Rejected.**
+- **`LockFileEx`.** Above: it releases on process death silently, which
+  loses the one fact worth having.
+- **One process owning the log, the others handing entries to it.** The
+  better architecture, and a change to how this program is arranged
+  rather than to a function. It belongs with the batch hand-off.
+- **Verifying the whole chain on an abandoned acquisition rather than
+  its last entry.** That answers `Verify`'s question, not `Append`'s. An
+  entry damaged three months ago does not stop a correct successor being
+  computed today, and starting a new chain over it would hide the older
+  damage behind a fresh one.
+- **Checking soundness on every append.** It would make the abandoned
+  signal decorative, and it would turn every read of a log damaged long
+  ago into a new chain. The control test above exists to keep this
+  rejected.
+- **Refusing to sign when the lock cannot be had.** SPEC §6.7 rejects it
+  for the unreachable case in its own words, and the reasoning does not
+  change with the cause.
+- **Appending to the current chain anyway after the wait expires.** It
+  is the defect, performed deliberately.
+- **Writing the new chain's file without `O_EXCL`.** Two processes whose
+  waits expire do so at the same moment by construction, so both would
+  pick the same next chain number and fork the file they had just
+  created to avoid forking. `O_EXCL` and the next number up.
+- **A `Global\` name with no fallback.** The privilege is documented as
+  required and measured as not enforced here; one machine is not
+  evidence about every machine, and a lock that fails to open is worse
+  than one whose scope is narrower than intended.
+- **A private namespace (`CreatePrivateNamespaceW`) with a SID-carrying
+  boundary descriptor.** It is the arrangement designed for exactly this
+  — cross-session, per-user, no privilege — and it was measured working
+  here. Rejected because `Global\` also works here, with one documented
+  API call instead of four that `golang.org/x/sys/windows` does not
+  bind, and the fallback covers the case that would justify the extra
+  machinery. It is written down so the next person who meets an
+  `ERROR_ACCESS_DENIED` on that path knows it was tried.
+
+---
+
+## D-230 — What `--force` forces: the output-file question, and nothing that can reach the document being signed
+
+**Date:** 2026-09-10
+**Phase:** F9b
+
+**The question.** [[D-222]] left a release binary's `sign` taking two
+flags, `--in` and `--force`, and nothing said what the second one
+forced. If it touched overwriting an input file, SPEC §18.10 would
+apply.
+
+**Decision.** `--force` answers one question in advance — *"a file
+already exists where this document's signature would go: replace it, or
+write beside it?"* — and answers nothing else. With it,
+`resolveOutputConflict` returns immediately and the person is never
+shown the output-exists screen; without it, an existing output is
+refused or renamed according to what they say ([[D-104]]).
+
+**It can never reach the document being signed.** That is a property of
+two things together rather than a check anywhere in the signing path:
+
+- the output name is `base + suffix + ext` (`jobs.OutputPathFor`), and
+- the suffix can never be empty, because `config.Load` replaces an empty
+  one with `-signed`.
+
+So the output's base name is strictly longer than the input's, and the
+two cannot be the same file — including for a document whose own name
+already ends in the suffix, which is the case a person actually meets on
+a second run over a folder (`ugovor-signed.pdf` →
+`ugovor-signed-signed.pdf`). **SPEC §18.10 and SPEC §12.11 are therefore
+not in question**: the original is not merely not overwritten silently,
+it is not reachable.
+
+What `--force` *does* overwrite is a previous run's output, and not
+silently: the person typed the flag. SPEC §12.11 forbids a silent
+overwrite; it does not forbid overwriting a file the person named the
+flag about.
+
+**What it does not answer.** J-3's question — "this document's name
+already ends in `-signed`; is this a counter-signature or did you mean
+the original?" ([[D-164]]) — is still asked. The two are different
+questions about different files, and a flag that silently answered both
+would sign documents the person did not choose.
+
+**Tests.** `TestForceCanNeverOverwriteTheDocumentBeingSigned` walks six
+input shapes, including a name that is already `-signed` and one with no
+extension, with the output folder unset and set to the input's own
+folder. `TestAnEmptyOutputSuffixCannotReachTheSigningFlow` writes
+`{"outputSuffix": ""}` to a real config file and loads it, because the
+claim is not "nobody would configure an empty suffix" but "an empty
+suffix is not what the flow is handed".
+
+**Rejected.**
+- **Renaming it `--overwrite`.** More accurate about what it does and
+  less accurate about when it applies: it is answered once and applies
+  to every document in the batch, which "overwrite" reads as being about
+  one file. `--force` is also what the path with no window has always
+  called it, and two names for one answer is what [[D-138]] removed.
+- **Removing it, since the window can ask.** The window asks once per
+  batch already; the flag is how a person who knows the answer skips
+  being asked. It bypasses no consent — the approval screen is
+  unaffected — and SPEC §18.2 is about the signature, not about where
+  the file lands.
+
+---
+
+## D-231 — `sign` and `open` stay two commands, and the overlap between them is deleted
+
+**Date:** 2026-09-10
+**Phase:** F9b
+
+**The question.** After [[D-222]], `liro-bridge sign --in x.pdf` and
+`liro-bridge open x.pdf` both opened the same window. This project has
+recorded its objection to one fact living in two places three times
+([[D-108]], [[D-124]], [[D-138]]). Either justify the two or collapse
+them.
+
+**Decision. Two commands, and the overlap goes.** `open` now takes no
+arguments at all.
+
+**Why two.** They are two different questions, and each has an answer
+the other cannot give:
+
+- `open` is *the window, with nothing in it*. There is no `sign` for
+  that: `sign` requires `--in`, and a `sign` with no documents would be
+  a window opened at a step that has nothing to show.
+- `sign --in <pattern>` is *this batch*. There is no `open` for that
+  either: it expands a pattern, and it opens the flow one step in, at
+  the certificate, with the document step skipped because the documents
+  are already named. That difference is not cosmetic — `open` is a
+  window the person opened themselves, `sign` is a window that comes to
+  the front because a batch is waiting (`AlwaysOnTop` is set for exactly
+  one of the two).
+
+Nothing is implemented twice underneath either: both funnel into
+`mainWindow.open`, and there is one consent screen, one session and one
+audit log — SPEC §4.3's own sentence, which is what the "one fact in two
+places" objection is actually about.
+
+**What is deleted, and why that is the whole of the charge.** `open
+<paths>` seeded the window with paths given after the command. Nothing
+ever called it that way — not the tray's Open item, which reaches the
+window inside this process; not the Explorer context menu, which has its
+own verb (`platform.ShellMenuVerbFlag`); not `--help`, which has never
+mentioned an argument. And it was the one place two commands answered
+one question differently: `sign --in "C:\docs\*.pdf"` expands the
+pattern, because on Windows the shell does not, and `open
+"C:\docs\*.pdf"` looked for a file with an asterisk in its name. One
+intent, two syntaxes, two answers — which is the disagreement [[D-138]]
+removed for the stamp margin and [[D-108]] for the certificate filter.
+
+`open` with an argument now says so and points at the command that does
+take documents, and returns 2:
+
+```
+> f9b-release.exe open C:\docs\ugovor.pdf
+liro-bridge: open takes no arguments; to sign named documents use:
+  liro-bridge sign --in <file or pattern>
+exit=2
+```
+
+**Consequence for SPEC §4.3.** The CLI stays one of the four entry
+points, because `sign` is still a way in that the window row does not
+describe. §4.3's row is corrected in [[D-232]]; §1 needs no change,
+since its second paragraph is about the local HTTP API and says nothing
+about a command line.
+
+**Tests.** `TestOpenTakesNoArgumentsAndPointsAtSignInstead`.
+
+**Rejected.**
+- **Collapsing `open` into `sign` — `sign` with no `--in` opens the
+  document step.** It would work, and it would make "which step opens"
+  depend on whether a flag was given, which is a hidden mode. It also
+  costs the name `open`, which is what a person types when they want the
+  application rather than a signature, and what a desktop shortcut will
+  want when F10 makes one.
+- **Collapsing `sign` into `open` — `open` takes documents and starts at
+  the certificate.** Worse: `sign` is the name SPEC §19's own F9 row is
+  written around, and "open" does not mean "sign these".
+- **Keeping `open <paths>` and making it expand patterns too.** It would
+  end the disagreement by giving two commands the same behaviour, which
+  is two ways to say one thing — the thing being objected to, one step
+  further on.
+- **Keeping `open <paths>` because F10 might want it.** F10 can add it
+  back with a reason, which is what [[D-222]] said about `--out` and
+  `--resign` and is the same answer here.
+
+---
+
+## D-232 — SPEC §4.3's CLI row said "Scripts, legacy systems" and showed a flag that no longer exists; corrected
+
+**Date:** 2026-09-10
+**Phase:** F9b
+
+**Decision.** One edit to `docs/SPEC.md`, the one [[D-225]] recorded as
+deliberately left for whoever made the next SPEC edit. The table of the
+four entry points read
+
+| CLI | Scripts, legacy systems | Yes | `liro-bridge sign --in x.pdf --out y.pdf` |
+
+and now reads
+
+| CLI | The user, from a shell | Yes | `liro-bridge sign --in x.pdf` — the same window, entered at the certificate step. There is no unattended mode. |
+
+The window row gains one clause in its Notes for the same reason —
+`liro-bridge open` is that row's command line, and naming it is what
+keeps the CLI row from reading as though it were the only one with a
+command.
+
+**Why both halves of the old row were wrong.** "Scripts, legacy systems"
+is an audience the owner ruled there is no contract for ([[D-225]]);
+`--out` was removed from a release binary by [[D-222]]. The row now
+describes what the command actually is: a person at a shell, who gets
+the same window, the same consent screen and the same audit log as every
+other entry point — which is the sentence immediately above the table,
+and the one that is load-bearing.
+
+**"There is no unattended mode" is in the row on purpose.** It is the
+question the old row invited, it is answered elsewhere in SPEC (§2's
+non-goals, §18.2) and it was answered wrongly by the code until
+[[D-222]]. A Notes column that says it costs nothing and closes the
+reading that produced the defect.
+
+**Four rows, not three.** Whether the CLI is still an entry point
+depended on [[D-231]], and it is: `sign` is a way in that the window row
+does not describe.
+
+**Rejected.**
+- **Deleting the CLI row.** It is an entry point, it goes through the
+  consent screen, and it is what F9's own exit condition is about.
+- **Rewriting more of §4.3 while in here.** SPEC is "the rules that
+  never change" (§0), and a phase that edits it freely is a phase that
+  can soften a constraint by rewording it. The phase named this row.
+
+---
+
+## D-233 — `--out` and `--resign` have no replacement in a release binary, and that is the choice rather than an oversight
+
+**Date:** 2026-09-10
+**Phase:** F9b
+
+**Decision.** Recorded as a decision because F9's report said it plainly
+and a report is read once. A release binary's `sign` takes `--in` and
+`--force`. Of the fifteen flags [[D-222]] removed, thirteen have a home
+— the certificate is chosen in the window, the level, the timestamp
+authority and the output folder are `config.json`, the stamp is the
+method screen ([[D-146]], [[D-151]]) — and **two do not**:
+
+- **`--out`**, "write this one document to exactly this path". It is
+  nearly answered by the output-file question ([[D-104]]) and the chosen
+  output folder ([[D-126]]), and neither is the same thing.
+- **`--resign`**, "yes, sign this document whose name already ends in
+  `-signed`". It is answered by J-3's own question ([[D-164]]), which a
+  person answers rather than a script.
+
+**Neither is coming back in this phase, and the reason is the same for
+both: what they were for is gone.** Both are flags whose value is that
+they let something run with nobody at the machine — a script that names
+an exact output path, a script that says "yes" in advance. A release
+binary's `sign` opens a window and waits for a person; a flag that
+pre-answers a question that person is about to be asked saves them one
+click and buys a script nothing at all, because the script is stopped at
+the approval either way.
+
+`--force` survives that test and these two do not, which is worth saying
+explicitly since it looks inconsistent: `--force` answers a question
+about *where a file lands*, which is not a question about the signature
+and does not become useful only when nobody is watching. A person
+signing forty documents at a command line has a real reason to say "yes,
+replace them" once rather than forty times ([[D-230]]).
+
+**What would bring one back.** A person asking for it, with what they
+were doing. It would be a flag on the window flow, it would pre-answer a
+question the flow already asks, and it would arrive with a reason — the
+same conditions [[D-222]] set. An integrator who is not on Node uses the
+protocol directly; that is the owner's standing ruling and it is not
+this phase's to revisit.
+
+**Rejected.**
+- **Adding `--out` back now because it is small.** Nobody has asked for
+  it. A flag added on a guess is a flag that has to be kept.
+- **Leaving it recorded only in F9's report.** The report is why this
+  entry exists. `docs/decisions.md` is the file a future phase reads in
+  full (SPEC §17), and "this was chosen" and "this fell out" are
+  indistinguishable a year later unless one of them is written down.
+
+---
+
+## D-234 — The audit log's guard is a file lock and the named mutex is only the signal; [[D-229]]'s Global\ measurement was taken on an administrator account and is re-measured here
+
+**Date:** 2026-09-10
+**Phase:** F9b — review
+
+**Supersedes the mechanism half of [[D-229]].** That entry stands as
+written (SPEC §17: entries are never edited) and its reasoning for
+*wanting* WAIT_ABANDONED is unchanged and still the reason a mutex is
+there at all. What changes is what carries the exclusion.
+
+**The objection, and it was right.** [[D-229]] reported that a `Global\`
+mutex opens here without `SeCreateGlobalPrivilege`, and paired that with
+a `Local\` fallback for machines that refuse. Two things were wrong with
+it:
+
+*(a) The measurement was taken on the wrong account.* Stated plainly:
+`helios\veljko` **is** a member of `BUILTIN\Administrators`. The token
+it runs with is a filtered one — Administrators deny-only, five
+privileges, none of them `SeCreateGlobalPrivilege` — which looks like a
+standard user's and is not one. The privilege is granted by default to
+Administrators and the service accounts, so measuring on an
+administrator's machine is measuring the case that decides nothing.
+
+*(b) The fallback reintroduced the defect the mutex was chosen to
+avoid.* `Local\` is per logon session; the audit directory is per user.
+On a machine that refuses `Global\`, one user's console session and RDP
+session — or an interactive agent and a scheduled task in session 0 —
+would silently have stopped sharing a lock over one directory, and the
+chain would fork again. A `Warn` line goes into a log nobody reads. That
+is [[D-221]]'s shape three days later: the check ran where it was
+written.
+
+**Re-measured, on a token strictly weaker than a standard user's.** A
+second local account cannot be created here without elevation, so the
+next best thing was measured and it is stronger evidence in the
+direction that matters: `CreateRestrictedToken` with
+`DISABLE_MAX_PRIVILEGE` and `BUILTIN\Administrators`,
+`BUILTIN\Performance Log Users` and `Helios\docker-users` all turned
+deny-only. An access check is monotone — removing SIDs and privileges
+can only reduce what a token can do — so a `Global\` name that opens
+under this opens for a standard user, whose enabled group set is a
+subset of what is left. Measured two ways, because a privilege check
+might plausibly consult the process token rather than the thread's:
+
+```
+=== this process, as launched ===
+  privileges   : SeShutdownPrivilege SeChangeNotifyPrivilege SeUndockPrivilege
+                 SeIncreaseWorkingSetPrivilege SeTimeZonePrivilege
+  admin enabled: false     elevated: false
+  Global\LiroProbeGlobal   OK      Local\LiroProbeLocal   OK      LockFileEx  OK
+
+=== this thread, impersonating the restricted token ===
+  privileges   : SeChangeNotifyPrivilege
+  admin enabled: false     elevated: false
+  Global\LiroProbeGlobal   OK      Local\LiroProbeLocal   OK      LockFileEx  OK
+
+=== child process, restricted primary token ===
+  privileges   : SeChangeNotifyPrivilege
+  admin enabled: false     elevated: false
+  Global\LiroProbeGlobal   OK      Local\LiroProbeLocal   OK      LockFileEx  OK
+```
+
+So on Windows 11 Pro 26200, `CreateMutexW` on a `Global\` name does not
+require the privilege its documentation names, for an interactive user
+with no privileges at all. [[D-229]]'s primary path was right; its
+evidence was not, and now it is.
+
+**Decision, all the same: the guard moves off the mutex.**
+
+*(a) The exclusion is `LockFileEx` on a `.lock` file inside the audit
+directory* (`flock` elsewhere, which is what the non-Windows side
+already did). The file *is* the name: two processes that resolve the
+same directory open the same file and contend, in any session, under any
+account, with no privilege and no namespace to get wrong.
+
+*(b) The named mutex carries the abandoned-writer signal and nothing
+else.* It is taken first — fixed order, so nothing can hold one while
+waiting for the other backwards, and mutex-first specifically because a
+waiter blocked on a mutex holds a handle to it, which is what keeps the
+object alive when its owner dies and what makes the waiter the thread
+told about it. Failing to get it is fatal to nothing: the state is
+reported as an ordinary acquisition and the file lock decides.
+
+*(c) The `Local\` fallback survives, and now costs nothing.* On a
+machine that refuses `Global\`, the signal narrows to one session and
+the guard does not move at all. That is a fallback worth having rather
+than one that hides a defect.
+
+**Why this is the right answer even though (a) came out well.** The
+question "is a `Global\` object available" has a different answer on
+different machines, and a correctness property should not have a
+different answer on different machines. The file lock has no such
+question attached. It also closes a hole [[D-229]] recorded and accepted
+in `dirLockID`'s own comment — two spellings of one directory (a
+substituted drive, an 8.3 short name) hash differently and would not
+have shared a mutex. Measured, with real processes, below.
+
+**Measured: the cross-session case, by its mechanism.** Two logon
+sessions cannot be created on this machine without administrative
+rights — `query session` shows session 0 (services, disconnected) and
+session 1 (console) and nothing else — so the report does not claim one
+was. What two sessions do to a session-scoped mutex is make it two
+different objects over one directory, and that *is* reproducible: `subst
+Y: <dir>` and then reach one audit directory by both spellings. The
+premise, measured rather than assumed:
+
+```
+C:\...\f9b\subst\audit   -> flock+0839113275106621
+Y:\audit                 -> flock+4af52dc03fe54eca
+```
+
+Two different mutex names, one directory. Eight real processes, four by
+each spelling, released together by one gate file:
+
+```
+entries=8 chains=1 storeOK=true brokenAt=-1
+  seq=0 app=ypath-3  prev=          hash=c55f984f
+  seq=1 app=ypath-2  prev=c55f984f  hash=613087b9
+  ...
+  seq=7 app=cpath-3  prev=1dd85049  hash=971058a6
+```
+
+One unbroken chain. The mutex could not have excluded any of them; the
+file did. Under [[D-229]]'s arrangement this run forks.
+
+**Measured: the fallback path itself, rather than reasoned about.**
+`TestALockWithNoMutexAtAllStillExcludes` builds two locks over one
+directory with no mutex at all — the state `openMutex` produces on a
+machine that refuses every named object — and asserts that one still
+cannot be taken while the other holds it, and that it is granted once
+the other lets go. `TestTwoLocksThatCannotShareAMutexStillExcludeEachOther`
+does the same with two mutexes that are provably different objects, and
+proves that premise before relying on it.
+
+Both observe order and outcome, never duration. An earlier version of
+that helper released the first lock without waiting for the second
+side's bounded attempt to finish, so the attempt raced the release and
+was granted for a perfectly good reason — which is exactly the class of
+mistake [[D-201]] is about, caught here by the test failing.
+
+**Everything [[D-229]] measured still holds under the new arrangement**,
+re-run against it with real processes: eight processes over one
+directory produce one chain 0…7; a holder that never lets go produces
+the ten-second wait and a chain of its own recording `unguarded`; a
+holder killed over a sound log continues the same chain at sequence 1;
+and a holder killed over a forked log starts a new chain recording
+`unsound` — which is the abandoned signal still arriving, since nothing
+else can produce that reason.
+
+**One thing that changed for SPEC §18.3's sake.** `DirLock.Name` is
+logged by `audit.Append` when a wait expires, and the obvious name for a
+file lock is its path — which sits under a user profile and therefore
+carries the person's name, into a log file, which SPEC §18.3 forbids.
+The name is the directory's hash on both platforms (`flock+<16 hex>`),
+and `TestTheNameNeverCarriesThePath` pins it.
+
+**Rejected.**
+- **Leaving the mutex as the guard, since `Global\` works here.** The
+  measured account was the wrong one, and even with the right one the
+  answer is a per-machine policy. A correctness property that depends
+  on one is a property with a footnote.
+- **Keeping the `Local\` fallback as the guard on machines that refuse
+  `Global\`.** Above: it is a per-session guard on a per-user directory,
+  which is the defect wearing a warning label.
+- **Dropping the mutex entirely now that the file lock carries the
+  exclusion.** It is the only thing that says a writer died mid-write.
+  [[D-229]]'s reasoning for it stands and is untouched.
+- **Taking the file lock first and the mutex second.** Simpler-looking,
+  and it loses the signal: a waiter that already holds the file finds
+  the mutex uncontended, and the object may not even exist any more.
+- **Creating a real standard-user account to measure on.** It needs
+  elevation, it leaves a profile and a SID behind, and the restricted
+  token is stronger evidence: it is strictly weaker than the account it
+  stands in for.
+
+---
+
+## D-235 — A batch never writes over one of its own documents; [[D-230]]'s claim was true of one document and not of a pattern
+
+**Date:** 2026-09-10
+**Phase:** F9b — review
+
+**Supersedes [[D-230]]'s scope claim.** That entry stands as written
+(SPEC §17) and everything it says about what `--force` *answers* is
+still true. What it got wrong is the word "cannot".
+
+**The objection, and it was right.** [[D-230]] argued that `--force`
+cannot reach the document being signed, because the output name is
+`base + suffix + ext` and the suffix is never empty, so an output is
+always longer than its own input. True — and it is a claim about one
+document. A pattern is not one document:
+
+```
+liro-bridge sign --in *.pdf
+```
+
+over a folder holding `faktura.pdf` and `faktura-signed.pdf` expands to
+both, and `faktura.pdf`'s output **is** `faktura-signed.pdf`, which the
+batch is at that moment signing.
+
+**Measured, on disk, with the built binary.** The same folder, before
+and after, hashes and sizes:
+
+```
+--- before the fix, --resign --force ---
+  before: faktura.pdf=427B/b9749fdb   faktura-signed.pdf=427B/b9749fdb
+  | Potpisano: ...\faktura-signed-signed.pdf
+  | Potpisano: ...\faktura-signed.pdf
+  | Potpisano 2/2 dokumenata
+  after : faktura-signed-signed.pdf   66714 bytes  307a9930
+  after : faktura-signed.pdf          66714 bytes  81188829   <- was 427B/b9749fdb
+  after : faktura.pdf                   427 bytes  b9749fdb
+```
+
+`faktura-signed.pdf` — a document this batch had just signed — was
+replaced by `faktura.pdf`'s signature. The only surviving copy of what
+was signed is inside `faktura-signed-signed.pdf`, a signature over a
+document that no longer exists.
+
+**And it is not about `--force`.** Answering the output-file question
+with "overwrite" reaches the same place; `--force` is that answer given
+in advance. Neither the flag nor the question can tell the two cases
+apart, because at that level they look identical: a file exists where a
+signature is about to go.
+
+**Order, and what decides it.** `expandInteractiveInput` sorts the
+glob's matches. Comparing `faktura-signed.pdf` with `faktura.pdf`, the
+first difference is the suffix's own first character against the
+extension's dot: `-` is 0x2D and `.` is 0x2E, so **the already-signed
+sibling sorts first and is signed first**, and is then destroyed. A
+configured suffix beginning with a character above `.` — `_signed`, say
+— reverses it, and the sibling is destroyed before it is read, so the
+signature that survives is of a document nobody kept.
+
+**Decision. No document's signature may be written over another document
+in the same batch, or over a path an earlier document in the batch has
+already been promised.**
+
+The rule is `jobs.CollidingOutputs`, beside `OutputPathFor` and
+`LooksLikeOutput` — the package that already holds the other
+output-naming facts, so that both front doors ask one question rather
+than two that can drift apart ([[D-108]], [[D-124]], [[D-138]]). Like
+`LooksLikeOutput`, it decides nothing about what to do; it answers the
+question the front doors ask.
+
+*The window skips those documents and says so.* Skipping rather than
+renaming, for [[D-164]]'s own reason: the request is genuinely ambiguous
+— is `faktura-signed.pdf` a previous run's output or a document being
+signed? — and guessing destroys something. It is the same mechanism J-3
+already uses (`jobs.ErrSkipDocument`) and the report carries its own
+sentence in all three locales, rather than folding it into a count the
+person cannot interpret.
+
+*The collision is decided before anybody is asked anything.* The
+intended paths are computed first, the collisions found, and only the
+remaining documents produce an output-file question. A person asked
+"replace it?" about a file that is going to be skipped whatever they say
+is being asked a question with no answer.
+
+*The command line refuses them and names them.* Reachable there only
+with `--resign`, since `partitionAlreadySigned` drops the siblings by
+default. It counts as that document's failure — "Potpisano 1/2" — and
+does not fail the run, because F3 §12.10's batch policy is
+skip-and-continue and a collision is not a better reason to abandon the
+other ninety-nine documents than any other per-document failure.
+
+**After the fix, the same measurement:**
+
+```
+--- after, --resign --force ---
+  | Potpisano: ...\faktura-signed-signed.pdf
+  | liro-bridge: sign-no-consent: ...\faktura.pdf: njegov potpis bi zamenio
+  |   drugi dokument iz ove grupe
+  | Potpisano 1/2 dokumenata
+  after : faktura-signed-signed.pdf   66714 bytes  81188829
+  after : faktura-signed.pdf            427 bytes  b9749fdb   <- untouched
+  after : faktura.pdf                   427 bytes  b9749fdb
+```
+
+**What [[D-230]] should have said**, and what is true now: `--force`
+answers the output-file question about files that are not part of this
+batch, which is what a previous run's output is. It never answers a
+question about a document the batch is signing, and no longer can.
+
+**Tests.** `jobs.CollidingOutputs` has its own table, including the
+three-deep case, two documents promised one path, and one directory
+spelled two ways. In `cmd/liro-bridge`,
+`TestNoOutputInABatchIsAnotherDocumentInTheSameBatch` and
+`TestABatchNeverDestroysOneOfItsOwnDocuments` — the second with real
+signatures, comparing every input's SHA-256 before and after the run —
+both **measured failing before the fix**, with the message quoted above.
+`TestTheCollisionIsDecidedBeforeAnybodyIsAsked` passes a nil window, so
+a question asked would panic and the test passing is the evidence that
+none was.
+
+**One test defect this found in itself.** The `jobs` table originally
+wrote its "one directory spelled two ways" case with literal
+backslashes, which are separators on Windows and ordinary characters
+everywhere else. It passed on Windows and failed on a real Linux kernel
+— found by running the cross-compiled test binary there rather than by
+cross-compiling it and stopping.
+
+**Rejected.**
+- **Writing beside it instead of skipping** — `faktura.pdf` becoming
+  `faktura-signed-2.pdf`. It signs everything the person asked for, and
+  it answers an ambiguous request by inventing a name they did not
+  choose. [[D-164]] rejected guessing in this exact place.
+- **Refusing the whole batch.** One ambiguous pair should not cost the
+  other ninety-eight documents their signatures.
+- **Narrowing [[D-230]]'s wording and changing nothing.** The phase
+  offered that and it is the worse half of the choice: the behaviour is
+  destructive whatever the entry says about it.
+- **Fixing it only in the window flow.** The command line reaches it
+  with `--resign`, and a defect fixed in one front door and not the
+  other is how the two stop agreeing.
+- **Making the collision an existence check.** A file that exists and is
+  not in the batch is a previous run's output, which is exactly what
+  `--force` is for. `TestCollidingOutputsIsNotADisguisedExistenceCheck`
+  keeps that distinction.

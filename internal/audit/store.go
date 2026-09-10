@@ -7,14 +7,20 @@ package audit
 // in what Verify checks, since tampering with an earlier month's file
 // must still be detectable.
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/veljaos/liro-bridge/internal/platform"
 )
 
 // MaxFileSize is F5 §8.4's rotation threshold.
@@ -134,21 +140,58 @@ func fromJSONEntry(j jsonEntry) (Entry, error) {
 	}, nil
 }
 
-// Store guards its own directory with a mutex: Append must read the
-// last entry and write the new one as one atomic-from-this-process
-// operation, or two concurrent batches finishing at once could both
-// compute the same PrevHash and silently fork the chain.
+// Store guards its own directory with two locks, and needs both.
+//
+// mu is this process's. Append must read the last entry and write the
+// new one as one operation, or two concurrent batches finishing at once
+// could both compute the same PrevHash and fork the chain.
+//
+// lock is every process's, and covers exactly the same span. The
+// process mutex is not enough and was never claimed to be: it is per
+// *Store value*, so two Stores over one directory — which is what a
+// tray agent and a `sign` process are, and what F6's twenty Explorer
+// invocations are — fork the chain just as readily as two processes do.
+// Measured, both ways, in D-223: two sequence-0 entries, both with an
+// empty PrevHash, and a log that reports itself tampered with from that
+// line onwards for ever.
+//
+// Reads (All, Chains, Verify, LatestChainFile, Export) take mu and not
+// lock. They are tolerant of a chain that cannot be read to the end by
+// construction, so the worst a concurrent append can do to a reader is
+// hide the line being written at that instant — while making the audit
+// window wait on a signing batch, which is what taking the lock here
+// would do, buys nothing for it.
 type Store struct {
 	dir string
 	mu  sync.Mutex
+
+	lock platform.DirLock
+
+	// lockTimeout is how long Append waits for lock. A field rather
+	// than the constant directly so a test can drive the expiry path
+	// without waiting out the real one.
+	lockTimeout time.Duration
 }
+
+// AppendLockTimeout bounds how long one Append waits for the audit
+// directory's lock.
+//
+// Bounded, because signing must never be blocked indefinitely by a log
+// — SPEC §6.7 settles that direction for the unreadable case and it is
+// the same trade here. Ten seconds rather than one, because the cost of
+// waiting is a report screen that appears late and the cost of giving
+// up is a permanent extra chain in the audit log, which a person will
+// see for the rest of the log's life. An Append is a read and one line
+// written; a machine that cannot finish twenty of them in ten seconds
+// has a problem this timeout is not the answer to.
+const AppendLockTimeout = 10 * time.Second
 
 // NewStore returns a Store rooted at dir, creating it if necessary.
 func NewStore(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	return &Store{dir: dir}, nil
+	return &Store{dir: dir, lock: platform.NewDirLock(dir), lockTimeout: AppendLockTimeout}, nil
 }
 
 // currentFile returns the file Append should write to for chain, for
@@ -205,10 +248,43 @@ func (s *Store) currentFile(chain int, t time.Time) (string, error) {
 // refusal is now recorded and recoverable rather than permanent and
 // silent — measured, one truncated last line used to make every
 // subsequent Append fail forever (FTEST B-9).
+//
+// The directory's own lock is held across all of it — the read, the
+// arithmetic and the write — because the read is half of what forks a
+// chain (D-223). Two more causes reach the same recovery through it:
+//
+//   - The lock was granted *abandoned*, meaning the process that held it
+//     died mid-append, and the entry this one would chain from is not
+//     sound. That is the one moment when "the line parses" is not enough
+//     to know the chain is whole.
+//   - The lock could not be taken within lockTimeout at all, so the
+//     current chain's last entry cannot be read safely. The entry goes
+//     into a chain of its own, created exclusively, rather than onto one
+//     another process may be extending at this instant.
 func (s *Store) Append(next Entry) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	state, err := s.lock.Lock(s.lockTimeout)
+	if errors.Is(err, platform.ErrDirLockTimeout) {
+		// Somebody else has held the log for longer than anybody should.
+		// This process cannot read the current chain's last entry
+		// safely, so it does not: it starts a chain of its own and says
+		// why, which is D-166's own remedy applied to a different cause.
+		slog.Warn("audit: the log's lock could not be taken; starting a new chain rather than refusing to record the batch",
+			"waited", s.lockTimeout, "lock", s.lock.Name())
+		return s.appendUnguarded(next)
+	}
+	if err != nil {
+		return Entry{}, err
+	}
+	defer s.lock.Unlock()
+
+	return s.appendLocked(next, state)
+}
+
+// appendLocked is Append with the directory's lock held.
+func (s *Store) appendLocked(next Entry, state platform.DirLockState) (Entry, error) {
 	chains, err := s.chains()
 	if err != nil {
 		return Entry{}, err
@@ -226,6 +302,17 @@ func (s *Store) Append(next Entry) (Entry, error) {
 			// the next one beside it.
 			chain = current.Number + 1
 			next.Discontinuity = discontinuityFrom(current)
+		case state == platform.DirLockAbandoned && !lastEntrySound(current.Entries):
+			// The lock was granted abandoned: the process that held it
+			// died while holding it, which is precisely when the last
+			// line on disk cannot be assumed whole. It parsed — the case
+			// above is the one where it did not — so the question left
+			// is whether it is *sound*, and it is not. Chaining from it
+			// would extend something already broken.
+			chain = current.Number + 1
+			next.Discontinuity = unsoundDiscontinuityFrom(current)
+			slog.Warn("audit: the previous writer died mid-append and the chain's last entry is not sound; starting a new chain",
+				"chain", current.Number, "entries", len(current.Entries))
 		case len(current.Entries) > 0:
 			last := current.Entries[len(current.Entries)-1]
 			prev = &last
@@ -244,14 +331,137 @@ func (s *Store) Append(next Entry) (Entry, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	b, err := json.Marshal(toJSONEntry(completed))
+	line, err := entryLine(completed)
 	if err != nil {
 		return Entry{}, err
 	}
-	if _, err := f.Write(append(b, '\n')); err != nil {
+	if _, err := f.Write(line); err != nil {
 		return Entry{}, err
 	}
 	return completed, nil
+}
+
+// maxUnguardedChains bounds appendUnguarded's search for a chain number
+// nobody else has just taken. It is not a retry count: each step is one
+// exclusive create that failed because the file already exists, which
+// means one other process reached the same conclusion at the same
+// moment. Sixty-four of those at once is not a state this program can
+// reason its way out of.
+const maxUnguardedChains = 64
+
+// appendUnguarded writes next into a chain of its own, without the
+// directory's lock, because the lock could not be had.
+//
+// Safe without it precisely because it touches nothing anybody else is
+// writing: the file is created with O_EXCL, so exactly one process can
+// own it, and a process that loses that race takes the next number
+// rather than sharing the file. The one line written into it is the
+// chain's first, so there is no last entry to read and nothing to
+// compute a PrevHash from — which is the read half of Append, the half
+// that forks, and the half this path does not do.
+func (s *Store) appendUnguarded(next Entry) (Entry, error) {
+	chains, err := s.chains()
+	if err != nil {
+		return Entry{}, err
+	}
+
+	d := &Discontinuity{Reason: BreakUnguarded}
+	first := 1
+	if n := len(chains); n > 0 {
+		last := chains[n-1]
+		first = last.Number + 1
+		// The chain named here is the one this entry would have
+		// continued, which is not necessarily the number one below the
+		// file this ends up in: if another process is starting a chain
+		// at the same moment, this one moves up a number and the chain
+		// it could not continue is still the same chain.
+		d.PreviousChain = last.Number
+		if k := len(last.Files); k > 0 {
+			d.PreviousFile = last.Files[k-1]
+		}
+		if k := len(last.Entries); k > 0 {
+			d.LastSequence = last.Entries[k-1].Sequence
+			d.HasLastSequence = true
+		}
+	}
+	next.Discontinuity = d
+
+	completed := AppendEntry(nil, next)
+	line, err := entryLine(completed)
+	if err != nil {
+		return Entry{}, err
+	}
+
+	t := completed.Timestamp
+	for chain := first; chain < first+maxUnguardedChains; chain++ {
+		path := s.chainFileName(chain, t.Year(), int(t.Month()), 1)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return Entry{}, err
+		}
+		defer func() { _ = f.Close() }()
+		if _, err := f.Write(line); err != nil {
+			return Entry{}, err
+		}
+		return completed, nil
+	}
+	return Entry{}, fmt.Errorf("audit: no free chain number after %d attempts starting at %d", maxUnguardedChains, first)
+}
+
+// entryLine is one entry's on-disk line, newline included.
+func entryLine(e Entry) ([]byte, error) {
+	b, err := json.Marshal(toJSONEntry(e))
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+// lastEntrySound reports whether the entry a new one would chain from
+// is whole: its own Hash recomputes from its own content, and its
+// PrevHash is the hash of the entry before it (or empty, when it is the
+// chain's first).
+//
+// Deliberately the last entry rather than the whole chain. What is
+// being asked is not "has this log ever been tampered with" — Verify
+// answers that, and the export and the audit window are where a person
+// is told — but the narrower question Append has to answer before it
+// writes: is the thing I am about to extend intact. An entry damaged
+// three months ago does not stop a correct successor being computed
+// today, and starting a new chain over it would hide the older damage
+// behind a fresh one.
+func lastEntrySound(entries []Entry) bool {
+	n := len(entries)
+	if n == 0 {
+		return true
+	}
+	last := entries[n-1]
+	if !bytes.Equal(last.Hash, last.ComputeHash()) {
+		return false
+	}
+	if n == 1 {
+		return len(last.PrevHash) == 0
+	}
+	return bytes.Equal(last.PrevHash, entries[n-2].Hash)
+}
+
+// unsoundDiscontinuityFrom is discontinuityFrom for a chain that read
+// perfectly and whose last entry is not sound. There is no line number
+// to give — nothing failed to read — so Line stays 0, which is already
+// what it means when the position is not known.
+func unsoundDiscontinuityFrom(broken Chain) *Discontinuity {
+	d := &Discontinuity{PreviousChain: broken.Number, Reason: BreakUnsound}
+	if n := len(broken.Files); n > 0 {
+		d.PreviousFile = broken.Files[n-1]
+	}
+	if n := len(broken.Entries); n > 0 {
+		d.LastSequence = broken.Entries[n-1].Sequence
+		d.HasLastSequence = true
+	}
+	return d
 }
 
 // discontinuityFrom turns a chain that cannot be continued into the

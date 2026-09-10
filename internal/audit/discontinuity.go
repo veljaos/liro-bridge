@@ -41,6 +41,30 @@ const (
 	// blocking a bookkeeper's afternoon over a log is worse than
 	// recording that the log moved.
 	BreakUnreachable BreakReason = "unreachable"
+
+	// BreakUnsound: the previous chain read perfectly and its last
+	// entry is not sound — its own hash does not recompute, or its
+	// PrevHash does not match the entry before it. Appending to it
+	// would chain from something already broken.
+	//
+	// It is only ever looked for after the lock over the audit
+	// directory was granted abandoned, which is Windows saying the
+	// process that held it died while holding it (D-223). That is the
+	// one moment when "the file parses" is not enough to know the
+	// chain is whole, and it is the only moment worth paying for the
+	// check.
+	BreakUnsound BreakReason = "unsound"
+
+	// BreakUnguarded: the lock over the audit directory could not be
+	// taken within the time allowed, so another process may be
+	// appending to the current chain right now and this one cannot
+	// safely read its last entry.
+	//
+	// Refusing to sign over a log is worse than recording that the log
+	// moved — SPEC §6.7's own reasoning for the unreachable case — so
+	// the entry goes into a chain of its own, created exclusively, and
+	// says why it is there.
+	BreakUnguarded BreakReason = "unguarded"
 )
 
 // Discontinuity is what a new chain's first entry says about why the
@@ -62,11 +86,14 @@ const (
 type Discontinuity struct {
 	// PreviousChain is the chain number this one follows. 1 is the
 	// original chain, which is the only one an audit directory written
-	// before this existed can hold.
+	// before this existed can hold. 0 means there was no previous chain
+	// at all — an empty directory whose lock could not be taken, which
+	// is the one way a chain's *first* entry can carry a record of why
+	// it is where it is.
 	PreviousChain int `json:"previousChain"`
 
 	// PreviousFile is the base name of the file that could not be
-	// continued.
+	// continued, or empty when there was no previous chain.
 	PreviousFile string `json:"previousFile"`
 
 	// LastSequence is the sequence number of the last entry that could

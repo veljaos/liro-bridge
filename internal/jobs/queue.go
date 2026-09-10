@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -314,6 +315,68 @@ func LooksLikeOutput(inPath, suffix string) bool {
 	base := filepath.Base(inPath)
 	name := strings.TrimSuffix(base, filepath.Ext(base))
 	return strings.HasSuffix(strings.ToLower(name), strings.ToLower(suffix))
+}
+
+// CollidingOutputs reports which documents in a batch cannot be
+// written, because the path chosen for one of them names something the
+// batch must not destroy: another document *in this same batch*, or an
+// output already promised to an earlier one. outputs is one path per
+// input, in the same order.
+//
+// The case it exists for is a pattern rather than a file. `sign --in
+// *.pdf` over a folder holding faktura.pdf and faktura-signed.pdf
+// expands to both, and faktura.pdf's output IS faktura-signed.pdf —
+// which the batch is at that moment signing. Measured before it was
+// fixed: with the output-file question answered "overwrite" (or
+// --force, which is the same answer given in advance), the batch signed
+// faktura-signed.pdf and then replaced it with faktura.pdf's signature,
+// on disk, silently.
+//
+// SPEC §12.11 and §18.10 are about the original never being silently
+// overwritten. The output name is always longer than its own input's,
+// so a document can never overwrite *itself* — which is true, and is
+// not the same claim as "no document in the batch is overwritten".
+//
+// Nothing here decides what to do about it, exactly as LooksLikeOutput
+// decides nothing: the window skips those documents and says so on the
+// report, the command line refuses them and exits non-zero. This
+// function only answers the question they ask.
+//
+// The comparison is case-insensitive on Windows and exact elsewhere,
+// for the reason LooksLikeOutput gives: Windows file names are, and
+// treating "A.pdf" and "a.pdf" as one document anywhere else would
+// refuse to sign a file for a collision that does not exist.
+func CollidingOutputs(inputs, outputs []string) map[int]bool {
+	claimed := make(map[string]bool, len(inputs)*2)
+	for _, in := range inputs {
+		claimed[pathKey(in)] = true
+	}
+
+	var out map[int]bool
+	for i, o := range outputs {
+		if i >= len(inputs) {
+			break
+		}
+		key := pathKey(o)
+		if claimed[key] {
+			if out == nil {
+				out = map[int]bool{}
+			}
+			out[i] = true
+			continue
+		}
+		claimed[key] = true
+	}
+	return out
+}
+
+// pathKey is how this package decides two paths name one file.
+func pathKey(path string) string {
+	clean := filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(clean)
+	}
+	return clean
 }
 
 // pdfsDirectlyIn lists the PDFs immediately inside dir, sorted by name,

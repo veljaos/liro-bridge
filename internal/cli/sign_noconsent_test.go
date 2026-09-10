@@ -651,3 +651,52 @@ func TestAlreadySignedNoticeIsALocalisedSentenceInEveryLanguage(t *testing.T) {
 		}
 	}
 }
+
+// A batch must never write over one of its own documents (F9b review,
+// question 2). Reachable here only with --resign, because
+// partitionAlreadySigned drops the "…-signed.pdf" siblings otherwise —
+// and with it, `--in *.pdf --resign --force` used to sign
+// faktura-signed.pdf and then replace it with faktura.pdf's signature.
+//
+// Refused rather than renamed: a script is better served by a non-zero
+// exit than by a file appearing under a name it did not choose.
+func TestRunSignWithoutConsentRefusesAnOutputThatIsAnotherInput(t *testing.T) {
+	dir := t.TempDir()
+	blank, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdfs", "blank.pdf"))
+	if err != nil {
+		t.Skipf("the blank fixture is not available: %v", err)
+	}
+	sibling := filepath.Join(dir, "faktura-signed.pdf")
+	for _, name := range []string{"faktura.pdf", "faktura-signed.pdf"} {
+		if err := os.WriteFile(filepath.Join(dir, name), blank, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sess := &fakeSignSession{}
+	var stdout, stderr bytes.Buffer
+	code := RunSignWithoutConsent(context.Background(), []string{
+		"--in", filepath.Join(dir, "*.pdf"),
+		"--thumbprint", "SIGNPDFTEST", "--resign", "--force", "--on-tsa-failure", "b-b",
+	}, &stdout, &stderr, "en", signPDFDeps(sess))
+
+	// The exit code is F3 §12.10's batch policy and is not asserted
+	// here: one document's failure does not fail a batch, and a
+	// collision is not a better reason to abandon the rest than any
+	// other per-document failure. What must be true is that it is said
+	// out loud and that nothing was destroyed.
+	_ = code
+	if !strings.Contains(stderr.String(), "another document in this batch") {
+		t.Errorf("stderr does not say why: %q", stderr.String())
+	}
+
+	// The sibling is signed, and it is still the document that was
+	// signed — not faktura.pdf's signature wearing its name.
+	after, err := os.ReadFile(sibling)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(blank) {
+		t.Fatalf("faktura-signed.pdf is %d bytes and the fixture is %d: it was rewritten", len(after), len(blank))
+	}
+}

@@ -147,6 +147,12 @@ type mainWindow struct {
 	// "sign them too".
 	skipAlreadySigned map[string]bool
 
+	// collisions is how many documents were left unsigned because their
+	// output path was another document in the same batch. Counted
+	// rather than listed: the report says how many and the queue rows
+	// say which, the same shape as skipAlreadySigned.
+	collisions int
+
 	// exit is the process exit code for a run started from the command
 	// line. Zero unless something failed.
 	exit int
@@ -531,6 +537,7 @@ func (m *mainWindow) handleAction(ctx context.Context) bool {
 		m.report = nil
 		m.selected = ""
 		m.skipAlreadySigned = nil
+		m.collisions = 0
 		m.auditNotice = ""
 		m.show(stepDocuments)
 	case "finish":
@@ -871,6 +878,12 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 			m.backToStart()
 			return false
 		}
+		m.collisions = 0
+		for _, o := range outputs {
+			if o.collides {
+				m.collisions++
+			}
+		}
 	}
 
 	// Either question above puts its own screen up. Whichever way they
@@ -982,6 +995,13 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 			var out interactiveOutput
 			if i < len(d.outputs) {
 				out = d.outputs[i]
+			}
+			if out.collides {
+				// Signing this one would write over another document in
+				// this same batch. Skipped for the same reason J-3's are
+				// — the request is ambiguous and guessing destroys
+				// something — and counted on the report beside them.
+				return jobs.Outcome{}, jobs.ErrSkipDocument
 			}
 			opts := interactiveSignOptions{
 				level:      d.level,
@@ -1344,6 +1364,12 @@ func (m *mainWindow) postReport(r jobs.Report) {
 		// screen that asked, because the report is what is looked at
 		// afterwards and "skipped" on its own does not say why.
 		"alreadySigned": alreadySignedReportText(m.c, len(m.skipAlreadySigned)),
+		// Documents whose signature would have replaced another document
+		// in this same batch. Skipped, and named as its own fact rather
+		// than folded into "skipped": the person asked for these to be
+		// signed and they were not, and the reason is not one they can
+		// work out from the count.
+		"outputCollision": outputCollisionReportText(m.c, m.collisions),
 		// The audit log continued in a new file because the previous
 		// chain could not be continued (Task 5). A notice, not an
 		// error: the batch is recorded, the old file is untouched, and
@@ -1363,6 +1389,21 @@ func (m *mainWindow) postReport(r jobs.Report) {
 	m.showingReport = true
 	if err := m.win.PostJSON(payload); err != nil {
 		slog.Warn("signing window: posting the report failed", "error", err)
+	}
+}
+
+// outputCollisionReportText says how many documents were left alone
+// because signing them would have written over another document in the
+// same batch (jobs.CollidingOutputs). Empty when none were, which is
+// the ordinary case and deserves no line.
+func outputCollisionReportText(c *i18n.Catalogue, n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n == 1:
+		return c.T("main.report_output_collision_one")
+	default:
+		return fmt.Sprintf(c.T("main.report_output_collision_many"), n)
 	}
 }
 

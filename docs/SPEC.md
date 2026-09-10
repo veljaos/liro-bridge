@@ -150,8 +150,8 @@ All four go through the **same** consent screen, the same session, the same audi
 |---|---|---|---|
 | `POST /v2/sign` | Liro web applications | **No** — hashes only | The application builds the PDF and CMS itself. |
 | `POST /v2/sign/pdf` | Third-party ERPs | Yes | Optional module. Can be disabled at install time. |
-| Agent window / OS integration | The user directly | Yes | Drag and drop, right-click menu. |
-| CLI | Scripts, legacy systems | Yes | `liro-bridge sign --in x.pdf --out y.pdf` |
+| Agent window / OS integration | The user directly | Yes | Drag and drop, right-click menu. `liro-bridge open` is the same window, with nothing in it. |
+| CLI | The user, from a shell | Yes | `liro-bridge sign --in x.pdf` — the same window, entered at the certificate step. There is no unattended mode. |
 
 The hash-only path exists because it is the most secure arrangement available: the agent never possesses the document. It is preserved even though the agent is now capable of handling documents, because a compromised web application must not be able to extract documents through the agent.
 

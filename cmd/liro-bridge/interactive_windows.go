@@ -460,17 +460,7 @@ func gatherInteractiveCertificates(ctx context.Context) (cli.Report, error) {
 // and the OS PIN dialog can appear behind the agent's window, which
 // looks like a frozen program rather than a prompt.
 func openInteractiveSession(ctx context.Context, thumbprint keysource.Thumbprint, hwnd uintptr) (keysource.Session, error) {
-	cngSource := windowscng.NewSource().WithWindowHandle(hwnd)
-	sess, err := cngSource.Open(ctx, thumbprint)
-	if err == nil {
-		return sess, nil
-	}
-	softSource := softTokenSource()
-	var e *errs.Error
-	if softSource != nil && errors.As(err, &e) && e.Code == errs.CodeCertNotFound {
-		return softSource.Open(ctx, thumbprint)
-	}
-	return nil, err
+	return openCardOrSoftToken(hwnd)(ctx, thumbprint)
 }
 
 // buildTSAClient wires Task 6's four TSA credential fields (config.Config,
@@ -676,6 +666,13 @@ const (
 type interactiveOutput struct {
 	path      string
 	overwrite bool
+
+	// collides is set when this path is another document in the same
+	// batch, or one an earlier document in it has already been promised.
+	// Such a document is skipped rather than signed: writing it would
+	// destroy something this batch is signing, and no answer to the
+	// output-file question means that (jobs.CollidingOutputs).
+	collides bool
 }
 
 // resolveOutputConflict decides where one document's signature will be
