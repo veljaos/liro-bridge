@@ -364,6 +364,30 @@ jobs:
       - name: go vet
         run: go vet -unsafeptr=false ./...
 
+      # TEMPORARY, branch probe/consent-ci only. Measurement, not a check:
+      # it asserts nothing and cannot fail the job. Removed before this
+      # reaches master.
+      - name: probe — what the certificate path and `sign` actually do here
+        shell: bash
+        run: |
+          go test -tags softtoken -count=1 -v -run 'TestProbe' ./cmd/liro-bridge > probe.txt 2>&1
+          echo "go-test-exit=$?" >> probe.txt
+          cat probe.txt
+          mkdir -p ci-probe && cp probe.txt ci-probe/
+          msg=$(grep -E '^(PROBE|go-test-exit)' probe.txt | tr -d '\r' | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::warning title=probe::$msg"
+        env:
+          CGO_ENABLED: 0
+          LIRO_DEBUG: 1
+
+      - name: upload the probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-probe-windows
+          path: ci-probe
+          if-no-files-found: warn
+
       - name: test (real WebView2 windows, no hardware)
         # -tags softtoken so the interactive consent/sign path
         # (cmd/liro-bridge's *_windows_test.go) can exercise a real
@@ -376,6 +400,44 @@ jobs:
         run: go test -tags softtoken ./... -count=1
         env:
           CGO_ENABLED: 0
+          # The agent says why it gave up in its own log, and until now
+          # not one line of that log reached this job. config.SetupLogging
+          # slog.SetDefault()s a JSON handler over a file under
+          # LOCALAPPDATA, which the suite points at a temporary directory
+          # it then deletes — so a Windows failure arrived here as a
+          # symptom with its cause thrown away, and the only remedy was to
+          # re-run it. LIRO_DEBUG=1 is the switch F0 §10 already defines
+          # for exactly this (text to stderr as well as JSON to the file);
+          # setting it here is what makes a red Windows job readable.
+          LIRO_DEBUG: 1
+
+      # The log file too, not only what stderr carried: a failed test now
+      # keeps its config home (tempConfigHome), and that directory holds
+      # the agent's JSON log, its audit chain and its config as the run
+      # left them. Artifacts are downloadable by anyone who can read the
+      # repository; job logs need admin.
+      - name: collect the agent's own state from a failed run
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p ci-agent-state
+          n=0
+          for d in "${TEMP:-/tmp}"/liro-config-* "${RUNNER_TEMP:-/tmp}"/liro-config-*; do
+            [ -d "$d/Liro" ] || continue
+            cp -r "$d/Liro" "ci-agent-state/$(basename "$d")"
+            n=$((n + 1))
+          done
+          echo "collected $n config home(s)"
+          find ci-agent-state -type f -printf '%s\t%p\n' 2>/dev/null || true
+
+      - name: upload the agent's own state from a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-agent-state-windows
+          path: ci-agent-state
+          if-no-files-found: warn
+          retention-days: 14
 
       # D-221 closed a defect in the packaging test — it resolved
       # npm-cli.js by assuming the Windows layout, which is wrong on

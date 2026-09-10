@@ -157,6 +157,16 @@ func boolText(b bool) string {
 // and 196 suite runs had left 1.26 GB in %TEMP%. The failure was
 // already being discarded here; discarding it is what made it
 // invisible.
+// A failing test keeps its directory instead. Everything the agent's own
+// slog writes goes into a file under here — config.SetupLogging
+// slog.SetDefault's a JSON handler over LOCALAPPDATA and nothing of it
+// reaches the test output — so deleting the directory on the way out of a
+// failure throws away the only account of why the failure happened. That
+// is what made "no new visible window titled Liro Bridge appeared within
+// 1m30s" a CI failure with no cause attached to it. sweepStaleConfigHomes
+// still collects these an hour later, so keeping them does not
+// reintroduce C-6's accumulation, and CI uploads them as an artifact
+// before then (.github/workflows/ci.yml).
 func tempConfigHome(t *testing.T) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", configHomePrefix)
@@ -164,7 +174,13 @@ func tempConfigHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("LOCALAPPDATA", dir)
-	t.Cleanup(func() { removeWithRetry(dir) })
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("keeping the config home of a failed test: %s", dir)
+			return
+		}
+		removeWithRetry(dir)
+	})
 }
 
 // configHomePrefix names the temporary directories tempConfigHome makes,
