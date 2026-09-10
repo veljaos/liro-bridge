@@ -41,7 +41,7 @@ func TestConsentWindowRendersAndRoundTrips(t *testing.T) {
 
 	win, messages := sharedConsentWindow(t)
 
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
+	if err := win.PostJSON(buildConsentInit(c, vm, "")); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 

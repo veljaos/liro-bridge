@@ -93,7 +93,7 @@ func TestConsentLongFileNameDoesNotWidenTheWindow(t *testing.T) {
 
 	longName := strings.Repeat("a", 300) + ".pdf"
 	vm := consent.BuildViewModel(consent.ApplicationLocal, [][]byte{{1}}, []string{longName}, []classify.Info{cert})
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
+	if err := win.PostJSON(buildConsentInit(c, vm, "")); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 	openConsentDetails(t, win)
@@ -114,7 +114,7 @@ func postConsentFingerprint(t *testing.T, win ui.Window, c *i18n.Catalogue, cert
 	vm := consent.BuildViewModel(consent.ApplicationLocal, [][]byte{{1, 2, 3}}, []string{"document.pdf"}, []classify.Info{cert})
 	vm.Fingerprint = fingerprint
 	vm.FingerprintShort = consent.ShortFingerprint(fingerprint)
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
+	if err := win.PostJSON(buildConsentInit(c, vm, "")); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 	openConsentDetails(t, win)

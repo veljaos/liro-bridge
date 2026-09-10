@@ -67,7 +67,15 @@
 
       list.appendChild(row);
     });
-    document.getElementById("no-usable-cert").hidden = anyUsable;
+    // The line that stands where "choose a certificate" would. Go
+    // decides the sentence, because only Go knows whether the listing is
+    // still running, whether there is a reader, whether there is a card
+    // in it, and whether the Windows service that answers any of those
+    // questions is running at all.
+    var notice = model.certNoticeText || "";
+    var noticeEl = document.getElementById("no-usable-cert");
+    window.liroSetText(noticeEl, notice);
+    noticeEl.hidden = notice === "";
     document.getElementById("select-prompt").hidden = !anyUsable;
   }
 

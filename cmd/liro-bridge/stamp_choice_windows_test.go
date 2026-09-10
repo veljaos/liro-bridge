@@ -40,7 +40,7 @@ func postConsent(t *testing.T, win ui.Window, c *i18n.Catalogue) {
 	t.Helper()
 	vm := consent.BuildViewModel(consent.ApplicationLocal, [][]byte{{1}}, []string{"ugovor.pdf"},
 		[]classify.Info{stampTestCertificate()})
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
+	if err := win.PostJSON(buildConsentInit(c, vm, "")); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 }

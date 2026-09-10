@@ -134,7 +134,7 @@ func TestTheStepHeaderReadsTheSameInEveryLanguage(t *testing.T) {
 	m := newMainWindow(cfg, "sr-Latn")
 	win, _ := sharedConsentWindow(t)
 	payload := buildConsentInit(c, consent.BuildViewModel(consent.ApplicationLocal,
-		[][]byte{{1}}, []string{"ugovor.pdf"}, []classify.Info{stampTestCertificate()}))
+		[][]byte{{1}}, []string{"ugovor.pdf"}, []classify.Info{stampTestCertificate()}), "")
 	payload["step"] = m.headerFor(stepCertificate)
 	if err := win.PostJSON(payload); err != nil {
 		t.Fatalf("PostJSON: %v", err)
@@ -168,7 +168,7 @@ func TestApproveIsNotTheDefaultFocusAndNeedsADeliberatePress(t *testing.T) {
 	win, messages := sharedConsentWindow(t)
 
 	payload := buildConsentInit(c, consent.BuildViewModel(consent.ApplicationLocal,
-		[][]byte{{1}}, []string{"ugovor.pdf"}, []classify.Info{stampTestCertificate()}))
+		[][]byte{{1}}, []string{"ugovor.pdf"}, []classify.Info{stampTestCertificate()}), "")
 	payload["step"] = m.headerFor(stepCertificate)
 	if err := win.PostJSON(payload); err != nil {
 		t.Fatalf("PostJSON: %v", err)

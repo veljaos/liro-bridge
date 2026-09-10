@@ -611,7 +611,7 @@ func TestCertificateSelectionDoesNotPersistBetweenRuns(t *testing.T) {
 		})
 
 	win, _ := sharedConsentWindow(t)
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
+	if err := win.PostJSON(buildConsentInit(c, vm, "")); err != nil {
 		t.Fatalf("PostJSON(consent init): %v", err)
 	}
 
@@ -628,7 +628,7 @@ func TestCertificateSelectionDoesNotPersistBetweenRuns(t *testing.T) {
 	if evalBool(t, win, "document.getElementById('approve-btn').disabled") {
 		t.Fatal("Approve is still disabled after a certificate was chosen")
 	}
-	if err := win.PostJSON(buildConsentInit(c, vm)); err != nil {
+	if err := win.PostJSON(buildConsentInit(c, vm, "")); err != nil {
 		t.Fatalf("PostJSON(second batch): %v", err)
 	}
 	if !evalBool(t, win, "document.getElementById('approve-btn').disabled") {

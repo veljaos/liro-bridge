@@ -8,10 +8,12 @@ package cli
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
@@ -108,7 +110,7 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 
 	readers, err := deps.Readers(ctx)
 	if err != nil {
-		return Report{}, fmt.Errorf("listing smart card readers: %w", err)
+		return Report{}, readerListingError(err)
 	}
 
 	certs, err := deps.Enumerate(ctx)
@@ -165,6 +167,79 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 	}
 
 	return Report{Readers: readers, Certificates: rows, TSL: provenance}, nil
+}
+
+// readerListingError gives a failed reader listing the code SPEC §7
+// already has for it.
+//
+// SMART_CARD_SERVICE_DOWN was defined in F1 and never once produced:
+// platform.ErrSmartCardServiceDown travelled as a bare wrapped error and
+// every caller above treated it as an unclassified failure. That is not
+// a cosmetic gap. It is the state windows-latest is permanently in —
+// there is no reader on a CI runner and the service is not running —
+// and it is the state of any machine where the agent is installed before
+// the reader is plugged in. Measured there: `liro-bridge sign` gave up
+// 1.011s in with no window and nothing on stdout, because the only thing
+// that knew why was an error string nobody could branch on (D-236).
+func readerListingError(err error) error {
+	code := errs.CodeInternal
+	if errors.Is(err, platform.ErrSmartCardServiceDown) {
+		code = errs.CodeSmartCardServiceDown
+	}
+	return errs.New(code, fmt.Errorf("listing smart card readers: %w", err))
+}
+
+// NothingUsableReason answers the one question a screen offering no
+// signing certificate has to answer: why not. It returns "" when at
+// least one offered certificate can sign right now, and otherwise the
+// SPEC §7 code for the reason, in the order a person can act on:
+//
+//	NO_READER          nothing to put a card into
+//	CARD_NOT_PRESENT   a reader, and no card in it
+//	CERT_NOT_FOUND     a card, and nothing on it this agent can offer
+//	<the row's own>     certificates offered, none of them usable, all
+//	                    for the same reason — CERT_EXPIRED, say
+//	CERT_NOT_USABLE    offered, unusable, and not all for one reason
+//
+// It is here rather than in the window because the same question is the
+// `certs` command's and the window's, and a question answered in two
+// places is one that can be answered two ways (D-108, D-124, D-138).
+// Hidden rows are not offered to anybody, so they are not evidence that
+// there is something to sign with.
+func (r Report) NothingUsableReason() errs.Code {
+	offered := make([]CertRow, 0, len(r.Certificates))
+	for _, row := range r.Certificates {
+		if row.Hidden() {
+			continue
+		}
+		if row.Info.Usable {
+			return ""
+		}
+		offered = append(offered, row)
+	}
+
+	if len(offered) > 0 {
+		reason := offered[0].Info.NotUsableReason
+		for _, row := range offered[1:] {
+			if row.Info.NotUsableReason != reason {
+				return errs.CodeCertNotUsable
+			}
+		}
+		if reason == "" {
+			return errs.CodeCertNotUsable
+		}
+		return reason
+	}
+
+	if len(r.Readers) == 0 {
+		return errs.CodeNoReader
+	}
+	for _, reader := range r.Readers {
+		if reader.CardPresent {
+			return errs.CodeCertNotFound
+		}
+	}
+	return errs.CodeCardNotPresent
 }
 
 // presenceMemo is one listing's answers to the presence question, keyed

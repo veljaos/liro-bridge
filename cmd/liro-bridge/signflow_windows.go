@@ -47,6 +47,8 @@ import (
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
+	"github.com/veljaos/liro-bridge/internal/errs"
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/trust/classify"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
@@ -334,10 +336,39 @@ func (m *mainWindow) advance(ctx context.Context) bool {
 // be done twice for one batch.
 func (m *mainWindow) postCertificateStep() {
 	vm := consent.BuildViewModel(m.applicationName(), m.digests(), m.fileNames(), m.certInfos)
-	payload := buildConsentInit(m.c, vm)
+	payload := buildConsentInit(m.c, vm, m.certificateNotice())
 	payload["step"] = m.headerFor(stepCertificate)
 	if err := m.win.PostJSON(payload); err != nil {
 		slog.Error("signing flow: could not post the certificate step", "error", err)
+	}
+}
+
+// certificateNotice is the sentence the certificate step shows when
+// there is nothing on it to choose. Empty when there is.
+//
+// The three whole-machine states get their own sentence, because they
+// are the three a person can do something about and they are not the
+// same thing: no reader is a cable, no card is a card, and a stopped
+// Windows service is neither. A row-level reason — an expired
+// certificate, one whose card is out — is already printed under the row
+// it belongs to, so the summary line above stays general rather than
+// repeating one row's reason as if it were the machine's.
+func (m *mainWindow) certificateNotice() string {
+	if m.listing != nil {
+		// The enumeration has not answered yet. Without this the screen
+		// would spend that second asserting that nothing here can sign,
+		// which is a statement about a question nobody has answered.
+		return m.c.T("consent.looking_for_certificates")
+	}
+	switch m.certReason {
+	case "":
+		return ""
+	case errs.CodeCertNotFound:
+		return m.c.T("consent.no_certificate_found")
+	case errs.CodeCertNotUsable, errs.CodeCertExpired:
+		return m.c.T("consent.no_usable_certificate")
+	default:
+		return m.c.T(i18n.CodeKey(m.certReason))
 	}
 }
 
@@ -347,14 +378,13 @@ func (m *mainWindow) postCertificateStep() {
 // the certificate step: pressing Back from the method step must not
 // re-enumerate a smart card.
 func (m *mainWindow) gatherCertificates(ctx context.Context) bool {
-	report, err := gatherInteractiveCertificates(ctx)
+	report, err := m.gather(ctx)
 	if err != nil {
 		slog.Error("signing flow: listing certificates failed", "error", err)
 		m.fail(err)
 		return false
 	}
-	m.certs = report
-	m.certInfos = visibleCertificates(report)
+	m.applyListing(certificateListing{report: report})
 	return true
 }
 

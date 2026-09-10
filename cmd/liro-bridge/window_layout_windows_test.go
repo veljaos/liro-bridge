@@ -278,7 +278,7 @@ func consentSixCertificates(t *testing.T, locale string) {
 
 	vm := consent.BuildViewModel(consent.ApplicationLocal,
 		[][]byte{{1}, {2}, {3}}, []string{"ugovor.pdf", "aneks.pdf", "izjava.pdf"}, sixCertificates())
-	if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm))); err != nil {
+	if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm, ""))); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 
@@ -316,7 +316,7 @@ func consentTenLongNames(t *testing.T, locale string) {
 		names = append(names, strings.Repeat("ugovor-o-poslovnoj-saradnji-", 6)+"0.pdf")
 	}
 	vm := consent.BuildViewModel(consent.ApplicationLocal, digests, names, sixCertificates())
-	if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm))); err != nil {
+	if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm, ""))); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 	openConsentDetails(t, win)
@@ -350,7 +350,7 @@ func TestALongApplicationNameFitsOnTheConsentScreen(t *testing.T) {
 			win, _ := sharedConsentWindow(t)
 			vm := consent.BuildViewModel(name,
 				[][]byte{{1}, {2}, {3}}, []string{"ugovor.pdf", "aneks.pdf", "izjava.pdf"}, sixCertificates())
-			if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm))); err != nil {
+			if err := win.PostJSON(withStepHeaderIn(locale, buildConsentInit(c, vm, ""))); err != nil {
 				t.Fatalf("PostJSON: %v", err)
 			}
 			if got := evalString(t, win, "document.getElementById('application-name').textContent"); got != name {

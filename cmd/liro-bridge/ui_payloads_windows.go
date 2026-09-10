@@ -41,6 +41,19 @@ type jsConsentModel struct {
 	Files             []string       `json:"files"`
 	FilesOverflowText string         `json:"filesOverflowText"`
 	Certificates      []jsCertOption `json:"certificates"`
+
+	// CertNoticeText is the sentence that stands where "choose a
+	// certificate" would, when there is nothing to choose: the listing
+	// is still running, or it finished and offered nothing usable. Empty
+	// when at least one certificate on the screen can sign.
+	//
+	// It is a sentence Go decided rather than a static label the page
+	// resolves for itself, because the page cannot tell "no reader" from
+	// "no card" from "the Windows service is off" — and the label it
+	// used to show unconditionally, "None of the certificates on this
+	// card can be used for signing", asserts a card that may not exist
+	// (D-236).
+	CertNoticeText string `json:"certNoticeText"`
 }
 
 func roleText(c *i18n.Catalogue, r consent.Role) string {
@@ -89,7 +102,10 @@ func buildCertOptions(c *i18n.Catalogue, certs []consent.CertificateOption) []js
 	return out
 }
 
-func buildConsentInit(c *i18n.Catalogue, vm consent.ViewModel) map[string]any {
+// buildConsentInit builds the certificate step's payload. notice is the
+// sentence for a screen with nothing to choose from — see
+// jsConsentModel.CertNoticeText — and is empty when there is.
+func buildConsentInit(c *i18n.Catalogue, vm consent.ViewModel, notice string) map[string]any {
 	certs := buildCertOptions(c, vm.Certificates)
 
 	filesOverflow := ""
@@ -108,7 +124,6 @@ func buildConsentInit(c *i18n.Catalogue, vm consent.ViewModel) map[string]any {
 			"consent.fingerprint_label":         c.T("consent.fingerprint_label"),
 			"consent.files_label":               c.T("consent.files_label"),
 			"consent.select_certificate_prompt": c.T("consent.select_certificate_prompt"),
-			"consent.no_usable_certificate":     c.T("consent.no_usable_certificate"),
 			"consent.copy_fingerprint":          c.T("consent.copy_fingerprint"),
 		},
 		"model": jsConsentModel{
@@ -120,6 +135,7 @@ func buildConsentInit(c *i18n.Catalogue, vm consent.ViewModel) map[string]any {
 			Files:             vm.Files,
 			FilesOverflowText: filesOverflow,
 			Certificates:      certs,
+			CertNoticeText:    notice,
 		},
 	}
 }

@@ -70,6 +70,8 @@
   "consent.fingerprint_label": "Отисак серије",
   "consent.level_bb": "Ниво B-B — без временског жига",
   "consent.local_application": "Овај рачунар",
+  "consent.looking_for_certificates": "Тражим ваш сертификат…",
+  "consent.no_certificate_found": "На овој картици није пронађен сертификат за потписивање.",
   "consent.no_usable_certificate": "Ниједан сертификат на овој картици се не може користити за потписивање.",
   "consent.output_exists_explain": "Ништа није преписано. Изаберите шта да се уради са потписаним документом.",
   "consent.output_exists_overwrite": "Препиши",

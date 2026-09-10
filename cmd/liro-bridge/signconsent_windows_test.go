@@ -89,6 +89,38 @@ func waitForNewWindowTitled(t *testing.T, title string, before map[uintptr]bool,
 	return 0
 }
 
+// waitForNewWindowTitledOrExit is waitForNewWindowTitled for a command
+// running on its own goroutine: it gives up the moment that command
+// returns, and says so, rather than waiting out a window that cannot
+// arrive any more.
+//
+// A command that has already exited is a different failure from a
+// command that is still running and has drawn nothing, and they are the
+// two this test can produce. Reporting them as one — "no window
+// appeared" — is what made a Windows CI failure a symptom with no cause,
+// which is the whole subject of D-236.
+func waitForNewWindowTitledOrExit(t *testing.T, title string, before map[uintptr]bool, done <-chan int, within time.Duration) uintptr {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		for h := range liroWindowsTitled(t, title) {
+			if before[h] {
+				continue
+			}
+			if visible, _, _ := procIsWindowVisibleT.Call(h); visible != 0 {
+				return h
+			}
+		}
+		select {
+		case code := <-done:
+			t.Fatalf("sign returned %d without ever showing a window; nobody was asked and nothing said so", code)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	t.Fatalf("no new visible window titled %q appeared within %v, and sign is still running", title, within)
+	return 0
+}
+
 func TestTheSignCommandOpensAWindowAndSignsNothingUntilItIsAnswered(t *testing.T) {
 	tempConfigHome(t)
 
@@ -114,7 +146,14 @@ func TestTheSignCommandOpensAWindowAndSignsNothingUntilItIsAnswered(t *testing.T
 	done := make(chan int, 1)
 	go func() { done <- run([]string{"sign", "--in", in}, io.Discard) }()
 
-	hwnd := waitForNewWindowTitled(t, title, before, 90*time.Second)
+	// The exit code is watched alongside the window, because the two
+	// ways this can fail need different answers and the wait alone
+	// cannot tell them apart. On windows-latest it failed the second
+	// way: `sign` was already over — 1.011s, exit 1, nothing on stdout
+	// — and the test spent the remaining eighty-nine seconds waiting
+	// for a window belonging to a process that had finished. "No window
+	// appeared" was true and said nothing about why (D-236).
+	hwnd := waitForNewWindowTitledOrExit(t, title, before, done, 90*time.Second)
 
 	// Nothing may have been signed by the time a person is first asked.
 	if _, err := os.Stat(out); err == nil {

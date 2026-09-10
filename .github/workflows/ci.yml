@@ -408,14 +408,17 @@ jobs:
           # symptom with its cause thrown away, and the only remedy was to
           # re-run it. LIRO_DEBUG=1 is the switch F0 §10 already defines
           # for exactly this (text to stderr as well as JSON to the file);
-          # setting it here is what makes a red Windows job readable.
+          # setting it here is what makes a red Windows job readable
+          # (D-237).
           LIRO_DEBUG: 1
 
       # The log file too, not only what stderr carried: a failed test now
       # keeps its config home (tempConfigHome), and that directory holds
       # the agent's JSON log, its audit chain and its config as the run
-      # left them. Artifacts are downloadable by anyone who can read the
-      # repository; job logs need admin.
+      # left them — more than stderr can carry. An artifact rather than
+      # the job log because reading a job log needs admin rights on the
+      # repository and reading an artifact only needs an account
+      # (measured, D-237).
       - name: collect the agent's own state from a failed run
         if: failure()
         shell: bash

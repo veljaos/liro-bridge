@@ -46,6 +46,12 @@ type mainWindow struct {
 	messages chan ui.Message
 	dropped  chan []string
 	closed   chan struct{}
+	// ready is closed once win is set and the first payload has been
+	// posted into it. It is what makes "the window is up" an observable
+	// state rather than a moment to wait a while for (D-201), and it is
+	// the happens-before edge that lets anything off this goroutine read
+	// win at all.
+	ready chan struct{}
 
 	c      *i18n.Catalogue
 	locale string
@@ -127,6 +133,17 @@ type mainWindow struct {
 	// that step — pressing Back must not re-enumerate a smart card.
 	certs     cli.Report
 	certInfos []classify.Info
+	// certReason is why the certificate step has nothing to offer, as
+	// one of SPEC §7's codes, or "" when it has something usable. It is
+	// what the screen says in place of "choose a certificate".
+	certReason errs.Code
+	// listing carries the enumeration to the loop for a run that opened
+	// its window before asking about certificates — `sign`, where the
+	// window has to be on screen whatever the answer turns out to be
+	// (D-236). Nil once the answer has arrived, which is what takes its
+	// case out of the select, and nil from the start on the paths that
+	// enumerate before there is a window.
+	listing chan certificateListing
 	// selected is the chosen certificate's thumbprint, empty until the
 	// person picks one.
 	selected string
@@ -169,6 +186,15 @@ type mainWindow struct {
 	// They are indistinguishable, to anyone reading the log later, from
 	// real signing sessions.
 	auditStore func() (*audit.Store, error)
+
+	// gather is the certificate enumeration, a field for the same
+	// reason auditStore is one: the states this window now has to be
+	// right about — no reader, no card, no smart card service — are
+	// states the machine running the test is not in and cannot be put
+	// into. The default is gatherInteractiveCertificates, the real
+	// Windows CNG and PC/SC listing, which is what every run in
+	// production uses.
+	gather func(context.Context) (cli.Report, error)
 }
 
 // runMainWindow opens the signing window and runs it until it is
@@ -193,9 +219,43 @@ type flowRequest struct {
 	stamp *consent.StampChoice
 }
 
+// certificateListing is one enumeration, handed to the window's loop by
+// the goroutine that made it.
+type certificateListing struct {
+	report cli.Report
+	err    error
+}
+
 // runSigningFlow opens the window on the certificate step, for a caller
 // that brought its own documents. It returns the process exit code.
+//
+// The window comes first and the certificates arrive into it. This used
+// to be the other way round — enumerate, and return 1 with no window if
+// that failed — which was measured on windows-latest, a machine with no
+// reader and no smart card service at all: `sign --in x.pdf` gave up
+// 1.011s in, with no window, nothing on stdout, and its only account of
+// itself in a JSON log file inside a temporary directory. That is F10's
+// stranger, who installs the agent before plugging the reader in, and
+// nothing told them anything (D-236).
+//
+// The enumeration starts before the window is created rather than after,
+// so the two overlap: on this machine they measured 0.36s and 0.86s, and
+// running them in sequence would have added the smaller to the larger
+// for no gain to anybody.
 func runSigningFlow(ctx context.Context, cfg config.Config, locale string, req flowRequest) int {
+	m := newSigningFlow(cfg, locale, req)
+	m.startListing(ctx)
+	return m.open(ctx, nil, stepCertificate)
+}
+
+// newSigningFlow is that run's state before there is a window. It is
+// separate from runSigningFlow so that a test can hold the window this
+// builds and read what is actually on it — the states this flow now has
+// to be right about (no reader, no card, no smart card service) are
+// states the machine running the test is not in and cannot be put into,
+// so the only honest way to see those screens is to give this window a
+// listing and then look at it.
+func newSigningFlow(cfg config.Config, locale string, req flowRequest) *mainWindow {
 	m := newMainWindow(cfg, locale)
 	m.documentsSupplied = true
 	m.suppliedStamp = req.stamp
@@ -208,11 +268,19 @@ func runSigningFlow(ctx context.Context, cfg config.Config, locale string, req f
 		paths = append(paths, in.path)
 	}
 	_, m.notices = m.queue.Add(paths)
+	return m
+}
 
-	if !m.gatherCertificatesBeforeOpening(ctx) {
-		return 1
-	}
-	return m.open(ctx, nil, stepCertificate)
+// startListing begins the certificate enumeration on its own goroutine,
+// to arrive in the window's loop whenever it arrives.
+func (m *mainWindow) startListing(ctx context.Context) {
+	// Buffered, so the goroutine is never left holding a value nobody
+	// will take — a window that failed to open never reaches the loop.
+	m.listing = make(chan certificateListing, 1)
+	go func(gather func(context.Context) (cli.Report, error), out chan<- certificateListing) {
+		report, err := gather(ctx)
+		out <- certificateListing{report: report, err: err}
+	}(m.gather, m.listing)
 }
 
 // newMainWindow is the window's state before there is a window.
@@ -221,11 +289,13 @@ func newMainWindow(cfg config.Config, locale string) *mainWindow {
 		messages:   make(chan ui.Message, 16),
 		dropped:    make(chan []string, 16),
 		closed:     make(chan struct{}),
+		ready:      make(chan struct{}),
 		c:          i18n.Load(locale),
 		locale:     locale,
 		cfg:        cfg,
 		method:     stampMethodOf(cfg),
 		auditStore: newAuditStore,
+		gather:     interactiveGather,
 	}
 }
 
@@ -234,14 +304,28 @@ func newMainWindow(cfg config.Config, locale string) *mainWindow {
 // way out of. A failure here is fatal rather than a screen: there is no
 // window yet to put one on.
 func (m *mainWindow) gatherCertificatesBeforeOpening(ctx context.Context) bool {
-	report, err := gatherInteractiveCertificates(ctx)
+	report, err := m.gather(ctx)
 	if err != nil {
 		slog.Error("signing flow: listing certificates failed", "error", err)
 		return false
 	}
-	m.certs = report
-	m.certInfos = visibleCertificates(report)
+	m.applyListing(certificateListing{report: report})
 	return true
+}
+
+// applyListing records one enumeration: what to offer, and — when there
+// is nothing to offer — which of SPEC §7's codes says why.
+func (m *mainWindow) applyListing(l certificateListing) {
+	if l.err != nil {
+		slog.Error("signing flow: listing certificates failed", "error", l.err)
+		m.certs = cli.Report{}
+		m.certInfos = nil
+		m.certReason = codeOfInteractive(l.err)
+		return
+	}
+	m.certs = l.report
+	m.certInfos = visibleCertificates(l.report)
+	m.certReason = l.report.NothingUsableReason()
 }
 
 // runMainWindowWatching is runMainWindow with an inbox to keep draining
@@ -307,6 +391,7 @@ func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep
 			return 1
 		}
 	}
+	close(m.ready)
 
 	if inbox != nil {
 		stop := make(chan struct{})
@@ -437,6 +522,16 @@ func (m *mainWindow) loop(ctx context.Context) {
 				m.runner.Stop()
 			}
 			return
+		case l := <-m.listing:
+			// The certificates, for a window that opened before there
+			// was an answer. Receiving from a nil channel blocks for
+			// ever, so clearing the field is what takes this case out
+			// of the select once the one answer has arrived.
+			m.listing = nil
+			m.applyListing(l)
+			if m.step == stepCertificate && !m.showingReport && !m.failed {
+				m.postCertificateStep()
+			}
 		case paths := <-m.dropped:
 			// Documents are added at the step that is about them.
 			// Anywhere else the drop is not lost and not silently

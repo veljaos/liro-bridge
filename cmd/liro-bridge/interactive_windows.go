@@ -433,6 +433,13 @@ func codeOfInteractive(err error) errs.Code {
 	return errs.CodeInternal
 }
 
+// interactiveGather is the enumeration every signing window uses. It is
+// a variable so that a test can put the window into the states this
+// machine cannot be put into — no reader, no card, no smart card
+// service — and look at what the window then says. Production never
+// assigns it.
+var interactiveGather = gatherInteractiveCertificates
+
 // gatherInteractiveCertificates wires the real Windows CNG source and
 // soft token (when built with the "softtoken" tag) into cli.Gather —
 // the same certificate list "liro-bridge certs" itself uses.

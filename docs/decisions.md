@@ -16570,3 +16570,202 @@ cross-compiling it and stopping.
   not in the batch is a previous run's output, which is exactly what
   `--force` is for. `TestCollidingOutputsIsNotADisguisedExistenceCheck`
   keeps that distinction.
+
+---
+
+## D-236 — What `sign` does on a machine with no reader: the window opens first and says which of the three kinds of nothing this is
+
+**Date:** 2026-09-10
+**Phase:** F10 — pre-phase fix
+
+**How this was found, and it was not by reading the code.** F9's own
+consent regression test —
+`TestTheSignCommandOpensAWindowAndSignsNothingUntilItIsAnswered`, the
+test that `sign` shows the consent window — passed on the machine it was
+written on and failed the first time it ran anywhere else:
+
+```
+--- FAIL: TestTheSignCommandOpensAWindowAndSignsNothingUntilItIsAnswered (90.02s)
+    signconsent_windows_test.go:117: no new visible window titled "Liro Bridge"
+    appeared within 1m30s
+```
+
+That is [[D-221]]'s finding for the third time in this repository, and
+the test is the smaller half of it. Measured on the runner itself, with a
+probe reporting what each step of the flow actually did:
+
+```
+PROBE readers   elapsed=2ms   n=0  err=smart card service is not running
+PROBE enumerate elapsed=2ms   n=0  err=<nil>
+PROBE gather    elapsed=950ms rows=0 visible=0
+                err=listing smart card readers: smart card service is not running
+PROBE sign      window-appeared=false after=0s
+PROBE sign      returned=1.011s code=1 stdout=""
+PROBE log       {"level":"ERROR","msg":"signing flow: listing certificates failed",
+                 "error":"listing smart card readers: smart card service is not running"}
+```
+
+**So it does not hang. It gives up in one second and says nothing.**
+`SCardEstablishContext` returns `SCARD_E_NO_SERVICE` on a machine with no
+reader — windows-latest has neither the hardware nor the service running
+— `cli.Gather` fails, and `runSigningFlow` enumerated *before* it opened
+anything, so a failure there returned 1 with no window to put it on. Not
+a line on stdout. The one sentence that knew why went to `slog`, which
+`run()` has by then pointed at a JSON file under `LOCALAPPDATA` — a
+temporary directory the suite deleted on its way out ([[D-237]]).
+
+**This is not a CI problem.** It is F10's stranger: somebody who installs
+the agent before the reader is plugged in, or whose reader has no driver
+yet, double-clicks a PDF and gets a second of nothing. It is also every
+developer's first run. A console message would help only somebody who
+started this from a console, and nobody double-clicking a PDF did.
+
+**Decision. The window opens first, and it says which of the three
+states this machine is in.**
+
+*(a) The window is created before the enumeration is asked about, not
+after.* `runSigningFlow` starts the listing on its own goroutine and
+opens the window; the answer arrives into the window's own loop
+(`certificateListing`, a case in `mainWindow.loop`). Whatever the machine
+turns out to be, there is a window. The two overlap rather than run in
+sequence — measured here at 0.36s for the listing and 0.86s for the
+window — so promptness was not traded for it.
+
+*(b) The screen says which kind of nothing.* These are different
+remedies, and a person needs to know which one they are in:
+
+| State | Code | What the screen says |
+|---|---|---|
+| Nothing to put a card into | `NO_READER` | "No card reader detected. Connect the reader and try again." |
+| A reader, and no card in it | `CARD_NOT_PRESENT` | "Insert your card into the reader." |
+| The Windows service is not running | `SMART_CARD_SERVICE_DOWN` | "The Windows Smart Card service is not running." |
+| A card, and nothing on it | `CERT_NOT_FOUND` | "No signing certificate was found on this card." |
+| Certificates, none of them usable | `CERT_NOT_USABLE` | unchanged — each row already carries its own reason |
+
+The codes are SPEC §7's, not new ones. Two of them — `NO_READER` and
+`SMART_CARD_SERVICE_DOWN` — had been in `internal/errs` since F1 and were
+**never once produced by anything**: `platform.ErrSmartCardServiceDown`
+travelled as a bare wrapped error and every caller above it saw an
+unclassified failure. `cli.Gather` classifies it now
+(`readerListingError`), and `cli.Report.NothingUsableReason` answers the
+rest — one function, so the `certs` command and the window cannot answer
+the same question two ways ([[D-108]], [[D-124]], [[D-138]]).
+
+*(c) The screen does not assert a card before it has looked.* The line
+that carries all this used to be a static label the page resolved for
+itself: `consent.no_usable_certificate`, "None of the certificates on
+this card can be used for signing" — a claim about a card that may not
+exist, shown whenever the list was empty for any reason, and never once
+asserted by a test. It is Go's sentence now
+(`jsConsentModel.CertNoticeText`), because only Go knows which of the
+rows above applies; and while the listing is still running it says
+`consent.looking_for_certificates` instead of delivering a verdict on a
+question nobody has answered yet.
+
+**Rejected.**
+- **A console message.** It reaches the one person who did not need it.
+  `sign` is what the Explorer verb runs; there is no console.
+- **Enumerating first and opening the window only on success**, i.e. what
+  the code did. The behaviour it produces — no window, no message, one
+  second — is the worst of the available ones, because it is
+  indistinguishable from the program not having been started.
+- **A "Try again" button that re-enumerates.** Genuinely useful for
+  somebody who plugs the reader in while the window is open, and out of
+  scope here: new UI surface, in three locales, with its own layout and
+  its own failure modes, for a case the person can already answer by
+  closing the window and double-clicking again. Recorded as worth doing
+  rather than done.
+- **Watching for card arrival and re-enumerating by itself.** The same
+  idea one step further, and a bigger one: a `SCardGetStatusChange`
+  watcher has a lifetime, a thread, and a way of being wrong. Not in a
+  fix pass.
+- **Failing the window onto the failure screen (`m.fail`).** That screen
+  is for a batch that went wrong, and it is a dead end. "Plug the reader
+  in" is not a failure of this batch; it is a state of this machine, and
+  it belongs on the step it is about.
+- **Changing the protocol path to match.** It stays as it is,
+  deliberately: a request from a paired application is answered with a
+  code, and opening a window at a person to tell them a program's request
+  could not be served is worse than answering the program
+  (`runProtocolFlow`, SPEC §7).
+
+**Tests.**
+- `internal/cli`: `TestTheReportSaysWhyItHasNothingToSignWith` (seven
+  states), `TestHiddenRowsAreNotSomethingToSignWith`, and
+  `TestAStoppedSmartCardServiceIsItsOwnCode`, which also checks that an
+  unrelated reader failure does not borrow the code.
+- `cmd/liro-bridge`:
+  `TestTheSignWindowIsOnScreenBeforeTheCertificateListIs` holds the
+  enumeration open and observes the window while the machine's answer is
+  still unknown — an ordering observed rather than a duration timed
+  ([[D-201]]).
+  `TestTheCertificateStepSaysWhichKindOfNothingThisIs` opens the real
+  window over each of the four listings and reads the sentence off the
+  page.
+  `TestTheCertificateStepNeverAssertsACardBeforeItHasLooked` and
+  `TestAUsableCertificateStillGetsNoNotice` cover the two ends.
+- The states are reachable in a test because the enumeration is a field
+  on the window with a package variable behind it (`interactiveGather`),
+  the same seam `auditStore` already is. This machine has a reader and
+  cannot be put into any of those states; a check that could only run
+  where the hardware is absent would be [[D-221]] again with the
+  platforms swapped.
+
+**Measured against the pre-fix trees.** At 58a6a23, in a worktree, the
+regression test still fails — and now fails in 0.04s with the reason
+attached instead of after ninety seconds without it:
+
+```
+liro-bridge: sign: --thumbprint je obavezan.
+    signconsent_windows_test.go:156: sign returned 2 without ever showing
+    a window; nobody was asked and nothing said so
+```
+
+At cd7b403, the certificate step with no reader, no card and no
+certificate was measured saying, in full: *"Nijedan sertifikat na ovoj
+kartici se ne moze koristiti za potpisivanje."* — nothing on the card
+that is not there.
+
+---
+
+## D-237 — The agent's own log reaches CI, and a failed test keeps the directory that holds it
+
+**Date:** 2026-09-10
+**Phase:** F10 — pre-phase fix
+
+**What [[D-236]] had to be found around.** The Windows job's failure said
+what had not happened and had no way of saying why. `config.SetupLogging`
+calls `slog.SetDefault` over a JSON handler pointed at
+`%LOCALAPPDATA%\Liro\logs`; the suite points `LOCALAPPDATA` at a
+temporary directory (`tempConfigHome`) and deleted it on the way out —
+including on the way out of a failure. So the one line that explained the
+failure was written, and then deleted, on every red Windows build this
+project has ever had. The only thing to do with such a failure is re-run
+it, which is how the one that matters gets ignored.
+
+**Decision, in two parts, and neither of them is a debugging aid.**
+
+*(a) `LIRO_DEBUG=1` on the Windows test step.* F0 §10 already defines
+that switch as "text to stderr as well as JSON to the file"; setting it
+in CI is what puts the agent's own account of itself into the same log
+that says the job went red.
+
+*(b) A failing test keeps its config home, and the job uploads it.*
+`tempConfigHome`'s cleanup returns without deleting when `t.Failed()`,
+and an `if: failure()` step collects every surviving `Liro` directory and
+uploads it as an artifact. That carries what stderr cannot: the JSON log,
+the audit chain and the config as the run left them.
+`sweepStaleConfigHomes` still collects these an hour later, so this does
+not reintroduce C-6's accumulation — it delays it by an hour, which is
+longer than any CI job and shorter than any developer's afternoon.
+
+**One thing measured, because it contradicts the premise this was chosen
+on.** Artifacts are *not* downloadable without authentication.
+`GET /actions/artifacts/{id}/zip` answers 401 to an anonymous request
+against this public repository, and the browser URL 404s; job logs answer
+403 ("Must have admin rights to Repository"). What *is* public is the
+check-run annotations API — which is why the measurement quoted in
+[[D-236]] was taken by having a probe step emit its results as
+`::warning::` annotations and reading them back over that API. The
+artifact is for a person signed in to GitHub, which is who reads a red
+build; it is not a way around authentication.

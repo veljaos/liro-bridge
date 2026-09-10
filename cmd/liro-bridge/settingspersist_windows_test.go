@@ -157,6 +157,7 @@ func boolText(b bool) string {
 // and 196 suite runs had left 1.26 GB in %TEMP%. The failure was
 // already being discarded here; discarding it is what made it
 // invisible.
+//
 // A failing test keeps its directory instead. Everything the agent's own
 // slog writes goes into a file under here — config.SetupLogging
 // slog.SetDefault's a JSON handler over LOCALAPPDATA and nothing of it
@@ -166,7 +167,7 @@ func boolText(b bool) string {
 // 1m30s" a CI failure with no cause attached to it. sweepStaleConfigHomes
 // still collects these an hour later, so keeping them does not
 // reintroduce C-6's accumulation, and CI uploads them as an artifact
-// before then (.github/workflows/ci.yml).
+// before then (.github/workflows/ci.yml, D-237).
 func tempConfigHome(t *testing.T) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", configHomePrefix)

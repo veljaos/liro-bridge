@@ -27,7 +27,7 @@ func TestConsentInitRendersCyrillic(t *testing.T) {
 			{Thumbprint: "AABBCCDD", Purpose: classify.PurposeSigning, Usable: true, Subject: classify.Subject{DisplayName: "ВЕЉКО СТАНОЈЕВИЋ"}},
 		})
 
-	payload := buildConsentInit(c, vm)
+	payload := buildConsentInit(c, vm, "")
 
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestConsentInitRendersLatinAndEnglishToo(t *testing.T) {
 	for _, tc := range tests {
 		c := i18n.Load(tc.locale)
 		vm := consent.BuildViewModel(consent.ApplicationLocal, nil, nil, nil)
-		b, err := json.Marshal(buildConsentInit(c, vm))
+		b, err := json.Marshal(buildConsentInit(c, vm, ""))
 		if err != nil {
 			t.Fatalf("%s: marshalling payload: %v", tc.locale, err)
 		}
