@@ -193,8 +193,8 @@ liro-bridge/
 │       ├── assets/                # HTML, CSS, JS, fonts, logo
 │       └── ...                    # WebView2 host, tray
 ├── sdk/
-│   ├── typescript/
-│   └── dotnet/
+│   ├── typescript/                # the only first-class SDK
+│   └── examples/                  # one client per language, protocol only
 ├── docs/
 │   ├── SPEC.md                    # this file
 │   ├── PROTOCOL.md                # generated/maintained from phase F7
@@ -1106,7 +1106,7 @@ Three groups, fourteen phases. Each has a verifiable exit condition.
 |---|---|---|
 | **F7** | Protocol: pairing, HMAC, nonce, port discovery, multi-session and RDP, jobs, error codes | Two sessions on one machine operate independently |
 | **F8** | TypeScript SDK, documentation, examples | Integration into a third-party project in three lines of code |
-| **F9** | CLI for legacy systems; .NET SDK | A Delphi program signs via `exec` |
+| **F9** | One `sign`, and it shows the consent window; no credential on any command line | A release binary contains no signing path that skips the consent screen, proved by inspecting the binary |
 | **F10** | Packaging: MSI and EXE, update channel, GitHub Releases, user guide | A stranger installs it and signs a document |
 
 ### Group 3 — runs everywhere

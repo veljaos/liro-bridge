@@ -95,30 +95,51 @@ jobs:
         env:
           CGO_ENABLED: 1
 
-      # F2 §7.3 / SPEC §16.6: the soft token must be impossible to enable
-      # in a release build. This does not trust the build tag alone — it
-      # builds a binary without it and inspects the binary itself. The
-      # second half proves the check can actually fail: if softtoken.go's
-      # own build tag were ever broken (e.g. a typo turning it into a
-      # comment), the symbols would vanish even WITH the tag, and that
-      # half goes red too — so this check fires in both directions, not
-      # just the one F2 asks for.
-      - name: soft token is absent without the build tag
+      # Two things must be impossible to enable in a release build, and
+      # this checks the binary rather than trusting either build tag.
+      #
+      #   internal/keysource/softtoken   F2 §7.3 / SPEC §16.6
+      #   internal/cli.RunSignWithoutConsent
+      #                                  SPEC §18.2: no signature without
+      #                                  human approval, and no flag,
+      #                                  configuration or header bypasses
+      #                                  the consent screen.
+      #
+      # The second used to be proved only incidentally — it was reachable
+      # as `liro-bridge sign` and nothing looked for it — and it is named
+      # here so that a future change putting it back into a release build
+      # goes red for the reason it is wrong, not for a symbol that
+      # happens to travel with it.
+      #
+      # Both directions are checked. A check that only looks for absence
+      # passes for the wrong reason the moment the build tag itself
+      # breaks: a typo turning `//go:build softtoken` into an ordinary
+      # comment would make the symbols vanish even WITH the tag, and the
+      # "absent" half would stay green forever.
+      - name: the soft token and the no-consent signing path are absent from a release build
         run: |
-          go build -o dist/liro-bridge-no-softtoken ./cmd/liro-bridge
-          if go tool nm dist/liro-bridge-no-softtoken | grep -q 'internal/keysource/softtoken'; then
-            echo "FAIL: softtoken symbols found in a binary built WITHOUT the softtoken tag"
-            go tool nm dist/liro-bridge-no-softtoken | grep 'internal/keysource/softtoken'
-            exit 1
-          fi
-          echo "OK: no softtoken symbols in a release-shaped build"
+          set -eu
+          symbols='internal/keysource/softtoken internal/cli.RunSignWithoutConsent'
 
+          go build -o dist/liro-bridge-no-softtoken ./cmd/liro-bridge
+          go tool nm dist/liro-bridge-no-softtoken > dist/nm-release.txt
           go build -tags softtoken -o dist/liro-bridge-with-softtoken ./cmd/liro-bridge
-          if ! go tool nm dist/liro-bridge-with-softtoken | grep -q 'internal/keysource/softtoken'; then
-            echo "FAIL: softtoken symbols are missing even WITH the tag — this check's own methodology is broken"
-            exit 1
-          fi
-          echo "OK: softtoken symbols are present when the tag is passed"
+          go tool nm dist/liro-bridge-with-softtoken > dist/nm-tagged.txt
+
+          for sym in $symbols; do
+            if grep -q "$sym" dist/nm-release.txt; then
+              echo "FAIL: a release-shaped binary contains $sym"
+              grep "$sym" dist/nm-release.txt | head
+              exit 1
+            fi
+            echo "OK: no $sym in a release-shaped build"
+
+            if ! grep -q "$sym" dist/nm-tagged.txt; then
+              echo "FAIL: $sym is missing even WITH the softtoken tag — this check's own methodology is broken"
+              exit 1
+            fi
+            echo "OK: $sym is present when the tag is passed"
+          done
         env:
           CGO_ENABLED: 0
 
@@ -171,6 +192,13 @@ jobs:
       # F2 §6.1's sign-digest check. This is this project's own
       # independent verifier's job too, run right after for the same
       # reason F3 §16.4 asks for it in CI.
+      #
+      # It signs through `sign-no-consent`, not `sign`. `sign` shows the
+      # consent window in every build (SPEC §18.2/§4.3) and there is no
+      # human on a CI runner; the path with no window exists only in a
+      # build made with the softtoken tag, under a name that says what
+      # it is, and the step above proves a release binary does not carry
+      # it.
       - name: sign a PDF and verify it with OpenSSL and the independent verifier
         run: |
           go build -tags softtoken -o dist/liro-bridge-softtoken ./cmd/liro-bridge
@@ -232,7 +260,7 @@ jobs:
           # without this flag the command correctly aborts. The flag is
           # how a caller says "B-B is what I want here", which is exactly
           # what this step means.
-          dist/liro-bridge-softtoken sign --in /tmp/input.pdf --out /tmp/signed.pdf --thumbprint "$THUMBPRINT" --force --on-tsa-failure b-b
+          dist/liro-bridge-softtoken sign-no-consent --in /tmp/input.pdf --out /tmp/signed.pdf --thumbprint "$THUMBPRINT" --force --on-tsa-failure b-b
 
           cat > dist/ci-helpers/extract/main.go << 'GOEOF'
           package main
@@ -337,6 +365,37 @@ jobs:
         run: go test -tags softtoken ./... -count=1
         env:
           CGO_ENABLED: 0
+
+      # D-221 closed a defect in the packaging test — it resolved
+      # npm-cli.js by assuming the Windows layout, which is wrong on
+      # every other operating system — and recorded that the fix left a
+      # gap pointing the other way: this job ran Go only, so
+      # sdk-typescript on ubuntu-latest was the only place that suite
+      # ran anywhere. Both npm-cli.js layouts resolve now, but the
+      # Windows branch was exercised by a person and the POSIX branch by
+      # CI, which is exactly the defect D-221 records with the platforms
+      # swapped. A check that only runs where it was written is not
+      # evidence about where it will run.
+      #
+      # The version is pinned rather than taken as latest, for the reason
+      # the golangci-lint comment above already gives: CI's verdict must
+      # not change overnight with no commit. It is the same version the
+      # sdk-typescript job pins, so the two jobs test the same Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: install the build tools (SDK)
+        working-directory: sdk/typescript
+        run: npm ci
+
+      - name: the committed dist/ is what src/ produces (Windows)
+        working-directory: sdk/typescript
+        run: npm run check-build
+
+      - name: test (SDK, Windows)
+        working-directory: sdk/typescript
+        run: npm test
 
   # The TypeScript SDK. Its own job rather than steps on the ubuntu one,
   # because it needs Node rather than Go and because a red SDK should

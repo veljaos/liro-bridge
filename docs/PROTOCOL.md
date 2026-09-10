@@ -347,11 +347,20 @@ The agent binds **loopback only** (`127.0.0.1`), on the first free port in
 
 ```
 Windows   %LOCALAPPDATA%\Liro\bridge.json
+macOS     ~/Library/Application Support/Liro/bridge.json
+Linux     $XDG_RUNTIME_DIR/liro/bridge.json
+          (~/.local/state/liro/bridge.json when XDG_RUNTIME_DIR is unset)
 ```
 
 ```json
 { "port": 17580, "agentVersion": "1.4.0", "protocolVersion": 2 }
 ```
+
+The agent is Windows-only until phase 12, so only the first line has an
+agent behind it today; the other two are where an SDK must look once
+there is one, and they are not what a guess would produce — on Linux it
+is the runtime directory, which is per user, per session and cleared at
+logout, not `~/.config`.
 
 **Read that file. Never scan ports.** Several people can be signed in to
 one machine at once — an accounting firm over RDP is the ordinary case, not
@@ -381,6 +390,18 @@ at the machine.
 `minimumClientVersion` is the oldest SDK this agent will serve. If your
 version is below it, tell the person to update the agent rather than
 failing at them later.
+
+**It is a semantic version (semver 2.0.0), compared by precedence** —
+`major.minor.patch` numerically, field by field, with pre-release and
+build metadata not used and not to be relied on. `1.10.0` is newer than
+`1.9.0`; a string comparison would get that backwards, which is why the
+format is stated rather than left to be inferred from the shape of
+`"0.0.0"`.
+
+The comparison is yours. The agent publishes the number and enforces
+nothing with it: refusing a client here would refuse it before the
+person could be told anything useful, and there is no request it could
+refuse that would explain itself better than your own sentence.
 
 ### 4.2 Several people on one machine
 
@@ -495,12 +516,25 @@ The result:
 ```json
 {
   "documents": [
-    { "name": "ugovor.pdf", "content": "<base64>", "achievedLevel": "B-T" }
+    { "name": "ugovor.pdf", "content": "<base64>", "achievedLevel": "B-T" },
+    { "name": "racun.pdf" }
   ],
-  "failures": [],
-  "counts": { "total": 1, "succeeded": 1, "failed": 0 }
+  "failures": [ { "index": 1, "code": "PDF_ENCRYPTED" } ],
+  "counts": { "total": 2, "succeeded": 1, "failed": 1 }
 }
 ```
+
+`documents` has one entry per document you sent, in the same order, and
+never closes up over a failure — the same rule §5.1 states for
+`signatures`, and for the same reason. **A document that did not sign
+keeps its `name` and has neither `content` nor `achievedLevel`**, and
+its position in the request appears in `failures`. So `content` is not a
+field to read unconditionally: `Buffer.from(doc.content, 'base64')` on
+every entry crashes on exactly the path that matters. Check `failures`,
+or check that `content` is present, before you touch it.
+
+`failures` is **absent, not empty**, when every document signed. The
+same is true of `/v2/sign`.
 
 `achievedLevel` is the level the document **actually reached**, never the
 one you asked for. A timestamp authority that did not answer produces a

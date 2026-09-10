@@ -35,8 +35,8 @@ import (
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
-// runSignInteractive is `liro-bridge sign --interactive`: the same
-// signing flow the window opens, entered one step in.
+// runSignCommand is `liro-bridge sign`: the same signing flow the
+// window opens, entered one step in.
 //
 // The documents came in on the command line, so the flow has no
 // document step; everything after that — the certificate and the
@@ -46,11 +46,20 @@ import (
 // implementation of the consent screen to keep right (SPEC §6.5), and
 // no window opens on top of another one.
 //
+// This was what `sign --interactive` did. It is now what `sign` does,
+// with no way to ask for anything else: SPEC §18.2 forbids a signature
+// without human approval and says no flag bypasses the consent screen,
+// and SPEC §4.3 puts every entry point through the same screen, session
+// and audit log. The path that asked nobody was F3-era code that
+// predated the consent screen (F5) and had never been reconciled with
+// either rule; it exists now only in a build made with the "softtoken"
+// tag, under its own name (noconsent_softtoken.go).
+//
 // Windows-only, matching internal/ui's own scope (SPEC §11.11).
-func runSignInteractive(ctx context.Context, args []string, out io.Writer, locale string, cfg config.Config) int {
+func runSignCommand(ctx context.Context, args []string, out io.Writer, locale string, cfg config.Config) int {
 	c := i18n.Load(locale)
 
-	inPattern, force, err := parseInteractiveArgs(args)
+	inPattern, force, err := parseSignArgs(args)
 	if err != nil {
 		fprintln(out, "liro-bridge: sign:", err)
 		return 2
@@ -253,8 +262,8 @@ func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue
 			// B-B.
 			return cfg, nil, true, true
 		case "configure":
-			// Its own pairing store: this is a `sign --interactive`
-			// process, not the tray, so nothing else in it holds one
+			// Its own pairing store: this is a `sign` process, not
+			// the tray, so nothing else in it holds one
 			// and there is no second copy to disagree with.
 			if err := runSettingsWindow(cfg, win.Handle(), openPairingsOrNil()); err != nil {
 				slog.Warn("consent: settings window failed", "error", err)
@@ -362,11 +371,21 @@ func newInteractiveInput(path string) (interactiveInput, error) {
 	return interactiveInput{path: path, digest: h.Sum(nil)}, nil
 }
 
-func parseInteractiveArgs(args []string) (in string, force bool, err error) {
+// parseSignArgs parses `sign`'s arguments. English, like every other
+// argument-parsing diagnostic and like --help itself (D-092, SPEC §9.2):
+// this is a person learning how to invoke the program, not a signer
+// reading about their own signature.
+func parseSignArgs(args []string) (in string, force bool, err error) {
 	for i := 0; i < len(args); i++ {
 		switch {
 		case args[i] == "--interactive":
-			continue
+			// Accepting and ignoring it would advertise a distinction
+			// that no longer exists, and this project deletes surface
+			// that does nothing rather than leaving it as a trap
+			// (D-132, D-146, D-151, D-175). Saying why is cheaper than
+			// "unrecognised argument" for the one flag most likely to
+			// still be typed.
+			return "", false, errors.New("--interactive is gone: sign always shows the consent window")
 		case args[i] == "--force":
 			force = true
 		case strings.HasPrefix(args[i], "--in="):
@@ -495,7 +514,7 @@ func interactiveTrustStore(ctx context.Context) []*x509.Certificate {
 	if err != nil {
 		return nil
 	}
-	return caCertificatesFromTSL(list)
+	return list.CACertificates()
 }
 
 // interactiveSignOptions is everything one document's signature needs

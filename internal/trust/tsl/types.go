@@ -10,6 +10,7 @@
 package tsl
 
 import (
+	"crypto/x509"
 	"strings"
 	"time"
 )
@@ -22,6 +23,36 @@ type List struct {
 	Sequence  int
 	IssuedAt  time.Time
 	Providers []Provider
+}
+
+// CACertificates is every CA/QC service certificate in the list, parsed.
+// It is what chain completion searches before falling back to AIA (F3
+// §5.4): the issuer of a Serbian qualified certificate is a service in
+// this list, and MUP embeds only the signer certificate in its CMS
+// (SPEC §11.8), so the chain has to be built from somewhere.
+//
+// A service whose certificate does not parse is skipped rather than
+// failing the whole list: chain completion is best-effort by design, and
+// one unparseable entry must not cost every other issuer its chain.
+//
+// It lives here rather than in the command that wires it up because it
+// is a pure question about a Trusted List with no wiring in it — and
+// because its two callers are a Windows-only file and a
+// softtoken-tagged one, so in cmd it was a function no ordinary build
+// could see a use for (D-111's shape, one level down).
+func (l *List) CACertificates() []*x509.Certificate {
+	var out []*x509.Certificate
+	for _, p := range l.Providers {
+		for _, svc := range p.Services {
+			if !svc.IsCA() || len(svc.Certificate) == 0 {
+				continue
+			}
+			if cert, err := x509.ParseCertificate(svc.Certificate); err == nil {
+				out = append(out, cert)
+			}
+		}
+	}
+	return out
 }
 
 // Provider is one TrustServiceProvider entry.

@@ -82,8 +82,8 @@ type mainWindow struct {
 	failed        bool
 
 	// documentsSupplied means the caller brought the documents, so this
-	// run has no first step — `sign --interactive --in ...`, and every
-	// request that arrives with its documents already named.
+	// run has no first step — `sign --in ...`, and every request that
+	// arrives with its documents already named.
 	documentsSupplied bool
 	// suppliedStamp is the method question already answered by the
 	// caller. With it set the flow is the certificate step and nothing
@@ -174,9 +174,9 @@ func runMainWindow(ctx context.Context, cfg config.Config, locale string, initia
 }
 
 // flowRequest is a run of the signing flow that does not begin at the
-// document list: the command line's `sign --interactive`, and — when
-// F7 brings it — a request from a paired application. What it carries
-// is what the person is then not asked.
+// document list: the command line's `sign`, and — when F7 brings it —
+// a request from a paired application. What it carries is what the
+// person is then not asked.
 type flowRequest struct {
 	// inputs are the documents, already read for their digests.
 	inputs []interactiveInput

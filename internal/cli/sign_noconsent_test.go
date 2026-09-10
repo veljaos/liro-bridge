@@ -1,3 +1,7 @@
+//go:build softtoken
+
+// Tests for the signing path that asks nobody (sign_noconsent.go),
+// which exists only in a build made with the "softtoken" tag.
 package cli
 
 import (
@@ -39,7 +43,7 @@ func newFakeSignPDFSession(t *testing.T) *fakeSignPDFSession {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(4242),
-		Subject:      pkix.Name{CommonName: "cli.RunSign test signer"},
+		Subject:      pkix.Name{CommonName: "cli.RunSignWithoutConsent test signer"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 	}
@@ -95,7 +99,7 @@ func writeMinimalPDF(t *testing.T, path string) {
 	}
 }
 
-func TestRunSignDefaultOutputSuffix(t *testing.T) {
+func TestRunSignWithoutConsentDefaultOutputSuffix(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "document.pdf")
 	writeMinimalPDF(t, in)
@@ -104,7 +108,7 @@ func TestRunSignDefaultOutputSuffix(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	// --on-tsa-failure b-b: this test is about the output suffix, not
 	// TSA behaviour (Task 7), and no --tsa is configured here.
-	code := RunSign(context.Background(), []string{"--in", in, "--thumbprint", "SIGNPDFTEST", "--level", "b-t", "--on-tsa-failure", "b-b"}, &stdout, &stderr, "en", signPDFDeps(sess))
+	code := RunSignWithoutConsent(context.Background(), []string{"--in", in, "--thumbprint", "SIGNPDFTEST", "--level", "b-t", "--on-tsa-failure", "b-b"}, &stdout, &stderr, "en", signPDFDeps(sess))
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr: %s", code, stderr.String())
 	}
@@ -121,23 +125,25 @@ func TestRunSignDefaultOutputSuffix(t *testing.T) {
 	}
 }
 
-// TestRunSignOpenErrorUsesSignPrefixNotSignDigest is Task 8: RunSign used
-// to report a session-open failure through printSignDigestError, a
-// helper hard-coded to the "sign-digest" command name — so running
-// `sign` printed "liro-bridge: sign-digest: ..." for an error that had
-// nothing to do with sign-digest.
-func TestRunSignOpenErrorUsesSignPrefixNotSignDigest(t *testing.T) {
+// TestRunSignWithoutConsentErrorsNameTheirOwnCommand is Task 8's
+// property, still true after the command was renamed: this path used to
+// report a session-open failure through printSignDigestError, a helper
+// hard-coded to the "sign-digest" command name, so a `sign` failure
+// printed "liro-bridge: sign-digest: ..." for something that had
+// nothing to do with sign-digest. Every message it prints now names the
+// command the person actually typed.
+func TestRunSignWithoutConsentErrorsNameTheirOwnCommand(t *testing.T) {
 	openErr := errs.New(errs.CodeCardNotPresent, nil)
 	deps := SignPDFDeps{Open: func(context.Context, keysource.Thumbprint) (keysource.Session, error) {
 		return nil, openErr
 	}}
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{"--in", "x.pdf", "--thumbprint", "ABCD"}, &stdout, &stderr, "en", deps)
+	code := RunSignWithoutConsent(context.Background(), []string{"--in", "x.pdf", "--thumbprint", "ABCD"}, &stdout, &stderr, "en", deps)
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero when Open fails")
 	}
-	if !strings.Contains(stderr.String(), "liro-bridge: sign:") {
-		t.Fatalf("stderr = %q, want the \"liro-bridge: sign:\" prefix", stderr.String())
+	if !strings.Contains(stderr.String(), "liro-bridge: sign-no-consent:") {
+		t.Fatalf("stderr = %q, want the \"liro-bridge: sign-no-consent:\" prefix", stderr.String())
 	}
 	if strings.Contains(stderr.String(), "sign-digest") {
 		t.Fatalf("stderr = %q, want no mention of sign-digest", stderr.String())
@@ -153,7 +159,7 @@ func mustReadOriginal(t *testing.T, path string) []byte {
 	return b
 }
 
-func TestRunSignRefusesToOverwriteWithoutForce(t *testing.T) {
+func TestRunSignWithoutConsentRefusesToOverwriteWithoutForce(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "document.pdf")
 	writeMinimalPDF(t, in)
@@ -164,7 +170,7 @@ func TestRunSignRefusesToOverwriteWithoutForce(t *testing.T) {
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{"--in", in, "--thumbprint", "SIGNPDFTEST"}, &stdout, &stderr, "en", signPDFDeps(sess))
+	code := RunSignWithoutConsent(context.Background(), []string{"--in", in, "--thumbprint", "SIGNPDFTEST"}, &stdout, &stderr, "en", signPDFDeps(sess))
 	if code == 0 {
 		t.Fatal("exit code = 0, want a failure when the output already exists and --force was not passed")
 	}
@@ -174,7 +180,7 @@ func TestRunSignRefusesToOverwriteWithoutForce(t *testing.T) {
 	}
 }
 
-func TestRunSignForceOverwrites(t *testing.T) {
+func TestRunSignWithoutConsentForceOverwrites(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "document.pdf")
 	writeMinimalPDF(t, in)
@@ -185,7 +191,7 @@ func TestRunSignForceOverwrites(t *testing.T) {
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{"--in", in, "--thumbprint", "SIGNPDFTEST", "--force", "--on-tsa-failure", "b-b"}, &stdout, &stderr, "en", signPDFDeps(sess))
+	code := RunSignWithoutConsent(context.Background(), []string{"--in", in, "--thumbprint", "SIGNPDFTEST", "--force", "--on-tsa-failure", "b-b"}, &stdout, &stderr, "en", signPDFDeps(sess))
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr: %s", code, stderr.String())
 	}
@@ -195,9 +201,9 @@ func TestRunSignForceOverwrites(t *testing.T) {
 	}
 }
 
-// TestRunSignGlobBatchSkipsAndContinues is F3 §12.10: if one document in
+// TestRunSignWithoutConsentGlobBatchSkipsAndContinues is F3 §12.10: if one document in
 // a batch fails, the rest are still signed on the same session.
-func TestRunSignGlobBatchSkipsAndContinues(t *testing.T) {
+func TestRunSignWithoutConsentGlobBatchSkipsAndContinues(t *testing.T) {
 	dir := t.TempDir()
 	good1 := filepath.Join(dir, "a.pdf")
 	good2 := filepath.Join(dir, "c.pdf")
@@ -210,7 +216,7 @@ func TestRunSignGlobBatchSkipsAndContinues(t *testing.T) {
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{"--in", filepath.Join(dir, "*.pdf"), "--thumbprint", "SIGNPDFTEST", "--on-tsa-failure", "b-b"}, &stdout, &stderr, "en", signPDFDeps(sess))
+	code := RunSignWithoutConsent(context.Background(), []string{"--in", filepath.Join(dir, "*.pdf"), "--thumbprint", "SIGNPDFTEST", "--on-tsa-failure", "b-b"}, &stdout, &stderr, "en", signPDFDeps(sess))
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0 (2 of 3 succeeded); stderr: %s", code, stderr.String())
 	}
@@ -228,7 +234,7 @@ func TestRunSignGlobBatchSkipsAndContinues(t *testing.T) {
 	}
 }
 
-func TestRunSignFlagValidation(t *testing.T) {
+func TestRunSignWithoutConsentFlagValidation(t *testing.T) {
 	sess := newFakeSignPDFSession(t)
 	cases := []struct {
 		name string
@@ -247,7 +253,7 @@ func TestRunSignFlagValidation(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			code := RunSign(context.Background(), c.args, &stdout, &stderr, "en", signPDFDeps(sess))
+			code := RunSignWithoutConsent(context.Background(), c.args, &stdout, &stderr, "en", signPDFDeps(sess))
 			if code == 0 {
 				t.Fatalf("exit code = 0, want a validation failure")
 			}
@@ -255,17 +261,17 @@ func TestRunSignFlagValidation(t *testing.T) {
 	}
 }
 
-// TestRunSignStampProducesVisibleSignature is F4 §7's CLI surface
+// TestRunSignWithoutConsentStampProducesVisibleSignature is F4 §7's CLI surface
 // exercised end to end: --stamp plus every optional flag produces a
 // signed, stamped PDF whose signature still verifies independently.
-func TestRunSignStampProducesVisibleSignature(t *testing.T) {
+func TestRunSignWithoutConsentStampProducesVisibleSignature(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "document.pdf")
 	writeMinimalPDF(t, in)
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{
+	code := RunSignWithoutConsent(context.Background(), []string{
 		"--in", in, "--thumbprint", "SIGNPDFTEST", "--level", "b-t",
 		"--stamp", "--stamp-position", "bottom-left", "--stamp-page", "1",
 		"--stamp-reference", "REF-42", "--on-tsa-failure", "b-b",
@@ -290,16 +296,16 @@ func TestRunSignStampProducesVisibleSignature(t *testing.T) {
 	}
 }
 
-// TestRunSignStampXYAccepted proves --stamp-xy alone (no --stamp-position)
+// TestRunSignWithoutConsentStampXYAccepted proves --stamp-xy alone (no --stamp-position)
 // is accepted and produces output.
-func TestRunSignStampXYAccepted(t *testing.T) {
+func TestRunSignWithoutConsentStampXYAccepted(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "document.pdf")
 	writeMinimalPDF(t, in)
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{
+	code := RunSignWithoutConsent(context.Background(), []string{
 		"--in", in, "--thumbprint", "SIGNPDFTEST",
 		"--stamp", "--stamp-xy", "50,50", "--on-tsa-failure", "b-b",
 	}, &stdout, &stderr, "en", signPDFDeps(sess))
@@ -308,18 +314,18 @@ func TestRunSignStampXYAccepted(t *testing.T) {
 	}
 }
 
-// TestRunSignStampMissingGlyphNamesCharacterAndCodePoint is Task 2: the
+// TestRunSignWithoutConsentStampMissingGlyphNamesCharacterAndCodePoint is Task 2: the
 // CLI's own local diagnostic output for a missing stamp glyph must name
 // the character and its code point, in the shape "...: <char> (U+XXXX).",
 // not report the card-shaped SIGN_FAILED message this used to surface as.
-func TestRunSignStampMissingGlyphNamesCharacterAndCodePoint(t *testing.T) {
+func TestRunSignWithoutConsentStampMissingGlyphNamesCharacterAndCodePoint(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "document.pdf")
 	writeMinimalPDF(t, in)
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{
+	code := RunSignWithoutConsent(context.Background(), []string{
 		"--in", in, "--thumbprint", "SIGNPDFTEST",
 		"--stamp", "--stamp-reference", "中", // CJK: outside the embedded font subset by construction
 	}, &stdout, &stderr, "en", signPDFDeps(sess))
@@ -485,7 +491,7 @@ func TestSignCommandNeverShowsARawOperatingSystemError(t *testing.T) {
 				args = append(args, "--out", out)
 			}
 			var stdout, stderr bytes.Buffer
-			code := RunSign(context.Background(), args, &stdout, &stderr, "en", signPDFDeps(sess))
+			code := RunSignWithoutConsent(context.Background(), args, &stdout, &stderr, "en", signPDFDeps(sess))
 			if code == 0 {
 				t.Fatalf("exit code = 0, want a failure; stdout %q stderr %q", stdout.String(), stderr.String())
 			}
@@ -522,7 +528,7 @@ func TestSignCommandSaysTheSameThingInEveryLanguage(t *testing.T) {
 				t.Fatal(err)
 			}
 			var stdout, stderr bytes.Buffer
-			code := RunSign(context.Background(),
+			code := RunSignWithoutConsent(context.Background(),
 				[]string{"--in", in, "--thumbprint", "SIGNPDFTEST", "--on-tsa-failure", "b-b"},
 				&stdout, &stderr, locale, signPDFDeps(sess))
 			if code == 0 {
@@ -536,11 +542,11 @@ func TestSignCommandSaysTheSameThingInEveryLanguage(t *testing.T) {
 	}
 }
 
-// TestRunSignSkipsInputsThatAreAlreadySignedDocuments is J-3's own
+// TestRunSignWithoutConsentSkipsInputsThatAreAlreadySignedDocuments is J-3's own
 // scenario: the same glob run a second time picks up the first run's
 // output. Without --resign those inputs are skipped and counted, so a
 // second run does not silently produce "-signed-signed.pdf".
-func TestRunSignSkipsInputsThatAreAlreadySignedDocuments(t *testing.T) {
+func TestRunSignWithoutConsentSkipsInputsThatAreAlreadySignedDocuments(t *testing.T) {
 	dir := t.TempDir()
 	writeMinimalPDF(t, filepath.Join(dir, "ugovor.pdf"))
 	writeMinimalPDF(t, filepath.Join(dir, "racun.pdf"))
@@ -549,7 +555,7 @@ func TestRunSignSkipsInputsThatAreAlreadySignedDocuments(t *testing.T) {
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{
+	code := RunSignWithoutConsent(context.Background(), []string{
 		"--in", filepath.Join(dir, "*.pdf"), "--thumbprint", "SIGNPDFTEST",
 		"--level", "b-t", "--on-tsa-failure", "b-b",
 	}, &stdout, &stderr, "en", signPDFDeps(sess))
@@ -573,16 +579,16 @@ func TestRunSignSkipsInputsThatAreAlreadySignedDocuments(t *testing.T) {
 	}
 }
 
-// TestRunSignResignsWhenAskedTo is the other half: the person is not
+// TestRunSignWithoutConsentResignsWhenAskedTo is the other half: the person is not
 // second-guessed. Counter-signing a document that arrived already
 // signed is an ordinary thing to want, and --resign is how it is said.
-func TestRunSignResignsWhenAskedTo(t *testing.T) {
+func TestRunSignWithoutConsentResignsWhenAskedTo(t *testing.T) {
 	dir := t.TempDir()
 	writeMinimalPDF(t, filepath.Join(dir, "prethodni-signed.pdf"))
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{
+	code := RunSignWithoutConsent(context.Background(), []string{
 		"--in", filepath.Join(dir, "*.pdf"), "--thumbprint", "SIGNPDFTEST",
 		"--level", "b-t", "--on-tsa-failure", "b-b", "--resign",
 	}, &stdout, &stderr, "en", signPDFDeps(sess))
@@ -597,17 +603,17 @@ func TestRunSignResignsWhenAskedTo(t *testing.T) {
 	}
 }
 
-// TestRunSignSaysSoWhenEveryInputIsAlreadySigned covers the case where
+// TestRunSignWithoutConsentSaysSoWhenEveryInputIsAlreadySigned covers the case where
 // skipping leaves nothing: signing produced no document, so the exit
 // code says so and the message names the flag.
-func TestRunSignSaysSoWhenEveryInputIsAlreadySigned(t *testing.T) {
+func TestRunSignWithoutConsentSaysSoWhenEveryInputIsAlreadySigned(t *testing.T) {
 	dir := t.TempDir()
 	writeMinimalPDF(t, filepath.Join(dir, "a-signed.pdf"))
 	writeMinimalPDF(t, filepath.Join(dir, "b-signed.pdf"))
 
 	sess := newFakeSignPDFSession(t)
 	var stdout, stderr bytes.Buffer
-	code := RunSign(context.Background(), []string{
+	code := RunSignWithoutConsent(context.Background(), []string{
 		"--in", filepath.Join(dir, "*.pdf"), "--thumbprint", "SIGNPDFTEST",
 		"--level", "b-t", "--on-tsa-failure", "b-b",
 	}, &stdout, &stderr, "en", signPDFDeps(sess))

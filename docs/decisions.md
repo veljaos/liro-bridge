@@ -14900,6 +14900,38 @@ developer, not by CI — which is the same shape of gap this entry is
 about, pointing the other way. Adding a Node step to the `windows` job
 would close it and is not done here.
 
+**Closed, 2026-09-09 (F9).** The `windows` job now runs the SDK suite
+too: `actions/setup-node@v4` pinned to Node 18 — the version
+`sdk-typescript` pins, so the two jobs test the same Node — then
+`npm ci`, `npm run check-build` and `npm test`, in `sdk/typescript`.
+
+Pinned rather than `latest`, for the reason the `golangci-lint` comment
+in `ci.yml` already gives: `latest` means CI's verdict can change
+overnight with no commit, so a new rule arrives as a red build on an
+unrelated change, at the worst possible moment for diagnosing it.
+
+Folded in here rather than opened as its own entry because it is the
+same finding. This entry's own sentence is that a check which only runs
+where it was written is not evidence about where it will run, and the
+gap it left was that sentence pointing at itself: the Windows branch of
+`npm-cli.js` resolution — the branch this entry added — was exercised by
+a person and the POSIX branch by CI. It is now exercised by both.
+
+Verified before pushing rather than by reading the runner's log
+afterwards: the three steps exactly as written were run on this Windows
+machine against `sdk/typescript` — `check-build` reports "dist/ matches
+src/", `npm test` reports 105 passed and 0 failed. Node here is 24, not
+the 18 the job pins, so what this proves is the steps' own shape on
+Windows; the first `windows` run of the job on Node 18 is what closes
+the rest.
+
+The two remaining `sdk-typescript` steps — the runtime-dependency check
+and the pack-and-install at the repository root — deliberately stay on
+`ubuntu-latest` alone. Neither has an operating system in it: one reads
+`package.json`, and the other packs a tarball and imports it, which is
+what an integrator does on whatever they run. Duplicating them would buy
+a second copy of the same answer on a slower runner.
+
 **Verified, on both operating systems and through every branch.**
 
 | Where | What ran | Result |
@@ -14943,3 +14975,602 @@ thing that closes this.
   on POSIX and fails on Windows, where `npm` is `npm.cmd` and needs a
   shell to be found — which is the rejected option above wearing a
   different hat.
+
+---
+
+## D-222 — There is one `sign` and it shows the consent window; the path with no window keeps its own name and only a softtoken build has it
+
+**Date:** 2026-09-09
+**Phase:** F9
+
+**The defect, and its age.** `liro-bridge sign` signed without asking
+anybody. The consent window appeared only behind `--interactive`.
+
+Measured against the binary rather than read out of the source. A build
+of the commit this phase started from (`58a6a23`), with the soft token
+configured and `LOCALAPPDATA` pointed at a scratch directory:
+
+```
+> old-bridge.exe sign --in ugovor.pdf --thumbprint E0BEC835... --on-tsa-failure b-b
+Potpisano: ...\ugovor-signed.pdf
+  Nivo: B-B
+  Sertifikat: …B4AA99A9
+exit=0
+```
+
+One process invocation, one signed document, no window, no pairing, no
+origin binding and no human. Any process running as that user could do
+it.
+
+The code is F3-era. It predates F5's consent window by three phases and
+was never reconciled with either of the two rules that govern it, and no
+entry in this log had reconciled it either:
+
+- **SPEC §18.2**: "No signature without human approval. No flag, no
+  configuration, no header bypasses the consent screen."
+- **SPEC §4.3**: "All four entry points go through the same consent
+  screen, the same session, the same audit log."
+
+**A second thing the same run establishes.** After that signature the
+scratch `%LOCALAPPDATA%\Liro` held `logs\` and `tsl-cache.xml` and **no
+`audit\` directory at all**. `internal/cli.RunSign` never touched the
+audit log — it had no `*audit.Store` anywhere in it. So `sign` was not
+only signing without approval, it was signing without a record, against
+SPEC §6.7's rule that the log records every signature. The consent fix
+closes that as a side effect: the window flow records every batch,
+including a refused one.
+
+**Decision.**
+
+*(a) There is one `sign`, in every build, and it shows the window.*
+`run`'s `sign` branch calls `runSignCommand` — what `runSignInteractive`
+was — unconditionally. `--interactive` is not a distinction any more and
+`parseSignArgs` refuses it with a sentence saying so rather than
+accepting and ignoring it: a flag that does nothing advertises a
+distinction that does not exist, and this project deletes surface like
+that rather than leaving it as a trap ([[D-132]], [[D-146]], [[D-151]],
+[[D-175]]).
+
+*(b) The path with no window survives only under the `softtoken` build
+tag, under its own name.* `internal/cli/sign.go` is now
+`internal/cli/sign_noconsent.go`, carrying `//go:build softtoken`, and
+`RunSign` is `RunSignWithoutConsent`. `cmd/liro-bridge` reaches it
+through a `sign-no-consent` subcommand that exists only in the same
+build (`noconsent_softtoken.go`; `noconsent_release.go` is what a
+release compiles instead and knows no command name at all).
+
+*(c) A release binary contains neither.* Proved by reading the symbol
+table, not by trusting the tag.
+
+**Why `sign-no-consent` rather than letting a tagged `sign` mean
+something different.** Both arrangements keep the path out of a release
+binary, and the second would have left CI's own command line untouched.
+It was rejected for the reason [[D-221]] recorded four days earlier: a
+check that only runs where it was written is not evidence about where it
+will run. If a tagged `sign` meant "sign with no window", the regression
+test for this very defect could only run in an untagged build — and the
+Windows CI job builds the suite **with** the tag, so the one automated
+check standing between this defect and its return would never have run
+in CI at all. With `sign` meaning the same thing in every build, the
+test is untagged, runs in both configurations, and runs on the Windows
+runner.
+
+**Why the path survives at all.** CI signs a PDF and verifies it with
+OpenSSL and this project's own independent verifier on every push (SPEC
+§16.4, F3's exit condition) and must keep doing that with no human
+present. That is a test build's need, so it lives behind the tag that
+already means "this is a test build" (SPEC §16.6). No flag was added: a
+`--no-prompt` in this program is a defect whatever motivates it, and a
+flag would also be reachable in a release binary, which is the whole
+thing being prevented.
+
+The renamed command still satisfies F3's exit condition end to end,
+checked rather than assumed: `sign-no-consent --in ... --out ...
+--thumbprint ... --force --on-tsa-failure b-b` against the soft token
+produced a document whose signature `internal/pades/verify` accepts
+(`ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`) and which
+`openssl cms -verify -binary` reports as "CMS Verification successful".
+
+**What this broke.** Everything that was relying on `sign` not opening a
+window, which is the flag surface the two paths never shared. A release
+binary's `sign` now takes `--in` and `--force` and nothing else. Gone
+from it: `--out`, `--thumbprint`, `--level`, `--tsa`,
+`--tsa-client-cert`, `--on-tsa-failure`, `--reserve`,
+`--max-revocation-size`, `--resign`, `--stamp`, `--stamp-position`,
+`--stamp-xy`, `--stamp-page`, `--stamp-reference` and
+`--stamp-show-document-id`.
+
+Each of those has a home already — the certificate is chosen in the
+window, the level, the timestamp authority and the output folder are
+`config.json`, the stamp is the method screen ([[D-146]], [[D-151]]) —
+except two, stated rather than glossed: **`--out` and `--resign` have no
+equivalent in the window flow.** `--out` is nearly answered by the
+output-file question ([[D-104]]) and the chosen output folder
+([[D-126]]), but neither is "write this one document to exactly this
+path"; `--resign` is answered by J-3's own question ([[D-164]]), which a
+person answers rather than a script. Nobody has asked for either back,
+and the owner's ruling for this phase is that there is no CLI contract
+for legacy callers — an integrator who is not on Node uses the protocol
+directly. If one of them is wanted, it is a flag on the window flow and
+it will arrive with a reason.
+
+`sign --interactive` in any script is now an error with a sentence
+saying why.
+
+**One mechanical consequence, recorded so it is not read as scope
+creep.** `caCertificatesFromTSL` lived in `cmd/liro-bridge/main.go` with
+no build constraint. Its two callers are now a Windows-only file and a
+softtoken-tagged one, so in a plain non-Windows build it became a
+function nothing could use, and `golangci-lint`'s `unused` said so
+against the `darwin` and `linux` views. `//nolint` is forbidden this
+phase and would have been the wrong answer anyway ([[D-111]]): it is a
+pure question about a Trusted List with no wiring in it, so it is now
+`tsl.List.CACertificates()`, in the package whose job is answering
+questions about Trusted Lists.
+
+**Tests.**
+
+- `TestTheSignCommandOpensAWindowAndSignsNothingUntilItIsAnswered`
+  (`cmd/liro-bridge`, no build tag) drives `run([]string{"sign", "--in",
+  ...})` — the dispatch is half of what broke, so it goes through the
+  same function `main` does — waits for a *visible* window of this
+  process's own class that was not open before, asserts no output file
+  exists at that moment, closes the window with `WM_CLOSE` (a window
+  message, never synthetic input — [[D-094]]), and asserts none exists
+  afterwards either. Confirmed to fail against the commit this phase
+  started from, in a worktree at that commit: "no new window titled
+  \"Liro Bridge\" appeared within 1m30s", with the old path's
+  `--thumbprint je obavezan.` on stderr beside it. Six consecutive runs,
+  three in each build configuration, pass.
+
+  Waiting for the window to be *visible* rather than merely to exist is
+  not decoration. Built the first way it hung once under the softtoken
+  tag and passed without it: `ui.NewWindow` creates the frame about two
+  seconds before it shows it, and a `WM_CLOSE` posted into that gap is
+  dispatched into a half-built window that then waits for a navigation
+  which never completes. Waiting for an observable state rather than for
+  a moment is [[D-201]]'s rule, arriving in a new place.
+- `TestTheNoConsentPathIsAbsentFromAReleaseBinary` builds the agent both
+  ways and reads each symbol table with `go tool nm`, requiring
+  `internal/cli.RunSignWithoutConsent` and
+  `internal/keysource/softtoken` to be absent from one and present in
+  the other. Both directions, for the reason [[D-031]] gives: a check
+  that only looks for absence passes for the wrong reason the moment the
+  build tag itself breaks.
+- `TestSignRejectsInteractiveRatherThanIgnoringIt` pins (a)'s second
+  half.
+
+CI's binary-inspection step is extended to name
+`internal/cli.RunSignWithoutConsent` alongside the soft token, so the
+absence is proved on every push rather than only by a test somebody
+might remember to run.
+
+**Rejected.**
+- **A `--no-prompt`, `--unattended` or `--yes` flag.** The phase
+  document's own instruction, and correct regardless of it: a flag is
+  reachable in a release binary, which is the entire thing being
+  prevented, and SPEC §18.2 says no flag bypasses the consent screen in
+  as many words.
+- **Letting `sign` mean the windowed path in a release build and the
+  headless one under the tag.** Above: it would have put the regression
+  test where CI cannot run it.
+- **Keeping `--interactive` accepted and ignored.** It costs nothing to
+  accept and it tells a person there are two behaviours when there is
+  one.
+- **Keeping the removed flags by routing them into the window flow.** A
+  bigger build than this phase asked for, and half of them are questions
+  the window exists to ask.
+- **Fixing the missing audit record separately, as its own change.** It
+  is the same code and the same fix: the path that recorded nothing is
+  gone, and the path that replaced it has recorded every batch since F5.
+
+---
+
+## D-223 — Nothing stops two processes appending to one audit chain, and the result is a log that reports tampering for ever; measured, reported, not fixed
+
+**Date:** 2026-09-09
+**Phase:** F9
+
+**The question.** [[D-182]] noted that `sign --interactive` opens its own
+pairing store because it is a different process. The audit log is the
+same shape of thing and a much worse one to get wrong: two processes
+appending to one hash chain would destroy the chain's only property. So
+— what happens today when `sign` runs while the tray agent is running in
+the same session?
+
+**Where the guard would be, and what is actually there.** `audit.Store`
+has exactly one (`internal/audit/store.go`):
+
+```go
+// Store guards its own directory with a mutex: Append must read the
+// last entry and write the new one as one atomic-from-this-process
+// operation, or two concurrent batches finishing at once could both
+// compute the same PrevHash and silently fork the chain.
+type Store struct {
+	dir string
+	mu  sync.Mutex
+}
+```
+
+A `sync.Mutex` on the `Store` value. Its own comment says what it is for
+and says the scope out loud — *atomic-from-this-process*. There is no
+file lock, no named mutex, no `O_EXCL`, no lock file and no cross-process
+anything anywhere in `internal/audit`: `NewStore` is `os.MkdirAll`, and
+`Append` reads every chain file, takes the last entry, computes
+`Sequence` and `PrevHash` from it, then opens the current file
+`O_APPEND|O_CREATE|O_WRONLY` and writes one line.
+
+Nothing else in the project covers it either. The only cross-process
+guard this program has is `platform.ShellBatchLeaderName`
+(`internal/platform/singleinstance_windows.go`), a `Local\` named mutex
+with exactly one caller — `runShellVerb`, deciding which of twenty
+Explorer invocations opens a window ([[D-119]]). Nothing prevents a
+second agent process from starting, and both processes resolve the same
+directory: `newAuditStore` is
+`filepath.Join(platform.ConfigDir("windows", platform.OSEnv), "audit")`,
+which is per user, so a tray agent and a `sign` process in one session
+share it by construction.
+
+**So: nothing guards it.** Said plainly rather than inferred.
+
+**Measured, two ways, because the mutex being per-`Store` makes the two
+identical.** A throwaway harness inside the module, created and deleted
+in the same session ([[D-100]]).
+
+*Two `*audit.Store` values over one directory, in one process:*
+
+```
+entries=2 chains=1 storeOK=false brokenAt=1
+  seq=0 app=store-1  prev=(none) hash=3b0995ab
+  seq=0 app=store-0  prev=(none) hash=8000e566
+```
+
+*Two real OS processes, each with its own `Store`, released at the same
+instant:*
+
+```
+entries=2 chains=1 storeOK=false brokenAt=1
+{"sequence":0,...,"application":"tray","prevHash":"","hash":"5e0247a4…"}
+{"sequence":0,...,"application":"sign","prevHash":"","hash":"22e0afec…"}
+```
+
+Both wrote `sequence: 0`. Both wrote an empty `prevHash`. `Verify`
+reports `brokenAt: 1` — the second line — because its `PrevHash` does
+not match the first line's `Hash`, which is exactly what an altered log
+looks like.
+
+**It is permanent, not a one-off.** Seeded with one entry, forked, then
+appended to normally:
+
+```
+entries=4 chains=1 storeOK=false brokenAt=2
+  seq=0 seed     prev=(none)   hash=0abd36d9
+  seq=1 store-0  prev=0abd36d9 hash=8f610448
+  seq=1 store-1  prev=0abd36d9 hash=d146ee2a
+  seq=2 later    prev=d146ee2a hash=319c2ed1
+```
+
+The later entry chains from whichever line was written last, so the log
+goes on growing and goes on verifying as tampered from the fork onward.
+[[D-166]]'s recovery does not help and is not meant to: it fires when a
+chain's last entry cannot be *read*, and here every line reads
+perfectly. The person is told nothing at the time, and months later the
+export's integrity check says the log was altered at entry 2 — about a
+race, in a file whose entire value is that it cannot be altered without
+saying so.
+
+**Reproducing it takes four lines**: two `audit.NewStore` calls on one
+directory, an `Append` on each from two goroutines released together,
+then `Verify`. Recorded here rather than committed, so nobody has to
+rediscover the shape.
+
+**How likely, stated rather than implied.** It needs two batches
+finishing inside the same few milliseconds, in two processes, in one
+session. That is not the ordinary case and it is not exotic either: F6's
+Explorer integration starts one process per selected file ([[D-119]]),
+F7's protocol path signs from the tray while a person may be signing
+from `sign`, and this phase makes `sign` write an audit entry where
+before it wrote none ([[D-222]]) — so the exposure is larger today than
+it was yesterday, which is exactly why the question was asked now.
+
+**Not fixed here, and deliberately not.** The remedy is a decision with
+at least three defensible shapes — a `Local\` named mutex held across
+`Append`, a `LockFileEx` byte-range lock on the chain file, or one
+process owning the log and the others handing entries to it — and the
+third is a change to how this program is arranged, not to a function.
+Choosing one silently inside a phase that was asked to establish the
+fact is how a design nobody chose ships ([[D-201]]'s own reason for
+leaving a layout defect to the owner). The phase asked for the fact,
+said not to fix it silently, and said not to assume it is fine. It is
+not fine.
+
+**Rejected.**
+- **Assuming the per-process mutex was enough because its comment reads
+  like a guarantee.** It says "atomic-from-this-process" and means it.
+  The measurement is what settles it, and this project has recorded five
+  times what reading instead of measuring costs ([[D-087]], [[D-122]],
+  [[D-161]], [[D-172]], [[D-219]]).
+- **Fixing it with a named mutex while in here.** Probably the right
+  answer. Not this phase's to choose, and a lock added without a story
+  for what happens when the holder dies is a program that will not sign.
+
+---
+
+## D-224 — TSA credentials leave the command line; no flag on any command accepts a secret
+
+**Date:** 2026-09-09
+**Phase:** F9
+
+**Decision.** `--tsa-user`, `--tsa-password` and
+`--tsa-client-cert-password` are removed. The signing command's
+timestamp credentials come from `config.Config` — `TSAUser`,
+`TSAPassword`, `TSAClientCertPassword`, the fields [[D-091]] added —
+carried in as `cli.TSACredentials` by the one place that knows what a
+configuration is. `--tsa` (a URL) and `--tsa-client-cert` (a file path)
+stay: neither is a credential.
+
+**Why.** On Windows a process's full command line is readable by every
+other process running as that user, and by anything running as an
+administrator: Task Manager's "Command line" column, `Get-CimInstance
+Win32_Process`, any process lister. A password given as an argument is
+therefore published to the machine for as long as the process runs, and
+it survives afterwards in the shell history and in whatever scheduled
+task or batch file invoked it. [[D-091]] had already moved these values
+into configuration; the flags stayed beside them, so the safe path
+existed and the unsafe one was still the documented one.
+
+**No `--pin`, ever, in any form.** Nobody has asked for one; somebody
+will. SPEC §6.5 is the standing answer and it is not about command
+lines: the card caches the PIN in its own state independently of which
+process is talking to it, so the PIN is not an access-control boundary
+between applications at all. A PIN on a command line therefore buys no
+security and spends a great deal — and [[D-025]] already made it
+impossible for a PIN to be a *field* anywhere in `internal/keysource`,
+`internal/keysource/softtoken` or `internal/signing`. This is the same
+rule one layer out.
+
+**The test.** `TestNoFlagOnAnyCommandAcceptsASecret`
+(`internal/cli/flagsecrets_test.go`) parses every `.go` file in
+`internal/cli` and `cmd/liro-bridge` and collects the first argument of
+every `*flag.FlagSet` registration, then fails on any name containing
+`pin`, `password`, `passwd`, `passphrase`, `secret`, `credential`,
+`apikey` or `api-key`. Reading the source is this project's method for a
+property about what is *declared* — [[D-025]]'s "no PIN field anywhere",
+[[D-158]]'s `AllCodes`, [[D-185]]'s "nothing binds anywhere but
+loopback" — because a flag registered in a file no test happens to
+exercise is invisible to anything else. Files are parsed individually
+rather than as a package so that build constraints are ignored: the
+signing path with no consent window is behind the `softtoken` tag
+([[D-222]]) and its flags are still flags.
+
+`TestTheFlagSecretRuleWouldActuallyFire` is the other half, because a
+word list nothing could match passes for ever: it requires `--pin`,
+`--card-pin`, `--tsa-password`, `--tsa-client-cert-password` and
+`--api-key` to be caught, and `--tsa`, `--tsa-client-cert`,
+`--thumbprint`, `--stamp-show-document-id`, `--resign` and `--all` not
+to be. Confirmed against a deliberately reintroduced `--tsa-password`
+and `--pin` on `certs`: both are named, with their file and line.
+
+**"user" is deliberately not a secret word.** A username is not a
+secret, and a list that caught it would catch
+`--stamp-show-document-id` and every future flag with "use" in it.
+`--tsa-user` was removed with the other two for a different reason — it
+is half of a credential pair whose other half now comes from
+configuration, so a flag for it alone would configure nothing — and a
+second assertion pins all three by name, which is what actually keeps
+them removed.
+
+**Rejected.**
+- **Keeping `--tsa-password` and warning about it.** A warning is a
+  thing to read once and route around; the value is on the command line
+  either way.
+- **Reading the credentials from the environment instead.** Better than
+  a command line and worse than configuration: an environment variable
+  is inherited by every child process, and this program already has one
+  place a credential belongs.
+- **A rule over flag *usage strings* rather than names.** It would catch
+  `--tsa-client-cert`'s own description, which names a certificate
+  rather than a credential, and it would miss a flag called `--p`
+  documented as "the password".
+- **Removing `--tsa` and `--tsa-client-cert` too, so the whole timestamp
+  configuration comes from one place.** Tidier, and beyond what was
+  asked: a URL and a path are not secrets, and the phase named three
+  flags.
+
+---
+
+## D-225 — Two promises removed from SPEC: the .NET SDK, and F9 as a CLI contract for legacy systems
+
+**Date:** 2026-09-09
+**Phase:** F9
+
+**Decision.** Two edits to `docs/SPEC.md`, both removing something the
+project had promised and no longer intends. No rule is added.
+
+*(a) §5's repository layout.* `sdk/dotnet/` is gone, replaced by what is
+actually there:
+
+```
+├── sdk/
+│   ├── typescript/                # the only first-class SDK
+│   └── examples/                  # one client per language, protocol only
+```
+
+*(b) §19's F9 row.* It read
+
+| **F9** | CLI for legacy systems; .NET SDK | A Delphi program signs via `exec` |
+
+and now reads
+
+| **F9** | One `sign`, and it shows the consent window; no credential on any command line | A release binary contains no signing path that skips the consent screen, proved by inspecting the binary |
+
+**Why the .NET SDK goes.** F8 §0 settled it and the owner has restated
+it: TypeScript is the only first-class SDK, and other languages keep the
+example-only status F8 §8 gave them. `sdk/examples/` holds seven clients
+— `sign-with-sdk.mjs`, `liro-test-client.ps1`, `sign.py`, `sign.go`,
+`Sign.cs`, `Sign.java`, `sign.php` — written against `docs/PROTOCOL.md`
+and, for five of them, run end to end against a real agent ([[D-218]]).
+A directory in the layout for a package nobody is building is a promise
+the repository makes on every reading of §5; a .NET integrator's answer
+is `Sign.cs` and the protocol, and that answer exists.
+
+**Why the F9 row goes.** Both halves of it are gone. The .NET SDK by F8
+§0, above. The CLI contract for legacy callers by the owner's decision
+this phase: an integrator who is not on Node uses the protocol directly.
+Keeping "A Delphi program signs via `exec`" as an exit condition would
+be worse than stale — it is the exact shape of thing [[D-222]] has just
+removed, a program obtaining a qualified signature by running a command,
+with no window and nobody at the machine. The row it is replaced with is
+what the phase actually was, and its exit condition is one a machine
+checks.
+
+**Why these two and nothing else.** The phase said these are the only
+SPEC edits it makes, and it is right to bound it: SPEC is "the rules
+that never change" (§0), and a phase that edits it freely is a phase that
+can soften a constraint by rewording it. Both of these remove a promise
+rather than adding a rule, which is the one direction that cannot make a
+future implementation wrong.
+
+**One thing left inaccurate, deliberately, and reported instead.** SPEC
+§4.3's table of the four entry points still describes the CLI row's
+caller as "Scripts, legacy systems" with the note `liro-bridge sign --in
+x.pdf --out y.pdf`. After [[D-222]] a release binary's `sign` has no
+`--out`, and "legacy systems" is the audience the owner has just said
+there is no contract for. It is a Notes column rather than a rule,
+changing it is a third SPEC edit this phase was told not to make, and
+the sentence immediately above it — "All four go through the **same**
+consent screen, the same session, the same audit log" — is the
+load-bearing part and is now true for the first time. Recorded here for
+whoever makes the next SPEC edit.
+
+**Rejected.**
+- **Leaving `sdk/dotnet/` and marking it "not built".** A layout is a
+  description of the repository; a directory that does not exist is not
+  a description.
+- **Rewriting SPEC §4.3's CLI row while in here.** Above.
+- **Replacing the F9 row with nothing, since a phase's row is history.**
+  §19 is a map of what each phase is for and every other row says what
+  its phase did; a blank one would read as a phase that did nothing.
+
+---
+
+## D-226 — Three gaps closed in `docs/PROTOCOL.md`, and a fourth found while closing them
+
+**Date:** 2026-09-09
+**Phase:** F9
+
+**Decision.** [[D-220]] recorded three things the protocol document does
+not say that an implementation needs, and deliberately left them: F8 was
+forbidden from editing the specification it was implementing against.
+This phase is not, so all three are now said. Nothing about the agent
+changed; every sentence describes what the code already does, read out
+of the code.
+
+*(a) §5.2 now says what a failed document looks like.* §5.1 was explicit
+for the digests path — one entry per digest, `null` in place, the array
+never closes up — and §5.2 showed only a fully successful `documents`
+array. Read out of `internal/api/jobhandlers.go`'s `signedDocumentBody`:
+a failed document keeps its `name` and has neither `content` nor
+`achievedLevel` (both `omitempty`), and its position in the request
+appears in `failures`. The example now shows a two-document batch with
+one failure, and the prose says the thing an integrator actually needs
+told: `content` is not a field to read unconditionally, because
+`Buffer.from(doc.content, 'base64')` over every entry crashes on exactly
+the path that matters.
+
+*(b) `minimumClientVersion` has a stated format.* It is a semantic
+version (semver 2.0.0) compared by precedence, with pre-release and
+build metadata not used. Also stated: the comparison is the caller's.
+The agent publishes the number (`api.MinimumClientVersion`, `"0.0.0"`)
+and enforces nothing with it — refusing a client at the agent would
+refuse it before the person could be told anything useful.
+
+*(c) §4 gives all three discovery paths.* It gave only the Windows one;
+SPEC §14 gives three, and `platform.BridgeFile` implements them. The
+Linux one is not what a guess would produce — `$XDG_RUNTIME_DIR/liro/`,
+falling back to `~/.local/state/liro/`, not `~/.config` — which is the
+whole reason writing it down is worth anything. Said with it: the agent
+is Windows-only until phase 12, so only the first line has an agent
+behind it today.
+
+**A fourth, found while writing (a).** Both result bodies declare
+`Failures []failureBody` with `json:"failures,omitempty"`, so
+**`failures` is absent from an all-succeeded result, not `[]`** — and
+§5.2's example showed `"failures": []`. §5.1's example happened to be
+right, because the failure it shows is real. One sentence now covers
+both endpoints, and the wrong example is corrected. It is a small thing
+that costs an integrator an afternoon: a client written against the
+example indexes into an array that is not there.
+
+**What this does not do.** The SDK still does not compare its own
+version against `minimumClientVersion`. [[D-212]] declined to, correctly
+at the time, because "a comparison rule this SDK invented would be a
+rule the agent had not agreed to". The agent has now stated one, so the
+comparison is a small piece of work that can be done — and it is SDK
+work, not a documentation fix, so it is recorded here rather than
+smuggled into a phase that was asked to edit a document.
+
+**Rejected.**
+- **Changing the agent so a failed document carries an explicit
+  `"content": null` instead of omitting the key.** It would make §5.2
+  read more like §5.1, and it is a protocol behaviour change this phase
+  is forbidden. Document what the code does.
+- **Making `failures` always present as `[]`.** Same objection, and the
+  same one [[D-220]] gives for not guessing a semver rule: two
+  implementations disagreeing about a field is how this gets expensive.
+
+---
+
+## D-227 — `sign-digest` is the same bypass one command over, and this phase did not fix it
+
+**Date:** 2026-09-09
+**Phase:** F9
+
+**Recorded because finding it was part of establishing whether
+[[D-222]]'s fix is complete. It is not.**
+
+`liro-bridge sign-digest --thumbprint <card> --digest <64 hex>` opens a
+session on a real card and returns a raw RSA signature over whatever
+digest it was handed. `internal/cli.RunSignDigest` has no consent
+screen, no audit entry and no window, in a release build, on every
+platform. It is F2's own exit condition and the README's documented
+OpenSSL verification recipe.
+
+**Why it is the same defect.** A digest is not a lesser thing than a
+document: the digest a PAdES signature is computed over is a SHA-256 of
+a `/ByteRange`, so a signature over an attacker-chosen digest is a
+signature over an attacker-chosen document. And SPEC §6.5 forecloses the
+obvious reassurance — the card's own PIN dialog is not a gate, because
+the card caches the PIN in its own state independently of which process
+is talking to it, so a second process signs silently for as long as the
+session lives. That is the paragraph SPEC calls the most important in
+the document, and it is why the consent window exists at all.
+
+**Why it is not fixed here.** The phase named one defect and said "This
+phase only." `sign-digest` is not a variant of `sign` — it is F2's whole
+surface, the README's recipe, and one of the two things CI signs on
+every push. What replaces it is a design question with real answers on
+both sides: a consent window in front of a raw digest is a window that
+can say almost nothing useful about what is being signed, since SPEC
+§6.6's screen shows a document count, a batch fingerprint and file
+names, and a bare digest has none of the three. Making that decision
+quietly inside a phase scoped to `sign` is how a design nobody chose
+ships.
+
+**What would need deciding, so the next pass does not start from
+nothing.** Either `sign-digest` goes behind the `softtoken` tag beside
+[[D-222]]'s path — which costs a release binary nothing, since its only
+documented use is verifying a build — or it keeps a real card and grows
+a consent screen of its own, which needs an answer to what that screen
+shows. The first is smaller and is what the evidence points at: F2
+§6.1's recipe is a developer checking a build, and a developer's build
+is exactly what the tag is for.
+
+**Rejected.**
+- **Reporting it only in this phase's report and not here.** A report is
+  read once. This is the log a future phase reads in full.
+- **Fixing it quietly as "obviously the same thing".** It is the same
+  class and it is not the same change, and the phase's own instruction
+  about the audit chain applies here with equal force: do not fix it
+  silently.
+

@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,18 +29,6 @@ var (
 	commit    = "none"
 	buildDate = "unknown"
 )
-
-// containsFlag reports whether name is present among args — used only
-// to decide "sign" vs "sign --interactive" dispatch before either
-// command's own flag.Parse runs.
-func containsFlag(args []string, name string) bool {
-	for _, a := range args {
-		if a == name {
-			return true
-		}
-	}
-	return false
-}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout))
@@ -68,11 +55,21 @@ func run(args []string, out io.Writer) int {
 	if len(args) > 0 && args[0] == "sign-digest" {
 		return runSignDigest(context.Background(), args[1:], out, os.Stderr, cfg.Locale)
 	}
+	// There is one `sign` and it shows the consent window. SPEC §18.2
+	// admits no exception — "No signature without human approval. No
+	// flag, no configuration, no header bypasses the consent screen" —
+	// and SPEC §4.3 puts all four entry points through the same consent
+	// screen, the same session and the same audit log. `--interactive`
+	// used to be what made the difference; it is not a distinction any
+	// more, and parseSignArgs says so to anyone who still passes it.
 	if len(args) > 0 && args[0] == "sign" {
-		if containsFlag(args[1:], "--interactive") {
-			return runSignInteractive(context.Background(), args[1:], out, cfg.Locale, cfg)
-		}
-		return runSign(context.Background(), args[1:], out, os.Stderr, cfg.Locale)
+		return runSignCommand(context.Background(), args[1:], out, cfg.Locale, cfg)
+	}
+	// The path with no window, present only in a build made with the
+	// "softtoken" tag, under its own name. In a release build this
+	// returns handled=false and the command does not exist at all.
+	if code, handled := runBuildOnlyCommand(context.Background(), args, out, os.Stderr, cfg); handled {
+		return code
 	}
 	// F6 §1: the main window, opened directly. Also how the tray's Open
 	// item and the Explorer context menu reach it.
@@ -167,69 +164,20 @@ func runSignDigest(ctx context.Context, args []string, stdout, stderr io.Writer,
 	return cli.RunSignDigest(ctx, args, stdout, stderr, locale, cli.SignDeps{Open: open})
 }
 
-// runSign wires the real Windows CNG (and, with the softtoken tag, soft
-// token fallback) source plus the F1 Trusted List into
-// internal/cli.RunSign (F3 §9). Chain completion (F3 §5.4) searches the
-// Trusted List's CA/QC service certificates first, before falling back
-// to AIA.
-func runSign(ctx context.Context, args []string, stdout, stderr io.Writer, locale string) int {
-	cngSource := windowscng.NewSource()
-	softSource := softTokenSource()
+// command is one subcommand and its one-line description.
+type command struct{ name, desc string }
 
-	open := func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, error) {
-		sess, err := cngSource.Open(ctx, thumbprint)
-		if err == nil {
-			return sess, nil
-		}
-		var e *errs.Error
-		if softSource != nil && errors.As(err, &e) && e.Code == errs.CodeCertNotFound {
-			return softSource.Open(ctx, thumbprint)
-		}
-		return nil, err
-	}
-
-	cachePath := filepath.Join(filepath.Dir(platform.DefaultConfigFile()), "tsl-cache.xml")
-	store, err := tsl.NewFileStore(cachePath, tsl.DefaultURL, tsl.HTTPFetcher)
-	var trustStore []*x509.Certificate
-	if err == nil {
-		if list, _, err := store.Current(ctx); err == nil {
-			trustStore = caCertificatesFromTSL(list)
-		}
-	}
-
-	return cli.RunSign(ctx, args, stdout, stderr, locale, cli.SignPDFDeps{Open: open, TrustStore: trustStore})
-}
-
-// caCertificatesFromTSL extracts every CA/QC service's certificate from
-// list, parsed as *x509.Certificate, for chain completion (F3 §5.4).
-// A service whose certificate does not parse is skipped rather than
-// failing the whole load — chain completion is best-effort by design.
-func caCertificatesFromTSL(list *tsl.List) []*x509.Certificate {
-	var out []*x509.Certificate
-	for _, p := range list.Providers {
-		for _, svc := range p.Services {
-			if !svc.IsCA() || len(svc.Certificate) == 0 {
-				continue
-			}
-			if cert, err := x509.ParseCertificate(svc.Certificate); err == nil {
-				out = append(out, cert)
-			}
-		}
-	}
-	return out
-}
-
-// topLevelCommands lists every liro-bridge subcommand and its one-line
-// description: certs, sign, sign-digest and tray are the only four the
-// binary actually recognises (see run, above) — none of them was
-// previously discoverable from --help, which is what this list and
-// topLevelUsage fix.
+// topLevelCommands lists every liro-bridge subcommand a released binary
+// recognises (see run, above) — none of them was previously
+// discoverable from --help, which is what this list and topLevelUsage
+// fix. A build made with the "softtoken" tag adds its own; see
+// buildOnlyCommands.
 //
-// Help and usage text is always English (D-0xx, SPEC §9.2) — developer-
+// Help and usage text is always English (D-092, SPEC §9.2) — developer-
 // facing like code, comments and documentation — regardless of the
 // configured UI locale, so these are plain string literals rather than
 // catalogue keys.
-var topLevelCommands = []struct{ name, desc string }{
+var topLevelCommands = []command{
 	{"certs", "List available signing certificates"},
 	{"sign", "Sign a PDF file"},
 	{"sign-digest", "Sign a pre-computed digest (advanced/integration use)"},
@@ -254,8 +202,8 @@ func topLevelUsage(fs *flag.FlagSet) func() {
 		fprintln(w, "Usage: liro-bridge <command> [flags]")
 		fprintln(w)
 		fprintln(w, "Commands:")
-		for _, cmd := range topLevelCommands {
-			fprintf(w, "  %-14s %s\n", cmd.name, cmd.desc)
+		for _, cmd := range append(append([]command{}, topLevelCommands...), buildOnlyCommands()...) {
+			fprintf(w, "  %-16s %s\n", cmd.name, cmd.desc)
 		}
 		fprintln(w)
 		fprintln(w, "Run 'liro-bridge <command> --help' for details about a command.")

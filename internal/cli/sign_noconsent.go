@@ -1,3 +1,25 @@
+//go:build softtoken
+
+// This file is the signing path that asks nobody, and it exists only in
+// a binary built with the "softtoken" tag.
+//
+// SPEC §18.2 is unconditional — "No signature without human approval.
+// No flag, no configuration, no header bypasses the consent screen" —
+// and SPEC §4.3 says all four entry points go through the same consent
+// screen. This code predates the consent screen (F5) and was never
+// reconciled with either. It was reachable as `liro-bridge sign` by any
+// process on the machine, with no pairing, no origin binding and no
+// human.
+//
+// It survives at all for one reason: CI signs a PDF and verifies it
+// with OpenSSL and this project's own independent verifier on every
+// push (SPEC §16.4, F3's exit condition), and must keep doing that with
+// no human present. That is a test build's need, so it lives behind the
+// tag that already means "this is a test build" (SPEC §16.6), reached by
+// its own command name — `sign-no-consent` — rather than by `sign`,
+// which shows the window in every build. A release binary contains
+// neither the command nor this function; CI proves it by inspecting the
+// binary.
 package cli
 
 import (
@@ -9,7 +31,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,10 +47,26 @@ import (
 	"github.com/veljaos/liro-bridge/internal/signing"
 )
 
-// SignPDFDeps supplies sign with everything it needs, as functions and
-// data rather than concrete types — the same shape SignDeps already
-// uses for sign-digest (F2), so main.go remains the only place a
-// concrete keysource.Source is chosen.
+// TSACredentials are the timestamp authority's credentials. They come
+// from configuration and never from a flag: on Windows a full command
+// line is readable by every process on the machine — Task Manager's
+// "Command line" column, Get-CimInstance Win32_Process, any process
+// lister — so a password passed as an argument is a password published
+// to the machine for as long as the process runs.
+//
+// D-091 already moved these four values into configuration; the flags
+// stayed beside them until this phase removed them. A URL and a file
+// path are not credentials and remain flags.
+type TSACredentials struct {
+	BasicUsername      string
+	BasicPassword      string
+	ClientCertPassword string
+}
+
+// SignPDFDeps supplies sign-no-consent with everything it needs, as
+// functions and data rather than concrete types — the same shape
+// SignDeps already uses for sign-digest (F2), so main.go remains the
+// only place a concrete keysource.Source is chosen.
 type SignPDFDeps struct {
 	Open func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, error)
 
@@ -37,26 +74,29 @@ type SignPDFDeps struct {
 	// searches first (F3 §5.4) — in production, the F1 Trusted List's
 	// CA/QC service certificates.
 	TrustStore []*x509.Certificate
+
+	// TSACredentials come from config.json. See TSACredentials.
+	TSACredentials TSACredentials
 }
 
 // signOutputSuffix is F3 §12.11's default.
 const signOutputSuffix = "-signed"
 
-// RunSign implements "liro-bridge sign" (F3 §9).
-func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, locale string, deps SignPDFDeps) int {
+// RunSignWithoutConsent implements "liro-bridge sign-no-consent": F3
+// §9's batch signing with no consent screen and no human. See this
+// file's own doc comment for why it exists and why it is behind a build
+// tag.
+func RunSignWithoutConsent(ctx context.Context, args []string, stdout, stderr io.Writer, locale string, deps SignPDFDeps) int {
 	c := i18n.Load(locale)
 
-	fs := flag.NewFlagSet("sign", flag.ContinueOnError)
+	fs := flag.NewFlagSet("sign-no-consent", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	inPattern := fs.String("in", "", "input PDF, or a glob matching several")
 	outPath := fs.String("out", "", "output path (only valid for a single input file)")
 	thumbprintHex := fs.String("thumbprint", "", "certificate SHA-1 thumbprint, hex")
 	level := fs.String("level", "b-lt", "b-t or b-lt")
 	tsaURL := fs.String("tsa", "", "RFC 3161 TSA URL")
-	tsaUser := fs.String("tsa-user", "", "TSA HTTP Basic auth username")
-	tsaPassword := fs.String("tsa-password", "", "TSA HTTP Basic auth password")
 	tsaP12Path := fs.String("tsa-client-cert", "", "TSA TLS client certificate, PKCS#12 file")
-	tsaP12Password := fs.String("tsa-client-cert-password", "", "TSA TLS client certificate password")
 	onTSAFailure := fs.String("on-tsa-failure", "abort", "abort or b-b")
 	reserve := fs.Int("reserve", 0, "bytes reserved for /Contents (default 32768)")
 	maxRevocationSize := fs.Int64("max-revocation-size", 0, "largest CRL/OCSP response embedded into /DSS, in bytes (default 5242880 = 5 MB; Task 1b)")
@@ -75,7 +115,7 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 	var stampOpts *pades.StampOptions
 	if *stamp {
 		if *stampPosition != "" && *stampXY != "" {
-			fprintln(stderr, "liro-bridge: sign:", c.T("sign.stamp_position_xy_conflict"))
+			fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.stamp_position_xy_conflict"))
 			return 2
 		}
 		opts := &pades.StampOptions{
@@ -87,14 +127,14 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 		if *stampXY != "" {
 			x, y, ok := parseStampXY(*stampXY)
 			if !ok {
-				fprintln(stderr, "liro-bridge: sign:", c.T("sign.stamp_xy_invalid"))
+				fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.stamp_xy_invalid"))
 				return 2
 			}
 			opts.UseXY, opts.X, opts.Y = true, x, y
 		} else {
 			corner, ok := parseStampPosition(*stampPosition)
 			if !ok {
-				fprintln(stderr, "liro-bridge: sign:", c.T("sign.stamp_position_invalid"))
+				fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.stamp_position_invalid"))
 				return 2
 			}
 			opts.Corner = corner
@@ -103,27 +143,27 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 	}
 
 	if *inPattern == "" {
-		fprintln(stderr, "liro-bridge: sign:", c.T("sign.in_required"))
+		fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.in_required"))
 		return 2
 	}
 	if *thumbprintHex == "" {
-		fprintln(stderr, "liro-bridge: sign:", c.T("sign.thumbprint_required"))
+		fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.thumbprint_required"))
 		return 2
 	}
 	requestedLevel, ok := parseLevel(*level)
 	if !ok {
-		fprintln(stderr, "liro-bridge: sign:", c.T("sign.level_invalid"))
+		fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.level_invalid"))
 		return 2
 	}
 	abortOnTSAFailure, ok := parseOnTSAFailure(*onTSAFailure)
 	if !ok {
-		fprintln(stderr, "liro-bridge: sign:", c.T("sign.on_tsa_failure_invalid"))
+		fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.on_tsa_failure_invalid"))
 		return 2
 	}
 
 	files, err := expandInput(*inPattern)
 	if err != nil || len(files) == 0 {
-		fprintln(stderr, "liro-bridge: sign:", c.T("sign.no_input_files"))
+		fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.no_input_files"))
 		return 1
 	}
 
@@ -137,25 +177,30 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 	// and does the safe thing unless told otherwise.
 	files, alreadySigned := partitionAlreadySigned(files, signOutputSuffix, *resign)
 	if alreadySigned > 0 {
-		fprintln(stderr, "liro-bridge: sign:", alreadySignedNotice(c, alreadySigned, signOutputSuffix, *resign))
+		fprintln(stderr, "liro-bridge: sign-no-consent:", alreadySignedNotice(c, alreadySigned, signOutputSuffix, *resign))
 	}
 	if len(files) == 0 {
-		fprintln(stderr, "liro-bridge: sign:", fmt.Sprintf(c.T("sign.already_signed_nothing_left"), signOutputSuffix))
+		fprintln(stderr, "liro-bridge: sign-no-consent:", fmt.Sprintf(c.T("sign.already_signed_nothing_left"), signOutputSuffix))
 		return 1
 	}
 
 	var client *tsa.Client
 	if *tsaURL != "" {
-		auth := tsa.Auth{BasicUsername: *tsaUser, BasicPassword: *tsaPassword}
+		// The credentials come from configuration, never from the
+		// command line. See TSACredentials.
+		auth := tsa.Auth{
+			BasicUsername: deps.TSACredentials.BasicUsername,
+			BasicPassword: deps.TSACredentials.BasicPassword,
+		}
 		if *tsaP12Path != "" {
 			p12, err := os.ReadFile(*tsaP12Path)
 			if err != nil {
-				fprintln(stderr, "liro-bridge: sign: reading --tsa-client-cert:", err)
+				fprintln(stderr, "liro-bridge: sign-no-consent: reading --tsa-client-cert:", err)
 				return 2
 			}
-			cert, err := tsa.LoadPKCS12ClientCert(p12, *tsaP12Password)
+			cert, err := tsa.LoadPKCS12ClientCert(p12, deps.TSACredentials.ClientCertPassword)
 			if err != nil {
-				fprintln(stderr, "liro-bridge: sign: loading --tsa-client-cert:", err)
+				fprintln(stderr, "liro-bridge: sign-no-consent: loading --tsa-client-cert:", err)
 				return 2
 			}
 			auth.ClientCertificate = &cert
@@ -167,7 +212,7 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 	// reused across every document in the batch.
 	session, err := deps.Open(ctx, keysource.Thumbprint(*thumbprintHex))
 	if err != nil {
-		printCommandError(stderr, "sign", err, c)
+		printCommandError(stderr, "sign-no-consent", err, c)
 		return 1
 	}
 	defer func() { _ = session.Close() }()
@@ -194,7 +239,7 @@ func RunSign(ctx context.Context, args []string, stdout, stderr io.Writer, local
 		}
 		if err := signOneFile(ctx, in, out, *force, session, client, requestedLevel, abortOnTSAFailure, *reserve, *maxRevocationSize, revocationMemory, deps.TrustStore, stampOpts, stdout, stderr, c); err != nil {
 			failures++
-			fprintln(stderr, "liro-bridge: sign:", in+":", errMessage(err, c))
+			fprintln(stderr, "liro-bridge: sign-no-consent:", in+":", errMessage(err, c))
 			if len(files) == 1 {
 				return 1
 			}
@@ -389,58 +434,6 @@ func thumbprintTail(t keysource.Thumbprint) string {
 		return "…" + s
 	}
 	return "…" + s[len(s)-8:]
-}
-
-// ErrorMessage renders err the way this package's own output does, for
-// a caller outside it that shows the same errors to the same person —
-// the consent window (cmd/liro-bridge's pushFailure), which had been
-// rendering the bare catalogue message and so printed a stamp-glyph
-// failure with its two "%s" placeholders unfilled. One renderer, one
-// behaviour: a code's Details reach the user in exactly one shape,
-// whichever front door the signature was started from.
-func ErrorMessage(err error, c *i18n.Catalogue) string {
-	return errMessage(err, c)
-}
-
-// errMessage renders err for the CLI's own local, English-or-localised
-// output — not an API boundary (SPEC §7 governs internal/api's future
-// JSON responses; this phase builds no such surface). A structured
-// *errs.Error's Details are appended, since they carry exactly the kind
-// of fact a person debugging a failed signing run needs — the character
-// and code point of a glyph missing from the stamp's font subset
-// (F4 §3.3), for instance, which the localised code alone
-// ("SIGN_FAILED") would not convey.
-func errMessage(err error, c *i18n.Catalogue) string {
-	var e *errs.Error
-	if errors.As(err, &e) {
-		if e.Code == errs.CodeStampGlyphMissing {
-			// Task 2: the catalogue message itself names the character
-			// and its code point ("...: %s (%s)."), rather than having
-			// them appended generically the way other codes' Details are
-			// — this is the one error whose whole point is to be read as
-			// a sentence, not a code plus a debugging fragment.
-			return fmt.Sprintf(c.T(i18n.CodeKey(e.Code)), e.Details["character"], e.Details["codePoint"])
-		}
-		msg := c.T(i18n.CodeKey(e.Code))
-		if len(e.Details) > 0 {
-			msg += " (" + formatDetails(e.Details) + ")"
-		}
-		return msg
-	}
-	return err.Error()
-}
-
-func formatDetails(details map[string]any) string {
-	keys := make([]string, 0, len(details))
-	for k := range details {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = fmt.Sprintf("%s=%v", k, details[k])
-	}
-	return strings.Join(parts, ", ")
 }
 
 // parseStampPosition maps --stamp-position's four accepted values (F4
