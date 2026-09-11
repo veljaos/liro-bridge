@@ -24,6 +24,7 @@ internal/pades/render/*.ttf          -text
 internal/ui/assets/icon.ico          -text
 internal/ui/assets/webview2/*.dll    -text
 assets/*.png                         -text
+docs/guide/slike/*.png               -text
 
 # Fuzz seed corpora. Go's own format is one Go string literal per line and
 # it is read literally; a CRLF checkout on Windows makes every entry a
