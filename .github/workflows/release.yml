@@ -183,20 +183,58 @@ jobs:
       # signed with the private half. The key arrives in the
       # environment, never on a command line, where every other process
       # on the machine could read it (D-224).
+      #
+      # The failure is raised as an ::error:: annotation rather than
+      # left as a non-zero exit, so the reason is on the run summary
+      # instead of only inside this step's log. signrelease says which
+      # of three things went wrong — the key is not set, it is not
+      # base64 or not 64 bytes, or it is a key the agent does not
+      # embed — and a bare exit renders all three as "Process completed
+      # with exit code 1". See D-251.
+      #
+      # `go run` appends a line of its own, "exit status 1", *after*
+      # the tool's message, so the last line is that and not the
+      # reason. Measured, against the real tool with no key: the first
+      # version of this annotation read "signing the release failed:
+      # exit status 1", which is the string it exists to replace.
       - name: sign the release manifest
         shell: bash
         env:
           LIRO_RELEASE_SIGNING_KEY: ${{ secrets.LIRO_RELEASE_SIGNING_KEY }}
-        run: go run ./scripts/signrelease --dir dist/release --version "${{ needs.build.outputs.version }}"
+        run: |
+          set -eu
+          if ! out="$(go run ./scripts/signrelease --dir dist/release --version "${{ needs.build.outputs.version }}" 2>&1)"; then
+            printf '%s\n' "$out"
+            msg="$(printf '%s' "$out" | grep -v '^exit status [0-9][0-9]*$' | tail -n 1 | sed 's/%/%25/g')"
+            [ -n "$msg" ] || msg="see this step's log"
+            echo "::error::signing the release failed: $msg"
+            exit 1
+          fi
+          printf '%s\n' "$out"
 
       # And verify it exactly as an installed agent will, against the
       # keys this build embeds. A release that the agent would refuse
       # must not reach the page: the whole point of the update channel
       # is that nothing is trusted without this check, and the build is
       # where a failure costs nobody an afternoon.
+      #
+      # Annotated for the same reason as the step above, and it is the
+      # same one-line change: this step has never run either, and the
+      # thing it would say — which artefact's digest disagrees with the
+      # signed manifest, or that the signature does not verify at all —
+      # is the whole content of the failure.
       - name: the agent's own verifier accepts it
         shell: bash
-        run: go run ./scripts/verifyrelease --dir dist/release
+        run: |
+          set -eu
+          if ! out="$(go run ./scripts/verifyrelease --dir dist/release 2>&1)"; then
+            printf '%s\n' "$out"
+            msg="$(printf '%s' "$out" | grep -v '^exit status [0-9][0-9]*$' | tail -n 1 | sed 's/%/%25/g')"
+            [ -n "$msg" ] || msg="see this step's log"
+            echo "::error::the release does not verify: $msg"
+            exit 1
+          fi
+          printf '%s\n' "$out"
 
       - name: publish
         shell: bash

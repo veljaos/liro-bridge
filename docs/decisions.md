@@ -18265,3 +18265,178 @@ is not bit-identical there and that is said rather than glossed.
   answer to F10's rule, which asks for a standard account on a machine
   that never held a Go toolchain. Closing an entry on the half that was
   cheap is how the other half stops being anybody's.
+
+---
+
+## D-250 — What reaches the release page: notes that carry no version and no file names, no attribution line, and why a draft cannot serve as a staging step
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**How this was found.** Reading `release.yml` before the first tag, not
+after it. `gh release create --notes-file docs/release-notes-template.md`
+passes that file to the release page **verbatim** — nothing substitutes
+into it, and nothing ever did. So the public page for v0.9.0 would have
+carried, in the one table a stranger uses to decide which of two MSIs to
+download:
+
+```
+| `liro-bridge-<verzija>-x64.msi` | Većina korisnika. ... |
+```
+
+angle brackets intact, on every row. And the file ended with a
+`🤖 Generated with Claude Code` attribution line, which would have been
+the last thing on the page.
+
+**Decision. Three changes to `docs/release-notes-template.md`, and one
+thing left as it is.**
+
+*(a) The download table names no files.* It keys on the part of each
+name that distinguishes it — the `.msi` **with** `-per-machine` in its
+name against the one **without**, and the `.exe` — and says the file
+names are under *Assets* with the version in them. F10 §1 asks the page
+to serve an accountant who is very often not a local administrator; what
+that person needs from this table is not a file name, which is on the
+page anyway, but **which of the two MSIs is theirs**, and the
+distinguishing suffix is the whole of that.
+
+*(b) The attribution line is gone.* A note about the tool that produced
+a file is a note from the workshop, and this is the page F10's own
+stranger reads first.
+
+*(c) The guide is pointed somewhere a downloader can reach.* It named
+`docs/guide/Uputstvo.html` — a repository path that does not exist for
+anybody who downloaded an MSI. It now names the Start menu shortcut
+*Liro Bridge — uputstvo* (checked against `liro-bridge.wxs:299`, which
+is the name the package actually installs) and `Uputstvo.html` beside
+the installed binary, with `Guide.html` named for a reader who wants
+English.
+
+*What is left as it is: the release is published immediately, not as a
+draft.* `gh release create` is given neither `--draft` nor
+`--prerelease`, so the release is public and is GitHub's *latest* from
+the moment the step goes green — which is exactly what
+`update.LatestManifestURL` (`/releases/latest/download/release.json`)
+resolves to, so every installed agent's daily check sees it from that
+second. For v0.9.0 that is the owner's decision and it is the right one:
+no installed agent exists yet to be offered anything.
+
+**A draft cannot serve as a staging step, and that is the half worth
+writing down.** The obvious proposal, the next time somebody wants to
+look before the world does, is to publish as a draft and promote it. It
+does not work here, and it fails at precisely the thing a rehearsal
+would be for: **a draft is excluded from
+`/releases/latest/download/…`**, so the update check cannot see it. A
+draft can rehearse how the page looks and nothing about whether the
+channel works. There is therefore no staging step in this pipeline, and
+the thing that does rehearse everything short of signing and publishing
+is `workflow_dispatch` — which is D-239's own reason for keeping that
+trigger, and which builds both MSIs, the EXE, the `--version` check and
+the signing refusal while producing nothing on any page.
+
+**Rejected.**
+- **Substituting the version into the template at publish time**, with a
+  `sed` in the workflow. It works, and it adds a step whose failure is
+  silent: a naming change in `build.ps1` beside a template still
+  describing the old shape produces a page that confidently names files
+  that are not there. A table that names no files cannot name a wrong
+  one.
+- **Keeping the file names and only removing the angle brackets**, i.e.
+  writing `liro-bridge-0.9.0-x64.msi` out. Then the page says 0.9.0 for
+  ever, on every release after this one.
+- **Dropping the table, since *Assets* lists the files anyway.**
+  *Assets* lists five files in alphabetical order and says nothing about
+  which of two nearly identically named MSIs a person without
+  administrator rights should take — which is F10 §1's primary artefact
+  and the most consequential choice on the page.
+- **An English section for the administrator the `-per-machine` row is
+  aimed at.** A real gap, and [[D-242]] already records that audience as
+  the second one this project writes for. It is a new section rather
+  than a correction to a wrong one, and adding it inside a change asked
+  to fix two specific things is how scope stops being anybody's. Raised
+  here instead.
+- **`--draft` for v0.9.0.** Above: it cannot rehearse the one thing
+  worth rehearsing, and there is no installed agent for a premature
+  publish to reach.
+
+---
+
+## D-251 — A failing release step says why on the run summary; `go run` had put its own last line where the reason should be
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Decision.** The two steps in the `release` job that can fail with
+something worth reading — *sign the release manifest* and *the agent's
+own verifier accepts it* — capture their output and raise an `::error::`
+annotation carrying the tool's own message. The `build` job's two checks
+already did this; these two did not.
+
+**Why.** The release job has never run ([[D-239]]). The first time
+either step fails will be the first time it runs, which is exactly when
+the reason being inside a step log rather than on the run summary costs
+most. `signrelease` refuses in three distinguishable ways — the key is
+not set, it is not base64 or not 64 bytes, or it is a valid key the
+agent does not embed — and a bare non-zero exit renders all three
+identically as `Process completed with exit code 1`.
+
+**The measurement that changed the change, and it is the point of this
+entry.** The first version took `tail -n 1`. Run against the real tool
+with no key, in a scratch directory holding one `.exe`:
+
+```
+signrelease: LIRO_RELEASE_SIGNING_KEY is not set; a release is not published unsigned
+exit status 1
+::error::signing the release failed: exit status 1
+```
+
+`go run` appends a line of its own **after** the tool's message, so the
+last line is `exit status 1` — the exact string the annotation exists to
+replace. The filter is `grep -v '^exit status [0-9][0-9]*$'`, which
+matches that line's precise shape and nothing a tool would write; an
+empty result after filtering falls back to `see this step's log` rather
+than to a bare colon.
+
+This is the project's own recurring finding arriving *inside* a change
+small enough to be made in one edit and believed: a one-line improvement
+that reads correctly and does not do what it says. It was caught only
+because the change was run rather than read ([[D-087]], [[D-122]],
+[[D-161]], [[D-172]], [[D-219]], [[D-247]]).
+
+**Measured after the fix, every failure mode, against the real tools:**
+
+| What | Annotation |
+|---|---|
+| key not set | `signing the release failed: signrelease: LIRO_RELEASE_SIGNING_KEY is not set; a release is not published unsigned` |
+| key not base64 | `signing the release failed: signrelease: LIRO_RELEASE_SIGNING_KEY is not base64` |
+| key 40 bytes | `signing the release failed: signrelease: LIRO_RELEASE_SIGNING_KEY decodes to 40 bytes, want 64` |
+| no `release.json` | `the release does not verify: verifyrelease: open …\release.json: The system cannot find the file specified.` |
+
+No failure path echoes the key: `signrelease` deliberately does not
+([[D-224]]'s reasoning, one layer out), and Actions masks a registered
+secret regardless. `%` is escaped to `%25` because a workflow command
+reads it as the start of an escape sequence — measured, with a message
+containing one.
+
+**`verifyrelease` got the same change although only `signrelease` was
+asked for.** It is the next step, it has equally never run, and every
+word of the argument for one is the argument for the other. Two adjacent
+steps answering the same question differently is what this project has
+removed for a rule ([[D-108]]), a question ([[D-124]]) and a margin
+([[D-138]]). Stated plainly rather than folded in quietly, because it is
+scope the owner did not ask for and may want back.
+
+**Rejected.**
+- **Emitting `::error::` from `signrelease` itself**, behind a
+  `GITHUB_ACTIONS` check. It puts knowledge of one CI system inside a
+  tool a person also runs by hand, for a concept — a workflow command —
+  that belongs to the runner. The build job's own checks annotate from
+  the step, which is the precedent this follows.
+- **Building the tools with `go build` so there is no wrapper line to
+  filter.** It removes the cause rather than filtering the symptom, and
+  it is the larger change: a new step, two binaries to name, in a job
+  that has never run once. The filter is exact.
+- **Annotating `build the artefacts` as well.** `build.ps1` throws with
+  its own message and that step has run on every push since [[D-241]]'s
+  packaging job existed, so it is not in the class this entry is about —
+  a step nobody has ever seen fail.
