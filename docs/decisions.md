@@ -18698,3 +18698,257 @@ problem for the test.
 - **Reproducing at `GOMAXPROCS=1` and reporting "not reproducible".**
   Above: `runnext` makes one P the single configuration in which this
   race cannot be lost.
+
+---
+
+## D-253 — The SmartScreen figures: the Publisher line says `Unknown publisher`, the dialog is in English whatever the guide is in, and neither guide relies on the picture for a button
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**What this closes.** [[D-242]] recorded the guide as finished except for
+one thing: "The SmartScreen warning is described in words, with what to
+click and a warning against clicking it out of habit, and **has no
+screenshot**. SPEC §15.1 and F10 §6 both require one." The dialog appears
+only for a file a browser genuinely downloaded, so no agent can produce
+it — [[D-242]] said so and left it for the owner. He produced it, from a
+real browser download of `liro-bridge-0.9.0-x64.msi` off the Releases
+page, and did not click Run anyway. This wires both states in.
+
+```
+docs/guide/slike/10-smartscreen.png                    16 416 B  529x492
+docs/guide/slike/11-smartscreen-vise-informacija.png   19 638 B  529x492
+```
+
+Both are referenced by `Uputstvo.html` and `Guide.html`, added to
+`build.ps1`'s `$expectedImages` and to `liro-bridge.wxs` as `GuideImg10`
+and `GuideImg11`. `.gitattributes` needed no change: its
+`docs/guide/slike/*.png -text` line already covers them, confirmed with
+`git check-attr` against an existing image rather than assumed.
+
+### What the Publisher line actually says, and what the guide now says about it
+
+Measured from the image, by a 4x nearest-neighbour crop rather than by
+reading a 529-pixel-wide screenshot:
+
+```
+App:        liro-bridge-0.9.0-x64.msi
+Publisher:  Unknown publisher
+```
+
+**Lowercase `p`.** The other dialog already in the guide
+(`09-upozorenje-izdavac.png`, the `Open File - Security Warning` one)
+spells it `Unknown Publisher`, capital `P`. Two Windows dialogs, two
+spellings, and both guides now carry each where it belongs — which
+matters only because this is the one section whose whole instruction is
+*read what is on the screen*, and a guide that paraphrases the string it
+is telling somebody to look for has undercut itself.
+
+The task's own question was what to do if it says "Unknown publisher".
+It does, and the guide answers it in four sentences rather than leaving
+the reader with the word:
+
+- It says so plainly and says it will say that for them too.
+- It says **why**: Windows puts the name out of the code-signing
+  certificate, there is not one (SPEC §15.1), so there is no name to put.
+- It says what it is **not**: Windows is making no claim that the file
+  was altered, in either direction. That sentence is there because
+  "unknown publisher" reads as an accusation to somebody who has just
+  downloaded an installer, and the honest reading — the question cannot
+  be answered from the file — is not the one a worried person reaches
+  for.
+- It hands them the check that **can** answer it: the SHA-256 on the
+  releases page, with a link to §4, which already has the PowerShell
+  one-liner. A reader who is stopped by that line now has something to
+  do instead of a judgement to make.
+
+That last one is the point of the section. "Unknown publisher" is the
+line F10 §6 is about — the one that makes a careful person stop — and
+the right answer to a careful person is not reassurance, it is a
+stronger check than the one that failed.
+
+### The screenshots are in English, and that inverts the instruction
+
+The task said to write *the English guide* so a reader who cannot read
+the Serbian in the picture still knows which button to press. The
+premise does not hold: **both dialogs are in English.** SmartScreen
+follows the Windows display language, not the agent's, and this
+machine's is English — so the eight agent screenshots are `sr-Latn`
+([[D-242]]) and these two are not, in one folder.
+
+The rule behind the instruction is right and survives its premise being
+wrong; it just points the other way. It is the **Serbian** reader who
+meets a picture in a language the text around it is not in. Both guides
+therefore name every button, link and line in words — `More info`,
+`Run anyway`, `Don't run`, `App`, `Publisher` — and the Serbian one
+glosses each in Serbian beside it, the convention that section already
+used for the other dialog. Neither guide says "the button on the left"
+without also saying what is written on it.
+
+Both guides' existing note already said the warning appears in the
+reader's own Windows language and that the picture is from an English
+one. It said "picture" and there are three now; the English one also now
+says outright that if your Windows is in Serbian the words on screen
+will not be the words in the pictures, which is the sentence a person
+with a Serbian Windows needs before they start comparing.
+
+**What this does not do: it does not add a Serbian screenshot set.**
+[[D-242]] rejected two sets — "two sets drift, and the drift shows up as
+a picture that no longer matches the words beside it" — and that
+reasoning is unchanged. What changed is that the one set is now
+knowingly mixed-language, which is worth stating rather than discovering.
+
+### Two things the pictures are relied on for, and two they are not
+
+The figures carry the two facts a paragraph is bad at: that the first
+screen has **no** button that continues, and that `Run anyway` appears
+to the **left** of `Don't run` — both of which the text also states in
+words, because a reader with a Serbian Windows is matching positions
+rather than strings.
+
+The `More info` link gets its own sentence describing where it is
+("the small underlined text on the left, under the second sentence and
+just above the empty half of the window. It is not a button and it is
+easy to miss"), because it is the one control on that screen a person
+has to find before anything else is possible, and it does not look like
+a control. Looking at the rendered figure is what produced that
+sentence; it is not what the old three-word step said.
+
+### Measured
+
+*The build guard fires.* [[D-242]] added a check that the folder holds
+no picture the WiX source does not install. Dropping the two files in
+and building **before** touching either list was the first thing done,
+so that the guard is known to work rather than believed:
+
+```
+THREW: docs/guide/slike holds 10-smartscreen.png,
+11-smartscreen-vise-informacija.png, which liro-bridge.wxs does not
+install. Add them there or remove them.
+```
+
+Character for character the message [[D-242]] describes, on a build that
+got as far as compiling the binary and no further.
+
+*The build after both lists are updated.* 16.4 s, three artefacts, both
+MSIs 4 784 128 bytes (up from [[D-241]]'s 4 575 232) with different
+digests. The per-user package's File table carries 14 rows, 11 of them
+`slike\*.png`, the two new ones at their exact source byte counts.
+
+*Installed, not inspected* — F10's rule, and [[D-243]]'s. Installed with
+`msiexec /i /qn` under a SAFER Basic User token
+(`runas /trustlevel:0x20000`, [[D-249]]'s route after
+`CreateRestrictedToken` was refused for want of
+`SeAssignPrimaryTokenPrivilege`):
+
+| | |
+|---|---|
+| install | `Installation success or error status: 0`, 0.5 s, `MSI_LUA: Package is marked as LUA installation capable with no elevation required` |
+| files under `%LOCALAPPDATA%\Programs\Liro Bridge` | **14** — the binary, both guides, `slike\` with **11** images |
+| `img src` references in the **installed** HTML | **22 across the two documents, every one resolves** |
+| installed HTML vs the repository's | byte-identical, both |
+| uninstall | `Removal success or error status: 0` |
+
+*And looked at.* Five entries in this log record that a green check is
+not evidence about what a reader sees ([[D-087]], [[D-122]], [[D-161]],
+[[D-172]], [[D-219]]), so the **installed** guide was served over
+loopback from a throwaway `http.FileServer` created and deleted in the
+same session ([[D-100]]) and both documents were read on screen through
+section 3. Both figures render, the numbered steps read correctly, the
+`App` and `Publisher` lines are legible at the figure's own size, the
+`<h4>` and its `.path` span sit correctly in the type scale, and the
+link to §4 works. The server was stopped by its own exact PID — two of
+them, since `go run` runs the built binary as a child and stopping the
+parent leaves the listener up.
+
+*A new `h4` rule in both stylesheets.* The Publisher discussion is a
+fourth level under a subsection that already uses `h3`, and neither
+document had ever used `h4`, so both would have fallen back to the
+browser's default — bold, 1em, rendering *smaller* than the `h3` above
+it. Two lines, one per document, matching the scale each already sets
+deliberately.
+
+### The machine was put back, and checked against copies rather than hashes
+
+[[D-243]]'s own lesson, applied before anything ran rather than after:
+`reg export` of the Explorer verb key and the `Run` key, and **copies**
+of `config.json`, the audit directory, `pairings.json`, `secrets.*`,
+`update-state.json`, `tsl-cache.xml` and the extracted icon.
+
+Every one of those is byte-identical to its copy afterwards, and both
+registry keys re-export byte-identically to the exports taken first. The
+uninstall took the Explorer verb key — which is correct and is
+[[D-249]]'s own finding, since the key it removed was this machine's
+*development* registration pointing at the repository-root build output,
+which the installed product never wrote. Restored from the export.
+Nothing named Liro is left in either Uninstall hive.
+
+`ui-assets`, `webview2` and `webview2-profile` were taken by the
+uninstall and not restored: they are `derivedState` by [[D-244]]'s own
+definition and the next run of the window tests remakes all three. The
+machine is not bit-identical there and that is said rather than glossed,
+exactly as [[D-249]] said it.
+
+`go test ./... -count=1` green with and without `softtoken`; `gofmt`,
+`go vet -unsafeptr=false` and `golangci-lint` clean in both the Windows
+and the Linux views; `checkdeps` and `checkcss` OK. No Go changed, so
+that is a check on the machine rather than on this work.
+
+### A defect in the figure that was already there — reported, not fixed
+
+Looking at the rendered section is what found it, and it is the one
+thing here worth acting on next. `09-upozorenje-izdavac.png`, the
+`Open File - Security Warning` figure [[D-242]] shipped, reads:
+
+```
+Name:  ...a1ce6a98\scratchpad\ssdemo\liro-bridge-1.0.2-x64.exe
+From:  C:\Users\Veljko\AppData\Local\Temp\claude\C--User...
+```
+
+Two things wrong with a picture a stranger reads. **The version is
+`1.0.2`, which has never existed** — the only release is 0.9.0 — so the
+guide shows a reader a file name they cannot have. And the `From` line
+names the owner's own profile and an agent working directory, which is
+the sort of thing SPEC §18.3 keeps out of a log file and has no more
+business in a shipped document.
+
+It is not fixed here for the reason [[D-242]] gives for why the
+SmartScreen figures were missing in the first place: producing it means
+running an unsigned binary carrying a Mark-of-the-Web on the owner's own
+desktop, which is a step outside this project's own files and windows.
+Unlike the two figures added here it does **not** need a browser — the
+`Zone.Identifier` stream can be written by hand, which is evidently how
+the existing one was made — so it can be recaptured from a plausible
+path with the real version whenever the owner wants it. This entry
+exists so that it is a decision rather than something nobody noticed.
+
+### What this does not establish
+
+The figures are of **0.9.0's** per-user MSI on **this** machine's
+English Windows. A Serbian Windows shows Serbian text in that dialog and
+there is no picture of it; the guide says so in words instead, which is
+the trade [[D-242]] already made and this entry does not reopen.
+Whether SmartScreen still warns at all once a release accumulates
+reputation is not something this project controls or can measure, and
+neither guide claims it will.
+
+**Rejected.**
+- **Making the English guide the only one to name the buttons in
+  words.** What the task asked for, on the premise that the pictures
+  were Serbian. They are English, so the reader who needs it most is the
+  Serbian one. Both guides name them.
+- **Adding a second, Serbian screenshot set for these two.** [[D-242]]
+  rejected two sets and the reasoning holds: they drift, and a picture
+  that no longer matches the words beside it is worse than a picture in
+  the wrong language beside words that name every control.
+- **Recapturing 09 while in here.** Above: same authorisation as the two
+  figures this entry adds, and a fix made quietly inside a change about
+  something else is how a step nobody chose ships.
+- **Paraphrasing `Unknown publisher` as "unknown publisher" in running
+  text.** It is a string the reader is being told to find on a screen,
+  and the two dialogs genuinely capitalise it differently.
+- **Reassuring the reader that the file is safe because we published
+  it.** The whole value of that line is that it stops somebody. Telling
+  them to ignore it teaches the habit the warn box immediately below
+  tells them not to have. The SHA-256 is a check they can perform; our
+  say-so is not.

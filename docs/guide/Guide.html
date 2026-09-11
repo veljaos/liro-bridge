@@ -26,6 +26,7 @@
   h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 4px; }
   h2 { font-size: 1.35rem; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
   h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+  h4 { font-size: 1rem; margin: 22px 0 6px; color: var(--quiet); }
   p, li { margin: 10px 0; }
   ol, ul { padding-left: 1.4rem; }
   ol li { margin: 14px 0; }
@@ -153,9 +154,11 @@ it.</p>
 
 <div class="note">
 <p><strong>The warning appears in whatever language your Windows is
-in</strong>, not the language of this program. The picture below is from
-an English Windows. The buttons are named in words here for that reason —
-read the button, do not go by where it sits in the picture.</p>
+in</strong>, not the language of this program. The pictures below are
+from an English Windows, so if yours is in Serbian the words on screen
+will not be the words in the pictures. Every button is named in words
+here for that reason — read the button, do not go by where it sits in
+the picture.</p>
 </div>
 
 <h3>If it says “The publisher could not be verified”</h3>
@@ -174,16 +177,61 @@ Windows has nothing else it can put there.</p>
 
 <h3>If it says “Windows protected your PC”</h3>
 
-<p>If you downloaded the file with a browser, Windows may instead show a
-blue window headed <strong>“Windows protected your PC”</strong>. At first
-glance it offers only a <strong>Don't run</strong> button:</p>
+<p>If you downloaded the file with a browser, Windows shows a blue
+full-window warning headed <strong>“Windows protected your PC”</strong>
+instead.</p>
+
+<figure>
+  <img src="slike/10-smartscreen.png" alt="A blue “Windows protected your PC” window: the text says Microsoft Defender SmartScreen prevented an unrecognized app from starting, with a More info link below it and a single Don’t run button in the bottom right corner.">
+  <figcaption>What you see first. There is <em>no</em> button in this
+  window that lets you continue — only <strong>Don’t run</strong>.</figcaption>
+</figure>
+
+<p>This is where most people give up, because it looks as though there is
+no choice. There is one, but it is hidden:</p>
 
 <ol>
-  <li>Click <strong>More info</strong>. The text expands and shows the
-    file name and the publisher.</li>
-  <li>Only then does a <strong>Run anyway</strong> button appear. Click
-    it.</li>
+  <li>Click <strong>More info</strong> — the small underlined text on the
+    left, under the second sentence and just above the empty half of the
+    window. It is not a button and it is easy to miss.</li>
+  <li>The window expands: an <strong>App</strong> line and a
+    <strong>Publisher</strong> line appear, and in the bottom right
+    corner a new <strong>Run anyway</strong> button appears to the
+    <em>left</em> of <strong>Don’t run</strong>.</li>
+  <li>Click <strong>Run anyway</strong>.</li>
 </ol>
+
+<figure>
+  <img src="slike/11-smartscreen-vise-informacija.png" alt="The same window after clicking More info: an App line naming the downloaded file, a Publisher line reading Unknown publisher, and two buttons — Run anyway on the left and Don’t run on the right.">
+  <figcaption>After clicking <strong>More info</strong>.
+  <strong>Run anyway</strong> is to the left of
+  <strong>Don’t run</strong>.</figcaption>
+</figure>
+
+<h4>What the <span class="path">Publisher</span> line says</h4>
+
+<p>It says <strong>Unknown publisher</strong>. It will say that for you
+too, and it is accurate.</p>
+
+<p>Windows puts the name from the certificate the file was signed with on
+that line. Liro Bridge has no such certificate — the reason is at the top
+of this section — so Windows has no name to put there and says the
+publisher is unknown. It is <strong>not</strong> telling you the file has
+been altered or tampered with; Windows is making no claim about that in
+either direction. It means only that the question “who made this?” cannot
+be answered from the file itself.</p>
+
+<p>Since that line cannot tell you whether the file is ours, check it
+yourself — it takes half a minute. The releases page lists a SHA-256
+digest for every file, and <a href="#antivirus">section 4</a> shows how
+to compute one and compare it. If they match, the file is byte for byte
+the one we published, which is a stronger check than a publisher's
+name.</p>
+
+<p>The <strong>App</strong> line shows the name of the file you
+downloaded, with its version in the name. The picture shows
+<span class="path">liro-bridge-0.9.0-x64.msi</span>; yours will name the
+version you downloaded.</p>
 
 <p>The warning does not come back for that version of the program.</p>
 

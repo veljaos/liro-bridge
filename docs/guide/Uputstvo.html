@@ -26,6 +26,7 @@
   h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 4px; }
   h2 { font-size: 1.35rem; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
   h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+  h4 { font-size: 1rem; margin: 22px 0 6px; color: var(--quiet); }
   p, li { margin: 10px 0; }
   ol, ul { padding-left: 1.4rem; }
   ol li { margin: 14px 0; }
@@ -149,7 +150,7 @@ prvi put.</p>
 
 <div class="note">
 <p><strong>Upozorenje je na jeziku vašeg Windows-a</strong>, a ne na
-jeziku ovog programa. Slika ispod je sa engleskog Windows-a. Zato su
+jeziku ovog programa. Slike ispod su sa engleskog Windows-a. Zato su
 dugmad u tekstu imenovana i engleski i srpski — gledajte šta piše na
 dugmetu, ne gde stoji na slici.</p>
 </div>
@@ -171,17 +172,59 @@ potpisani, Windows nema šta drugo da napiše.</p>
 
 <h3>Ako piše „Windows protected your PC“</h3>
 
-<p>Ako ste fajl preuzeli pretraživačem, Windows može umesto toga
-prikazati plavi prozor sa naslovom <strong>„Windows protected your PC“</strong>
-(„Windows je zaštitio vaš računar“). U njemu na prvi pogled postoji samo
-dugme <strong>Don't run</strong> („Ne pokreći“):</p>
+<p>Ako ste fajl preuzeli pretraživačem, Windows će umesto toga prikazati
+plav prozor preko celog ekrana, sa naslovom
+<strong>„Windows protected your PC“</strong> („Windows je zaštitio vaš
+računar“).</p>
+
+<figure>
+  <img src="slike/10-smartscreen.png" alt="Plav prozor „Windows protected your PC“: tekst kaže da je Microsoft Defender SmartScreen sprečio pokretanje neprepoznate aplikacije, ispod njega link More info, a u donjem desnom uglu jedino dugme Don’t run.">
+  <figcaption>Prvo što vidite. U ovom prozoru <em>nema</em> dugmeta kojim
+  biste nastavili — postoji samo <strong>Don’t run</strong>.</figcaption>
+</figure>
+
+<p>Ovo je mesto na kojem većina ljudi odustane, jer izgleda kao da izbora
+nema. Ima ga, ali je sakriven:</p>
 
 <ol>
-  <li>Kliknite na <strong>More info</strong> („Više informacija“). Tekst
-    se proširi i prikaže ime fajla i izdavača.</li>
-  <li>Tek tada se pojavljuje dugme <strong>Run anyway</strong> („Svejedno
-    pokreni“). Kliknite na njega.</li>
+  <li>Kliknite na <strong>More info</strong> („Više informacija“) — sivi
+    podvučeni tekst ispod druge rečenice, levo, odmah iznad prazne
+    polovine prozora. Nije dugme i lako se previdi.</li>
+  <li>Prozor se proširi: pojavljuju se redovi <strong>App</strong> i
+    <strong>Publisher</strong>, a u donjem desnom uglu, <em>levo</em> od
+    dugmeta <strong>Don’t run</strong>, novo dugme
+    <strong>Run anyway</strong> („Svejedno pokreni“).</li>
+  <li>Kliknite <strong>Run anyway</strong>.</li>
 </ol>
+
+<figure>
+  <img src="slike/11-smartscreen-vise-informacija.png" alt="Isti prozor posle klika na More info: red App sa imenom preuzetog fajla, red Publisher u kojem piše Unknown publisher, i dva dugmeta — Run anyway levo i Don’t run desno.">
+  <figcaption>Posle klika na <strong>More info</strong>. Dugme
+  <strong>Run anyway</strong> je levo od <strong>Don’t run</strong>.</figcaption>
+</figure>
+
+<h4>Šta piše u redu <span class="path">Publisher</span></h4>
+
+<p>Piše <strong>Unknown publisher</strong> — „nepoznat izdavač“. Tako će
+pisati i kod vas, i to je tačno.</p>
+
+<p>Windows u tom redu ispisuje ime iz sertifikata kojim je fajl potpisan.
+Liro Bridge takav sertifikat nema (razlog je na početku ovog odeljka), pa
+Windows nema odakle da uzme ime i piše da je izdavač nepoznat. To
+<strong>nije</strong> poruka da je fajl izmenjen ili da mu je neko nešto
+dodao — Windows o tome ništa ne tvrdi ni u jednom ni u drugom smeru.
+Znači samo da se pitanje „ko je ovo napravio“ ne može odgovoriti iz samog
+fajla.</p>
+
+<p>Pošto vam taj red ne može reći da li je fajl naš, to proverite sami, i
+to je posao od pola minuta: na stranici izdanja stoji SHA-256 otisak
+svakog fajla, a kako se računa i poredi piše u
+<a href="#antivirus">odeljku 4</a>. Ako se otisci poklapaju, fajl je bajt
+po bajt onaj koji smo objavili — što je jača provera od imena izdavača.</p>
+
+<p>U redu <strong>App</strong> piše ime fajla koji ste preuzeli, sa
+verzijom u imenu. Na slici je <span class="path">liro-bridge-0.9.0-x64.msi</span>;
+kod vas će stajati verzija koju ste preuzeli.</p>
 
 <p>Upozorenje se posle toga više ne pojavljuje za tu verziju programa.</p>
 

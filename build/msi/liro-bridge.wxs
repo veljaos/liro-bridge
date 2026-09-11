@@ -283,6 +283,8 @@
         <File Id="GuideImg7" Name="07-dnevnik.png"          Source="$(var.GuideImagesDir)\07-dnevnik.png" />
         <File Id="GuideImg8" Name="08-podesavanja.png"      Source="$(var.GuideImagesDir)\08-podesavanja.png" />
         <File Id="GuideImg9" Name="09-upozorenje-izdavac.png" Source="$(var.GuideImagesDir)\09-upozorenje-izdavac.png" />
+        <File Id="GuideImg10" Name="10-smartscreen.png"      Source="$(var.GuideImagesDir)\10-smartscreen.png" />
+        <File Id="GuideImg11" Name="11-smartscreen-vise-informacija.png" Source="$(var.GuideImagesDir)\11-smartscreen-vise-informacija.png" />
         <RemoveFolder Id="RemoveGuideImagesFolder" Directory="GuideImagesFolder" On="uninstall" />
       </Component>
     </DirectoryRef>

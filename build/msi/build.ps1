@@ -131,12 +131,18 @@ try {
     }
     # Every picture the two documents reference, checked here rather than
     # discovered as a broken image by the first person to read the guide.
-    # The WiX source names these eight explicitly, so a ninth added to
-    # the folder without being added there would ship in neither.
+    # The WiX source names each of these explicitly, so one added to the
+    # folder without being added there would ship in neither.
+    #
+    # 10 and 11 are the two SmartScreen states, and they are the one pair
+    # in this folder that TestCaptureGuideScreens cannot produce: the
+    # dialog appears only for a file a browser genuinely downloaded, so
+    # they were photographed by hand and are replaced by hand.
     $expectedImages = @(
         "01-dokumenti-prazno.png", "02-dokumenti.png", "03-sertifikat.png", "04-metod.png",
         "05-napredak.png", "06-izvestaj.png", "07-dnevnik.png", "08-podesavanja.png",
-        "09-upozorenje-izdavac.png")
+        "09-upozorenje-izdavac.png", "10-smartscreen.png",
+        "11-smartscreen-vise-informacija.png")
     foreach ($img in $expectedImages) {
         $p = Join-Path $guideImages $img
         if (-not (Test-Path $p)) {
