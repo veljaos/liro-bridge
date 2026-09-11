@@ -17350,3 +17350,528 @@ use; the directory is removed on uninstall with the rest.
   This is the one document in the project written for somebody who will
   never read any of that, and it is written for a Serbian signer.
 
+
+---
+
+## D-243 — What was measured by installing and running, on a real machine with a real card
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Recorded because F10's rules turn on it.** "Verify by installing and
+running, not by inspecting what the build produced. An MSI that passes
+its own validation and fails on a machine is this project's failure mode
+wearing a new hat — recorded four times ([[D-161]], [[D-200]],
+[[D-219]], [[D-221]])." This is what that produced.
+
+### The per-user package
+
+Installed with `msiexec /i /qn`: **exit 0 in 1.1 s, with no elevation**.
+The installer's own log is the evidence rather than the absence of a
+prompt: `MSI_LUA: Package is marked as LUA installation capable with no
+elevation required`. Twelve files landed in
+`%LOCALAPPDATA%\Programs\Liro Bridge` — the binary, both guides, and
+`slike\` with nine images — and every image reference in the
+*installed* `Uputstvo.html` resolves beside it. Two Start menu
+shortcuts, the ARP entry under HKLM with the audit-log sentence in
+`Comments`, and the product registered under
+`HKCU\...\Installer\Products`.
+
+### F10 §3.1, which is the one that had never been true
+
+The Explorer verb and the autostart entry must point at the installed
+binary rather than at a build output. Measured either side of running
+the installed agent once:
+
+| | before | after |
+|---|---|---|
+| Explorer verb | the repository-root build output | the installed binary |
+| `HKCU\…\Run` `LiroBridge` | **absent** | `"…\Programs\Liro Bridge\liro-bridge.exe" tray` |
+
+The second row is the autostart defect, closed and observed. The value
+did not exist at all, and the one that now exists carries the `tray`
+argument it always lacked — the absence of which meant that for five
+phases the setting printed usage to a console nobody had.
+
+### Uninstall
+
+Removed: the install folder, both shortcuts, the Explorer verb, the
+autostart value, `HKCU\Software\Liro`, the ARP entry, `bridge.json`, and
+the agent's own extracted state (`ui-assets\`, `webview2\`). **Kept:
+`audit\`, `config.json`, `pairings.json`, `secrets.*`** — F10 §3.3 and
+SPEC §6.7.
+
+The notice runs at `UILevel >= 4`. The first attempt used `/qb-`, which
+is level 3, and correctly got the silent branch — recorded because it
+looked at first like the notice failing to appear. At `/qr` it appears:
+a message box titled **"Liro Bridge je uklonjen"**, whose body names the
+audit log, the folder it is in, and what is kept.
+
+### The per-machine package
+
+Installed and uninstalled with the owner taking the UAC prompt. Its log
+says `MSI_LUA: Elevated credential consent provided. Install will run
+elevated`. Files in `C:\Program Files\Liro Bridge`, shortcuts in the
+All-Users Start menu, and an ARP entry named **"Liro Bridge
+(per-machine)"** — distinct, so the two packages do not collide in
+Programs and Features. The per-user install was untouched by it.
+
+### A signature, from the installed binary, on a real card
+
+The installed binary, by path and digest, produced one B-T signature
+with the owner's MUP certificate. The independent verifier (SPEC §16.4)
+accepted it: `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`
+and `TimestampOK` all true, no errors.
+
+**`SignerChainTrusted` was the one number that needed fixing before it
+meant anything.** It read `false` on the first run — not because the
+chain failed, but because `scripts/verifypdf` had never called
+`CheckChainTrust`. `Result`'s own doc comment warns that the field is
+"false, not merely unset" in that case, so a verifier that skips the
+call reports every qualified signature in Serbia as untrusted. With the
+Trusted List consulted (sequence 36, from the agent's own cache, at the
+timestamp's `genTime` rather than at a clock) it is **true**.
+`TimestampChainTrusted` is false and correctly so: the configured
+authority is freetsa.org, which the Settings preset itself labels as not
+qualified in Serbia.
+
+### A hundred documents, one approval, one PIN
+
+F6's exit condition, run through the installed release binary rather
+than from the SDK side — the gap [[D-219]] recorded as never having been
+closed against a real agent.
+
+```
+staged 100, signed 100, every one 104 708 bytes
+first written .. last          45.54 s
+per document after the first   median 457 ms, mean 460, min 449, max 747
+verified                       all 100, passed 100, failed 0
+audit                          sequence 17, approved, 100 documents
+```
+
+457 ms lands almost exactly on SPEC §12.9's measured ≈0.41 s for a
+subsequent signature — on a different card from the one that produced
+that figure.
+
+### F10 §3.2: an upgrade cannot interrupt a signature
+
+Demonstrated against a batch genuinely in flight rather than a mocked
+state. A watcher waited for the agent's own in-flight mark
+(`HKCU\Software\Liro\Bridge\SigningInProgress`) and fired a second
+installer run the instant it appeared:
+
+```
+12:44:42.036  mark is set (pid 4616) - a batch is in flight
+12:44:43.111  installer exited 1603 after 1.1 s
+12:44:43.115  mark immediately afterwards: still set (pid 4616)
+   PROPERTY CHANGE: Adding LIROSIGNING property. Its value is '4616'.
+   Action start: LaunchConditions.
+   Product: Liro Bridge -- Liro Bridge upravo potpisuje dokumente…
+                           Liro Bridge is signing documents right now…
+   Action ended: LaunchConditions. Return value 3.
+   Product: Liro Bridge -- Configuration failed.
+```
+
+Three things make it a demonstration rather than a coincidence. The mark
+was **still set** when the refusal finished, so the batch had not
+quietly ended first. `LIROSIGNING = 4616` is the signing process's own
+PID, so the installer read the mark that batch set. And the installed
+binary's SHA-256 was **unchanged afterwards** — nothing was replaced and
+Restart Manager was never given the chance to terminate an agent whose
+window is message-only and cannot answer `WM_QUERYENDSESSION`.
+
+### What this is not
+
+It is not the phase's exit condition. A stranger installing it and
+signing a document is, and neither the agent nor the owner can be that
+stranger. What this establishes is that the artefact installs without
+administrator rights, registers itself where it should, signs with a
+real qualified certificate, survives a hundred documents on one PIN,
+refuses to be upgraded out from under a batch, and uninstalls leaving
+the audit log behind. Every one of those is a way the stranger's
+afternoon could have failed, and none of them will now.
+
+### One thing done wrong, recorded because the lesson is this project's own
+
+`config.json` was snapshotted **by hash and not by copy**. Running the
+agent rewrote it — 367 bytes to 684, every field made explicit — and so
+the original bytes cannot be restored, only the settings, from a copy
+taken after the agent had already run. Every value in it is coherent and
+nothing was deliberately changed, but the file is not the file that was
+there.
+
+That is [[D-153]]'s finding — "restoring the *shape* of what was there
+is not restoring what was there" — committed against a test and then
+made again, by this session, about its own snapshot. **A hash proves
+something changed. Only a copy can put it back.** The registry keys were
+captured with `reg export` and restored byte-for-byte; the file beside
+them was not, and the difference is the whole lesson.
+
+### Two artefacts the uninstall does not account for
+
+`audit\.lock` (zero bytes, [[D-234]]'s lock file) and the `preview-*`
+directory an earlier session left behind are in neither `derivedState`
+nor `keptState`. Both are harmless — the first lives inside the
+directory that is deliberately kept — but neither was decided, and a
+list whose purpose is to be exhaustive should say so. Recorded rather
+than changed: adding `.lock` to `derivedState` is a one-line change and
+it is not this entry's to make while a phase is being reported.
+
+**Rejected.**
+- **Reporting "installed and signed" as the exit condition met.** F10
+  says in as many words that it is a real result, worth having, and not
+  that condition — "the report must not let it read as one".
+- **Running the hundred at B-T.** Each of the hundred would take its own
+  round trip to freetsa.org, and a timestamp failing mid-batch puts a
+  question on screen ([[D-095]]) — which would have stalled the
+  demonstration the batch existed for. The level is orthogonal to what
+  was being measured; the configuration was restored afterwards and the
+  audit entry says B-B.
+- **Timing the installer by hand instead of watching for the mark.** The
+  window is forty-five seconds and a person cannot aim at it reliably.
+  Waiting for the state rather than for a moment is [[D-201]]'s rule,
+  applied to a demonstration rather than to a test.
+
+---
+
+## D-244 — Two MSIs from one WiX source rather than one package with a property, and what an uninstall keeps
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Decision.** `build/msi/liro-bridge.wxs` is compiled twice, with
+`-dScope=perUser` and `-dScope=perMachine`, producing two packages and
+one plain EXE:
+
+```
+liro-bridge-<v>-x64.msi               per-user, no administrator rights   -- the primary artefact
+liro-bridge-<v>-x64-per-machine.msi   for Group Policy deployment
+liro-bridge-<v>-x64.exe               the same binary on its own
+```
+
+All three carry the same binary. There is no "installer edition" of this
+program (SPEC §15).
+
+**Why two packages rather than one with a property.** F10 §1 leaves the
+shape open — "the same MSI with a property, or a second artefact —
+decide, and record which and why". Two, for three reasons that are not
+about taste:
+
+- **Group Policy software installation assigns per-machine packages.**
+  A package that decides its own scope from a property is a package a
+  GPO cannot assign predictably.
+- **A dual-purpose package is `ALLUSERS=2` plus `MSIINSTALLPERUSER`,
+  and those are exactly what a UAC-compliant per-user package ignores.**
+  Measured, in the installer's own log, when they were authored here
+  first: `PROPERTY CHANGE: Deleting ALLUSERS property` and
+  `MSIINSTALLPERUSER property is not valid for UAC compliant package.
+  Ignoring`. Two properties deleted before they are read are surface
+  with nothing behind them.
+- **The two differ in more than a scope.** The install directory
+  (`%LOCALAPPDATA%\Programs` against `%ProgramFiles%`), the hive the
+  shortcuts and markers live under, which Start menu they go in, and
+  whether the per-user registrations the agent makes for itself are the
+  installer's business at all. A property cannot express that; a
+  preprocessor variable over one source can, and keeps one file.
+
+They are named differently in Programs and Features — "Liro Bridge" and
+"Liro Bridge (per-machine)" — so a machine carrying both does not show
+two identical rows.
+
+**The version comes from the tag and nowhere else.** `-ldflags` stamps
+it, and CI checks the built binary's own `--version` output against the
+tag rather than trusting the flag that produced it. An unversioned build
+says `dev`, which is what it is. One real limitation is recorded where
+it bites rather than discovered later: Windows Installer's
+`ProductVersion` takes at most three numeric parts and ignores anything
+after them, so `1.0.0-rc.1` installs as `1.0.0` — the binary still
+reports the full string, which is what the update check compares.
+
+**What an uninstall keeps, which F10 §3.3 asks to be decided.**
+
+*The audit log is never removed.* SPEC §6.7 and F10 §3.3 both say so,
+and the uninstall says so too — a message box naming the log, the folder
+and what is kept, shown when somebody is watching (`UILevel >= 4`) and
+silently skipped for a GPO uninstall.
+
+*Configuration and pairings are kept as well.* F10 §3.3 leaves this one
+open. They are kept because of what uninstalling usually is: an upgrade
+by hand, or a reinstall after something went wrong. A person who
+reinstalls and finds their language, their timestamp authority, their
+output folder and their paired applications all gone has been punished
+for fixing their own machine. Against that, the argument for deleting
+them is tidiness and one real thing — `secrets.json` holds device
+secrets that let paired applications ask for signatures. That is
+answered by what a device secret can actually do: nothing at all
+without the consent window, which is the only real gate (SPEC §6.5).
+A stale secret whose application is gone authenticates requests nobody
+makes.
+
+*What is removed is everything the agent extracted for itself* —
+`ui-assets`, the WebView2 loader, the browser profile, `bridge.json`,
+the extracted icon, a downloaded installer. None of it is anybody's
+data and all of it can be produced again. The list lives in Go beside
+the code that knows the layout, not in the installer's authoring, for
+the reason this project has recorded four times ([[D-108]], [[D-124]],
+[[D-138]], [[D-183]]): a path written down in two languages drifts. It
+also cannot live in MSI authoring — `ui-assets` has a subdirectory named
+after a content hash, and `RemoveFile` can only name directories it
+already knows.
+
+**Rejected.**
+- **One package with `ALLUSERS`.** Above, and measured.
+- **Only a per-user MSI, with the EXE for everyone else.** F10 §1 asks
+  for a per-machine option for GPO deployment specifically, and a plain
+  EXE is not one: it registers nothing, so a domain administrator has
+  nothing to assign and nothing to remove.
+- **Deleting configuration and pairings on uninstall.** Above.
+- **A per-machine package that also removes the per-user registrations
+  of every user on the machine.** It cannot: those live under each
+  user's own `HKCU`, and an installer running elevated has no business
+  walking other people's hives. The per-machine uninstall clears the
+  registrations of the user who ran it, through the same impersonated
+  custom action, and leaves everybody else's alone — they point at a
+  binary that is gone, which the next agent to start anywhere clears.
+
+---
+
+## D-245 — The update check asks, and asking is the only thing it can do
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Decision.** `internal/update` is the whole channel: a signed manifest,
+its verification, semantic-version precedence, and a once-a-day
+schedule. `cmd/liro-bridge` gives it the one power it has — opening a
+window that asks.
+
+**Verify before parse, not after.** `VerifyManifest` checks the Ed25519
+signature over the manifest's bytes against the embedded keys
+([[D-238]]) and only then unmarshals them. A manifest is untrusted input
+from the network; parsing it first would mean the JSON decoder runs on
+bytes nobody has vouched for, which is a decoder's worth of attack
+surface in front of the check that was supposed to come first.
+
+**An artefact's URL is built, never read.** It comes from a fixed base,
+the tag and the artefact's name — never from a field inside the
+manifest. So a manifest that verifies still cannot point a download at
+another host. That is the difference between trusting a signature and
+trusting whatever the signed document happens to say.
+
+**What it sends, stated because F10 §5 asks for it stated.** A plain
+`GET` to `github.com` — not `api.github.com`, so no token, no rate
+limit, no query string — carrying the method, the path, `Accept`, and a
+`User-Agent` of exactly `liro-bridge`. **No identifier of the machine,
+no identifier of the user, and not the agent's own version.** The
+version is deliberately absent: a `User-Agent` carrying it would let
+whoever serves the file count installations per version, which is
+telemetry (SPEC §6.8, and §2's "telemetry of any kind" non-goal). Go's
+default would reveal less again but would also make an agent
+indistinguishable from a scraper, and nothing downstream branches on the
+string.
+
+**Offline is normal.** `State.LastCheck` records when a check
+*completed*, successfully or not — not when one last succeeded. A
+machine with no internet therefore tries once a day and not once a
+minute, which is what SPEC §6.8's "offline is normal, not an error"
+means in practice.
+
+**The state is its own file.** `update-state.json`, not four more fields
+in `config.json`, because `config.json` is the person's own settings and
+the settings window rewrites it whole ([[D-134]]). A background check
+writing to it once a day would put the agent and the settings window in
+a race over a file only one of them owns.
+
+**It never installs by itself, and there is no flag that makes it.**
+SPEC §15.2 and F10 §5 both require the agent to ask, and F10 §5 adds
+"no flag, no configuration key, no silent mode" with the note that F9
+found one of these after it shipped. The daily check's entire authority
+is to open a window with **Instaliraj sada** and **Ne sada** on it. A
+version the person says "not now" to is remembered and not raised again
+by the agent — the manual check in Settings still reports it, because
+that is somebody asking rather than the program deciding.
+
+**Rejected.**
+- **Parsing the manifest and then verifying it.** Above.
+- **Taking the download URL from the manifest.** A signature says the
+  bytes are ours; it does not make every field in them safe to obey.
+- **A `User-Agent` with the version in it**, which every HTTP client in
+  the world sends. It is the smallest possible piece of telemetry and
+  still telemetry.
+- **Installing automatically when the signature verifies.** The
+  signature says the release is ours. It does not say the person wants
+  their signing agent replaced while they are using it, which is what
+  [[D-243]]'s in-flight mark exists for on the other side of the same
+  question.
+
+---
+
+## D-246 — WebView2: what the agent does with the runtime absent is measured; what the installer does is not, and the difference is stated rather than blurred
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Why this has its own entry.** F10 §2 calls a missing WebView2 runtime
+"the likeliest single cause of *the stranger installed it and nothing
+happened*" and says to establish the facts rather than reason about
+them. Half of it is established and half is not, and a phase report that
+let the two read alike would be worse than one that admitted only the
+half.
+
+### Measured: what the agent does at run time
+
+Reproduced by pointing `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` at an empty
+directory, which is how the runtime's own loader is told where to look
+and is therefore how its absence can be produced on a machine that has
+it. Both binaries built from this repository, same document, same
+command:
+
+| | master (4ea03d5) | this branch |
+|---|---|---|
+| exit | after **0.35 s** | waits for the dialog |
+| stdout | **0 bytes** | — |
+| stderr | **0 bytes** | — |
+| on screen | **nothing at all** | a message box |
+
+The message box is titled *"Liro Bridge ne može da otvori prozor"* and
+its body names the Microsoft Edge WebView2 Runtime, says it is not
+installed on this computer, gives Microsoft's own download link
+(`go.microsoft.com/fwlink/p/?LinkId=2124703`) and says to start Liro
+Bridge again afterwards.
+
+**The defect this closes is not that the message was wrong. It is that
+the message had no caller.** `ui.DetectRuntime` and the message box were
+both written in F5, for exactly this case, and nothing in the program
+ever invoked either. So for five phases the answer to "what does it do
+when the runtime is missing" was: exits in a third of a second, prints
+nothing, shows nothing — which is indistinguishable, to the person who
+double-clicked, from the program not having been started.
+
+### Not measured: what the installer does
+
+The MSI carries a `RegistrySearch` over three locations — the
+`WOW6432Node` and native per-machine `EdgeUpdate` client keys for the
+Evergreen Runtime's GUID, and the per-user one under `HKCU` — and a
+`LaunchCondition` that refuses the install with a message naming where
+to get the runtime. **None of that has been run on a machine that
+genuinely lacks it.**
+
+The environment-variable trick does not reach it. It redirects the
+*loader*, which is a run-time concern; the installer reads the registry,
+and those keys exist on this machine because the runtime is installed on
+this machine. Deleting them to simulate it would be editing the record
+of somebody else's software on the owner's machine to make a check pass,
+which is not a measurement.
+
+**So, stated exactly:**
+
+- the agent's behaviour with the runtime absent — **measured, both
+  before and after**
+- the installer's refusal — **written, read, and not exercised**
+
+A machine without the runtime is being arranged. Until it exists this
+stays open, and [[D-243]]'s own rule applies: an artefact that passes
+its own validation and fails on a machine is this project's failure mode
+wearing a new hat.
+
+### What was established about installing the runtime, and what was not
+
+F10 §2 asks whether the Evergreen bootstrapper installs per-user without
+elevation — "establish whether, do not assume either way". **Not
+established.** The installer does not bundle or fetch the bootstrapper;
+it refuses and names the address. That is a decision in itself: a
+per-user installer that downloads and runs somebody else's installer is
+a per-user installer that needs the network, needs to verify what it
+fetched, and owns a failure mode in the middle of somebody's first two
+minutes with the program. Refusing while the person is still in front of
+a browser — they have just downloaded this file — is the smaller thing
+that cannot go wrong quietly.
+
+**Rejected.**
+- **Bundling the Evergreen bootstrapper in the MSI.** It is
+  redistributable, and it would make the install a two-installer
+  operation whose second half this project would be answerable for.
+- **Deleting the EdgeUpdate registry keys to exercise the launch
+  condition.** It would produce a green check and no knowledge: the
+  condition would be tested against a machine pretending to lack a
+  runtime that is in fact installed and working, which tells you nothing
+  about a machine that really does lack one.
+- **Reporting the run-time measurement as if it covered both.** The two
+  checks read different things — a loader path and three registry keys —
+  and drift is the reason F10 §2 asks for both separately.
+
+---
+
+## D-247 — Three defects, none of which any test could have found, and the sixth entry saying so
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Recorded because the phase turned on it, and because the pattern now
+has six entries and a new variation.**
+
+Three things in this phase had never worked. None was found by a failing
+test; all three were found by running the binary and watching what it
+did.
+
+| Found by | Defect |
+|---|---|
+| running `sign` with the runtime's loader pointed at an empty directory | the agent exited in 0.35 s with nothing on stdout, stderr or screen — `ui.DetectRuntime` and the message box F5 wrote for this had **no caller anywhere in the program** ([[D-246]]) |
+| reading `HKCU\…\Run` after an install and a first run | the autostart value was the quoted path with **no arguments**, so every sign-in printed usage to a console that does not exist |
+| reading it again, and finding nothing there | **nothing ever applied `StartWithWindows` at startup** — only a Settings save did, so the setting defaulting to `true` meant nothing at all |
+
+The second and third are one shape seen from two sides, and together
+they are worth stating plainly: **the agent has never once started with
+Windows.** The setting has existed since F5. It has a checkbox, it
+persists, it is read back correctly, and for five phases it did nothing.
+Every test about it passed, because every test asked whether the value
+was written — and the value was written, to a command line that could
+not work, by a code path nothing called at startup.
+
+### What is new about this one
+
+The five previous entries ([[D-087]], [[D-122]], [[D-128]], [[D-161]],
+[[D-172]], and [[D-219]]) are about *looking* at one thing properly, or
+about *counting* across many. This phase adds a third axis:
+**a feature can be fully implemented, fully tested, and never invoked.**
+
+`ui.DetectRuntime` was correct. The message box was correct, in three
+languages. `platform.Autostart` was correct and had tests that put a
+value in the registry and read it back. `StartWithWindows` was stored,
+validated and rendered. Every piece worked. Nothing called them in the
+order that would have mattered, and no test noticed because a test that
+exercises a function proves the function works — not that anything uses
+it.
+
+The check that finds this class is not a better unit test. It is asking,
+of a feature, *what invokes this, and when?* — and then doing that thing
+to a running binary and watching. That is what [[D-243]] did for the
+installer and what this entry did for the runtime and the Run key, and
+it is the only reason any of the three is now closed.
+
+### The measurement that makes it concrete
+
+Two of the three are visible in one before-and-after, on the same
+machine, either side of installing and running the release binary:
+
+```
+HKCU\...\Run  LiroBridge     before: (the value does not exist)
+                             after : "...\Programs\Liro Bridge\liro-bridge.exe" tray
+```
+
+The value did not exist. Not "pointed at the wrong path" — was not
+there. And the one that now exists carries the `tray` argument whose
+absence was the other half of the same defect.
+
+**Rejected.**
+- **Reporting the three as ordinary bug fixes.** Five entries already
+  record that a green suite is not evidence about a running program;
+  what this phase adds is that a green suite is not evidence that
+  anything *calls* the thing it tests, and that is a different check
+  with a different question behind it.
+- **Adding a test that asserts `DetectRuntime` has a caller.** It can be
+  done — this project already walks its own syntax tree for exactly this
+  class of property ([[D-025]], [[D-158]], [[D-185]], [[D-224]]) — and
+  it would be a test about one function rather than about the habit. The
+  habit is the fix. Where a syntax-tree check is the right shape, it
+  already exists.
