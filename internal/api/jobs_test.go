@@ -45,6 +45,46 @@ func (c *client) collect(jobID string) (int, map[string]any) {
 	}
 }
 
+// awaitJob blocks until the job has finished, and returns the last
+// event the agent published about it.
+//
+// It observes the property rather than waiting for a moment (D-201).
+// A 202 means accepted, not done: the run is on its own goroutine and
+// a test that reads what that goroutine produced without first
+// learning it has finished is asserting on a race. The agent's own way
+// of saying a job finished is the event stream — jobs.Job.Follow
+// returns once the state is terminal, the handler returns with it, and
+// the stream closes — so reading it to its end returns exactly when
+// the job is over, on any machine, however loaded, with no duration
+// anywhere in it.
+//
+// Connecting late is safe by construction: Follow reports the state as
+// it stands before it waits for a change, so a job that finished
+// before the stream opened emits its terminal state and ends at once.
+//
+// There is deliberately no deadline here, matching readEvents. A job
+// that never terminates hangs, and the test binary's own timeout turns
+// that into a failure carrying the goroutine dump that says where it
+// is parked — which is a better answer than a duration this test would
+// otherwise be measuring the machine against.
+func (c *client) awaitJob(jobID string) map[string]any {
+	c.h.t.Helper()
+	resp, err := c.h.http.Client().Do(c.request(http.MethodGet, jobEventsPath(jobID), nil))
+	if err != nil {
+		c.h.t.Fatalf("following the job: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		c.h.t.Fatalf("following the job answered %d, want 200", resp.StatusCode)
+	}
+	var last map[string]any
+	scanEvents(c.h.t, resp, func(event map[string]any) { last = event })
+	if last == nil {
+		c.h.t.Fatalf("the event stream for %s carried no events at all", jobID)
+	}
+	return last
+}
+
 func TestSubmittingDigestsAnswers202WithAJobAndAFingerprint(t *testing.T) {
 	h := newHarness(t)
 	c := h.client("My ERP", "https://erp.example.com")
@@ -69,10 +109,7 @@ func TestSubmittingDigestsAnswers202WithAJobAndAFingerprint(t *testing.T) {
 	// The fingerprint is the value the consent window shows, computed
 	// the same way, so a caller can compare what it sent against what
 	// the person was approving (SPEC §6.6).
-	req, ok := h.signer.lastRequestAfter(t, 1)
-	if !ok {
-		t.Fatal("the signer was never called")
-	}
+	req := h.signer.lastRequestAfter(t, 1)
 	if body["batchFingerprint"] != consentFingerprint(req.Digests) {
 		t.Errorf("batchFingerprint is %v, want %s", body["batchFingerprint"], consentFingerprint(req.Digests))
 	}
@@ -154,7 +191,7 @@ func TestOneJobPerApplicationOverHTTP(t *testing.T) {
 	if status, body := c.submitDigests(1); status != http.StatusAccepted {
 		t.Fatalf("the first submission returned %d: %v", status, body)
 	}
-	waitFor(t, func() bool { return h.signer.count() == 1 })
+	h.signer.awaitCalls(t, 1)
 
 	status, body := c.submitDigests(1)
 	if status != http.StatusConflict {
@@ -535,12 +572,38 @@ func TestABatchWhereEveryDocumentFailedIsAFailedJob(t *testing.T) {
 
 // ---- helpers --------------------------------------------------------
 
-// lastRequestAfter waits until the signer has been called n times and
-// returns the last request.
-func (f *fakeSigner) lastRequestAfter(t *testing.T, n int) (SignRequest, bool) {
+// awaitCalls blocks until the signer has been entered n times.
+//
+// It waits on the signer's own event rather than polling for the count
+// (D-201, D-252). A poll with a deadline is not the race the
+// certificates listing had — it does observe the state — but its
+// failure on a machine slower than the deadline is a timeout, which
+// says nothing about the property and is exactly the unreadable flake
+// this package is trying not to have. Waiting on the event has no
+// duration in it at all: a machine that never calls the signer hangs,
+// and the test binary's own timeout turns that into a failure carrying
+// the goroutine dump that says where it is parked.
+func (f *fakeSigner) awaitCalls(t *testing.T, n int) {
 	t.Helper()
-	waitFor(t, func() bool { return f.count() >= n })
-	return f.lastRequest()
+	for {
+		f.mu.Lock()
+		reached := len(f.requests) >= n
+		called := f.called
+		f.mu.Unlock()
+		if reached {
+			return
+		}
+		<-called
+	}
+}
+
+// lastRequestAfter blocks until the signer has been called n times and
+// returns the last request.
+func (f *fakeSigner) lastRequestAfter(t *testing.T, n int) SignRequest {
+	t.Helper()
+	f.awaitCalls(t, n)
+	req, _ := f.lastRequest()
+	return req
 }
 
 // readEvents reads a whole SSE stream to its end and returns every

@@ -58,10 +58,16 @@ func TestTheListingNamesTheCertificatesSignCanBeAskedFor(t *testing.T) {
 	// The thumbprint the listing gives is the thumbprint /v2/sign
 	// takes, which is the whole point of the endpoint: no case
 	// conversion, no prefix, nothing to reformat.
-	status, _ = c.do(http.MethodPost, "/v2/sign", digestsRequest(1, first["thumbprint"].(string)))
+	//
+	// 202 means accepted, not done — the run is on its own goroutine —
+	// so the job is followed to its end before the signer is read.
+	// Reading it without that is a race, and one this test lost on a
+	// loaded runner (D-252).
+	status, submit := c.do(http.MethodPost, "/v2/sign", digestsRequest(1, first["thumbprint"].(string)))
 	if status != http.StatusAccepted {
 		t.Fatalf("signing with the thumbprint the listing gave answers %d", status)
 	}
+	c.awaitJob(submit["jobId"].(string))
 	req, ok := h.signer.lastRequest()
 	if !ok || req.Thumbprint != first["thumbprint"] {
 		t.Fatalf("the signer was asked for %q", req.Thumbprint)

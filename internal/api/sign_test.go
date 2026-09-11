@@ -153,10 +153,7 @@ func TestLabelsAreSanitisedBeforeAnythingSeesThem(t *testing.T) {
 		t.Fatalf("status %d: %v", status, body)
 	}
 
-	req, ok := h.signer.lastRequestAfter(t, 1)
-	if !ok {
-		t.Fatal("the signer was never called")
-	}
+	req := h.signer.lastRequestAfter(t, 1)
 	if strings.ContainsRune(req.Labels[0], '\u202e') {
 		t.Errorf("a direction override survived into the label: %q", req.Labels[0])
 	}
@@ -179,10 +176,7 @@ func TestTheApplicationNameComesFromPairing(t *testing.T) {
 	if status, resp := c.do(http.MethodPost, "/v2/sign", body); status != http.StatusAccepted {
 		t.Fatalf("status %d: %v", status, resp)
 	}
-	req, ok := h.signer.lastRequestAfter(t, 1)
-	if !ok {
-		t.Fatal("the signer was never called")
-	}
+	req := h.signer.lastRequestAfter(t, 1)
 	if req.Application != "Knjigovodstvo doo" {
 		t.Fatalf("the flow was told the application is %q, want the name bound at pairing", req.Application)
 	}
@@ -362,10 +356,7 @@ func TestASuppliedStampIsCarriedThroughUnchanged(t *testing.T) {
 	if status, resp := c.do(http.MethodPost, "/v2/sign/pdf", body); status != http.StatusAccepted {
 		t.Fatalf("status %d: %v", status, resp)
 	}
-	req, ok := h.signer.lastRequestAfter(t, 1)
-	if !ok {
-		t.Fatal("the signer was never called")
-	}
+	req := h.signer.lastRequestAfter(t, 1)
 	if req.Stamp == nil || !req.Stamp.Visible || req.Stamp.Position != "top-left" {
 		t.Fatalf("the stamp reached the flow as %+v", req.Stamp)
 	}
@@ -380,10 +371,7 @@ func TestNoStampBlockMeansThePersonIsAsked(t *testing.T) {
 	if status, resp := c.do(http.MethodPost, "/v2/sign/pdf", documentsRequest(1)); status != http.StatusAccepted {
 		t.Fatalf("status %d: %v", status, resp)
 	}
-	req, ok := h.signer.lastRequestAfter(t, 1)
-	if !ok {
-		t.Fatal("the signer was never called")
-	}
+	req := h.signer.lastRequestAfter(t, 1)
 	if req.Stamp != nil {
 		t.Fatalf("an absent stamp block became %+v rather than a question", req.Stamp)
 	}

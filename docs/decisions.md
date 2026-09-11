@@ -18440,3 +18440,261 @@ scope the owner did not ask for and may want back.
   its own message and that step has run on every push since [[D-241]]'s
   packaging job existed, so it is not in the class this entry is about —
   a step nobody has ever seen fail.
+
+---
+
+## D-252 — A 202 means accepted, not done; one test read the answer before it was written, and the shape is worth naming because the obvious reproduction of it is the one that cannot work
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**The failure.** `ci` was red on `344c1e1`, a commit that touched
+`release.yml`, `decisions.md` and the notes template and no Go at all:
+
+```
+--- FAIL: TestTheListingNamesTheCertificatesSignCanBeAskedFor (0.01s)
+    certificates_test.go:67: the signer was asked for ""
+2026/09/11 13:40:09 INFO api: a signing job finished jobId=… signed=1 failed=0
+```
+
+The log line is the diagnosis and it is below the failure: the job
+finished after the test had already given up on it.
+
+**What the test did.** It posted to `/v2/sign`, was answered **202
+Accepted**, and read `h.signer.lastRequest()` on the next line.
+`startJob` writes that 202 and runs the batch on its own goroutine
+(`go s.runJob(job, req)`), so 202 means *accepted*, not *done*. The
+test waited for nothing at all. The value it read when it lost was the
+zero `SignRequest`, whose `Thumbprint` is `""` — which is what the
+message says.
+
+**Decision.** The test follows the job to its end before it reads the
+signer, through the agent's own way of saying a job has finished:
+
+```go
+status, submit := c.do(http.MethodPost, "/v2/sign", digestsRequest(1, thumbprint))
+c.awaitJob(submit["jobId"].(string))
+req, ok := h.signer.lastRequest()
+```
+
+`awaitJob` (`internal/api/jobs_test.go`) opens `GET
+/v2/jobs/{id}/events` and reads it to EOF. `jobs.Job.Follow` returns
+once the state is terminal, `handleJobEvents` returns with it, and the
+stream closes — so reading it to its end returns exactly when the job
+is over, on any machine, however loaded, **with no duration in it at
+all**. Connecting late is safe by construction: `Follow` reports the
+state as it stands before it waits for a change, so a job that finished
+before the stream opened emits its terminal state and ends at once.
+
+No sleep was added, no poll on a timer, and no timeout was raised
+(D-201). There is deliberately no deadline on the read either, matching
+`readEvents`: a job that never terminates hangs, and the test binary's
+own timeout turns that into a failure carrying the goroutine dump that
+says where it is parked — which is a better answer than a duration this
+test would otherwise be measuring the machine against.
+
+### Reproduced — and the obvious way to reproduce it is the one that cannot
+
+Measured on this machine (16 cores) with 24 busy processes on it, using
+a throwaway probe created and deleted in the same session (D-100) that
+reported how many times the signer had been called at the moment the
+old assertion read it:
+
+| | signer not called at all |
+|---|---|
+| idle, any `GOMAXPROCS`, 300 submissions | **0** |
+| **`GOMAXPROCS=1`**, loaded, 400 runs of the real test | **0 — and it cannot be anything else** |
+| `GOMAXPROCS=2`, loaded, 300 submissions | 3 |
+| `GOMAXPROCS=4`, loaded, 300 submissions | **11** |
+| `GOMAXPROCS=8`, loaded, 300 submissions | 5 |
+| `GOMAXPROCS=16`, loaded, 300 submissions | 1 |
+
+And the real test, at `GOMAXPROCS=4` under that load, four batches of
+300 — three of the four failed, with the runner's message character for
+character:
+
+```
+certificates_test.go:67: the signer was asked for ""
+```
+
+**`GOMAXPROCS=1` was tried first and it is the wrong instrument, which
+is worth writing down because it is the natural first guess.** A `go`
+statement puts the new goroutine in the current P's **`runnext`** slot,
+not on the back of a queue — so with one P it is the very next thing
+that runs, ahead of the client goroutine that is about to assert. One P
+makes this race *impossible* rather than rare. It needs **two or more**:
+the handler writes the 202 and keeps running, the client's read
+completes on another P, and the assertion happens while the handler's
+own P has still not reached its `runnext`. Four hundred runs at
+`GOMAXPROCS=1` prove nothing, and would have been easy to report as
+"not reproducible".
+
+**Why a hosted runner loses and a developer's machine does not.** The
+window is the handler's remaining instructions plus one loopback round
+trip. On this machine that is microseconds against fifteen idle cores.
+On `ubuntu-latest` it is two cores, every goroutine of the suite
+contending for them, and `-race` instrumenting every memory access —
+which lengthens the handler's remaining work by a large multiple while
+leaving the client's read where it was. That is the same asymmetry
+[[D-112]] measured for a different test and [[D-201]] for three more,
+and `-race` cannot be run here at all (no C compiler, [[D-012]]'s
+condition), so the runner remains the only place this class is seen.
+
+**After the fix**, in exactly the conditions that produced those three
+failures: **1200 consecutive runs, all green**, and the whole package 30
+times over at each of `GOMAXPROCS` 2, 4 and 8, all green.
+
+### The sweep of `internal/api`: exactly one, and that is a real result
+
+Every site that obtains a 202 was enumerated mechanically rather than
+read for — every `StatusAccepted` in every test file in the package,
+with the ten lines after it. **One** has the defect, and it is this one.
+Every other one of the fifteen either asserts on the 202's own body,
+which is synchronous, or goes through `collect`, which asks the result
+endpoint until it stops saying 202, or waits on a state before reading.
+
+Two negative assertions look like the same shape and are not:
+`h.signer.count() != 0` after a **400** (`sign_test.go`, twice) and
+`h.registry.Len() != 0` after a 400. A 400 is refused before a job is
+created, so no goroutine exists to race. Likewise `h.certs.count()` on
+the listing path and `h.ui.count()` on the pairing path: the
+enumeration and `ShowPairing` both happen inside the handler, before
+the response is written. `pendingPairing.finish` — which closes or
+confirms the window — is called synchronously from `Confirm`, so the
+two window-state assertions that do not wait are reading state that was
+already written when the call returned.
+
+**One thing was changed that is not the defect, and it is stated
+plainly rather than folded in.** `lastRequestAfter` — five call sites —
+waited by polling `f.count()` every millisecond against a five-second
+deadline. That is not this race: it does observe a state it reads back,
+which is what D-201 permits in as many words, and it cannot report a
+false negative. But its failure on a machine slower than five seconds
+is a *timeout*, which says nothing about the property and is exactly
+the unreadable flake F10 §7 is about. `fakeSigner` now closes and
+replaces a `called` channel on every entry — the same close-and-replace
+broadcast `jobs.Job` uses, for the same reason — and `awaitCalls` waits
+on that event. No duration anywhere, no assertion changed, and the five
+call sites lost a `!ok` branch that could no longer be reached.
+
+### Is the pairing-window resize flake the same family? Measured: no — and it is still not identified
+
+F10 §7 carries forward
+`TestALongApplicationNameStaysReadableInThePairingWindow`, which failed
+once in F9b "on a one-pixel difference after a WebView2 resize" and
+passed on re-run. [[D-240]] examined it, could not reproduce it, and
+concluded the cause was a tolerance finer than the layout's own
+fractional granularity. Having both in front of one session for the
+first time, the two were measured against each other rather than
+compared by description.
+
+**The property that separates the two families is the size of the
+error.** A race hands back a *categorically different* answer; a
+tolerance defect hands back a *nearly-right* one.
+
+- The 202 race returned `""` where a 40-character thumbprint belonged.
+  Not close — absent.
+- [[D-201]]'s stale-layout read, measured on this machine, returned
+  `window.innerHeight 330, body.scrollHeight 330, body.clientHeight
+  330` immediately after `Resize(420, 210)` — the entire pre-resize
+  viewport, **120 points** wrong.
+- A tolerance defect is wrong by less than one pixel, by definition.
+
+**So what are the margins on the pairing window?** Measured at rest, on
+both screens, in all three locales, with the 120-character name in
+place — the numbers the three assertions actually compare:
+
+| Assertion | compares | margin |
+|---|---|---|
+| `assertPageDoesNotScroll` | `body.scrollHeight 369` against `body.clientHeight 369` | **0, exactly** |
+| `assertButtonsVisible` | `#deny-btn.bottom 353.000` against `innerHeight 369` | **16.000** |
+| `assertNameStartsInsideTheWindow` | `#app-name.top 36.797` against `0` | **36.797** |
+
+Identical in `sr-Latn`, `sr-Cyrl` and `en`; `devicePixelRatio` is 1.
+Nothing on this window is within a pixel of failing anything.
+
+**And [[D-240]]'s premise separates into two kinds of number.** It
+records that "every box on that page is fractional — .identity 140.016,
+.field 87.969, .field-label 16.797 …", which is true and was
+re-measured here. But those are `getBoundingClientRect().height`. The
+same elements' `clientHeight` and `scrollHeight` are **140 and 143** —
+integers, as the CSSOM defines them. So:
+
+- `assertPageDoesNotScroll` compares two integers. Their difference is
+  an integer. **A sub-pixel tolerance cannot change its verdict**, and
+  widening it there was justified by a fractional argument that does not
+  apply to it.
+- Only the two `getBoundingClientRect` assertions can be affected by a
+  fraction at all — and they have 16 and 36.8 points of clearance.
+
+**Conclusion, and it is narrower than either "same" or "different".**
+The resize flake is not this family: the path has a real observation in
+it (`resizeAndSettle` loops on `window.innerWidth`/`innerHeight` until
+they are the size asked for, which was read and confirmed), and six
+deliberately unsynchronised reads after a bare `Resize` all returned the
+new layout here. Nor is it established to be the tolerance family: the
+only assertion whose numbers are fractional has thirty-six points of
+margin. **It remains unidentified, and the reason is that its own
+evidence was destroyed before anyone could read it** — `%.0f` turned
+whatever it was into "one pixel". [[D-240]]'s second change, printing
+three decimals, is the one that matters, and it is what will classify
+the next occurrence in a single reading: a fraction means a tolerance,
+tens of points mean a stale layout, and an absent value means a race.
+Re-running it is not evidence and 25 further green runs under load
+(`GOMAXPROCS` 2 and 4) are recorded here only so that nobody spends the
+afternoon again.
+
+**One finding to hand back rather than act on.** Because
+`assertPageDoesNotScroll`'s page-level numbers are integers, its
+`> layoutEpsilon` costs coverage and buys nothing: a `body` that
+overflows by exactly one integer pixel draws a scrollbar and now
+passes. That is one integer away from [[D-202]]'s own finding — a
+region eight tenths of a point short, every layout test green, and a
+scrollbar in the shipped window. `assertRegionDoesNotScroll`, which is
+what actually guards that case, uses a strict `>` with no epsilon and
+is unaffected. Reported rather than changed: [[D-240]] is a recorded
+decision two days old and reversing half of it is its own entry, not a
+line in a flake fix (the discipline [[D-201]], [[D-227]], [[D-233]] and
+[[D-249]] each applied to a finding that was not their phase's).
+
+### What to look for next time
+
+The tell is the status code. **A 202 is the system telling you it has
+not done the thing yet.** Anywhere one is followed by a read of
+something only the acceptance *scheduled* — a recorded call, a written
+file, a published state, a log line — the assertion is racing the work,
+and it will pass on the machine it was written on because that machine
+has spare cores and no instrumentation.
+
+The remedy is never a duration and never a bigger one. Ask what the
+system itself does to announce that the work is finished — here a
+stream that closes, elsewhere a channel, a state that can be read back,
+a file that appears — and wait on that. If there is no such
+announcement, that is a finding about the product before it is a
+problem for the test.
+
+**Rejected.**
+- **`time.Sleep`, a retry, or a longer deadline.** Each re-picks a
+  number that works on the two machines anyone has looked at, which is
+  what [[D-112]] rejected, what [[D-201]] rejected three more times, and
+  what F10 §7 exists to stop.
+- **`c.collect(jobID)` instead of `awaitJob`.** It would work — it is
+  what a caller does — and it polls the result endpoint every two
+  milliseconds against a ten-second deadline. The stream is the same
+  fact with no duration in it, and it does not consume the result,
+  which a test asserting about the signer has no business doing.
+- **`h.signer.lastRequestAfter(t, 1)`, the helper four other tests
+  use.** It would have made this test correct in one word, and it is
+  the weaker instrument for the reason given above. It was fixed
+  instead.
+- **Rewriting `collect` to follow the stream too.** It is deliberately
+  a caller's own behaviour — ask again until the answer changes — and
+  three tests are *about* what a caller sees at each status. Its poll
+  is the subject, not an artefact.
+- **Reporting the whole `waitFor`/`collect` family as instances of this
+  defect, to make the sweep's number larger than one.** They observe a
+  state; this one observed nothing. One is the honest answer and F10
+  §7's question deserves it.
+- **Reproducing at `GOMAXPROCS=1` and reporting "not reproducible".**
+  Above: `runnext` makes one P the single configuration in which this
+  race cannot be lost.

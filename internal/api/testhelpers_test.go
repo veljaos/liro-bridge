@@ -310,13 +310,20 @@ type fakeSigner struct {
 	// requests records every SignRequest that reached the signer.
 	requests []SignRequest
 
+	// called is closed and replaced every time the signer is entered,
+	// so a test can wait on the event rather than poll for the count.
+	// It is the same close-and-replace broadcast jobs.Job uses, for
+	// the same reason: nothing is buffered, so nothing can be missed,
+	// and a waiter always lands on the state as it stands now.
+	called chan struct{}
+
 	// respond is what to do with a request. The default signs every
 	// digest with a stand-in signature.
 	respond func(req SignRequest, job *jobs.Job) (SignResult, error)
 }
 
 func newFakeSigner() *fakeSigner {
-	return &fakeSigner{respond: signEverything}
+	return &fakeSigner{respond: signEverything, called: make(chan struct{})}
 }
 
 // signEverything is the default: publish the states a real run passes
@@ -341,6 +348,8 @@ func (f *fakeSigner) Sign(ctx context.Context, req SignRequest, job *jobs.Job) (
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
 	respond := f.respond
+	close(f.called)
+	f.called = make(chan struct{})
 	f.mu.Unlock()
 	return respond(req, job)
 }
