@@ -17924,3 +17924,225 @@ absence was the other half of the same defect.
   it would be a test about one function rather than about the habit. The
   habit is the fix. Where a syntax-tree check is the right shape, it
   already exists.
+
+---
+
+## D-248 — The uninstall takes the page images a crash left behind, and a starting agent collects one nobody came back for
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Closing what [[D-243]] recorded and deliberately left.** That entry's
+last section names two things under the agent's own directory that are
+in neither `derivedState` nor `keptState`, says neither was decided,
+and says "a list whose purpose is to be exhaustive should say so.
+Recorded rather than changed: adding `.lock` to `derivedState` is a
+one-line change and it is not this entry's to make while a phase is
+being reported." The phase is reported. This is that change, and it
+turned out to be the smaller half of the two.
+
+**`audit\.lock` needs no change, and the reason is worth stating rather
+than leaving as an absence.** Both lists name entries at the top of the
+agent's own directory; `.lock` is not one — it lives *inside* `audit`,
+which `keptState` names and which an uninstall leaves whole
+([[D-234]]'s lock file, in the directory F10 §3.3 says is never
+removed). It is accounted for by the entry above it. What [[D-243]]
+observed is true literally and does not describe a gap.
+
+**A preview directory is a real gap, and it is not bookkeeping.**
+`preview-<random>` is where the placement window writes rendered pages
+of the document somebody is about to sign ([[D-141]]). [[D-141]]'s own
+reason for deleting it when the window closes is the reason this
+matters: "a rendered page of somebody's contract is a different kind of
+thing from a stylesheet, and it has no reason to outlive the window
+that needed it." An uninstall that leaves one behind leaves pictures of
+somebody else's documents in a profile after the program that could
+explain them is gone.
+
+It survives only when the window never closed — a crash, a kill, a
+machine switched off mid-decision. `placeUI.close` covers every path it
+can take, including the ones that end in an error; it cannot cover not
+taking a path at all.
+
+**Measured on this machine, which is why this is a finding rather than
+a tidy-up.** The directory [[D-243]] found is still there:
+
+```
+preview-1672968169   modified 2026-09-10 13:28:38   1.0 days old
+  p1-2.0000.png      14,670 bytes   a rendered page of a document
+  stamp.png          35,040 bytes
+                     49,710 bytes total
+```
+
+A page of a real document, in the owner's profile, a day after the
+window that drew it stopped existing, with nothing in the program that
+would ever have removed it.
+
+**Decision, two halves.**
+
+*(a) An uninstall takes them.* `derivedStatePrefixes` is a second list
+beside `derivedState`, for entries whose names this program does not
+know in advance, and it has one member. `removeDerivedState` reads the
+directory to expand it. That the name carries a random suffix is
+exactly why it was in neither list when [[D-243]] went looking: a
+constant cannot name it.
+
+*(b) A starting agent collects one nobody came back for.*
+`sweepStalePreviews` runs from `applyStartupRegistrations` — the one
+place both commands that mean "the agent is being used as an agent"
+already go through ([[D-247]]'s own lesson: a function nothing calls is
+a feature that does not exist).
+
+**Why a day.** A second agent in this session may have a placement
+window open right now, serving images out of a directory whose
+modification time stopped changing when its last page was drawn.
+Collecting one out from under it would fill somebody's screen with
+broken images while they were deciding where to put a signature. A day
+is longer than any window stays open and shorter than "never", which is
+what this was. It is not a guess at how fast the machine is — the
+comparison is against the directory's own timestamp, so a slow machine
+reaches it later and never sooner ([[D-201]]).
+
+**What it never touches.** Both halves match on the prefix, so `audit`,
+`config.json`, `pairings.json`, `secrets.*` and everything else
+[[D-244]] decided to keep are untouched whatever their age. Both tests
+put a kept name alongside — the sweep's with a ten-year-old timestamp —
+so that "removes what is stale" cannot quietly become "removes what is
+left".
+
+**Both tests were confirmed to fail against the behaviour they
+replace.** With `derivedStatePrefixes` emptied, the uninstall test
+reports "preview-1672968169 survived an uninstall, and it holds page
+images of somebody's documents" for both directories. With the age
+guard removed, the sweep test reports "sweepStalePreviews removed 2,
+want 1" — the fresh directory collected along with the stale one, which
+is the window-breaking case the guard exists for.
+
+**The real leftover was not deleted by this session.** It is the
+owner's data and the next agent start will collect it, which is the
+behaviour being added rather than a step to perform by hand. Reported
+instead, with its contents, above.
+
+**Rejected.**
+- **Adding `preview-` to `derivedState` as a literal.** It is not a
+  name; it is a prefix, and a list of exact names that quietly contains
+  one prefix is a list nobody can read correctly.
+- **Naming the preview directories in the WiX source instead.**
+  Impossible for the same reason [[D-244]] already gives for
+  `ui-assets`: `RemoveFile` can only name directories it already knows,
+  and this one is named after a random number.
+- **Sweeping on a shorter interval — an hour, or every entry older than
+  the process that made it.** An hour is inside the time a placement
+  window can plausibly stay open, and "older than the process that made
+  it" needs a way to know which process that was, which is a lock or a
+  PID file for a directory that is deleted on every ordinary path.
+- **Deleting the directory as it closes *and* sweeping, but reporting
+  neither.** The sweep says what it removed, at `Info`, with an age. A
+  program that silently deletes things in somebody's profile is a
+  program nobody can diagnose.
+- **Removing every `preview-` directory at startup regardless of age.**
+  It is the one-line version and it breaks a second agent's open
+  window, which is the case the guard is entirely about.
+
+---
+
+## D-249 — The per-user package declares it needs no elevation, and that is measured from the package itself; that a token with no administrative rights can complete the install is not
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Why this exists.** F10's own rules say: "Test on a machine or image
+that has never had a Go toolchain, and on a standard user account with
+no administrative rights. [[D-234]]'s lesson is one phase old: a
+development account's token looks like a user's and is not one."
+[[D-243]] reports the per-user install — the phase's primary artefact —
+and does not say which account it ran on. It ran on this one.
+
+**Measured, and it is not ambiguous:**
+
+```
+Get-LocalGroupMember -Group Administrators
+  Helios\Administrator   [User]
+  Helios\Veljko          [User]
+```
+
+So the account every measurement in [[D-243]] was taken on is a member
+of `BUILTIN\Administrators`. [[D-234]] established exactly this once
+already, for a different question — it had to re-measure a `Global\`
+mutex for the same reason — and wrote the sentence this entry is named
+after. The conflation it warned about is reproduced one phase later, in
+the checklist item where it matters most.
+
+**What [[D-243]] does establish, and it is not nothing.** Its evidence
+is the installer's own log line, `MSI_LUA: Package is marked as LUA
+installation capable with no elevation required`, and no UAC prompt
+appeared. Both are true. Neither is the checklist item: they say the
+*package* does not ask to be elevated, which is a property of the
+package, not of the token that ran it.
+
+**That property is now measured from the package rather than from a log
+line about it.** Windows Installer records it in the package's own
+summary stream — bit 3 of Word Count, "elevated privileges are not
+required to install this package" — and it can be read without
+installing anything:
+
+| Package | Word Count | bit 3 | `ALLUSERS` |
+|---|---|---|---|
+| `liro-bridge-dev-x64.msi` (per-user) | 10 | **set** — no elevation required | not set |
+| `liro-bridge-dev-x64-per-machine.msi` | 2 | **clear** — elevation required | `1` |
+
+Read through `WindowsInstaller.Installer` — the same COM interface the
+`packaging` CI job already opens both packages with ([[D-241]]) — from
+the artefacts that job's own command produced. This is better evidence
+than the log line for the same claim: it comes from the artefact a
+stranger downloads rather than from one run of it on one machine, and
+it is the first measurement in this project of the two packages
+actually differing in the way [[D-244]] decided they should. `ALLUSERS`
+absent in one and `1` in the other is that decision, visible in the
+bytes.
+
+**So, stated exactly, the way [[D-246]] states its own halves:**
+
+- the per-user package **declares** that it requires no elevation —
+  **measured, from the package**
+- the per-user package **installs under a token that has no
+  administrative rights** — **not measured**
+
+**Why the second is not measured here, rather than left looking like an
+oversight.** [[D-234]] has the technique: `CreateRestrictedToken` with
+`BUILTIN\Administrators` turned deny-only produces a token strictly
+weaker than a standard user's, and an access check is monotone, so
+anything that succeeds under it succeeds for a standard user. Applying
+it to `msiexec` would settle this in about a minute.
+
+What it costs is an install and an uninstall on the owner's own
+machine, unasked. [[D-243]] did one deliberately and reported what it
+left behind; doing another as a side effect of recording a gap is the
+wrong order, and an uninstall deliberately leaves state ([[D-244]]) so
+"put it back" is not free. It is the owner's to authorise, it is one
+command, and this entry exists so that it is a decision rather than
+something nobody thought of.
+
+**Why it is worth doing before the stranger rather than after.** The
+stranger F10's exit condition is about is an accountant who is very
+often not a local administrator — F10 §1's own words for why the
+per-user MSI is the primary artefact. If the install fails for them
+under a token this machine could have produced in a minute, the exit
+condition fails for a reason that was measurable here, which is the
+most expensive possible place to find it.
+
+**Rejected.**
+- **Reading the D-243 claim as covering it.** It does not, and the
+  difference is precisely [[D-234]]'s: a filtered administrator's token
+  and a standard user's look alike from inside the process and are not
+  the same thing.
+- **Simulating it by dropping privileges inside the running installer.**
+  `msiexec` runs as a service for the elevated half of an install; a
+  privilege dropped in the launching process is not the token the
+  package's actions run under, so what it would measure is not the
+  question.
+- **Treating the summary-stream bit as sufficient.** It is the package's
+  declaration. A package can declare no elevation and still fail on a
+  token that cannot write where a component puts a file — which is
+  exactly what a per-user package is arranged to avoid, and exactly the
+  arrangement nobody has run under such a token.

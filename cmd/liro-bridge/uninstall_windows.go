@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
@@ -38,6 +40,38 @@ var derivedState = []string{
 	"icon.ico",         // the extracted tray and window icon (D-090)
 	"release-update",   // a downloaded installer, if one was ever fetched
 }
+
+// derivedStatePrefixes is the same list for entries whose names this
+// program does not know in advance.
+//
+// There is one, and it is not bookkeeping: a preview directory holds
+// rendered pages of the documents somebody was about to sign (D-141),
+// and D-141's own reasoning for deleting it when the window closes —
+// "a rendered page of somebody's contract is a different kind of thing
+// from a stylesheet, and it has no reason to outlive the window that
+// needed it" — applies with more force to an uninstall than to a
+// window close. The program is being removed; its pictures of somebody
+// else's contracts should not be what is left behind.
+//
+// They are normally removed by the window that made them. One survives
+// only when that never happened: a crash, a kill, a machine turned off
+// mid-signature. D-243 found one on this machine, left by a session
+// weeks earlier, and recorded that it was in neither list.
+var derivedStatePrefixes = []string{
+	"preview-", // page images for the placement window (D-141)
+}
+
+// stalePreviewAge is how old a preview directory must be before a
+// starting agent will collect it.
+//
+// It is a day rather than an hour because a second agent in the same
+// session may have a placement window open right now, and that window
+// is serving images out of a directory whose modification time stopped
+// changing when its last page was drawn. Collecting one out from under
+// it would fill somebody's screen with broken images while they were
+// deciding where to put a signature. A day is longer than any window
+// stays open and shorter than "never", which is what this was before.
+const stalePreviewAge = 24 * time.Hour
 
 // keptState is what an uninstall leaves, and what the notice names. It
 // is a list so that the message and the behaviour cannot disagree: a
@@ -115,7 +149,10 @@ func runUninstallNotice(args []string, out io.Writer, cfg config.Config) int {
 // failure of the uninstall. An uninstall that fails because a log file
 // was open is worse than one that leaves a log file behind.
 func removeDerivedState(dir string) (removed, failed int) {
-	for _, name := range derivedState {
+	names := append([]string{}, derivedState...)
+	names = append(names, matchingPrefixes(dir, derivedStatePrefixes)...)
+
+	for _, name := range names {
 		path := filepath.Join(dir, name)
 		if _, err := os.Lstat(path); err != nil {
 			continue
@@ -128,4 +165,72 @@ func removeDerivedState(dir string) (removed, failed int) {
 		removed++
 	}
 	return removed, failed
+}
+
+// matchingPrefixes lists the entries of dir whose names begin with one
+// of the given prefixes.
+//
+// A directory that cannot be read produces nothing rather than an
+// error: an uninstall's job is to remove what it can find, and the
+// caller already treats a thing it cannot remove as a count rather
+// than a failure.
+func matchingPrefixes(dir string, prefixes []string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		// A directory that is not there yet is the ordinary state of a
+		// profile the agent has never run in, and the startup sweep is
+		// one of the first things to look at it. That is not worth a
+		// line in anybody's log.
+		if !os.IsNotExist(err) {
+			slog.Warn("uninstall: could not list the agent's own directory", "dir", dir, "error", err)
+		}
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		for _, p := range prefixes {
+			if strings.HasPrefix(e.Name(), p) {
+				names = append(names, e.Name())
+				break
+			}
+		}
+	}
+	return names
+}
+
+// sweepStalePreviews removes preview directories nothing came back
+// for, and is called once when the agent starts.
+//
+// The placement window deletes its own on every path it can take
+// (D-141), including the ones that end in an error. What it cannot
+// cover is not taking a path at all — a crash, a kill, a machine
+// switched off while somebody was choosing where a signature goes —
+// and what is left then is a folder of rendered pages of that person's
+// documents, sitting in their profile until something removes it.
+// Before this, nothing did: D-243 found one on this machine that a
+// session weeks earlier had left.
+//
+// It reports what it removed and swallows everything else. An agent
+// that cannot tidy up is still an agent that can sign, and a person
+// waiting to sign a document is not served by being told about a
+// directory.
+func sweepStalePreviews(dir string, now time.Time) int {
+	removed := 0
+	for _, name := range matchingPrefixes(dir, derivedStatePrefixes) {
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		if now.Sub(info.ModTime()) < stalePreviewAge {
+			continue
+		}
+		if err := os.RemoveAll(path); err != nil {
+			slog.Warn("startup: could not remove a stale preview directory", "path", name, "error", err)
+			continue
+		}
+		slog.Info("startup: removed a preview directory nothing came back for", "path", name, "age", now.Sub(info.ModTime()).Truncate(time.Hour))
+		removed++
+	}
+	return removed
 }

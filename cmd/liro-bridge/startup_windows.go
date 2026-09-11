@@ -4,6 +4,8 @@ package main
 
 import (
 	"log/slog"
+	"runtime"
+	"time"
 
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
@@ -38,6 +40,11 @@ func applyStartupRegistrations(cfg config.Config) {
 	if err := applyAutostart(cfg); err != nil {
 		slog.Warn("startup: could not apply the autostart setting", "error", err)
 	}
+	// Not a registration, and here because this is the one place both
+	// commands that mean "the agent is being used as an agent" already
+	// go through. What it collects is pictures of somebody's documents
+	// that a crash left behind — see sweepStalePreviews.
+	sweepStalePreviews(platform.ConfigDir(runtime.GOOS, platform.OSEnv), time.Now())
 }
 
 // applyAutostart makes HKCU\...\Run agree with cfg.StartWithWindows.

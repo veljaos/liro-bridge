@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // What an uninstall takes and what it leaves, checked against a
@@ -58,6 +59,111 @@ func TestAnUninstallTakesOnlyWhatItCanMakeAgain(t *testing.T) {
 	// And the directory itself: what is left in it is the point.
 	if _, err := os.Stat(dir); err != nil {
 		t.Errorf("the agent's own directory was removed: %v", err)
+	}
+}
+
+// A preview directory holds rendered pages of the documents somebody
+// was about to sign (D-141). Whatever else an uninstall leaves behind,
+// it is not those.
+//
+// Named by prefix rather than in full, because the name carries a
+// random suffix — which is the reason it was in neither list when
+// D-243 went looking, and the reason removeDerivedState has to read
+// the directory rather than only consult a constant.
+func TestAnUninstallTakesThePageImagesACrashLeftBehind(t *testing.T) {
+	dir := t.TempDir()
+
+	previews := []string{"preview-1672968169", "preview-42"}
+	for _, name := range previews {
+		if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name, "page-1.png"), []byte("a page of somebody's contract"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Kept state alongside, so this proves the prefix match is a
+	// prefix match and not "remove everything that is left".
+	if err := os.MkdirAll(filepath.Join(dir, "audit"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, failed := removeDerivedState(dir); removed != len(previews) || failed != 0 {
+		t.Errorf("removeDerivedState removed %d and failed %d, want %d removed and none failed", removed, failed, len(previews))
+	}
+	for _, name := range previews {
+		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("%s survived an uninstall, and it holds page images of somebody's documents", name)
+		}
+	}
+	for _, name := range []string{"audit", "config.json"} {
+		if _, err := os.Lstat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s did not survive an uninstall: %v", name, err)
+		}
+	}
+}
+
+// A preview directory nothing came back for is collected when the
+// agent next starts, and one that is merely recent is not — because a
+// second agent in this session may have a placement window open over
+// it right now.
+func TestAStalePreviewIsSweptAndARecentOneIsLeftAlone(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	cases := []struct {
+		name string
+		age  time.Duration
+		want bool // swept
+	}{
+		{"preview-stale", stalePreviewAge + time.Hour, true},
+		{"preview-justunder", stalePreviewAge - time.Hour, false},
+		{"preview-fresh", 0, false},
+	}
+	for _, c := range cases {
+		path := filepath.Join(dir, c.name)
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "page-1.png"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// The directory's own mtime, not the file's: that is what the
+		// sweep reads, and on Windows writing a file inside a
+		// directory updates the directory too.
+		when := now.Add(-c.age)
+		if err := os.Chtimes(path, when, when); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Something kept, with an ancient timestamp, to prove the sweep is
+	// about the prefix and not about age alone.
+	auditDir := filepath.Join(dir, "audit")
+	if err := os.MkdirAll(auditDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ancient := now.Add(-10 * 365 * 24 * time.Hour)
+	if err := os.Chtimes(auditDir, ancient, ancient); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := sweepStalePreviews(dir, now), 1; got != want {
+		t.Errorf("sweepStalePreviews removed %d, want %d", got, want)
+	}
+	for _, c := range cases {
+		_, err := os.Lstat(filepath.Join(dir, c.name))
+		if c.want && err == nil {
+			t.Errorf("%s is %v old and survived the sweep", c.name, c.age)
+		}
+		if !c.want && err != nil {
+			t.Errorf("%s is only %v old and was swept: a window may still be serving images out of it", c.name, c.age)
+		}
+	}
+	if _, err := os.Lstat(auditDir); err != nil {
+		t.Errorf("the sweep removed the audit directory: %v", err)
 	}
 }
 
