@@ -18131,6 +18131,119 @@ under a token this machine could have produced in a minute, the exit
 condition fails for a reason that was measurable here, which is the
 most expensive possible place to find it.
 
+**Measured, 2026-09-11 — the cheap half, and it passes.** This entry
+stays open; what follows narrows it. A genuinely restricted token was
+reachable after all, by a route that needs no privilege:
+`runas /trustlevel:0x20000`, which is SAFER's Basic User level.
+`CreateRestrictedToken` plus `CreateProcessAsUser` — [[D-234]]'s own
+route — was tried first and refused with `ERROR_PRIVILEGE_NOT_HELD`,
+because this token holds neither `SeIncreaseQuotaPrivilege` nor
+`SeAssignPrimaryTokenPrivilege`. Recorded so the next person does not
+spend the same half hour.
+
+The token `msiexec` actually ran under, read from the child process
+itself rather than from the launcher's intent:
+
+```
+BUILTIN\Administrators   S-1-5-32-544   Group used for deny only
+Mandatory Label\Medium Mandatory Level  S-1-16-8192
+SeChangeNotifyPrivilege                  Enabled      <- the only one
+```
+
+That is **stricter than a standard user**, who holds four more
+privileges (`SeShutdown`, `SeUndock`, `SeIncreaseWorkingSet`,
+`SeTimeZone`). Administrators is deny-only, which can only ever subtract
+access, never add it. An access check is monotone, so what succeeds here
+succeeds for a real standard account.
+
+**It installs, and it uninstalls.**
+
+```
+Windows Installer installed the product. ... Installation success or error status: 0.
+Windows Installer removed  the product. ... Removal success or error status: 0.
+```
+
+Predictions were written down before the run rather than read off it
+afterwards. Eleven of twelve held: twelve files under
+`%LOCALAPPDATA%\Programs\Liro Bridge`, nothing in `%ProgramFiles%`,
+shortcuts in the per-user Start menu and not the All-Users one, the
+`Run` value still absent and the Explorer verb untouched (an install
+registers neither — only running the agent does), and on uninstall
+`webview2`, `webview2-profile`, `ui-assets` and the leftover
+`preview-` directory gone while `audit\`, `config.json`,
+`pairings.json`, `secrets.*`, `update-state.json`, `tsl-cache.xml` and
+`logs\` stayed.
+
+**The prediction that failed was mine, and [[D-243]] was right.** The
+ARP entry lands in **HKLM**, not `HKCU` — predicted `HKCU` on the
+reasoning that a token which cannot write there cannot produce one.
+What that reasoning missed is that the entry is written by the
+Windows Installer service, which runs as LocalSystem for the execute
+sequence of any install, per-user or not. It round-trips: the same
+restricted token's uninstall removed it. So it is not a defect in the
+package — but it does mean a per-user install of this program appears
+in Programs and Features for **every** user of the machine, which on
+SPEC §14.1's bookkeeper is a row other people cannot act on. Recorded
+as a question rather than answered here.
+
+**And one prediction was of a defect, which is the point of predicting.**
+`derivedState` named `icon.ico`; `ensureTrayIconExtracted` writes
+`icon-<len>.ico` — `icon-13717.ico` here — the same convention
+`ensureLoaderExtracted` uses so a changed asset lands beside the old one
+rather than on top of it. `webview2` escaped it by being a directory the
+list names. The icon has no directory, so **every uninstall this program
+has ever done has left the extracted tray icon behind**. Predicted to
+survive; survived. Fixed by [[D-248]]'s prefix list, which is why that
+list exists rather than being a special case for previews, and pinned by
+`TestAnUninstallTakesTheExtractedIconWhateverItsSizeIsCalled` — confirmed
+to fail against the old name, reporting all three sizes.
+
+The two lists had to be separated to do it. An uninstall takes every
+prefix; the startup sweep takes only `preview-`, because the extracted
+icon is derived state an uninstall should take and a *starting* agent
+must not — it is about to load it. Sweeping the whole list would have
+deleted it, and would have got away with it today only because that
+entry happens to be a file and the sweep happens to skip files, which is
+a guard nobody wrote on purpose.
+
+**What this closes and what it does not.** It closes the question the
+phase actually rests on: a token with no administrative rights can both
+install and uninstall the per-user package. It does not close this
+entry. The account is still a member of `BUILTIN\Administrators`, so
+what was measured is a restricted token on an administrator's machine,
+not a standard account on a machine that never had one — and F10's rule
+names both halves. The clean machine being arranged for the WebView2
+test closes it; this narrows it.
+
+**The machine was put back, and one thing had to be.** Every file copied
+beforehand — `audit\`, `config.json`, `pairings.json`, `secrets.*`, and
+the leftover preview directory — restored and compared by hash to the
+copy, not to a remembered digest ([[D-243]]'s own lesson): thirteen
+files, none differing.
+
+**The Explorer verb key was gone, and the `reg export` taken before any
+of this is what put it back.** The uninstall calls
+`platform.NewShellMenu().Unregister()`, which is correct — it is the
+registration the agent makes for itself and the uninstall's job to
+unmake — and the key it removed was this machine's *development*
+registration, pointing at the repository-root build output, which the
+installed product never wrote. Restored from the export and verified
+byte-for-byte against it.
+
+That is the whole argument for exporting a key before touching
+anything rather than hashing it: a hash would have said it changed and
+left nothing to change it back with, and the value is not one this
+session could have reconstructed — it names an icon path with a
+content length in it and a binary path that is not where the installer
+puts one. The same lesson [[D-243]] recorded against `config.json`,
+arriving one artefact over.
+
+`ui-assets`, `webview2` and `webview2-profile` were taken by the
+uninstall and had not been copied; they are `derivedState` by
+[[D-244]]'s definition, and the next run of the window tests remade all
+three without being asked, which is the definition holding. The machine
+is not bit-identical there and that is said rather than glossed.
+
 **Rejected.**
 - **Reading the D-243 claim as covering it.** It does not, and the
   difference is precisely [[D-234]]'s: a filtered administrator's token
@@ -18144,5 +18257,11 @@ most expensive possible place to find it.
 - **Treating the summary-stream bit as sufficient.** It is the package's
   declaration. A package can declare no elevation and still fail on a
   token that cannot write where a component puts a file — which is
-  exactly what a per-user package is arranged to avoid, and exactly the
-  arrangement nobody has run under such a token.
+  exactly what a per-user package is arranged to avoid. Written when
+  nothing had run under such a token; the measurement above did, and it
+  is the difference between a declaration and a result.
+- **Stopping at the measurement above and closing this entry.** It is
+  the answer to the question the phase rests on and it is not the
+  answer to F10's rule, which asks for a standard account on a machine
+  that never held a Go toolchain. Closing an entry on the half that was
+  cheap is how the other half stops being anybody's.

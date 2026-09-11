@@ -37,14 +37,13 @@ var derivedState = []string{
 	"webview2",         // the extracted WebView2Loader.dll (D-080)
 	"webview2-profile", // the browser profile the runtime keeps for us (D-207)
 	"ui-assets",        // the extracted HTML/CSS/JS the virtual host serves (D-082)
-	"icon.ico",         // the extracted tray and window icon (D-090)
 	"release-update",   // a downloaded installer, if one was ever fetched
 }
 
 // derivedStatePrefixes is the same list for entries whose names this
 // program does not know in advance.
 //
-// There is one, and it is not bookkeeping: a preview directory holds
+// The first is not bookkeeping either: a preview directory holds
 // rendered pages of the documents somebody was about to sign (D-141),
 // and D-141's own reasoning for deleting it when the window closes —
 // "a rendered page of somebody's contract is a different kind of thing
@@ -57,9 +56,37 @@ var derivedState = []string{
 // only when that never happened: a crash, a kill, a machine turned off
 // mid-signature. D-243 found one on this machine, left by a session
 // weeks earlier, and recorded that it was in neither list.
+//
+// The second is a defect this list is the fix for rather than an
+// afterthought to it. `derivedState` named "icon.ico" from the day it
+// was written, and `ensureTrayIconExtracted` has never written a file
+// by that name: it writes `icon-<len>.ico`, the same shape
+// `ensureLoaderExtracted` uses, so that a changed asset lands beside
+// the old one instead of on top of it. `webview2` survived the same
+// convention because it is a directory and the list names the
+// directory. The icon has none, so every uninstall this program has
+// ever done has left the extracted tray icon behind, and nobody noticed
+// because what was checked was the names in the list rather than the
+// names on the disk.
+//
+// Measured, on this machine, under a restricted token: predicted to
+// survive before the uninstall ran, and it did — see D-249.
 var derivedStatePrefixes = []string{
-	"preview-", // page images for the placement window (D-141)
+	previewPrefix, // page images for the placement window (D-141)
+	"icon-",       // the extracted tray and window icon, icon-<len>.ico (D-090)
 }
+
+// previewPrefix is named on its own because the startup sweep takes
+// only this one, and an uninstall takes them all.
+//
+// The difference is not cosmetic. An uninstall runs when the program is
+// going away, so everything it can remake is fair game; the sweep runs
+// while the program is starting, and the extracted icon is a file it is
+// about to load. A sweep over the whole list would have deleted it —
+// and would have got away with it today only because that entry happens
+// to be a file and the sweep happens to skip files, which is a guard
+// nobody wrote on purpose and nothing would have kept true.
+const previewPrefix = "preview-"
 
 // stalePreviewAge is how old a preview directory must be before a
 // starting agent will collect it.
@@ -216,7 +243,7 @@ func matchingPrefixes(dir string, prefixes []string) []string {
 // directory.
 func sweepStalePreviews(dir string, now time.Time) int {
 	removed := 0
-	for _, name := range matchingPrefixes(dir, derivedStatePrefixes) {
+	for _, name := range matchingPrefixes(dir, []string{previewPrefix}) {
 		path := filepath.Join(dir, name)
 		info, err := os.Stat(path)
 		if err != nil || !info.IsDir() {

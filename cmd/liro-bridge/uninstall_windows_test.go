@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,84 @@ func TestAnUninstallTakesThePageImagesACrashLeftBehind(t *testing.T) {
 	}
 }
 
+// The extracted icon is named for the size of the asset it came from,
+// the way the extracted WebView2 loader is, so an uninstall has to
+// match it the same way it matches a preview directory.
+//
+// This is a real defect measured before it was fixed: derivedState
+// named "icon.ico", ensureTrayIconExtracted writes "icon-<len>.ico",
+// and every uninstall left the file behind. The name is built here the
+// way the extractor builds it rather than typed as a literal, so a
+// change to that convention fails this test instead of silently
+// reopening the hole.
+func TestAnUninstallTakesTheExtractedIconWhateverItsSizeIsCalled(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, size := range []int{13717, 1, 999999} {
+		name := fmt.Sprintf("icon-%d.ico", size)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("ico"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Something kept whose name also begins with a letter of that
+	// prefix, so the match is a prefix match and not a substring one.
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, failed := removeDerivedState(dir); removed != 3 || failed != 0 {
+		t.Errorf("removeDerivedState removed %d and failed %d, want 3 removed and none failed", removed, failed)
+	}
+	for _, size := range []int{13717, 1, 999999} {
+		name := fmt.Sprintf("icon-%d.ico", size)
+		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("%s survived an uninstall; the extracted icon is derived state", name)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "config.json")); err != nil {
+		t.Errorf("config.json did not survive an uninstall: %v", err)
+	}
+}
+
+// The startup sweep takes preview directories and nothing else.
+//
+// Worth its own test because the sweep and the uninstall read the same
+// kind of list and must not read the same list: the extracted icon is
+// derived state an uninstall should take and a *starting* agent must
+// not, since it is about to load it. Before the two were separated this
+// passed only because the icon happens to be a file and the sweep
+// happens to skip files.
+func TestTheStartupSweepNeverTakesTheIconTheAgentIsAboutToLoad(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-365 * 24 * time.Hour)
+
+	icon := filepath.Join(dir, "icon-13717.ico")
+	if err := os.WriteFile(icon, []byte("ico"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(icon, old, old); err != nil {
+		t.Fatal(err)
+	}
+	// A directory with the icon prefix too, so the sweep cannot pass
+	// this merely by skipping files.
+	iconDir := filepath.Join(dir, "icon-cache")
+	if err := os.MkdirAll(iconDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(iconDir, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := sweepStalePreviews(dir, time.Now()); got != 0 {
+		t.Errorf("the startup sweep removed %d entries, and none of them was a preview", got)
+	}
+	for _, p := range []string{icon, iconDir} {
+		if _, err := os.Lstat(p); err != nil {
+			t.Errorf("the startup sweep took %s, which an agent that is starting still needs: %v", filepath.Base(p), err)
+		}
+	}
+}
+
 // A preview directory nothing came back for is collected when the
 // agent next starts, and one that is merely recent is not — because a
 // second agent in this session may have a placement window open over
@@ -183,6 +262,25 @@ func TestNothingIsBothKeptAndRemoved(t *testing.T) {
 		if inDerived[n] {
 			t.Errorf("%q is in both derivedState and keptState", n)
 		}
+		// A prefix is a list entry too, and a prefix that reaches a
+		// kept name is the same promise broken in a way the exact-name
+		// check above cannot see.
+		for _, p := range derivedStatePrefixes {
+			if strings.HasPrefix(n, p) {
+				t.Errorf("keptState names %q, which the derived prefix %q would remove", n, p)
+			}
+		}
+	}
+	// And the sweep's own prefix has to be one of them, or a directory
+	// it collects at startup is one an uninstall would leave.
+	found := false
+	for _, p := range derivedStatePrefixes {
+		if p == previewPrefix {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the startup sweep takes %q and no uninstall prefix matches it", previewPrefix)
 	}
 }
 
