@@ -100,22 +100,22 @@ func capture(t *testing.T, win ui.Window, name string) (*image.NRGBA, int) {
 	if screenDC == 0 {
 		t.Fatalf("%s: GetWindowDC returned 0", name)
 	}
-	defer procReleaseDC.Call(hwnd, screenDC)
+	defer func() { _, _, _ = procReleaseDC.Call(hwnd, screenDC) }()
 
 	memDC, _, _ := procCreateCompatibleDC.Call(screenDC)
 	if memDC == 0 {
 		t.Fatalf("%s: CreateCompatibleDC returned 0", name)
 	}
-	defer procDeleteDC.Call(memDC)
+	defer func() { _, _, _ = procDeleteDC.Call(memDC) }()
 
 	bmp, _, _ := procCreateCompatibleBitmap.Call(screenDC, uintptr(w), uintptr(h))
 	if bmp == 0 {
 		t.Fatalf("%s: CreateCompatibleBitmap returned 0", name)
 	}
-	defer procDeleteObject.Call(bmp)
+	defer func() { _, _, _ = procDeleteObject.Call(bmp) }()
 
 	old, _, _ := procSelectObject.Call(memDC, bmp)
-	defer procSelectObject.Call(memDC, old)
+	defer func() { _, _, _ = procSelectObject.Call(memDC, old) }()
 
 	// PW_RENDERFULLCONTENT (0x2) is what makes this work for a window
 	// whose content is drawn by another process's compositor, which is
