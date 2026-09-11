@@ -218,13 +218,37 @@
       </Directory>
     </Directory>
 
+    <!--
+      The guide's screenshots. "slike" is the folder name the two guide
+      documents reference, so it is the folder name here: an <img src>
+      that resolves is the whole requirement.
+    -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Directory Id="GuideImagesFolder" Name="slike" />
+    </DirectoryRef>
+
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="LiroBridgeExe" Guid="*">
         <File Id="LiroBridgeExeFile" Name="liro-bridge.exe" Source="$(var.ExeFile)" KeyPath="yes" />
       </Component>
 
-      <Component Id="UserGuide" Guid="*">
+      <!--
+        Both guides travel with the program, so a person who has lost the
+        download page still has them (F10 §6). The Serbian one is the
+        authoritative text and the English one is its translation
+        (D-242); each links to the other, which is why both have to be
+        installed rather than only the one the Start menu points at.
+      -->
+      <!--
+        An explicit GUID rather than "*": WiX will not generate one for a
+        component holding more than one file unless the keypath is a
+        versioned file, and an HTML document is not versioned. The same
+        applies to GuideImages below. These are fixed for the life of the
+        product, like every other authored component GUID here.
+      -->
+      <Component Id="UserGuide" Guid="6F8EE5A5-09FA-4582-BF45-7276DB851C61">
         <File Id="UserGuideFile" Name="Uputstvo.html" Source="$(var.GuideFile)" KeyPath="yes" />
+        <File Id="UserGuideEnFile" Name="Guide.html" Source="$(var.GuideEnFile)" />
       </Component>
 
       <!--
@@ -239,6 +263,26 @@
       <Component Id="InstallFolderCleanup" Guid="7E32F5CF-8320-49BB-8AB2-2B23C7510509">
         <RegistryValue Root="$(var.RegRoot)" Key="Software\Liro\Bridge" Name="InstalledFolder" Type="integer" Value="1" KeyPath="yes" />
         <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="GuideImagesFolder">
+      <!--
+        One component for all eight, with the first as its keypath. They
+        are installed and removed together and there is no case in which
+        one of them is wanted without the others: a guide missing three
+        of its pictures is not a state worth being able to reach.
+      -->
+      <Component Id="GuideImages" Guid="578735FB-09C4-46FA-8C0F-946527C107B6">
+        <File Id="GuideImg1" Name="01-dokumenti-prazno.png" Source="$(var.GuideImagesDir)\01-dokumenti-prazno.png" KeyPath="yes" />
+        <File Id="GuideImg2" Name="02-dokumenti.png"        Source="$(var.GuideImagesDir)\02-dokumenti.png" />
+        <File Id="GuideImg3" Name="03-sertifikat.png"       Source="$(var.GuideImagesDir)\03-sertifikat.png" />
+        <File Id="GuideImg4" Name="04-metod.png"            Source="$(var.GuideImagesDir)\04-metod.png" />
+        <File Id="GuideImg5" Name="05-napredak.png"         Source="$(var.GuideImagesDir)\05-napredak.png" />
+        <File Id="GuideImg6" Name="06-izvestaj.png"         Source="$(var.GuideImagesDir)\06-izvestaj.png" />
+        <File Id="GuideImg7" Name="07-dnevnik.png"          Source="$(var.GuideImagesDir)\07-dnevnik.png" />
+        <File Id="GuideImg8" Name="08-podesavanja.png"      Source="$(var.GuideImagesDir)\08-podesavanja.png" />
+        <RemoveFolder Id="RemoveGuideImagesFolder" Directory="GuideImagesFolder" On="uninstall" />
       </Component>
     </DirectoryRef>
 
@@ -307,6 +351,7 @@
     <Feature Id="Complete" Title="Liro Bridge" Level="1" Display="expand" ConfigurableDirectory="INSTALLFOLDER">
       <ComponentRef Id="LiroBridgeExe" />
       <ComponentRef Id="UserGuide" />
+      <ComponentRef Id="GuideImages" />
       <ComponentRef Id="InstallFolderCleanup" />
       <ComponentRef Id="StartMenuShortcuts" />
       <?if $(var.Scope) = perUser ?>

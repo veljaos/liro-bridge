@@ -118,10 +118,36 @@ try {
     & go build -trimpath -ldflags $ldflags -o $exe ./cmd/liro-bridge
     if ($LASTEXITCODE -ne 0) { throw "go build failed" }
 
-    # The guide travels with the program, so a person who has lost the
-    # download page still has it (F10 section 6).
+    # The guides travel with the program, so a person who has lost the
+    # download page still has them (F10 section 6). Both languages and
+    # the one shared set of screenshots: the Serbian text is the
+    # authoritative one and the English is its translation, and each
+    # links to the other (D-242).
     $guide = Join-Path $repo "docs/guide/Uputstvo.html"
-    if (-not (Test-Path $guide)) { throw "$guide is not there" }
+    $guideEn = Join-Path $repo "docs/guide/Guide.html"
+    $guideImages = Join-Path $repo "docs/guide/slike"
+    foreach ($g in @($guide, $guideEn)) {
+        if (-not (Test-Path $g)) { throw "$g is not there" }
+    }
+    # Every picture the two documents reference, checked here rather than
+    # discovered as a broken image by the first person to read the guide.
+    # The WiX source names these eight explicitly, so a ninth added to
+    # the folder without being added there would ship in neither.
+    $expectedImages = @(
+        "01-dokumenti-prazno.png", "02-dokumenti.png", "03-sertifikat.png", "04-metod.png",
+        "05-napredak.png", "06-izvestaj.png", "07-dnevnik.png", "08-podesavanja.png")
+    foreach ($img in $expectedImages) {
+        $p = Join-Path $guideImages $img
+        if (-not (Test-Path $p)) {
+            throw "$p is not there. Regenerate with: LIRO_GUIDE_SHOTS=1 go test ./cmd/liro-bridge/ -run TestCaptureGuideScreens"
+        }
+    }
+    $onDisk = @(Get-ChildItem $guideImages -Filter *.png | Select-Object -ExpandProperty Name)
+    $extra = $onDisk | Where-Object { $expectedImages -notcontains $_ }
+    if ($extra) {
+        throw ("docs/guide/slike holds $($extra -join ', '), which liro-bridge.wxs does not install. " +
+               "Add them there or remove them.")
+    }
     $icon = Join-Path $repo "internal/ui/assets/icon.ico"
 
     # ---- Authenticode: present, and a no-op until there is a
@@ -141,6 +167,8 @@ try {
             -dScope="$scope" `
             -dExeFile="$exe" `
             -dGuideFile="$guide" `
+            -dGuideEnFile="$guideEn" `
+            -dGuideImagesDir="$guideImages" `
             -dIconFile="$icon" `
             -out $wixobj (Join-Path $PSScriptRoot "liro-bridge.wxs")
         if ($LASTEXITCODE -ne 0) { throw "candle failed for $scope" }

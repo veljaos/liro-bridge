@@ -2,25 +2,425 @@
 <html lang="sr-Latn">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Liro Bridge — uputstvo</title>
+<style>
+  :root {
+    --ink: #16211F;
+    --quiet: #5B6B68;
+    --brand: #0078D4;
+    --line: #DFE4E3;
+    --warn-bg: #FFF8E6;
+    --warn-line: #E8C86A;
+    --stop-bg: #FDEDED;
+    --stop-line: #E9A8A8;
+    --ok-bg: #EEF7F0;
+    --ok-line: #A9CFB4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto; padding: 32px 24px 96px; max-width: 46rem;
+    font: 16px/1.65 "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+    color: var(--ink); background: #fff;
+  }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 4px; }
+  h2 { font-size: 1.35rem; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+  p, li { margin: 10px 0; }
+  ol, ul { padding-left: 1.4rem; }
+  ol li { margin: 14px 0; }
+  .lead { color: var(--quiet); font-size: 1.05rem; margin-bottom: 28px; }
+  a { color: var(--brand); }
+  code, .path {
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 0.92em;
+    background: #F4F6F6; padding: 1px 5px; border-radius: 3px;
+    overflow-wrap: anywhere;
+  }
+  figure { margin: 20px 0 24px; }
+  figure img {
+    display: block; max-width: 100%; height: auto;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  figcaption { color: var(--quiet); font-size: 0.9rem; margin-top: 8px; }
+  .note, .warn, .stop, .ok {
+    border-left: 4px solid var(--line); background: #F7F9F9;
+    padding: 12px 16px; margin: 20px 0; border-radius: 0 6px 6px 0;
+  }
+  .warn { background: var(--warn-bg); border-left-color: var(--warn-line); }
+  .stop { background: var(--stop-bg); border-left-color: var(--stop-line); }
+  .ok   { background: var(--ok-bg);   border-left-color: var(--ok-line); }
+  .note p:first-child, .warn p:first-child, .stop p:first-child, .ok p:first-child { margin-top: 0; }
+  .note p:last-child, .warn p:last-child, .stop p:last-child, .ok p:last-child { margin-bottom: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 18px 0; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; }
+  .lang { float: right; font-size: 0.9rem; }
+  .toc { background: #F7F9F9; border-radius: 8px; padding: 14px 20px; margin: 28px 0 8px; }
+  .toc ul { margin: 6px 0; }
+  .toc li { margin: 4px 0; }
+  footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--quiet); font-size: 0.9rem; }
+  @media print { .toc, .lang { display: none; } h2 { page-break-before: auto; } figure { page-break-inside: avoid; } }
+</style>
 </head>
 <body>
-<h1>Liro Bridge — uputstvo</h1>
 
-<p><strong>Ovo uputstvo još nije napisano.</strong> Ono je deo faze F10 i
-sadržaće, prema F10 §6:</p>
+<p class="lang"><a href="Guide.html">English</a></p>
+<h1>Liro Bridge</h1>
+<p class="lead">Uputstvo za potpisivanje PDF dokumenata kvalifikovanim
+elektronskim sertifikatom sa vaše kartice ili USB tokena.</p>
 
+<div class="toc">
+  <strong>Sadržaj</strong>
+  <ul>
+    <li><a href="#pre">1. Šta vam treba pre početka</a></li>
+    <li><a href="#instalacija">2. Instalacija</a></li>
+    <li><a href="#smartscreen">3. Upozorenje koje ćete videti pri prvom pokretanju</a></li>
+    <li><a href="#antivirus">4. Ako antivirus stavi program u karantin</a></li>
+    <li><a href="#prvi">5. Prvi potpis, korak po korak</a></li>
+    <li><a href="#gde">6. Gde su potpisani dokumenti</a></li>
+    <li><a href="#dnevnik">7. Dnevnik revizije</a></li>
+    <li><a href="#podesavanja">8. Podešavanja</a></li>
+    <li><a href="#problemi">9. Ako nešto ne radi</a></li>
+    <li><a href="#uklanjanje">10. Uklanjanje programa</a></li>
+  </ul>
+</div>
+
+<p>Liro Bridge je mali program koji stoji na vašem računaru. Dokument koji
+potpisujete <strong>ne odlazi nigde</strong> — ni na internet, ni nama.
+Privatni ključ nikada ne napušta karticu, a nijedan potpis se ne pravi
+bez vašeg klika.</p>
+
+<h2 id="pre">1. Šta vam treba pre početka</h2>
+
+<p>Liro Bridge ne razgovara sa karticom direktno. To radi
+<em>middleware</em> — program koji ste dobili uz sertifikat. Ako on nije
+instaliran, Windows neće videti karticu, pa je neće videti ni Liro
+Bridge.</p>
+
+<table>
+  <tr><th>Izdavalac sertifikata</th><th>Šta mora biti instalirano</th></tr>
+  <tr><td>MUP (lična karta sa čipom)</td><td>čitač kartica + <strong>TrustEdgeID</strong> (NetSeT)</td></tr>
+  <tr><td>Pošta Srbije</td><td>čitač kartica + <strong>TrustEdgeID</strong> (NetSeT)</td></tr>
+  <tr><td>Halcom</td><td>čitač ili USB token + <strong>Nexus Personal</strong></td></tr>
+</table>
+
+<p>Uz to vam treba Windows 10 ili 11, 64-bitni.</p>
+
+<div class="note">
+<p><strong>Kako da proverite da Windows vidi vašu karticu.</strong>
+Ubacite karticu, otvorite <em>Upravljač uređajima</em> (Device Manager) i
+pogledajte grupu <em>Smart card readers</em>. Ako je čitač tu i nema žutog
+znaka pored njega, hardver je u redu. Ako Liro Bridge i posle toga kaže da
+nema sertifikata, najverovatnije nedostaje middleware iz tabele gore.</p>
+</div>
+
+<h2 id="instalacija">2. Instalacija</h2>
+
+<ol>
+  <li>Otvorite stranicu izdanja i preuzmite fajl čije se ime završava na
+    <span class="path">-x64.msi</span>.</li>
+  <li>Dvaput kliknite na preuzeti fajl.</li>
+  <li>Instalacija traje nekoliko sekundi i <strong>ne traži administratorska
+    prava</strong> — ne pojavljuje se plavi prozor koji pita „Da li dozvoljavate
+    ovoj aplikaciji da menja vaš uređaj?“.</li>
+</ol>
+
+<p>Program se instalira u vaš korisnički profil, u
+<span class="path">%LOCALAPPDATA%\Programs\Liro Bridge</span>, a u Start
+meniju dobijate <em>Liro Bridge</em> i <em>Liro Bridge — uputstvo</em>
+(ovaj tekst).</p>
+
+<div class="note">
+<p>Postoji i fajl sa <span class="path">-per-machine.msi</span> na kraju
+imena. On instalira program za sve korisnike računara, traži
+administratorska prava i namenjen je administratorima koji ga postavljaju
+kroz Group Policy. Ako instalirate sami za sebe, <strong>ne treba vam</strong>.</p>
+</div>
+
+<h2 id="smartscreen">3. Upozorenje koje ćete videti pri prvom pokretanju</h2>
+
+<p>Windows će pri prvom pokretanju prikazati plavo upozorenje
+<strong>„Windows protected your PC“</strong> („Windows je zaštitio vaš
+računar“). To je očekivano i nije znak da nešto nije u redu.</p>
+
+<p>Razlog je jednostavan: da bi Windows prepoznao program kao poznat,
+izdavač mora da kupi sertifikat za potpisivanje programa. Liro Bridge ga
+za sada nema. Dok ga ne bude, ovo upozorenje se pojavljuje svakome ko
+pokrene program prvi put.</p>
+
+<p><strong>Šta da kliknete:</strong></p>
+<ol>
+  <li>U upozorenju kliknite na <strong>More info</strong> („Više
+    informacija“). Tekst se proširi i prikaže ime fajla.</li>
+  <li>Pojaviće se dugme <strong>Run anyway</strong> („Svejedno
+    pokreni“). Kliknite na njega.</li>
+</ol>
+
+<p>Upozorenje se posle toga više ne pojavljuje za tu verziju programa.</p>
+
+<div class="warn">
+<p><strong>Pre nego što kliknete „Run anyway“ — proverite odakle je fajl.</strong>
+Ovo upozorenje postoji sa razlogom i ne treba ga preskakati iz navike.
+Kliknite ga samo ako ste fajl preuzeli sa zvanične stranice izdanja.
+Ako vam je neko poslao instalaciju mejlom ili porukom, nemojte je
+pokretati — preuzmite je sami.</p>
+</div>
+
+<h2 id="antivirus">4. Ako antivirus stavi program u karantin</h2>
+
+<p>Neki antivirusni programi prijave Liro Bridge kao sumnjiv. To je
+pogrešna uzbuna („false positive“) i ima prepoznatljiv uzrok: program nije
+potpisan sertifikatom izdavača (vidi odeljak 3), razgovara sa čitačem
+pametnih kartica i otvara lokalni port na vašem računaru. Taj skup
+osobina ima i poneki zlonamerni program, pa ga automatika ponekad
+pomeša.</p>
+
+<p>Šta možete da uradite:</p>
+<ol>
+  <li><strong>Prvo proverite da je fajl zaista naš.</strong> Na stranici
+    izdanja stoji SHA-256 otisak svakog fajla. U PowerShell-u pokrenite:
+    <br><code>Get-FileHash -Algorithm SHA256 putanja\do\fajla.msi</code>
+    <br>i uporedite ispisani niz sa onim na stranici. Ako se razlikuju,
+    <strong>nemojte</strong> praviti izuzetak — fajl nije onaj koji smo
+    objavili.</li>
+  <li>Ako se poklapaju, dodajte izuzetak u antivirusu za fasciklu
+    <span class="path">%LOCALAPPDATA%\Programs\Liro Bridge</span>.</li>
+  <li>Prijavite pogrešnu uzbunu proizvođaču antivirusa. Skoro svi imaju
+    formular za to i to je jedini način da problem nestane za sve
+    ostale.</li>
+</ol>
+
+<p>Ako ne znate kako da napravite izuzetak, a program vam je potreban
+danas, pitajte osobu koja održava računare u vašoj firmi. Nemojte gasiti
+antivirus.</p>
+
+<h2 id="prvi">5. Prvi potpis, korak po korak</h2>
+
+<p>Ubacite karticu u čitač i pokrenite <em>Liro Bridge</em> iz Start
+menija.</p>
+
+<h3>Korak 1 — izaberite dokumente</h3>
+
+<figure>
+  <img src="slike/01-dokumenti-prazno.png" alt="Prozor Liro Bridge-a sa isprekidanim okvirom i natpisom „Prevucite PDF dokumente ovde“.">
+  <figcaption>Prozor kakav vas dočeka.</figcaption>
+</figure>
+
+<p>Prevucite PDF dokumente u okvir, ili kliknite <strong>Izaberi…</strong>
+pa ih pronađite. Možete prevući i celu fasciklu — program uzima PDF-ove
+koji su u njoj.</p>
+
+<figure>
+  <img src="slike/02-dokumenti.png" alt="Spisak od tri dokumenta sa imenima i veličinama, i aktivno dugme Dalje.">
+  <figcaption>Tri dokumenta spremna za potpisivanje. Kliknite <strong>Dalje</strong>.</figcaption>
+</figure>
+
+<h3>Korak 2 — izaberite sertifikat i odobrite</h3>
+
+<figure>
+  <img src="slike/03-sertifikat.png" alt="Spisak sertifikata sa imenom vlasnika, izdavaocem i poslednjim ciframa otiska; dugmad Otkaži i Odobri.">
+  <figcaption>Kliknite na red sa svojim sertifikatom, pa na <strong>Odobri</strong>.</figcaption>
+</figure>
+
+<p>Dugme <em>Odobri</em> je isključeno dok ne izaberete sertifikat. To je
+namerno: potpis se pravi samo posle vašeg svesnog izbora.</p>
+
+<p>Ako vas zanima šta se tačno potpisuje, otvorite <strong>Detalji</strong>
+— tu su imena svih dokumenata i otisak cele grupe.</p>
+
+<h3>Korak 3 — izaberite kako potpis izgleda</h3>
+
+<figure>
+  <img src="slike/04-metod.png" alt="Tri opcije: potpis sa izborom pozicije, potpis u zadatom uglu, i potpis bez vizuelnog prikaza.">
+  <figcaption>Tri mogućnosti. Izaberite jednu i kliknite <strong>Potpiši</strong>.</figcaption>
+</figure>
+
+<table>
+  <tr><td><strong>Potpiši birajući poziciju potpisa</strong></td>
+      <td>Otvara se strana dokumenta pa pečat prevučete tamo gde treba. Pozicija se pamti za sledeći put.</td></tr>
+  <tr><td><strong>Potpiši sa definisanim pozicijama</strong></td>
+      <td>Pečat ide u ugao koji izaberete, na svakom dokumentu.</td></tr>
+  <tr><td><strong>Potpiši bez vizuelnog prikaza</strong></td>
+      <td>Na dokumentu se ne crta ništa. Potpis je i dalje potpuno važeći i svaki čitač PDF-a ga vidi — samo se ne vidi okom.</td></tr>
+</table>
+
+<h3>Korak 4 — unesite PIN</h3>
+
+<p>Posle klika na <em>Potpiši</em> Windows će tražiti PIN vaše kartice.
+<strong>Taj prozor je Windows-ov, a ne naš</strong> — Liro Bridge nikada
+ne vidi i ne čuva vaš PIN.</p>
+
+<div class="stop">
+<p><strong>Tri pogrešna PIN-a blokiraju karticu.</strong> Ako niste
+sigurni, prekinite i proverite PIN, nemojte pogađati. Odblokiranje traži
+PUK, a kod lične karte i odlazak na šalter MUP-a.</p>
+</div>
+
+<h3>Korak 5 — sačekajte</h3>
+
+<figure>
+  <img src="slike/05-napredak.png" alt="Natpis „Priprema kartice…“, traka napretka, i spisak dokumenata koji čekaju.">
+  <figcaption>Prvi potpis traje oko pet sekundi — kartica se priprema. Svaki sledeći je znatno brži.</figcaption>
+</figure>
+
+<p>Ako neki dokument ne uspe, program ga preskače i nastavlja dalje.
+Nećete morati da unosite PIN ponovo zbog jednog lošeg fajla.</p>
+
+<h3>Korak 6 — gotovo</h3>
+
+<figure>
+  <img src="slike/06-izvestaj.png" alt="Natpis „Završeno“, broj potpisanih dokumenata, fascikla u koju su sačuvani i nivo potpisa B-LT.">
+  <figcaption>Izveštaj kaže koliko je potpisano i gde je sačuvano. <strong>Otvori folder</strong> vas vodi pravo tamo.</figcaption>
+</figure>
+
+<div class="ok">
+<p><strong>Nivo potpisa</strong> na dnu izveštaja govori koliko je potpis
+„izdržljiv“ u vremenu:</p>
 <ul>
-  <li>SmartScreen upozorenje, sa slikom, i šta kliknuti</li>
-  <li>šta uraditi ako antivirus stavi program u karantin</li>
-  <li>čitač kartica i middleware, po izdavaocu sertifikata</li>
-  <li>prvi potpis, od početka do kraja, sa slikama</li>
-  <li>gde je dnevnik revizije i čemu služi</li>
-  <li>kako se program uklanja</li>
+  <li><strong>B-LT</strong> — potpis, vremenski žig i dokaz da sertifikat
+    u tom trenutku nije bio povučen. Ovo je ono što želite.</li>
+  <li><strong>B-T</strong> — potpis i vremenski žig.</li>
+  <li><strong>B-B</strong> — samo potpis, bez vremenskog žiga. Važeći je,
+    ali ne dokazuje <em>kada</em> je napravljen. Ako vidite ovo a očekivali
+    ste više, u <em>Podešavanjima</em> nije podešen izdavalac vremenskog
+    žiga, ili nije odgovorio.</li>
 </ul>
+</div>
 
-<p>Fajl postoji zato što ga <code>build/msi/build.ps1</code> ugrađuje u
-instalaciju i prečicu u Start meniju: prazna prečica je gora od
-nenapisanog uputstva, a nedostajući fajl bi zaustavio build.</p>
+<h2 id="gde">6. Gde su potpisani dokumenti</h2>
+
+<p>Podrazumevano, potpisani dokument se čuva <strong>pored originala</strong>,
+sa <span class="path">-signed</span> na kraju imena:
+<span class="path">Faktura 2026-114.pdf</span> postaje
+<span class="path">Faktura 2026-114-signed.pdf</span>.</p>
+
+<p><strong>Original se nikada ne menja i nikada se ne briše.</strong></p>
+
+<p>Ako želite sve na jedno mesto, u prvom koraku kliknite
+<strong>Promeni…</strong> pored <em>Sačuvaj potpisane u</em> i izaberite
+fasciklu. Klik na <em>Pored svakog dokumenta</em> vraća na
+podrazumevano.</p>
+
+<p>Ako fajl sa tim imenom već postoji, program vas pita šta da radi i nudi
+da sačuva pod imenom <span class="path">…-2.pdf</span>. Ništa se ne
+prepisuje bez vašeg odgovora.</p>
+
+<h2 id="dnevnik">7. Dnevnik revizije</h2>
+
+<figure>
+  <img src="slike/07-dnevnik.png" alt="Spisak stavki dnevnika: datum i vreme, broj dokumenata, i ishod potpisano ili otkazano.">
+  <figcaption>Otvara se desnim klikom na ikonicu programa pored sata → <em>Prikaži dnevnik revizije</em>.</figcaption>
+</figure>
+
+<p>Dnevnik beleži <strong>svaku</strong> grupu dokumenata koju ste
+potpisali ili odbili: kada, koliko dokumenata, kojim sertifikatom i sa
+kakvim ishodom.</p>
+
+<p>Čemu služi: ako vas neko za šest meseci pita da li ste i kada potpisali
+neki dokument, ovo je odgovor. Stavke su ulančane kriptografskim otiscima,
+pa se nijedna ne može naknadno izmeniti ili ukloniti a da to ne bude
+vidljivo.</p>
+
+<p><strong>Dnevnik ne napušta vaš računar.</strong> U programu ne postoji
+način da se pošalje bilo kome. Nalazi se u
+<span class="path">%LOCALAPPDATA%\Liro\audit</span>, a dugme
+<strong>Izvezi</strong> pravi kopiju u fascikli koju izaberete, zajedno sa
+izveštajem o proveri ispravnosti.</p>
+
+<div class="note">
+<p>U dnevniku <strong>nema</strong> imena dokumenata, ličnih imena, JMBG-a
+ni sadržaja dokumenata. Sertifikat je zapisan otiskom, a ne imenom
+vlasnika.</p>
+</div>
+
+<h2 id="podesavanja">8. Podešavanja</h2>
+
+<figure>
+  <img src="slike/08-podesavanja.png" alt="Prozor sa podešavanjima: jezik, pokretanje uz Windows, izdavalac vremenskog žiga, nivo potpisa i nastavak imena.">
+  <figcaption>Desni klik na ikonicu pored sata → <em>Podešavanja</em>.</figcaption>
+</figure>
+
+<p>Ono što ćete najverovatnije menjati:</p>
+
+<table>
+  <tr><td><strong>Jezik</strong></td><td>srpski (latinica), srpski (ćirilica) ili engleski.</td></tr>
+  <tr><td><strong>Pokreni uz Windows</strong></td><td>program je spreman čim se prijavite.</td></tr>
+  <tr><td><strong>Izdavalac vremenskog žiga</strong></td><td>bez njega potpis ostaje na nivou B-B. Za neke izdavaoce je potreban ugovor i klijentski sertifikat.</td></tr>
+  <tr><td><strong>Nivo potpisa</strong></td><td>B-LT je podrazumevan i preporučen.</td></tr>
+  <tr><td><strong>Nastavak imena</strong></td><td><span class="path">-signed</span> ako ništa ne promenite.</td></tr>
+</table>
+
+<h2 id="problemi">9. Ako nešto ne radi</h2>
+
+<h3>Kliknem na program i ništa se ne dešava</h3>
+<p>Najčešći uzrok je da na računaru nedostaje <strong>WebView2</strong> —
+komponenta koju Liro Bridge koristi da nacrta svoje prozore. Windows 11 je
+ima ugrađenu; poneki Windows 10, naročito ako je odsečen od interneta
+pravilima firme, nema.</p>
+<p>Program će vam to reći porukom. Rešenje je instalirati
+<em>Microsoft Edge WebView2 Runtime</em> — besplatan je i dolazi od
+Microsofta. Ako nemate prava da instalirate programe, ovo je stvar za
+osobu koja održava računare.</p>
+
+<h3>„Nije pronađen nijedan čitač kartica“</h3>
+<p>Čitač nije priključen, ili ga Windows ne vidi. Izvucite ga i vratite u
+drugi USB port, pa proverite u <em>Upravljaču uređajima</em> (odeljak 1).</p>
+
+<h3>„Ubacite karticu u čitač“</h3>
+<p>Čitač je tu, kartica nije — ili nije do kraja ubačena. Kod USB tokena
+proverite da lampica svetli.</p>
+
+<h3>„Windows servis za pametne kartice nije pokrenut“</h3>
+<p>Windows-ov servis <em>Smart Card</em> je zaustavljen. Najbrže rešenje je
+ponovo pokrenuti računar. Ako se ponavlja, recite to osobi koja održava
+računare — servis je podešen da se ne pokreće sam.</p>
+
+<h3>„Na ovoj kartici nije pronađen sertifikat za potpisivanje“</h3>
+<p>Kartica se vidi, ali na njoj nema sertifikata kojim se sme potpisivati.
+Najčešće nedostaje middleware iz tabele u odeljku 1. Vredi proveriti i da
+sertifikat nije istekao.</p>
+
+<h3>Potpisao sam, ali na dokumentu ne vidim ništa</h3>
+<p>Verovatno je izabrano <em>Potpiši bez vizuelnog prikaza</em> (korak 3).
+Dokument <strong>jeste</strong> potpisan — otvorite ga u Adobe Readeru i
+videćete traku o potpisu na vrhu. Ako želite vidljiv pečat, potpišite
+original ponovo i izaberite jednu od prve dve mogućnosti.</p>
+
+<h3>Adobe Reader kaže da identitet potpisnika nije poznat</h3>
+<p>Za dokumente potpisane sertifikatom MUP-a to je očekivano i nije greška
+u dokumentu: Adobe u svom spisku poverenja nema MUP-ovo telo za
+sertifikaciju. Potpis je i dalje ispravan. Državni portal eUprava i
+kvalifikovani validacioni servisi u Srbiji ga prihvataju.</p>
+
+<h2 id="uklanjanje">10. Uklanjanje programa</h2>
+
+<ol>
+  <li>Otvorite <em>Podešavanja</em> Windows-a → <em>Aplikacije</em> →
+    <em>Instalirane aplikacije</em>.</li>
+  <li>Pronađite <strong>Liro Bridge</strong>, kliknite na tri tačke pa na
+    <em>Deinstaliraj</em>.</li>
+</ol>
+
+<p>Uklanjaju se program, prečice, stavka u desnom kliku na PDF i
+pokretanje uz Windows.</p>
+
+<div class="ok">
+<p><strong>Dnevnik revizije i vaša podešavanja ostaju.</strong> Dnevnik je
+zapis o tome šta ste potpisali i nadživljava program koji ga je napisao —
+brisanje programa ne sme da obriše dokaz. Ostaje u
+<span class="path">%LOCALAPPDATA%\Liro</span>. Ako zaista želite i to da
+uklonite, obrišite tu fasciklu ručno, posle deinstalacije.</p>
+</div>
+
+<p>Potpisani dokumenti se, naravno, ne diraju.</p>
+
+<footer>
+<p>Liro Bridge je slobodan softver otvorenog koda. Verziju koju imate
+pokazuje <em>Podešavanja</em>, a ista se ispisuje komandom
+<code>liro-bridge --version</code>.</p>
+<p>Ovo uputstvo je izvorni tekst; <a href="Guide.html">engleska verzija</a>
+je prevod. Ako se u nečemu razlikuju, važi ono što piše ovde.</p>
+</footer>
+
 </body>
 </html>

@@ -17254,3 +17254,99 @@ property changed should look like.
   is one no stranger will ever see. The install that matters is the one
   on a machine with a card in it.
 
+---
+
+## D-242 — The guide is Serbian and English from one set of screenshots; the Serbian is the original and the English says so on its own first screen
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Decision.** Two documents, `docs/guide/Uputstvo.html` (`sr-Latn`) and
+`docs/guide/Guide.html` (`en`), one folder of screenshots
+(`docs/guide/slike`) referenced by both, and both installed beside the
+program.
+
+**Which is authoritative: the Serbian one.** It is the original text;
+the English is a translation of it. That is stated in three places —
+this entry, a note at the top of the English document, and the footer of
+each — because a reader who only ever opens one of them is the reader
+the statement is for.
+
+The reason is not that Serbian is the default locale (SPEC §9.1), though
+it is. It is who the document is for. Every person this guide describes
+holds a Serbian qualified certificate, from MUP, Pošta Srbije or Halcom,
+and reads a Windows in Serbian. The English document exists for a
+developer, an administrator deploying by Group Policy, or somebody whose
+Windows is in English — a real audience, and the second one. When a
+sentence has to be got exactly right, it gets got right in the language
+of the person who is going to act on it.
+
+**`sr-Cyrl` is not a third document, and that is a departure from SPEC
+§9.1.** The interface has three locales and the guide has two. The
+reason is that a screenshot set has a locale in it, and this one is
+`sr-Latn`: a Cyrillic document illustrated with Latin screenshots would
+be a document whose pictures contradict its text on every page, and
+three documents means three that drift. A Serbian reader who runs the
+interface in Cyrillic reads Latin without difficulty; the reverse
+direction — pictures in the wrong script — is the one that costs
+something. Recorded as a departure rather than presented as the obvious
+reading.
+
+**One screenshot set, and its locale is recorded because it is a fact
+about the artefact.** The screenshots are `sr-Latn`, which is the
+interface's own default, and they are referenced by both documents
+rather than duplicated. The owner's instruction is the reasoning: a
+dialog is a dialog in either language, and two sets are two sets to keep
+in step. The English document therefore shows Serbian windows and names
+the buttons in both — `Izaberi…` (Browse), `Odobri` (Approve) — which is
+what a person with a Serbian interface in front of them actually needs
+matched up.
+
+**Relative references rather than images embedded in the HTML.** A
+self-contained document would survive being emailed on its own, and it
+would mean the same eight pictures existing twice, regenerated twice,
+and the two drifting. The guide is installed beside its `slike` folder
+and opened from the Start menu shortcut, which is how it is read.
+
+**The build refuses rather than shipping a guide with holes in it.**
+`build.ps1` checks both documents and each of the eight images before
+WiX runs, and fails naming the missing file and the command that
+regenerates it. It also fails if the folder holds a picture the WiX
+source does not install, because the source names the eight explicitly
+and a ninth added to the folder alone would ship in neither package —
+a broken image discovered by a reader rather than by a build.
+
+**What is still missing from the guide, said plainly.** The SmartScreen
+warning is described in words, with what to click and a warning against
+clicking it out of habit, and **has no screenshot**. SPEC §15.1 and F10
+§6 both require one. Producing it means running an unsigned binary
+carrying a Mark-of-the-Web on the owner's own desktop so that Windows
+shows the dialog, which is a step outside this project's own files and
+windows and is therefore his to authorise. The section is written and
+the figure is the one thing outstanding.
+
+**Two WiX consequences, recorded because both were errors first.** The
+guide component now holds two files and the images component holds
+eight, and WiX refuses `Guid="*"` for a component with more than one
+file unless its keypath is a versioned file — an HTML document is not
+one. Both carry fixed GUIDs now, like every other authored component in
+the source. And the images live in their own `Directory` named `slike`,
+because that is the folder name the documents' own `img src` attributes
+use; the directory is removed on uninstall with the rest.
+
+**Rejected.**
+- **`sr-Latn` only.** F10 §6 leaves the choice open and the owner
+  settled it: English as well. An administrator deploying this by Group
+  Policy is not necessarily a Serbian speaker.
+- **All three SPEC §9.1 locales.** Above: a third document needs a third
+  screenshot set or it contradicts its own pictures.
+- **Two screenshot sets, one per language.** The owner's instruction,
+  and right: two sets drift, and the drift shows up as a picture that no
+  longer matches the words beside it.
+- **Embedding the images as data URIs.** Above.
+- **Making the English document the authoritative one** on the grounds
+  that the rest of this repository is English (SPEC §0). Rejected: SPEC
+  §0's rule is about code, comments and documentation for developers.
+  This is the one document in the project written for somebody who will
+  never read any of that, and it is written for a Serbian signer.
+

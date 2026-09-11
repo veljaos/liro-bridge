@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liro Bridge — user guide</title>
+<style>
+  :root {
+    --ink: #16211F;
+    --quiet: #5B6B68;
+    --brand: #0078D4;
+    --line: #DFE4E3;
+    --warn-bg: #FFF8E6;
+    --warn-line: #E8C86A;
+    --stop-bg: #FDEDED;
+    --stop-line: #E9A8A8;
+    --ok-bg: #EEF7F0;
+    --ok-line: #A9CFB4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto; padding: 32px 24px 96px; max-width: 46rem;
+    font: 16px/1.65 "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+    color: var(--ink); background: #fff;
+  }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 4px; }
+  h2 { font-size: 1.35rem; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+  p, li { margin: 10px 0; }
+  ol, ul { padding-left: 1.4rem; }
+  ol li { margin: 14px 0; }
+  .lead { color: var(--quiet); font-size: 1.05rem; margin-bottom: 28px; }
+  a { color: var(--brand); }
+  code, .path {
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 0.92em;
+    background: #F4F6F6; padding: 1px 5px; border-radius: 3px;
+    overflow-wrap: anywhere;
+  }
+  figure { margin: 20px 0 24px; }
+  figure img {
+    display: block; max-width: 100%; height: auto;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  figcaption { color: var(--quiet); font-size: 0.9rem; margin-top: 8px; }
+  .note, .warn, .stop, .ok {
+    border-left: 4px solid var(--line); background: #F7F9F9;
+    padding: 12px 16px; margin: 20px 0; border-radius: 0 6px 6px 0;
+  }
+  .warn { background: var(--warn-bg); border-left-color: var(--warn-line); }
+  .stop { background: var(--stop-bg); border-left-color: var(--stop-line); }
+  .ok   { background: var(--ok-bg);   border-left-color: var(--ok-line); }
+  .note p:first-child, .warn p:first-child, .stop p:first-child, .ok p:first-child { margin-top: 0; }
+  .note p:last-child, .warn p:last-child, .stop p:last-child, .ok p:last-child { margin-bottom: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 18px 0; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; }
+  .lang { float: right; font-size: 0.9rem; }
+  .toc { background: #F7F9F9; border-radius: 8px; padding: 14px 20px; margin: 28px 0 8px; }
+  .toc ul { margin: 6px 0; }
+  .toc li { margin: 4px 0; }
+  footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--quiet); font-size: 0.9rem; }
+  @media print { .toc, .lang { display: none; } h2 { page-break-before: auto; } figure { page-break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<p class="lang"><a href="Uputstvo.html">Srpski</a></p>
+<h1>Liro Bridge</h1>
+<p class="lead">How to sign PDF documents with the qualified electronic
+certificate on your smart card or USB token.</p>
+
+<div class="note">
+<p>The Serbian text is the original. Where the two disagree,
+<a href="Uputstvo.html">Uputstvo.html</a> is the one that is right.</p>
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#before">1. What you need first</a></li>
+    <li><a href="#install">2. Installing</a></li>
+    <li><a href="#smartscreen">3. The warning you will see the first time</a></li>
+    <li><a href="#antivirus">4. If your antivirus quarantines it</a></li>
+    <li><a href="#first">5. Your first signature, step by step</a></li>
+    <li><a href="#where">6. Where the signed documents go</a></li>
+    <li><a href="#audit">7. The audit log</a></li>
+    <li><a href="#settings">8. Settings</a></li>
+    <li><a href="#trouble">9. If something does not work</a></li>
+    <li><a href="#uninstall">10. Uninstalling</a></li>
+  </ul>
+</div>
+
+<p>Liro Bridge is a small program that sits on your own computer. The
+document you sign <strong>goes nowhere</strong> — not to the internet, not
+to us. The private key never leaves the card, and no signature is ever
+made without you clicking a button.</p>
+
+<h2 id="before">1. What you need first</h2>
+
+<p>Liro Bridge does not talk to your card directly. That is done by
+<em>middleware</em> — the program that came with your certificate. If it is
+not installed, Windows cannot see the card, so neither can Liro Bridge.</p>
+
+<table>
+  <tr><th>Certificate issuer</th><th>What must already be installed</th></tr>
+  <tr><td>MUP (Serbian ID card with a chip)</td><td>a card reader + <strong>TrustEdgeID</strong> (NetSeT)</td></tr>
+  <tr><td>Pošta Srbije</td><td>a card reader + <strong>TrustEdgeID</strong> (NetSeT)</td></tr>
+  <tr><td>Halcom</td><td>a reader or USB token + <strong>Nexus Personal</strong></td></tr>
+</table>
+
+<p>Beyond that you need 64-bit Windows 10 or 11.</p>
+
+<div class="note">
+<p><strong>How to check that Windows sees your card.</strong> Insert the
+card, open <em>Device Manager</em> and look under <em>Smart card
+readers</em>. If the reader is listed with no yellow mark beside it, the
+hardware is fine. If Liro Bridge still finds no certificate, the
+middleware from the table above is what is most likely missing.</p>
+</div>
+
+<h2 id="install">2. Installing</h2>
+
+<ol>
+  <li>Open the releases page and download the file whose name ends in
+    <span class="path">-x64.msi</span>.</li>
+  <li>Double-click the downloaded file.</li>
+  <li>It takes a few seconds and <strong>does not ask for administrator
+    rights</strong> — no blue window appears asking whether you want to
+    allow this app to make changes to your device.</li>
+</ol>
+
+<p>The program installs into your own user profile, at
+<span class="path">%LOCALAPPDATA%\Programs\Liro Bridge</span>, and the
+Start menu gets <em>Liro Bridge</em> and <em>Liro Bridge — uputstvo</em>
+(this guide).</p>
+
+<div class="note">
+<p>There is also a file ending in <span class="path">-per-machine.msi</span>.
+That one installs for every user of the computer, does need administrator
+rights, and exists for administrators deploying it through Group Policy.
+If you are installing for yourself, <strong>you do not want it</strong>.</p>
+</div>
+
+<h2 id="smartscreen">3. The warning you will see the first time</h2>
+
+<p>The first time you run it, Windows shows a blue warning that says
+<strong>“Windows protected your PC”</strong>. This is expected and is not a
+sign that anything is wrong.</p>
+
+<p>The reason is simple: for Windows to recognise a program as known, its
+publisher has to buy a code-signing certificate. Liro Bridge does not have
+one yet. Until it does, this warning appears for everybody the first time
+they run it.</p>
+
+<p><strong>What to click:</strong></p>
+<ol>
+  <li>In the warning, click <strong>More info</strong>. The text expands
+    and shows the file name.</li>
+  <li>A <strong>Run anyway</strong> button appears. Click it.</li>
+</ol>
+
+<p>The warning does not come back for that version of the program.</p>
+
+<div class="warn">
+<p><strong>Before you click “Run anyway”, check where the file came from.</strong>
+This warning exists for a reason and is not one to click through out of
+habit. Only click it if you downloaded the file from the official
+releases page yourself. If somebody sent you an installer by email or
+chat, do not run it — go and download it yourself.</p>
+</div>
+
+<h2 id="antivirus">4. If your antivirus quarantines it</h2>
+
+<p>Some antivirus products flag Liro Bridge as suspicious. This is a false
+positive, and it has a recognisable cause: the program is not signed by a
+publisher certificate (see section 3), it talks to a smart card reader,
+and it opens a local port on your machine. Some malware has that same set
+of traits, so automated scanners sometimes confuse the two.</p>
+
+<p>What to do:</p>
+<ol>
+  <li><strong>First check the file really is ours.</strong> The releases
+    page lists a SHA-256 digest for every file. In PowerShell run:
+    <br><code>Get-FileHash -Algorithm SHA256 path\to\file.msi</code>
+    <br>and compare what it prints with what the page says. If they
+    differ, <strong>do not</strong> add an exception — that file is not
+    the one we published.</li>
+  <li>If they match, add an antivirus exception for the folder
+    <span class="path">%LOCALAPPDATA%\Programs\Liro Bridge</span>.</li>
+  <li>Report the false positive to the antivirus vendor. Almost all of
+    them have a form for it, and it is the only thing that makes the
+    problem go away for everybody else.</li>
+</ol>
+
+<p>If you do not know how to add an exception and you need the program
+today, ask whoever looks after the computers where you work. Do not turn
+the antivirus off.</p>
+
+<h2 id="first">5. Your first signature, step by step</h2>
+
+<p>Put the card in the reader and start <em>Liro Bridge</em> from the
+Start menu.</p>
+
+<h3>Step 1 — choose the documents</h3>
+
+<figure>
+  <img src="slike/01-dokumenti-prazno.png" alt="The Liro Bridge window with a dashed drop area reading “Prevucite PDF dokumente ovde”.">
+  <figcaption>The window as it greets you.</figcaption>
+</figure>
+
+<p>Drag PDF documents onto the area, or click <strong>Izaberi…</strong>
+(Browse) and find them. You can drag a whole folder — the program takes
+the PDFs inside it.</p>
+
+<figure>
+  <img src="slike/02-dokumenti.png" alt="A list of three documents with names and sizes, and an enabled Dalje button.">
+  <figcaption>Three documents ready. Click <strong>Dalje</strong> (Next).</figcaption>
+</figure>
+
+<h3>Step 2 — choose your certificate and approve</h3>
+
+<figure>
+  <img src="slike/03-sertifikat.png" alt="A certificate list showing the holder's name, the issuer and the last characters of the thumbprint, with Cancel and Approve buttons.">
+  <figcaption>Click the row with your certificate, then <strong>Odobri</strong> (Approve).</figcaption>
+</figure>
+
+<p><em>Odobri</em> stays disabled until you have chosen a certificate. That
+is deliberate: a signature is only ever made after a choice you made on
+purpose.</p>
+
+<p>If you want to see exactly what is being signed, open
+<strong>Detalji</strong> (Details) — it lists every document name and a
+fingerprint of the whole batch.</p>
+
+<h3>Step 3 — choose what the signature looks like</h3>
+
+<figure>
+  <img src="slike/04-metod.png" alt="Three options: sign by choosing a position, sign in a fixed corner, and sign with no visible mark.">
+  <figcaption>Three choices. Pick one and click <strong>Potpiši</strong> (Sign).</figcaption>
+</figure>
+
+<table>
+  <tr><td><strong>Potpiši birajući poziciju potpisa</strong><br>Sign, choosing where it goes</td>
+      <td>A page of the document opens and you drag the stamp where it belongs. The position is remembered for next time.</td></tr>
+  <tr><td><strong>Potpiši sa definisanim pozicijama</strong><br>Sign in a fixed corner</td>
+      <td>The stamp goes in the corner you pick, on every document.</td></tr>
+  <tr><td><strong>Potpiši bez vizuelnog prikaza</strong><br>Sign with no visible mark</td>
+      <td>Nothing is drawn on the page. The signature is still completely valid and every PDF reader can see it — you just cannot.</td></tr>
+</table>
+
+<h3>Step 4 — enter your PIN</h3>
+
+<p>After you click <em>Potpiši</em>, Windows asks for your card's PIN.
+<strong>That window is Windows's own, not ours</strong> — Liro Bridge
+never sees or stores your PIN.</p>
+
+<div class="stop">
+<p><strong>Three wrong PINs block the card.</strong> If you are not sure,
+stop and check rather than guessing. Unblocking needs the PUK, and for a
+national ID card, a visit to a MUP counter.</p>
+</div>
+
+<h3>Step 5 — wait</h3>
+
+<figure>
+  <img src="slike/05-napredak.png" alt="“Priprema kartice…”, a progress bar, and the list of documents waiting.">
+  <figcaption>The first signature takes about five seconds while the card gets ready. Every one after it is much faster.</figcaption>
+</figure>
+
+<p>If one document fails, the program skips it and carries on. You will
+not have to enter your PIN again because of one bad file.</p>
+
+<h3>Step 6 — done</h3>
+
+<figure>
+  <img src="slike/06-izvestaj.png" alt="“Završeno”, the number of documents signed, the folder they were saved in, and the signature level B-LT.">
+  <figcaption>The report says how many were signed and where they went. <strong>Otvori folder</strong> takes you straight there.</figcaption>
+</figure>
+
+<div class="ok">
+<p><strong>The signature level</strong> at the bottom says how well the
+signature will hold up over time:</p>
+<ul>
+  <li><strong>B-LT</strong> — signature, timestamp, and proof that the
+    certificate was not revoked at the time. This is what you want.</li>
+  <li><strong>B-T</strong> — signature and timestamp.</li>
+  <li><strong>B-B</strong> — signature only, no timestamp. Still valid,
+    but it does not prove <em>when</em> it was made. If you see this and
+    expected more, no timestamp authority is configured in
+    <em>Settings</em>, or the one that is did not answer.</li>
+</ul>
+</div>
+
+<h2 id="where">6. Where the signed documents go</h2>
+
+<p>By default the signed document is saved <strong>next to the
+original</strong>, with <span class="path">-signed</span> added to the
+name: <span class="path">Faktura 2026-114.pdf</span> becomes
+<span class="path">Faktura 2026-114-signed.pdf</span>.</p>
+
+<p><strong>The original is never changed and never deleted.</strong></p>
+
+<p>If you would rather have them all in one place, click
+<strong>Promeni…</strong> (Change) beside <em>Sačuvaj potpisane u</em> on
+the first screen and pick a folder. <em>Pored svakog dokumenta</em> puts
+it back to the default.</p>
+
+<p>If a file with that name already exists, the program asks what to do
+and offers to save as <span class="path">…-2.pdf</span>. Nothing is
+overwritten without your answer.</p>
+
+<h2 id="audit">7. The audit log</h2>
+
+<figure>
+  <img src="slike/07-dnevnik.png" alt="A list of log entries: date and time, number of documents, and the outcome, signed or cancelled.">
+  <figcaption>Right-click the program's icon near the clock → <em>Prikaži dnevnik revizije</em>.</figcaption>
+</figure>
+
+<p>The log records <strong>every</strong> batch you signed or refused:
+when, how many documents, with which certificate, and how it ended.</p>
+
+<p>What it is for: if somebody asks you in six months whether and when you
+signed something, this is the answer. Entries are chained together by
+cryptographic digests, so none of them can be altered or removed
+afterwards without it showing.</p>
+
+<p><strong>The log never leaves your computer.</strong> There is no way in
+the program to send it to anybody. It lives in
+<span class="path">%LOCALAPPDATA%\Liro\audit</span>, and
+<strong>Izvezi</strong> (Export) writes a copy to a folder you choose,
+together with a report on its integrity.</p>
+
+<div class="note">
+<p>The log contains <strong>no</strong> document names, personal names,
+national ID numbers or document contents. The certificate is recorded by
+its digest, not by its holder's name.</p>
+</div>
+
+<h2 id="settings">8. Settings</h2>
+
+<figure>
+  <img src="slike/08-podesavanja.png" alt="The settings window: language, start with Windows, timestamp authority, signature level and the name suffix.">
+  <figcaption>Right-click the icon near the clock → <em>Podešavanja</em>.</figcaption>
+</figure>
+
+<p>What you are most likely to change:</p>
+
+<table>
+  <tr><td><strong>Jezik</strong> — Language</td><td>Serbian (Latin), Serbian (Cyrillic) or English.</td></tr>
+  <tr><td><strong>Pokreni uz Windows</strong> — Start with Windows</td><td>ready as soon as you sign in.</td></tr>
+  <tr><td><strong>Izdavalac vremenskog žiga</strong> — Timestamp authority</td><td>without one, signatures stay at B-B. Some authorities need a contract and a client certificate.</td></tr>
+  <tr><td><strong>Nivo potpisa</strong> — Signature level</td><td>B-LT is the default and the recommended one.</td></tr>
+  <tr><td><strong>Nastavak imena</strong> — Name suffix</td><td><span class="path">-signed</span> unless you change it.</td></tr>
+</table>
+
+<h2 id="trouble">9. If something does not work</h2>
+
+<h3>I click the program and nothing happens</h3>
+<p>The usual cause is a missing <strong>WebView2</strong> — the component
+Liro Bridge uses to draw its windows. Windows 11 has it built in; some
+Windows 10 machines, especially ones kept off the internet by company
+policy, do not.</p>
+<p>The program tells you so in a message. The fix is to install the
+<em>Microsoft Edge WebView2 Runtime</em>, which is free and comes from
+Microsoft. If you are not allowed to install software, this one is for
+whoever looks after the computers.</p>
+
+<h3>“Nije pronađen nijedan čitač kartica” — no card reader found</h3>
+<p>The reader is not plugged in, or Windows cannot see it. Unplug it, try
+another USB port, and check Device Manager (section 1).</p>
+
+<h3>“Ubacite karticu u čitač” — insert your card</h3>
+<p>The reader is there and the card is not, or is not pushed all the way
+in. On a USB token, check that its light is on.</p>
+
+<h3>“Windows servis za pametne kartice nije pokrenut” — the Smart Card service is not running</h3>
+<p>Windows's own <em>Smart Card</em> service has stopped. Restarting the
+computer is the quickest fix. If it keeps happening, tell whoever looks
+after the computers — the service has been set not to start on its own.</p>
+
+<h3>“Na ovoj kartici nije pronađen sertifikat za potpisivanje”</h3>
+<p>The card is visible but carries no certificate that may be used for
+signing. Most often the middleware from section 1 is missing. It is also
+worth checking that the certificate has not expired.</p>
+
+<h3>I signed, but I cannot see anything on the document</h3>
+<p><em>Sign with no visible mark</em> was probably chosen at step 3. The
+document <strong>is</strong> signed — open it in Adobe Reader and you will
+see the signature bar across the top. If you want a visible stamp, sign
+the original again and pick one of the first two options.</p>
+
+<h3>Adobe Reader says the signer's identity is unknown</h3>
+<p>For documents signed with a MUP certificate this is expected and is not
+a fault in the document: Adobe's own trust list does not include MUP's
+certification authority. The signature is still valid. The Serbian
+eUprava portal and the qualified validation services in Serbia accept
+it.</p>
+
+<h2 id="uninstall">10. Uninstalling</h2>
+
+<ol>
+  <li>Open Windows <em>Settings</em> → <em>Apps</em> → <em>Installed
+    apps</em>.</li>
+  <li>Find <strong>Liro Bridge</strong>, click the three dots, then
+    <em>Uninstall</em>.</li>
+</ol>
+
+<p>That removes the program, its shortcuts, its entry in the right-click
+menu for PDFs, and its start-with-Windows setting.</p>
+
+<div class="ok">
+<p><strong>The audit log and your settings stay.</strong> The log is the
+record of what you signed and it outlives the program that wrote it —
+removing the program must not remove the evidence. It stays in
+<span class="path">%LOCALAPPDATA%\Liro</span>. If you really want it gone
+too, delete that folder by hand after uninstalling.</p>
+</div>
+
+<p>Your signed documents are of course left alone.</p>
+
+<footer>
+<p>Liro Bridge is free and open-source software. <em>Settings</em> shows
+the version you have, and <code>liro-bridge --version</code> prints the
+same thing.</p>
+<p>This is a translation. The <a href="Uputstvo.html">Serbian text</a> is
+the original, and where the two disagree it is the one that is right.</p>
+</footer>
+
+</body>
+</html>
