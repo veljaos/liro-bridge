@@ -135,7 +135,8 @@ try {
     # the folder without being added there would ship in neither.
     $expectedImages = @(
         "01-dokumenti-prazno.png", "02-dokumenti.png", "03-sertifikat.png", "04-metod.png",
-        "05-napredak.png", "06-izvestaj.png", "07-dnevnik.png", "08-podesavanja.png")
+        "05-napredak.png", "06-izvestaj.png", "07-dnevnik.png", "08-podesavanja.png",
+        "09-upozorenje-izdavac.png")
     foreach ($img in $expectedImages) {
         $p = Join-Path $guideImages $img
         if (-not (Test-Path $p)) {

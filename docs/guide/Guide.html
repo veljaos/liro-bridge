@@ -143,20 +143,46 @@ If you are installing for yourself, <strong>you do not want it</strong>.</p>
 
 <h2 id="smartscreen">3. The warning you will see the first time</h2>
 
-<p>The first time you run it, Windows shows a blue warning that says
-<strong>“Windows protected your PC”</strong>. This is expected and is not a
-sign that anything is wrong.</p>
+<p>The first time you run it, Windows shows a warning. This is expected
+and is not a sign that anything is wrong.</p>
 
 <p>The reason is simple: for Windows to recognise a program as known, its
 publisher has to buy a code-signing certificate. Liro Bridge does not have
-one yet. Until it does, this warning appears for everybody the first time
-they run it.</p>
+one yet. Until it does, everybody sees a warning the first time they run
+it.</p>
 
-<p><strong>What to click:</strong></p>
+<div class="note">
+<p><strong>The warning appears in whatever language your Windows is
+in</strong>, not the language of this program. The picture below is from
+an English Windows. The buttons are named in words here for that reason —
+read the button, do not go by where it sits in the picture.</p>
+</div>
+
+<h3>If it says “The publisher could not be verified”</h3>
+
+<figure>
+  <img src="slike/09-upozorenje-izdavac.png" alt="An “Open File - Security Warning” dialog: the publisher could not be verified, Publisher reads Unknown Publisher, with Run and Cancel buttons.">
+  <figcaption>This is what appears when you run the program from the folder you downloaded it into.</figcaption>
+</figure>
+
+<p>The <strong>Publisher</strong> line reads <strong>Unknown
+Publisher</strong>. That is accurate, and it is the line that should make
+you stop and check where the file came from — until programs are signed,
+Windows has nothing else it can put there.</p>
+
+<p>Click <strong>Run</strong>. <strong>Cancel</strong> stops.</p>
+
+<h3>If it says “Windows protected your PC”</h3>
+
+<p>If you downloaded the file with a browser, Windows may instead show a
+blue window headed <strong>“Windows protected your PC”</strong>. At first
+glance it offers only a <strong>Don't run</strong> button:</p>
+
 <ol>
-  <li>In the warning, click <strong>More info</strong>. The text expands
-    and shows the file name.</li>
-  <li>A <strong>Run anyway</strong> button appears. Click it.</li>
+  <li>Click <strong>More info</strong>. The text expands and shows the
+    file name and the publisher.</li>
+  <li>Only then does a <strong>Run anyway</strong> button appear. Click
+    it.</li>
 </ol>
 
 <p>The warning does not come back for that version of the program.</p>

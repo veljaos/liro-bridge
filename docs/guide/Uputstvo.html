@@ -139,20 +139,47 @@ kroz Group Policy. Ako instalirate sami za sebe, <strong>ne treba vam</strong>.<
 
 <h2 id="smartscreen">3. Upozorenje koje ćete videti pri prvom pokretanju</h2>
 
-<p>Windows će pri prvom pokretanju prikazati plavo upozorenje
-<strong>„Windows protected your PC“</strong> („Windows je zaštitio vaš
-računar“). To je očekivano i nije znak da nešto nije u redu.</p>
+<p>Windows će pri prvom pokretanju prikazati upozorenje. To je očekivano
+i nije znak da nešto nije u redu.</p>
 
 <p>Razlog je jednostavan: da bi Windows prepoznao program kao poznat,
-izdavač mora da kupi sertifikat za potpisivanje programa. Liro Bridge ga
-za sada nema. Dok ga ne bude, ovo upozorenje se pojavljuje svakome ko
-pokrene program prvi put.</p>
+izdavač mora da kupi sertifikat kojim se programi potpisuju. Liro Bridge
+ga za sada nema. Dok ga ne bude, upozorenje vidi svako ko program pokrene
+prvi put.</p>
 
-<p><strong>Šta da kliknete:</strong></p>
+<div class="note">
+<p><strong>Upozorenje je na jeziku vašeg Windows-a</strong>, a ne na
+jeziku ovog programa. Slika ispod je sa engleskog Windows-a. Zato su
+dugmad u tekstu imenovana i engleski i srpski — gledajte šta piše na
+dugmetu, ne gde stoji na slici.</p>
+</div>
+
+<h3>Ako piše „The publisher could not be verified“</h3>
+
+<figure>
+  <img src="slike/09-upozorenje-izdavac.png" alt="Prozor „Open File - Security Warning“: izdavač se ne može proveriti, Publisher piše Unknown Publisher, dugmad Run i Cancel.">
+  <figcaption>Ovo se pojavljuje kada program pokrenete iz fascikle u koju ste ga preuzeli.</figcaption>
+</figure>
+
+<p>U redu <strong>Publisher</strong> piše <strong>Unknown Publisher</strong>
+(„nepoznat izdavač“). To je tačno i to je ono što ovde treba da vas
+zaustavi i natera da proverite odakle vam fajl — dok programi nisu
+potpisani, Windows nema šta drugo da napiše.</p>
+
+<p>Kliknite <strong>Run</strong> („Pokreni“). <strong>Cancel</strong>
+(„Otkaži“) prekida.</p>
+
+<h3>Ako piše „Windows protected your PC“</h3>
+
+<p>Ako ste fajl preuzeli pretraživačem, Windows može umesto toga
+prikazati plavi prozor sa naslovom <strong>„Windows protected your PC“</strong>
+(„Windows je zaštitio vaš računar“). U njemu na prvi pogled postoji samo
+dugme <strong>Don't run</strong> („Ne pokreći“):</p>
+
 <ol>
-  <li>U upozorenju kliknite na <strong>More info</strong> („Više
-    informacija“). Tekst se proširi i prikaže ime fajla.</li>
-  <li>Pojaviće se dugme <strong>Run anyway</strong> („Svejedno
+  <li>Kliknite na <strong>More info</strong> („Više informacija“). Tekst
+    se proširi i prikaže ime fajla i izdavača.</li>
+  <li>Tek tada se pojavljuje dugme <strong>Run anyway</strong> („Svejedno
     pokreni“). Kliknite na njega.</li>
 </ol>
 

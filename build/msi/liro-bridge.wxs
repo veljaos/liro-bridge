@@ -268,7 +268,7 @@
 
     <DirectoryRef Id="GuideImagesFolder">
       <!--
-        One component for all eight, with the first as its keypath. They
+        One component for all nine, with the first as its keypath. They
         are installed and removed together and there is no case in which
         one of them is wanted without the others: a guide missing three
         of its pictures is not a state worth being able to reach.
@@ -282,6 +282,7 @@
         <File Id="GuideImg6" Name="06-izvestaj.png"         Source="$(var.GuideImagesDir)\06-izvestaj.png" />
         <File Id="GuideImg7" Name="07-dnevnik.png"          Source="$(var.GuideImagesDir)\07-dnevnik.png" />
         <File Id="GuideImg8" Name="08-podesavanja.png"      Source="$(var.GuideImagesDir)\08-podesavanja.png" />
+        <File Id="GuideImg9" Name="09-upozorenje-izdavac.png" Source="$(var.GuideImagesDir)\09-upozorenje-izdavac.png" />
         <RemoveFolder Id="RemoveGuideImagesFolder" Directory="GuideImagesFolder" On="uninstall" />
       </Component>
     </DirectoryRef>
