@@ -158,6 +158,41 @@ func TestThisBuildEmbedsTwoUsableReleaseKeys(t *testing.T) {
 	}
 }
 
+// Two generations of key material were discarded before the pair this
+// build embeds, and their public halves survive in this repository's
+// own history and in terminal output (D-238). Neither was ever trusted
+// by a released build, and the way to keep that true is to check it
+// rather than to rely on nobody reverting a file.
+//
+// The values below are public halves, so naming them costs nothing —
+// which is the whole reason this check can exist at all. Only the
+// first generation's are known: it is the pair this file carried
+// before the owner's own was pasted in, and it is recoverable from any
+// clone. The second generation produced single keys whose public
+// halves never reached this repository, so there is nothing here to
+// compare against — recorded so that a reader does not take the two
+// values below for the complete list.
+func TestNoDiscardedReleaseKeyIsTrustedByThisBuild(t *testing.T) {
+	// The first generation: an agent-generated pair, discarded because
+	// its provenance rested on a claim rather than on the owner having
+	// made it. See D-238.
+	discarded := map[string]string{
+		"first-generation primary": "DfVtjTl9lKSjZQB07a4dB6OcRIQPAuNGk0R9VDspvCk=",
+		"first-generation spare":   "BNiw9ruQH5nNAJdNyzeOygTZCytQxVstE3g0gP1z5BE=",
+	}
+	for role, b64 := range discarded {
+		raw, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			t.Fatalf("the %s constant in this test is not base64: %v", role, err)
+		}
+		for i, k := range TrustedKeys() {
+			if k.Equal(ed25519.PublicKey(raw)) {
+				t.Errorf("embedded key %d is the %s, which was discarded and must never be trusted", i, role)
+			}
+		}
+	}
+}
+
 // The private halves are not in this repository. Checked by searching
 // the tree rather than by asserting the intention, because the
 // intention is what is already written down and the search is what
