@@ -449,6 +449,83 @@ jobs:
         working-directory: sdk/typescript
         run: npm test
 
+  # The packaging build, on every push.
+  #
+  # Until this job existed, build/msi ran in exactly one place: the
+  # release workflow, on a tag. So the first thing a broken WiX source,
+  # a renamed asset or a missing file would break was a release — the
+  # one build where a failure costs the most and where nobody has time
+  # to read it. That is the same shape as a check that only runs where
+  # it was written (D-221), pointed at a build rather than at a test:
+  # this one only ran when it was most expensive to be wrong.
+  #
+  # It builds a development version deliberately. `-Version` is what a
+  # release stamps; omitting it exercises the other branch of every
+  # version decision in build.ps1 (the binary reports "dev", the MSIs
+  # are stamped 0.0.0), and it means this job can never be mistaken for
+  # a release or produce something that looks like one.
+  packaging:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Pinned by SHA-256 inside build.ps1, so a cache hit and a fresh
+      # download are the same bytes or the build fails. The cache is a
+      # saving, never a source of truth.
+      - name: cache the WiX toolset
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/Liro/build/wix314
+          key: wix314-${{ runner.os }}-6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31
+
+      - name: build the artefacts
+        shell: pwsh
+        run: ./build/msi/build.ps1 -Out dist/ci
+
+      # Inspecting what the build produced is not enough on its own —
+      # this project has recorded that four times (D-161, D-200, D-219,
+      # D-221) — but it is what a hosted runner can do: it has no
+      # reader, no card, and installing per-machine would need
+      # elevation. So this asserts the three things that are true of the
+      # artefacts themselves, and the report says plainly that a real
+      # install is verified by hand on a real machine, not here.
+      - name: the three artefacts are there and the binary runs
+        shell: bash
+        run: |
+          set -eu
+          for f in liro-bridge-dev-x64.msi liro-bridge-dev-x64-per-machine.msi liro-bridge-dev-x64.exe; do
+            test -s "dist/ci/$f" || { echo "::error::dist/ci/$f is missing or empty"; exit 1; }
+            printf '  %-44s %10d bytes\n' "$f" "$(stat -c%s "dist/ci/$f")"
+          done
+          got="$(./dist/ci/liro-bridge-dev-x64.exe --version)"
+          echo "$got"
+          case "$got" in
+            "liro-bridge dev "*) ;;
+            *) echo "::error::an unversioned build reports '$got', which should begin with 'liro-bridge dev'"; exit 1 ;;
+          esac
+
+      # An MSI that Windows Installer itself will not read is a file
+      # every ICE check in build.ps1 has already passed over, so the
+      # summary information stream is read here through the same COM
+      # interface the installer uses.
+      - name: Windows Installer can read both packages
+        shell: pwsh
+        run: |
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          foreach ($msi in Get-ChildItem dist/ci -Filter *.msi) {
+              $db = $installer.GetType().InvokeMember(
+                  "OpenDatabase", "InvokeMethod", $null, $installer, @($msi.FullName, 0))
+              $si = $db.GetType().InvokeMember("SummaryInformation", "GetProperty", $null, $db, @(0))
+              $subject  = $si.GetType().InvokeMember("Property", "GetProperty", $null, $si, @(3))
+              $template = $si.GetType().InvokeMember("Property", "GetProperty", $null, $si, @(7))
+              Write-Host ("{0,-44} {1} [{2}]" -f $msi.Name, $subject, $template)
+              if (-not $template) { throw "$($msi.Name) has no platform/language template" }
+          }
+
   # The TypeScript SDK. Its own job rather than steps on the ubuntu one,
   # because it needs Node rather than Go and because a red SDK should
   # say "SDK" rather than sending somebody to read a Go job's log.

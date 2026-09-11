@@ -393,12 +393,28 @@ func assertNameStartsInsideTheWindow(t *testing.T, win ui.Window, window, id str
 	if height <= 0 {
 		t.Fatalf("%s: #%s has no rendered height; nothing was measured", window, id)
 	}
-	if top < -0.5 {
-		t.Errorf("%s: #%s renders at %.0f..%.0f of a %.0f-point window — its first line is above the top",
+	// One whole CSS pixel, and the numbers are reported with their
+	// fractions rather than rounded. Both for the same reason, measured
+	// on this window: every box on this page has a fractional height —
+	// .identity 140.016, .field 87.969, .field-label 16.797,
+	// .field-value 67.172, .code-block 105.984, .pairing-code 47.594 —
+	// so an edge measured against an integer viewport sits on a
+	// boundary by construction, and half a pixel is below the
+	// granularity of the thing being compared.
+	//
+	// Rounding the numbers in the message is what made the F9b failure
+	// F10 §7 carries forward unreadable: "renders at 353..370 of 369"
+	// is what a 369.6 bottom edge looks like once %.0f has been applied
+	// to it, and it is indistinguishable from a real one-pixel overflow.
+	// A tolerance below the measurement's own precision produces
+	// failures nobody can act on; printing the fraction is what makes
+	// the next one diagnosable in one reading.
+	if top < -layoutEpsilon {
+		t.Errorf("%s: #%s renders at %.3f..%.3f of a %.3f-point window — its first line is above the top",
 			window, id, top, bottom, viewport)
 	}
-	if top > viewport+0.5 {
-		t.Errorf("%s: #%s renders at %.0f..%.0f of a %.0f-point window — it starts below the bottom",
+	if top > viewport+layoutEpsilon {
+		t.Errorf("%s: #%s renders at %.3f..%.3f of a %.3f-point window — it starts below the bottom",
 			window, id, top, bottom, viewport)
 	}
 }

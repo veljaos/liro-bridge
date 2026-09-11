@@ -138,10 +138,23 @@ func assertPageDoesNotScroll(t *testing.T, win ui.Window, window, scrollSelector
 	for _, el := range []string{"document.documentElement", "document.body"} {
 		box := evalNumbers(t, win, el+".scrollHeight", el+".clientHeight", el+".scrollWidth", el+".clientWidth")
 		scrollH, clientH, scrollW, clientW := box[0], box[1], box[2], box[3]
-		if scrollH > clientH {
+		// The same one-pixel tolerance the per-element check below has
+		// always had, and for the same reason: scrollHeight and
+		// clientHeight are rounded integers over a layout built from
+		// fractional boxes, so comparing them with > asserts a
+		// precision neither of them has.
+		//
+		// It costs nothing here. Measured on the pairing window by
+		// walking the viewport from 365 to 371: scrollHeight equals
+		// clientHeight at every height and the page cannot be scrolled
+		// by any amount at all, because `height: 100vh` and the one
+		// region that is allowed to shrink absorb the difference
+		// (D-106). The structure this guards against breaking would
+		// break by tens of pixels, never by one.
+		if scrollH-clientH > layoutEpsilon {
 			t.Errorf("%s: %s scrollHeight %v exceeds clientHeight %v — the page itself scrolls", window, el, scrollH, clientH)
 		}
-		if scrollW > clientW {
+		if scrollW-clientW > layoutEpsilon {
 			t.Errorf("%s: %s scrollWidth %v exceeds clientWidth %v — the page scrolls sideways", window, el, scrollW, clientW)
 		}
 	}
@@ -163,6 +176,30 @@ func assertPageDoesNotScroll(t *testing.T, win ui.Window, window, scrollSelector
 		t.Errorf("%s: a second scrollable region alongside %s: %s", window, scrollSelector, extra)
 	}
 }
+
+// layoutEpsilon is one whole CSS pixel, and it is the tolerance every
+// comparison between a rendered edge and a viewport in this package
+// uses. layoutEpsilonJS is the same number for the scripts that do the
+// comparing inside the page.
+//
+// One pixel rather than half of one because that is the granularity of
+// what is being compared. Measured on the pairing window: every box on
+// it has a fractional height — .identity 140.016, .field 87.969,
+// .field-label 16.797, .field-value 67.172, .code-block 105.984,
+// .pairing-code 47.594, .code-note 33.594 — so an edge lands on a
+// fraction and a viewport is an integer. A tolerance smaller than the
+// fractions actually present is a tolerance that fails on arithmetic
+// rather than on anything a person could see, which is F10 §7's
+// carried-over flake (see D-240).
+//
+// It is not a loosened assertion. Nothing this package guards against
+// — a button below the fold, a name scrolled off the top, a page that
+// scrolls when it must not — is ever wrong by one pixel; those are
+// wrong by tens.
+const (
+	layoutEpsilon   = 1.0
+	layoutEpsilonJS = "1.0"
+)
 
 // resizeAndSettle resizes win and returns once the page itself reports
 // the new viewport — never before, and never after a fixed wait.
@@ -215,8 +252,9 @@ func assertButtonsVisible(t *testing.T, win ui.Window, window, scrollSelector st
 		"if(b.offsetParent===null) return;" + // not on the visible screen
 		"if(b.closest(" + jsStringLiteral(scrollSelector) + ")) return;" +
 		"var r=b.getBoundingClientRect();" +
-		"if(r.bottom>window.innerHeight+0.5||r.top<-0.5||r.right>window.innerWidth+0.5||r.left<-0.5)" +
-		"bad.push(b.id+' at '+Math.round(r.top)+'..'+Math.round(r.bottom)+' of '+window.innerHeight);" +
+		"var e=" + layoutEpsilonJS + ";" +
+		"if(r.bottom>window.innerHeight+e||r.top<-e||r.right>window.innerWidth+e||r.left<-e)" +
+		"bad.push(b.id+' at '+r.top.toFixed(3)+'..'+r.bottom.toFixed(3)+' of '+window.innerHeight);" +
 		"});return bad.join('; ');})()"
 	if bad := evalString(t, win, script); bad != "" {
 		t.Errorf("%s: button(s) outside the window: %s", window, bad)

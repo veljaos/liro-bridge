@@ -17069,3 +17069,188 @@ to a repository secret.
   would refuse. The sign-and-verify round trip is already covered by
   `internal/update`'s own tests with generated keys.
 
+---
+
+## D-240 — The resize wait observes the resize; what failed by "one pixel" was a tolerance finer than the layout's own granularity, reported rounded
+
+**Date:** 2026-09-11
+**Phase:** F10 — carried over from F9b (F10 §7)
+
+**The question F10 §7 asks, answered first.** *Does the resize wait
+observe the resize or wait a fixed time?* **It observes.**
+`resizeAndSettle` calls `Window.Resize` and then reads
+`window.innerWidth`/`innerHeight` back out of the page in a loop until
+they are the size that was asked for. Each turn is a real round trip, so
+nothing spins, and the thirty-second deadline exists only to turn a
+window that never resizes at all into a failure rather than a hang. That
+is [[D-201]]'s own remedy and it is unchanged by this entry. **No
+timeout was raised and none needed to be.**
+
+**So the flake is not the resize.** Two measurements say so.
+
+*The page cannot overflow at all.* The pairing window's viewport was
+walked from 365 to 371 points with the 120-character name in place. At
+every height `document.body.scrollHeight` equals `clientHeight`, and the
+page cannot be scrolled by any amount — `scrollTop` set to 10⁶ comes
+back 0 at each one. `height: 100vh` and the one region allowed to shrink
+([[D-106]], [[D-202]]) absorb the whole difference; the identity block
+took it up point for point, 136.016 at 365 through 142.016 at 371. A
+page that structurally cannot scroll cannot fail a scroll assertion by
+one pixel.
+
+*Every box on that page is fractional.* Measured, same window:
+
+```
+.identity 140.016   .field 87.969    .field-label 16.797
+.field-value 67.172 .code-block 105.984
+.pairing-code 47.594  .code-note 33.594
+```
+
+So an edge lands on a fraction and a viewport is an integer, by
+construction, on every screen this project measures.
+
+**What was actually wrong, and it is two things.**
+
+*The tolerances were finer than the fractions in play.*
+`assertButtonsVisible` and `assertNameStartsInsideTheWindow` compared a
+rendered edge against the viewport with a **half**-pixel tolerance, on a
+layout whose boxes carry fractions up to `.984`. A tolerance below the
+granularity of the thing being compared fails on arithmetic rather than
+on anything a person could see. Both now use one whole CSS pixel, named
+once as `layoutEpsilon`, and `assertPageDoesNotScroll`'s page-level
+comparison gets the same one-pixel tolerance its own per-element check
+has had since it was written — the two sat in one function disagreeing
+about how precise `scrollHeight` is.
+
+*The failure was reported rounded, which is why it reads as one pixel.*
+`assertNameStartsInsideTheWindow` formatted every number with `%.0f` and
+`assertButtonsVisible` with `Math.round`. A bottom edge at 369.6 in a
+369-point window prints as "at 353..370 of 369" — indistinguishable from
+a real one-pixel overflow, and unactionable either way. Every one of
+these now prints three decimal places. **That is the half of this fix
+that matters most: it is why the F9b failure could not be diagnosed from
+its own message, and it is what makes the next one diagnosable in one
+reading.**
+
+**This is not an assertion being loosened.** Nothing these tests guard
+against — a button below the fold, a name scrolled off the top, a page
+that scrolls when it must not — is ever wrong by one pixel. [[D-202]]
+measured the real cases: `#app-name` at **−8**, `#connected-name` at
+**−53**, a page needing 354 in 330. Those are tens of pixels. A
+one-pixel tolerance does not reach any of them.
+
+**Not reproduced, and said plainly.** 25 consecutive runs of
+`TestALongApplicationNameStaysReadableInThePairingWindow` and
+`TestAnOrdinaryNameLeavesTheIdentityBlockUnscrolled` pass on this
+machine, which reports `devicePixelRatio` 1. The F9b occurrence was one
+run in an unknown number on an unknown display scale, and no record of
+its message survives beyond F10 §7's summary of it — which is itself the
+argument for the reporting change. What is established is which
+assertions in that test are structurally capable of a one-pixel failure
+and which are not; the fix is applied to the ones that are.
+
+**Rejected.**
+- **Raising a timeout.** Forbidden by F10 §7 and wrong regardless: the
+  wait already observes the property, so there is no duration in it to
+  raise.
+- **Leaving the half-pixel tolerances and re-running on failure.** That
+  is the habit F10 §7 exists to stop — "a test that fails one run in ten
+  becomes a release that fails one attempt in ten, and a suite people
+  learn to re-run instead of read".
+- **Removing the tolerance entirely and comparing fractional values
+  throughout.** There is no fractional `scrollHeight` in the DOM to
+  compare against; the number is rounded before any test can see it.
+- **Replacing the scroll comparison with an attempt to scroll the page
+  and see whether it moves.** It observes the property directly, which
+  is attractive, and it is weaker: an element with `overflow: hidden`
+  clips its content and cannot be scrolled, so the observation would
+  pass while content was being cut off. `scrollHeight` against
+  `clientHeight` catches clipping and scrolling both.
+- **Widening the windows so nothing is near a boundary.** [[D-106]]'s
+  standing answer: widening is not a fix, it is a delay.
+
+---
+
+## D-241 — The packaging build runs on every push, and what a hosted runner can and cannot say about an installer
+
+**Date:** 2026-09-11
+**Phase:** F10
+
+**Decision.** `.github/workflows/ci.yml` gains a `packaging` job on
+`windows-latest`: it runs `build/msi/build.ps1`, asserts the three
+artefacts exist and that the binary reports `dev`, and opens both MSIs
+through `WindowsInstaller.Installer` to confirm Windows Installer itself
+can read them.
+
+**Why.** Until now `build/msi` ran in exactly one place — the release
+workflow, on a tag. So the first thing a broken WiX source, a renamed
+asset or a missing file would break was a release: the one build where
+being wrong costs the most and where nobody has time to read the log.
+That is [[D-221]]'s finding pointed at a build rather than at a test — a
+check that only runs where it was written — with the aggravation that
+this one only ran when it was most expensive to be wrong.
+
+**It builds a development version deliberately.** Omitting `-Version`
+exercises the other branch of every version decision in `build.ps1` (the
+binary reports `dev`, the MSIs are stamped `0.0.0`), and it means this
+job can never be mistaken for a release or produce something that looks
+like one.
+
+**What a hosted runner can actually establish, stated rather than
+implied.** It cannot install the per-machine package — that needs
+elevation. It cannot run the per-user one usefully — there is no reader,
+no card, and no smart card service ([[D-236]] measured exactly that).
+So this job inspects what the build produced, and this project has
+recorded four times that inspecting the build is not the same as
+installing it ([[D-161]], [[D-200]], [[D-219]], [[D-221]]).
+
+It is still worth having, and the reason is what it catches rather than
+what it proves: a package that does not build, a package Windows
+Installer will not open, an artefact whose name changed, a binary that
+does not report its own version. Every one of those is a release that
+fails at the tag today. **A real install remains a thing done by hand on
+a real machine, and the phase report says so in those words rather than
+letting a green tick stand in for it.**
+
+**The Windows Installer read is not decoration.** `build.ps1` already
+runs WiX's own ICE validation with three checks suppressed for stated
+reasons, and an MSI can pass all of that and still be a file the
+installer refuses. Opening the summary information stream through the
+same COM interface the installer uses is the cheapest check that is not
+WiX marking its own work, and the platform/language template
+(`x64;1033`) is what a package missing it fails on.
+
+**The WiX cache key is the archive's own digest.** `build.ps1` pins WiX
+3.14.1 by SHA-256 and fails if what it fetched does not match, so a
+cache hit and a fresh download are the same bytes or there is no build.
+Keying the cache on that digest rather than on a version string means a
+changed pin can never be served a stale toolset. The cache is a saving,
+never a source of truth.
+
+**Measured before it was added**, rather than written and pushed: the
+whole job was run on this machine. `build.ps1 -Out dist/ci` took 61.9 s
+including the WiX fetch and produced `liro-bridge-dev-x64.msi`
+(4,575,232 bytes), `liro-bridge-dev-x64-per-machine.msi` (4,575,232) and
+`liro-bridge-dev-x64.exe` (11,357,184); `--version` reported
+`liro-bridge dev (commit 67d39a6, …)`; and both MSIs opened through the
+COM interface reporting `x64;1033`. The two packages are the same size
+and different digests, which is what two builds of one source with one
+property changed should look like.
+
+**Rejected.**
+- **Adding these as steps on the existing `windows` job.** That job is
+  `go vet` and the test suite, and it already runs with the `softtoken`
+  tag; a red packaging build should say "packaging" rather than sending
+  somebody to read a test job's log. The same reasoning `sdk-typescript`
+  already has its own job for.
+- **Building the versioned artefacts in CI too.** It would test one more
+  branch and produce files that look like a release on every push. The
+  release workflow builds those, and its own `--version` check is what
+  covers that branch.
+- **Installing the per-user MSI on the runner to prove more.** Tempting,
+  and it would be a real install — but what it would exercise is a
+  machine with no reader and no smart card service, which is the one
+  configuration [[D-236]] already covers, and the artefact it installs
+  is one no stranger will ever see. The install that matters is the one
+  on a machine with a card in it.
+
