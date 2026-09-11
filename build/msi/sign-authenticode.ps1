@@ -24,10 +24,18 @@
     LIRO_AUTHENTICODE_PFX_BASE64   the .pfx, base64-encoded
     LIRO_AUTHENTICODE_PASSWORD     its password
 
-  and nothing else changes. In CI those are repository secrets, which
-  a workflow triggered by a pull request from a fork cannot read -- the
-  same protection the release signing key relies on (see
-  .github/workflows/release.yml).
+  and nothing else changes. In CI those are repository secrets handed
+  to the build only on a tag push. That is deliberately a weaker
+  protection than the release signing key's, which lives in a
+  deployment environment a workflow file cannot reach around; the
+  reason the two differ, and why this one has to arrive here rather
+  than later, is written where it is applied
+  (.github/workflows/release.yml).
+
+  It has to arrive here because of ordering: build.ps1 signs the staged
+  executable before WiX embeds it in the two MSIs, so an artefact
+  signed after the build would be a package whose own copy of the
+  program is unsigned.
 
   The timestamp URL is a public RFC 3161 service run by DigiCert. It is
   not one of SPEC section 6.8's four outbound requests, and it does not need

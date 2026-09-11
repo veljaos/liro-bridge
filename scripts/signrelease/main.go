@@ -102,19 +102,28 @@ func run(dir, version, notes string) error {
 		return err
 	}
 
+	// Verify it exactly as the agent will, with the agent's own embedded
+	// trust set — which is what catches a key that is not the one this
+	// build's binaries were meant to be verified against.
+	//
+	// Before writing anything, not after. This check used to run after
+	// both files were on disk, so signing with a key the agent does not
+	// trust left a release.json and a release.json.sig beside the
+	// artefacts that verified against nothing — measured, by signing a
+	// directory with a freshly generated key: the tool exited 1 and both
+	// files were there afterwards. The release workflow happens to catch
+	// that one step later, but a tool that fails should not leave its
+	// output behind for the next thing along to pick up.
+	if _, err := update.VerifyManifest(manifestBytes, []byte(sig), update.TrustedKeys()); err != nil {
+		return fmt.Errorf("the signature this tool just built does not verify against the keys the agent embeds: %w", err)
+	}
+
 	manifestPath := filepath.Join(dir, "release.json")
 	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(manifestPath+".sig", []byte(sig), 0o644); err != nil {
 		return err
-	}
-
-	// And verify it exactly as the agent will, with the agent's own
-	// embedded trust set — which is what catches a key that is not the
-	// one this build's binaries were meant to be verified against.
-	if _, err := update.VerifyManifest(manifestBytes, []byte(sig), update.TrustedKeys()); err != nil {
-		return fmt.Errorf("the signature this tool just wrote does not verify against the keys the agent embeds: %w", err)
 	}
 
 	fmt.Printf("release.json and release.json.sig written to %s\n", dir)

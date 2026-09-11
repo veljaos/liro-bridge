@@ -4,9 +4,9 @@ name: Release
 # artefacts, signs the manifest with the release key, verifies it the
 # way the agent will, and publishes them to GitHub Releases (SPEC §15).
 #
-# workflow_dispatch does everything except publish, so the whole
-# pipeline can be exercised without a tag and without a release page
-# full of test versions.
+# workflow_dispatch does everything the release key is not needed for,
+# so the whole build can be exercised without a tag and without a
+# release page full of test versions.
 on:
   push:
     tags:
@@ -14,32 +14,48 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to build (no leading v). Nothing is published."
+        description: "Version to build (no leading v). Nothing is signed and nothing is published."
         required: true
         default: "0.0.0"
 
-# The signing job must not be reachable from a fork's pull request
-# (F10 §4.1). Two things make that true, and only one of them is this
-# file:
+# There are two jobs because there are two levels of authority, and the
+# split is most of what keeps the release key away from everything that
+# is not a release (F10 §4.1).
 #
-#   1. GitHub never exposes repository secrets to a workflow triggered
-#      by pull_request from a fork. That is the guarantee that actually
+#   build    runs for a tag and for a dispatch, and never holds the
+#            release signing key.
+#   release  runs only for a tag, is bound to the `release`
+#            environment, and is the only place that key exists.
+#
+# Four things make the signing job unreachable from a fork's pull
+# request, and only the last three are this file:
+#
+#   1. GitHub never exposes secrets to a workflow triggered by
+#      pull_request from a fork. That is the guarantee that actually
 #      holds, and it holds whatever this file says.
-#   2. This workflow has no pull_request trigger at all, and the job
-#      below additionally refuses to run anywhere but this repository —
-#      so a fork that pushes a tag builds nothing, rather than building
-#      something unsigned and calling it a release.
-#
-# The Authenticode step (build/msi/sign-authenticode.ps1) is inside the
-# build and reads its own secrets the same way. It is a no-op today
-# because there is no code-signing certificate (SPEC §15.1).
+#   2. This workflow has no pull_request trigger at all, and both jobs
+#      refuse to run anywhere but this repository — so a fork that
+#      pushes a tag builds nothing, rather than building something
+#      unsigned and calling it a release.
+#   3. The `release` environment's own deployment rule admits only refs
+#      matching v*, so the release signing key cannot be reached from a
+#      branch, from a dispatch, or from any tag that is not a release.
+#      That rule lives in repository settings rather than here, which is
+#      exactly why it is worth stating here: this file cannot enforce it
+#      and cannot show whether it is on.
+#   4. The Authenticode certificate is handed to the build only on a tag
+#      push. That one is a control in this file rather than a platform
+#      guarantee, and the difference is stated where it is applied
+#      below, because the two must not be read as equally strong.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
     if: github.repository == 'veljaos/liro-bridge'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,14 +84,28 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "building $v"
 
+      # Authenticode runs inside the build and cannot be moved out of
+      # it: build.ps1 signs the staged executable *before* WiX embeds it
+      # in the two MSIs, so signing the finished artefacts afterwards
+      # would produce packages whose own copy of the program is
+      # unsigned. That ordering is why this job, rather than the
+      # release job, is where the certificate has to arrive.
+      #
+      # It is handed over only for a tag push, so a dispatch cannot get
+      # anything signed with it. That is a control in this file, not the
+      # platform guarantee the release key gets from its environment:
+      # an edit to this line would lift it, where an edit to this file
+      # cannot lift a deployment rule. It is the right strength for what
+      # it protects — anyone who can dispatch this workflow can also
+      # push a tag — and it is written down rather than assumed.
+      #
+      # Both are empty until there is a certificate, and the step inside
+      # the build says so out loud rather than being absent (SPEC §15.1).
       - name: build the artefacts
         shell: pwsh
         env:
-          # Present, and empty until there is a certificate. The step
-          # inside the build says so out loud rather than being absent
-          # (SPEC §15.1).
-          LIRO_AUTHENTICODE_PFX_BASE64: ${{ secrets.LIRO_AUTHENTICODE_PFX_BASE64 }}
-          LIRO_AUTHENTICODE_PASSWORD: ${{ secrets.LIRO_AUTHENTICODE_PASSWORD }}
+          LIRO_AUTHENTICODE_PFX_BASE64: ${{ github.event_name == 'push' && secrets.LIRO_AUTHENTICODE_PFX_BASE64 || '' }}
+          LIRO_AUTHENTICODE_PASSWORD: ${{ github.event_name == 'push' && secrets.LIRO_AUTHENTICODE_PASSWORD || '' }}
         run: ./build/msi/build.ps1 -Version "${{ steps.version.outputs.version }}" -Out dist/release
 
       # The version the binary reports is checked against the tag rather
@@ -95,20 +125,69 @@ jobs:
             *) echo "::error::the binary reports '$got', which does not begin with 'liro-bridge $v'"; exit 1 ;;
           esac
 
+      # signrelease has no "skip signing" path, and this is where that is
+      # checked rather than asserted in its doc comment. A build that
+      # lost its key must fail rather than publish something no agent
+      # would ever accept, and this job is the one place the key is
+      # guaranteed absent — so it is the only place the refusal can be
+      # observed.
+      - name: signing refuses to run without a key, and writes nothing
+        shell: bash
+        env:
+          LIRO_RELEASE_SIGNING_KEY: ""
+        run: |
+          set -eu
+          if go run ./scripts/signrelease --dir dist/release --version "${{ steps.version.outputs.version }}"; then
+            echo "::error::signrelease signed something with no key configured"; exit 1
+          fi
+          for f in dist/release/release.json dist/release/release.json.sig; do
+            if [ -e "$f" ]; then echo "::error::signrelease wrote $f after refusing"; exit 1; fi
+          done
+          echo "refused, and wrote neither release.json nor release.json.sig"
+
+      - name: hand the artefacts on
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-bridge-${{ steps.version.outputs.version }}
+          path: dist/release
+          retention-days: 7
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.repository == 'veljaos/liro-bridge'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    # Everything in this job can reach the release signing key, and
+    # nothing outside it can. The environment's deployment rule is what
+    # restricts that to a release tag; see the note at the top.
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The artefacts that get signed are the ones the build made and
+      # checked, not a second build of the same source. Two builds of
+      # one tag would be two different sets of bytes with one set of
+      # digests claimed over them.
+      - name: take the artefacts the build made
+        uses: actions/download-artifact@v4
+        with:
+          name: liro-bridge-${{ needs.build.outputs.version }}
+          path: dist/release
+
       # SPEC §15.2: the agent embeds a public key and every release is
       # signed with the private half. The key arrives in the
       # environment, never on a command line, where every other process
       # on the machine could read it (D-224).
-      #
-      # signrelease refuses to run without it. There is deliberately no
-      # "skip signing" path: an unsigned release is one no agent will
-      # ever accept, so producing one quietly is worse than failing the
-      # build that tried.
       - name: sign the release manifest
         shell: bash
         env:
           LIRO_RELEASE_SIGNING_KEY: ${{ secrets.LIRO_RELEASE_SIGNING_KEY }}
-        run: go run ./scripts/signrelease --dir dist/release --version "${{ steps.version.outputs.version }}"
+        run: go run ./scripts/signrelease --dir dist/release --version "${{ needs.build.outputs.version }}"
 
       # And verify it exactly as an installed agent will, against the
       # keys this build embeds. A release that the agent would refuse
@@ -120,23 +199,12 @@ jobs:
         run: go run ./scripts/verifyrelease --dir dist/release
 
       - name: publish
-        if: github.event_name == 'push'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           gh release create "${GITHUB_REF_NAME}" \
-            --title "Liro Bridge ${{ steps.version.outputs.version }}" \
+            --title "Liro Bridge ${{ needs.build.outputs.version }}" \
             --notes-file docs/release-notes-template.md \
             dist/release/*
-
-      # A build with no tag still keeps what it made, so the pipeline
-      # can be looked at without publishing anything.
-      - name: keep the artefacts
-        if: github.event_name != 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: liro-bridge-${{ steps.version.outputs.version }}
-          path: dist/release
-          retention-days: 7
