@@ -19414,3 +19414,95 @@ is an instrument rather than a fifth theory.
   instrument rather than to close.
 
 ---
+
+## D-257 — Windows the browser creates after the registration snapshot get a drop target when they appear; the compositor window's asymmetry is closed, and it is not the fix
+
+**Date:** 2026-09-12
+**Phase:** F10
+
+**Decision.** A window that accepts dropped files re-scans its own tree
+once a second and registers a target on anything new
+(`dropwatch_windows.go`). [[D-123]]'s registration snapshot and the
+re-registration after navigation are both unchanged; this is purely
+additive.
+
+**The asymmetry, measured.** `registerDropTargets` walks the tree after
+`NavigationCompleted`, and the compositor's own window is created after
+that. So, deterministically, three runs of each:
+
+| | drop targets |
+|---|---|
+| a freshly opened window | **4** — frame, `Chrome_WidgetWin_0`, `Chrome_WidgetWin_1`, `Chrome_RenderWidgetHostHWND` |
+| the same window after any navigation | **5** — and the fifth is `Intermediate D3D Window` |
+
+Read from outside with `GetPropW(hwnd, "OleDropTargetInterface")`, the
+compositor window is present either way — visible, 560x690, the whole
+client area, `WS_EX_LAYERED|WS_EX_TRANSPARENT` — and carries a target
+only in the second case. Which windows can receive a drop should not
+depend on how far through a flow somebody is.
+
+[[D-123]] wrote this limit down when it created the snapshot: "A window
+that navigated elsewhere later could grow a child nobody registered, and
+would refuse drops over it with no error." This closes it in general,
+not only for the compositor window.
+
+**It is not the fix for [[D-255]]'s fault, and this entry says so because
+it would be easy to read as one.** Every drop measured in this project,
+in every configuration, has arrived at `Chrome_RenderWidgetHostHWND` —
+including six drops onto fresh windows where the compositor window had no
+target at all, and including the sessions of 5 and 6 September that
+[[D-255]] cites. Nothing has ever been observed landing on the compositor
+window. Shipping this as the answer would be the guess [[D-255]] refused,
+and it would let a fault nobody has explained go quiet.
+
+**Why a timer rather than a hook.** `SetWinEventHook(EVENT_OBJECT_CREATE)`
+is the event-driven form and would avoid the poll. It was not taken: it
+adds a process-wide hook and a second callback ABI to a layer with six
+recorded lifetime defects ([[D-099]], [[D-101]], [[D-114]], [[D-129]],
+[[D-169]], [[D-170]]), to save one `EnumChildWindows` over a tree of five
+per second. `WM_PARENTNOTIFY` was ruled out by reading: the compositor
+window carries `WS_EX_NOPARENTNOTIFY`, so it never sends one.
+
+The interval is not a wait for anything and nothing is timed against it
+([[D-201]]): a slower machine asks the same questions later, never fewer
+of them.
+
+**Tests.** `TestOnlyWindowsWithNoTargetYetAreRegisteredAgain` and
+`TestAWindowAlreadyRegisteredIsNeverRegisteredTwice` pin the pure
+decision, including that `EnumChildWindows` listing a window twice cannot
+register it twice.
+`TestAWindowThatAppearsAfterTheSnapshotStillGetsADropTarget` is the real
+one: it opens a real window, creates a child **after** registration, and
+asserts the child has no target at first and acquires one — read with
+`GetPropW` from outside rather than from `w.dropTargets`, which belongs
+to the UI thread and would be a data race under `-race`, which is where
+this suite actually runs. The ceiling exists only to turn a watch that
+never runs into a failure rather than a hang.
+
+**Confirmed in the built binary**, which is this project's standing
+requirement ([[D-087]], [[D-122]], [[D-161]], [[D-172]], [[D-219]],
+[[D-247]]): a fresh `liro-bridge open` window now reads
+
+```
+LiroBridgeWindow             droptarget YES
+Chrome_WidgetWin_0           droptarget YES
+Chrome_WidgetWin_1           droptarget YES
+Chrome_RenderWidgetHostHWND  droptarget YES
+Intermediate D3D Window      droptarget YES
+```
+
+with `ui: registered a drop target on a window that appeared later
+class="Intermediate D3D Window"` one second after the other four.
+
+**Rejected.**
+- **Shipping it as the fix for the drag fault.** Above.
+- **A WinEvent hook.** Above.
+- **Registering only the compositor window by class name.** It would
+  close the one case measured and leave [[D-123]]'s general limit open,
+  keyed on a class name Microsoft may rename.
+- **Doing nothing, since drops work anyway.** They work on the windows
+  that have been measured. A window with no target refuses drops over it
+  in silence, which is the failure mode hardest to diagnose and the one
+  this whole investigation has been about.
+
+---

@@ -45,6 +45,8 @@ var (
 	procSetFocus              = user32DLL.NewProc("SetFocus")
 	procEnumChildWindows      = user32DLL.NewProc("EnumChildWindows")
 	procGetClassNameW         = user32DLL.NewProc("GetClassNameW")
+	procSetTimer              = user32DLL.NewProc("SetTimer")
+	procKillTimer             = user32DLL.NewProc("KillTimer")
 	procEnableWindow          = user32DLL.NewProc("EnableWindow")
 	procGetWindowRect         = user32DLL.NewProc("GetWindowRect")
 
@@ -107,6 +109,7 @@ const (
 
 	wmDestroy    = 0x0002
 	wmClose      = 0x0010
+	wmTimer      = 0x0113
 	wmDropFiles  = 0x0233
 	wmDPIChanged = 0x02E0
 	wmApp        = 0x8000

@@ -153,6 +153,13 @@ type window struct {
 	// drops, or when registration failed.
 	dropTargets []*dropTarget
 
+	// dropWatchOn belongs to the once-a-second watch that registers
+	// windows the browser creates after the first snapshot
+	// (dropwatch_windows.go). Touched only on the UI thread, which is
+	// also the only thread that registers, revokes and tears down — so
+	// it needs no lock.
+	dropWatchOn bool
+
 	// tearingDown is set by the owning thread, on entry to the teardown
 	// and before it releases anything, so that a second WM_CLOSE — from
 	// the title bar, from Close, or dispatched by the nested message
@@ -445,6 +452,14 @@ func (w *window) setUpWebView2(t *uiThread, opts Options) error {
 		// The WM_DROPFILES fallback, for a drop that lands on the frame
 		// itself rather than on the browser's windows. One call.
 		setDragAcceptFiles(w.hwnd, true)
+		// The snapshot above is a snapshot: the compositor's own window
+		// is created after it, and D-123 recorded that a window the
+		// browser adds later gets no target and refuses drops over it
+		// in silence. The watch registers those as they appear, and
+		// separately says when something is in front of this window —
+		// which is the one state that makes a drop vanish with nothing
+		// in any log (dropwatch_windows.go).
+		w.startDropWatch()
 	}
 	return nil
 }
@@ -554,6 +569,12 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		}
 		return 0
 
+	case wmTimer:
+		if wparam == dropWatchTimerID {
+			w.watchDropSurface()
+		}
+		return 0
+
 	case wmDropFiles:
 		// wparam is the HDROP. droppedFiles reads every path out of it
 		// and releases it; the callback runs on this window's own
@@ -629,6 +650,10 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		// Give the drop registrations back before the apartment holding
 		// them goes away. Harmless when nothing was registered.
 		if w.onFilesDropped != nil {
+			// The watch first: it is the only thing that adds to
+			// dropTargets after creation, and it must not run again
+			// between the revoke and the destroy.
+			w.stopDropWatch()
 			revokeDropTargets(w.dropTargets)
 			w.dropTargets = nil
 			setDragAcceptFiles(hwnd, false)
