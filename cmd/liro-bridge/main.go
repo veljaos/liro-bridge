@@ -31,6 +31,17 @@ var (
 )
 
 func main() {
+	// First, before anything writes anywhere: give back a console
+	// Windows allocated for this process because it had none to
+	// inherit. That is what every launcher an installed agent is
+	// reached by looks like, and it is why an empty terminal window
+	// used to appear beside the agent. A console inherited from a shell
+	// is left exactly as it is, so `sign` and `certs` still print for a
+	// person at a prompt. See detachAllocatedConsole.
+	//
+	// In main rather than in run: run takes the writer it prints to, so
+	// tests drive it with a buffer and have no console in the question.
+	detachAllocatedConsole()
 	os.Exit(run(os.Args[1:], os.Stdout))
 }
 

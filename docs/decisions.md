@@ -18952,3 +18952,186 @@ neither guide claims it will.
   them to ignore it teaches the habit the warn box immediately below
   tells them not to have. The SHA-256 is a check they can perform; our
   say-so is not.
+
+---
+
+## D-254 — The console window is the PE subsystem, not any one launcher; the binary stays a console binary and gives back a console nobody else is on
+
+**Date:** 2026-09-12
+**Phase:** F10 — first findings from a real install
+
+**How this arrived.** The first two findings from somebody other than the
+owner or the agent, from a real install of v0.9.0 downloaded off the
+Releases page. This is the first: after installing, an empty terminal
+window sits beside the agent, saying nothing.
+
+### Which invocation produces it: all of them, and that is the answer
+
+The phase asked which of the autostart entry, the Start menu shortcut,
+the tray or the installer's own final step produces it, "because the fix
+differs". Measured, the question has no such answer, and why it has none
+is the whole of the fix.
+
+`liro-bridge.exe` is linked for the console subsystem. Read out of the
+PE optional header of the artefact a stranger actually downloaded and of
+the repository's own build output, both are
+`IMAGE_SUBSYSTEM_WINDOWS_CUI` (3). Nothing in `build/msi/build.ps1`
+passes `-H=windowsgui`, and the string appears nowhere in the
+repository.
+
+The loader's rule for such a binary is that a process created with no
+console to inherit gets one allocated for it — **before `main` runs**,
+and so before any argument has been looked at. The command word
+therefore cannot be what decides, and the four candidates are four
+instances of one thing:
+
+| Launcher | How it creates the process |
+|---|---|
+| the installer's own final step | `LaunchAgent`, a type-18 custom action, `ExeCommand="tray"`, `After="InstallFinalize"`, condition `UILevel >= 3` — so every install a person watches |
+| `HKCU\...\Run` | Explorer, at every sign-in |
+| the Start menu shortcut | Explorer, `Arguments="open"` |
+| the Explorer verb | Explorer, `--shell-verb "%1"` |
+
+None of them has a console to hand down. All four get one allocated.
+
+The prediction written before measuring said the MSI had no
+launch-at-end action and that the autostart entry was the likeliest
+culprit. That was wrong, and it is the more useful half: `LaunchAgent`
+exists, it runs `tray`, and it is why the window appears *while the
+person is still looking at the installer* rather than at the next
+sign-in.
+
+**Measured, on the released binary, in a launcher's exact situation** —
+created from `Win32_Process.Create`, which runs under the WMI provider
+host, a service with no console, exactly as msiexec and Explorer are:
+
+```
+hasConsole = true
+a visible CASCADIA_HOSTING_WINDOW_CLASS window, 1129x635, titled
+"C:\Users\Veljko\AppData\Local\Programs\Liro Bridge\liro-bridge.exe"
+```
+
+Photographed with `PrintWindow`, so taking the picture did not take the
+foreground from whoever was using the machine ([[D-122]]): a black,
+empty terminal with a cursor in it and nothing else.
+
+The counter-case, the same binary from a terminal that already had a
+console: no new console host, output inline, exit code intact.
+
+### Two fixes measured and rejected before the third
+
+**`-H=windowsgui`.** The owner's own guess, right about the cause and
+wrong about the remedy. It removes the window by construction — no
+console is ever allocated — and it was measured to cost this:
+
+| From PowerShell | console subsystem | GUI subsystem |
+|---|---|---|
+| direct at a prompt | output, exit 7 | output, exit 7 |
+| `$x = & agent.exe 2>&1` | **2 lines captured, `$LASTEXITCODE` 7** | **nothing captured, `$LASTEXITCODE` empty** |
+
+Output capture and the exit code both disappear. CI checks
+`liro-bridge --version` against the tag in two workflows, and [[D-236]]
+made `sign` exit non-zero deliberately "because a script sees only the
+exit code". Neither would fail loudly; both would quietly start reading
+nothing. Rejected.
+
+**Hiding the console window.** Cannot work at all here, and the reason
+generalises to every Windows 11 with Windows Terminal as the default
+terminal: `GetConsoleWindow()` inside the process returns a zero-sized
+`PseudoConsoleWindow` — measured — not the window a person can see,
+which belongs to the terminal host. There is nothing there to hide.
+Recorded because it is the obvious second idea.
+
+### The decision
+
+`detachAllocatedConsole`, called first in `main`, gives back a console
+this process is the only one attached to, and leaves alone one it
+inherited.
+
+`GetConsoleProcessList` reports 1 when and only when the loader made
+this console for this process; a console inherited from cmd.exe or
+PowerShell always carries the shell as well. Measured both ways: from a
+terminal it reports 4 and nothing is freed; from a console-less parent
+it reports 1 and the console is given back.
+
+**Freeing loses nothing.** The only output that dies with a console is
+output written to the console, and a console this process is alone on
+closes when this process exits — nobody could have read it. A caller
+that redirected stdout handed over a pipe or a file, which is not a
+console and which `FreeConsole` does not touch, so capture and exit
+codes are unaffected.
+
+**And no window is ever shown**, which was the open question about this
+approach rather than something to assume. Measured with the two real
+binaries in a launcher's own situation, against a watcher enumerating
+console-host windows in a tight loop:
+
+| Binary | Polls | Console windows naming it |
+|---|---|---|
+| released 0.9.0 | 24 562 | **1, visible, in every one of them** |
+| built from this tree | 26 026 | **0** |
+
+The same instrument, five further runs of a probe that frees its
+console: 0 across roughly 98 000 polls, against a positive control it
+caught in 12 759 of 21 095. The console host's window is created
+asynchronously by the terminal handoff, and freeing the console before
+that completes means it is never created — so this is not a flash made
+short, it is a window not drawn.
+
+### The tests, and the two that had to be thrown away first
+
+`TestAConsoleTheAgentIsAloneOnIsGivenBack` starts the built agent with a
+console of its own and requires that it no longer has one.
+`TestAConsoleSharedWithACallerIsKept` starts it the ordinary way and
+requires that it does. Each fails in its own direction and only its own:
+with the free removed the first fails and the second passes; with the
+rule widened to "always free" the second fails and the first passes.
+`TestOutputSurvivesForACallerThatRedirectedIt` and
+`TestTheAgentStillLinksForTheConsoleSubsystem` cover the two things the
+rejected fixes would have broken.
+
+Whether a process has a console can only be asked by a process that has
+none of its own, so the test binary asks a second copy of itself, which
+gives up its console and answers through an exit code.
+
+**Two earlier versions of that test went green against the unfixed
+binary**, and both are worth recording because both are this project's
+own recurring shape:
+
+- The first polled for the console *window* and passed on its first
+  observation, because it looked before the terminal handoff had created
+  one. A check its first look satisfies is not a check.
+- The second asked the right question too early: milliseconds after
+  `cmd.Start()`, `AttachConsole` answered `ERROR_INVALID_HANDLE` for a
+  process that plainly had a console. It now waits for the agent's own
+  statement that it is up — its discovery file — and then asks. A state
+  observed rather than a duration timed ([[D-201]]); the ceiling exists
+  only to turn an agent that never starts into a failure instead of a
+  hang.
+
+Both were caught by running the test against the old behaviour before
+believing the new one, which is the only reason either is known.
+
+### What this does not change
+
+The binary is still a console binary: it still waits for its caller,
+still captures, still returns an exit code. `certs` and `sign` print for
+a person at a prompt exactly as before. What changed is only that a
+console nobody asked for and nobody can read is given back before
+anything is written to it.
+
+**Rejected.**
+- **`-H=windowsgui`.** Above, and measured.
+- **Hiding the console window.** Above, and measured.
+- **Making the launchers create the process differently.** Neither a
+  `Run` value, a shortcut, nor an MSI custom action can pass
+  `CREATE_NO_WINDOW`; there is nowhere to put it.
+- **Freeing only for the window commands (`tray`, `open`,
+  `--shell-verb`).** The console exists before the command word is read,
+  so that rule would answer an earlier question with a later fact — and
+  `certs` launched from Explorer has a console that closes before
+  anybody could read it either.
+- **Two binaries, one console and one GUI.** SPEC §1's single binary,
+  and it would double every artefact in the installer over one field of
+  a header.
+
