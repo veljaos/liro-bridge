@@ -153,12 +153,14 @@ type window struct {
 	// drops, or when registration failed.
 	dropTargets []*dropTarget
 
-	// dropWatchOn belongs to the once-a-second watch that registers
-	// windows the browser creates after the first snapshot
-	// (dropwatch_windows.go). Touched only on the UI thread, which is
-	// also the only thread that registers, revokes and tears down — so
-	// it needs no lock.
+	// dropWatchOn and cover belong to the once-a-second watch that
+	// registers windows the browser creates after the first snapshot,
+	// and says when something is in front of this one
+	// (dropwatch_windows.go). Both are touched only on the UI thread,
+	// which is also the only thread that registers, revokes and tears
+	// down — so neither needs a lock.
 	dropWatchOn bool
+	cover       coverState
 
 	// tearingDown is set by the owning thread, on entry to the teardown
 	// and before it releases anything, so that a second WM_CLOSE — from

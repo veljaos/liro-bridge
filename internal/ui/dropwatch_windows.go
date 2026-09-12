@@ -122,4 +122,6 @@ func (w *window) watchDropSurface() {
 		slog.Info("ui: registered a drop target on a window that appeared later",
 			"hwnd", fmt.Sprintf("%#x", hwnd), "class", windowClass(hwnd))
 	}
+
+	w.reportCover(tree)
 }

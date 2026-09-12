@@ -34,6 +34,34 @@ func TestAWindowAlreadyRegisteredIsNeverRegisteredTwice(t *testing.T) {
 	}
 }
 
+func TestWhetherADropWouldReachThisWindow(t *testing.T) {
+	const ourPID = uint32(4242)
+	ours := []uintptr{0x100, 0x200, 0x300}
+
+	cases := []struct {
+		name     string
+		under    uintptr
+		underPID uint32
+		want     coverState
+	}{
+		{"the frame itself", 0x100, ourPID, coverNone},
+		// Chrome_RenderWidgetHostHWND, which every measured drop has
+		// arrived at, is owned by the msedgewebview2 process — so a
+		// window of ours carrying somebody else's process id is the
+		// normal case and must not read as covered.
+		{"a browser window underneath it, owned by another process", 0x300, 9999, coverNone},
+		{"a second window of this same agent", 0x900, ourPID, coverByOwnProcess},
+		{"somebody else's window", 0x900, 777, coverByOtherProcess},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := classifyCover(c.under, c.underPID, ours, ourPID); got != c.want {
+				t.Fatalf("classifyCover = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
 // The one that needed the watch to exist: a window the browser creates
 // after the registration snapshot gets a drop target anyway.
 //

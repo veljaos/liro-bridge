@@ -47,6 +47,9 @@ var (
 	procGetClassNameW         = user32DLL.NewProc("GetClassNameW")
 	procSetTimer              = user32DLL.NewProc("SetTimer")
 	procKillTimer             = user32DLL.NewProc("KillTimer")
+	procWindowFromPoint       = user32DLL.NewProc("WindowFromPoint")
+	procGetWindowThreadPID    = user32DLL.NewProc("GetWindowThreadProcessId")
+	procIsIconic              = user32DLL.NewProc("IsIconic")
 	procEnableWindow          = user32DLL.NewProc("EnableWindow")
 	procGetWindowRect         = user32DLL.NewProc("GetWindowRect")
 
@@ -429,6 +432,32 @@ func descendantWindows(hwnd uintptr) []uintptr {
 	})
 	_, _, _ = procEnumChildWindows.Call(hwnd, cb, 0)
 	return out
+}
+
+// windowUnderPoint is the window at a screen point, with the process
+// that owns it. Used to ask whether a drop aimed at this window would
+// actually reach it (dropwatch_windows.go).
+//
+// WindowFromPoint takes its POINT by value and is packed into one
+// 64-bit argument exactly as MonitorFromPoint is — see
+// cursorMonitorRect, where passing the two fields separately silently
+// shifted every later argument by a slot.
+func windowUnderPoint(pt point) (hwnd uintptr, pid uint32) {
+	packedPt := uintptr(uint32(pt.X)) | uintptr(uint32(pt.Y))<<32
+	h, _, _ := procWindowFromPoint.Call(packedPt)
+	if h == 0 {
+		return 0, 0
+	}
+	var owner uint32
+	_, _, _ = procGetWindowThreadPID.Call(h, uintptr(unsafe.Pointer(&owner)))
+	return h, owner
+}
+
+// isIconic reports whether a window is minimised, in which case its
+// rectangle says nothing about where it is on screen.
+func isIconic(hwnd uintptr) bool {
+	r, _, _ := procIsIconic.Call(hwnd)
+	return r != 0
 }
 
 // windowClass is the window's registered class name, for log lines that

@@ -19506,3 +19506,91 @@ class="Intermediate D3D Window"` one second after the other four.
   this whole investigation has been about.
 
 ---
+
+## D-258 — The agent says when something is in front of its own window, and there is one command a person can run without us
+
+**Date:** 2026-09-12
+**Phase:** F10
+
+**Decision.** Two halves of one answer to [[D-256]]'s finding.
+
+*(a) The agent notices.* On the same timer as [[D-257]], a window that
+accepts drops asks what is under its own centre and logs the transitions
+— one line when something comes in front of it, one when it is in front
+again:
+
+```
+ui: another program's window is in front of this one; a drop here would go
+    to it and this agent would never hear of it   class=... hwnd=... pid=...
+ui: another window of this agent is in front of this one; a drop here would
+    go to that one                                class=... hwnd=...
+ui: this window is in front again where a drop would land
+```
+
+*(b) A report a person can produce alone.* `scripts/dragreport.cmd` — one
+command, no arguments — collects the machine, the WebView2 runtime, every
+agent process with its integrity level against Explorer's, every Liro
+Bridge window's full tree with its drop targets, what is really under
+each window's centre, the agent's log summarised by session, and the last
+sixty drag lines. It writes a text file to the Desktop and changes
+nothing.
+
+**Why the agent and not only the report.** The owner's own words, and
+they are the reason (a) exists at all: *"If the answer lives only in a
+probe I have to remember to run before closing anything, it'll be missed
+— I missed it today."* Three failing sessions produced no record of what
+was on the screen, because the only instrument was a person noticing. A
+log line is not a ritual.
+
+**Membership of this window's tree is the test, never the owning
+process.** `Chrome_RenderWidgetHostHWND` — the window every measured drop
+has actually arrived at — belongs to the **msedgewebview2** process, not
+to the agent. A check that compared process ids would therefore report
+the agent's own window as somebody else's, constantly. This is not a
+hypothetical: the first version of this session's own probe did exactly
+that and announced `*** NOT OURS ***` over a window that was working
+perfectly. `classifyCover` checks the tree first and only then
+distinguishes "another window of this agent" from "another program",
+because those two need different sentences: the first is the
+two-agent-windows arrangement [[D-129]] measured, the second is what
+[[D-256]] reproduced by accident.
+
+**No window title is ever logged.** A title carries the name of the
+document being signed, which SPEC §18.3 keeps out of log files. A class
+name, an HWND and a process id carry nothing about a person.
+
+**A person switching to another program produces a pair of lines, and
+that is intended.** The question the pair answers is asked afterwards, by
+somebody reading a log: *was this window the one under the cursor at that
+moment?* Silence has been the answer to it three times today.
+
+**Tests.** `TestWhetherADropWouldReachThisWindow` covers the four cases
+of `classifyCover` — the frame, a browser window beneath it, a second
+window of this process, another process's window. The live half was
+confirmed in a real run rather than asserted: the log line above fired by
+itself during `TestAWindowThatAppearsAfterTheSnapshotStillGetsADropTarget`,
+naming `MozillaWindowClass pid=1824`, because the test's window genuinely
+was behind Firefox — the same accident that produced [[D-256]]'s
+evidence, this time recorded by the program instead of by a probe.
+
+`dragreport.cmd` was run against a live window before being committed,
+and it caught a defect in itself on that run: it matched the process name
+exactly and so reported "none running" while a window was plainly open.
+It matches a prefix now.
+
+**Rejected.**
+- **Checking at `DragEnter` time.** That is the one moment this cannot
+  use: if something is in front, `DragEnter` never fires. The check has
+  to run when nothing is happening.
+- **A probe the owner runs before closing the window.** [[D-100]] says
+  verification scaffolding does not belong in the product, and that
+  reasoning holds for a *measurement*; this is a state the product is in
+  and cannot otherwise report, which is [[D-127]]'s own distinction —
+  "what stayed is the logging, which is not scaffolding: it is what a bug
+  report from a user's machine will need."
+- **Logging the covering window's title, which would name the program.**
+  SPEC §18.3. The class name identifies the program well enough to act on
+  and carries no document name.
+- **Shipping `dragreport.cmd` inside the MSI.** It is a support tool for
+  whoever has the repository, not part of what a signer installs. F10's
+  artefacts are unchanged.
