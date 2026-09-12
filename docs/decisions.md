@@ -19135,3 +19135,148 @@ anything is written to it.
   and it would double every artefact in the installer over one field of
   a header.
 
+---
+
+## D-255 — Dragging a PDF onto the window: it worked, four things promise it, it does not work now, and what is established stops short of the cause
+
+**Date:** 2026-09-12
+**Phase:** F10 — first findings from a real install
+
+**The second finding from the same install: a PDF dragged onto the
+window does nothing.** The phase asked to establish whether it ever
+worked, whether anything claims it does, and then to say what it would
+take — before writing any of it. Nothing was written.
+
+### It worked, and the agent's own log is the evidence
+
+[[D-127]] made both delivery paths log which window received a drop,
+precisely so that a report about what happened on screen would not have
+to stand alone. It does not have to:
+
+```
+2026-09-05 15:48:26  ui: drag entered a registered window  class=Chrome_RenderWidgetHostHWND carriesFiles=true
+2026-09-05 15:48:27  ui: drop received                     class=Chrome_RenderWidgetHostHWND paths=1
+...
+2026-09-06 20:32:35  ui: drag entered a registered window  class=Chrome_RenderWidgetHostHWND carriesFiles=true
+```
+
+Thirty-eight drops delivered across 5 and 6 September, carrying 47
+paths between them, one to four at a time, every one of them to
+`Chrome_RenderWidgetHostHWND` — the window four levels below the frame
+that [[D-123]] found by instrumenting rather than by theorising. Forty-two
+drags entered a registered window; the four that entered and did not
+drop are somebody changing their mind, which is what that pair of lines
+is for.
+
+**The last one is 2026-09-06 20:32.** There is not one after it.
+
+### It does not work now, and the log says that too
+
+Today's sessions registered drop targets and produced **no `drag
+entered` line at all** — not a refused drop, not a drop of the wrong
+kind: no drag reached any registered window, by either delivery path.
+The frame's `WM_DROPFILES` fallback is silent as well.
+
+### Four things promise it, and that is the more serious defect
+
+| Where | What it says |
+|---|---|
+| SPEC §1 | "The user drags PDFs into its window" |
+| SPEC §4.3 | the window row's notes: "Drag and drop, right-click menu" |
+| `docs/guide/Uputstvo.html` and `Guide.html` | **step one of the first signature**: "Prevucite PDF dokumente u okvir" / "Drag PDF documents onto the area" |
+| the window itself | `main.empty_title`, its largest text, in all three locales: "Prevucite PDF dokumente ovde" / "Превуците PDF документе овде" / "Drop PDF documents here" |
+
+The guide is the one that matters. A stranger's first instruction, with
+a screenshot of the dashed drop area beside it, is to do the one thing
+that does not work — and that screenshot is installed next to the
+program on every machine.
+
+### What has been ruled out, measured rather than reasoned
+
+- **Not a failed registration.** Today's log shows `RegisterDragDrop`
+  succeeding on the frame, `Chrome_WidgetWin_0`, `Chrome_WidgetWin_1`
+  and `Chrome_RenderWidgetHostHWND`, and a live window's tree read from
+  outside confirms all four carry an `OleDropTargetInterface`.
+- **Not the compositor window's missing registration.** The live tree
+  shows `Intermediate D3D Window` — visible, full-size, layered, last
+  among its siblings — with no drop target, because the registration is
+  a snapshot taken after `NavigationCompleted` and that window is
+  created after it. That was this session's hypothesis, and grouping
+  every registration in the log by moment refutes it: **2026-09-05
+  15:48:02 registered the same four windows and no compositor window,
+  and the drops twenty-four seconds later arrived.**
+- **Not the navigation snapshot [[D-123]] left open.** `Window.Navigate`
+  has re-registered since F6b (`0deb494`), and today's log shows it
+  doing so three times.
+- **Not UIPI.** This process and `explorer.exe` both measure medium
+  integrity, the check [[D-123]] made first.
+- **Not the WebView2 runtime.** 152.0.4191.66 was installed on
+  2026-09-06 at 13:10; the drops at 20:32 that day were on it.
+- **Not the pickers' OLE.** `pickFiles` and `pickFolder` each call
+  `OleInitialize`/`OleUninitialize` on their own locked thread, so
+  neither can tear down the shared UI thread's apartment.
+
+### What is left, and it is a bisect rather than a theory
+
+Two things changed on this machine between the last delivered drop and
+today: **this project** (F7, F8, F9, F9b, F10 — including [[D-207]],
+which on 2026-09-08 replaced a thread and an OLE apartment per window
+with one of each for the whole process, and `RegisterDragDrop` binds a
+target to the apartment of the thread that registers it), and
+**Windows** (KB5126052 on 09-09, KB5124008 and KB5124007 on 09-11).
+
+Which of the two it is cannot be settled from here, because settling it
+needs a drag and [[D-094]] does not allow one to be simulated. What it
+does not need is a guess: two binaries are built and one drag on each
+answers it — the agent at `775dfa3` (2026-09-05, before [[D-207]]) and
+the agent at master. If the old one fails today too it is the machine;
+if it works it is ours, and [[D-207]] is where to look first.
+
+That is [[D-127]]'s own lesson applied before the round rather than
+after it: two rounds of the owner's hands were spent once on a
+hypothesis that had never been measured, and the answer was to carry the
+instrument into the first round rather than the second.
+
+### What it would take, stated because the phase asked
+
+**The feature is not the work.** The four questions the phase raises — a
+non-PDF, twenty files, a drop during a batch, and whether a drop is an
+intent to sign — are already answered, and have been since F6, by
+`internal/jobs` rather than by the window:
+
+- a non-PDF and a folder are `Queue.Add`'s business, and it expands
+  folders and filters by extension;
+- twenty files are one `Add` call, and F6 §7's own tests cover two
+  hundred;
+- a drop during a batch adds to a list, because adding to a list is all
+  a drop does;
+- **a drop is not an intent to sign.** It puts documents on the
+  documents step. Signing is still Sign, then the certificate step, then
+  Approve — SPEC §18.2 is not in question and no new entry point is
+  proposed. The drop path hands paths to
+  `queueEvent(windowEvent{dropped: paths})` and stops.
+
+So what is needed is not a feature but a cause, and then almost
+certainly a small change in `internal/ui`. **It is not bigger than this
+phase.** What it is, is blocked on one measurement only the owner can
+take.
+
+**Until it is fixed, the promise is the defect that is live**, and it is
+deliberately not repaired here. A guide whose first instruction does not
+work is worse than a guide that never mentions dragging — but if one
+drag shows this is a small fix, then the guide is right and the program
+is wrong, and editing the guide would be the wrong repair made
+permanent.
+
+**Rejected.**
+- **Guessing at a cause and shipping a change against it.** [[D-123]]
+  and [[D-127]] record what that costs, and the evidence above has
+  already refuted two plausible hypotheses — one of them this session's
+  own.
+- **Removing the promise from the guide and the window now.** It would
+  make the documentation true by making the product smaller, before
+  anybody has established that the product needs to be smaller.
+- **A test that drives `IDropTarget`'s methods directly.** [[D-123]]
+  already rejected it and the reason is unchanged: it proves this
+  package's own code and says nothing about which window Windows hands a
+  drop to, which is the entire question.
