@@ -19280,3 +19280,137 @@ permanent.
   already rejected it and the reason is unchanged: it proves this
   package's own code and says nothing about which window Windows hands a
   drop to, which is the entire question.
+
+---
+
+## D-256 — The drag that does nothing: what a full bisect eliminated, and why `entered=0` is a statement about the desktop rather than about this program
+
+**Date:** 2026-09-12
+**Phase:** F10 — the second finding from a real install
+
+**[[D-255]] left this blocked on one measurement only the owner could
+take. Six of them were taken. Every one worked, and what they eliminated
+is worth more than the fault they failed to reproduce.**
+
+### The bisect [[D-255]] asked for
+
+Two binaries, built from this repository, run with their own scratch
+homes so the real one was never written to:
+
+| Binary | Apartment model | Drag |
+|---|---|---|
+| `775dfa3` (2026-09-05, before [[D-207]]) | a thread and an OLE apartment **per window** | **works** |
+| `master` `814efef` | one UI thread, one apartment, one environment | **works** |
+
+So neither the three Windows updates of 09-09 and 09-11 nor [[D-207]] is
+the cause. The drop arrived at `Chrome_RenderWidgetHostHWND` in both,
+which is the same window [[D-123]] measured in September.
+
+### Then the installed release, in every configuration that could be built
+
+The failing artefact is the installed v0.9.0. `go version -m` reads
+`vcs.revision=c10ead5`, the `v0.9.0` tag exactly, built with **go1.26.5**
+where both test binaries used **go1.27.1** — an uncontrolled variable, and
+this session's own. The only commits after the tag are [[D-253]] and
+[[D-254]] plus their documents: **nothing in `internal/ui`**, so the drag
+code is byte-identical. `build.ps1` adds `-trimpath` and `-s -w`, which
+strip and rewrite and cannot change behaviour, and there is no
+`rsrc.syso` and no manifest anywhere in it.
+
+Run against the owner's own hands, the installed binary took a drop:
+
+- on a freshly opened window, against the real `%LOCALAPPDATA%\Liro`
+- again after four navigations through the flow
+- with the compositor window registered and with it unregistered
+
+### What the log said, which is the part that settles it
+
+The startup line carries `version` and `commit`, so every session in the
+log names its own binary. Today's, filtered to those that opened a
+window:
+
+```
+15:39:58   0.9.0  c10ead5   reg=4    entered=0   dropped=0    tray (wrote bridge.json)
+15:40:51   0.9.0  c10ead5   reg=19   entered=0   dropped=0    open
+15:57:53   0.9.0  c10ead5   reg=4    entered=0   dropped=0
+21:32:21   0.9.0  c10ead5   reg=24   entered=2   dropped=2    open
+```
+
+The Start menu shortcut is `Arguments="open"` (`liro-bridge.wxs`), so
+**15:40:51 already was the launch path the next round would have
+tested**, and the same command on the same binary against the same home
+worked seven hours later. `LaunchAgent` is
+`Execute="immediate" Impersonate="yes"`, which runs in the user's own
+msiexec context, so it cannot have produced an elevated agent either —
+and the installed binary was measured at `MEDIUM (S-1-16-8192)`, the
+same integrity as `explorer.exe`, which is the check [[D-123]] made on a
+repository build and nobody had ever made on this one.
+
+**Not the machine, not [[D-207]], not the binary, not the build flags,
+not the home, not the launch path, not navigation, not UIPI.** The one
+variable left uncontrolled is the toolchain, and it is bracketed rather
+than eliminated: the same source built two ways both work, and the third
+build failed and then stopped failing without being rebuilt.
+
+### The finding: `entered=0` is not a refusal
+
+In all three failures `DragEnter` was never called on any registered
+window. Every hypothesis this session pursued — and there were four, all
+wrong — assumed the drop was aimed at our window and rejected. There is
+a second reading, and it is the only one consistent with everything
+above: **the drop was never aimed at a window of ours**, because
+something else was in front of it at that point.
+
+That state is invisible from inside the process. No target is consulted,
+nothing is refused, and the log shows a flawless registration followed by
+silence — which is exactly what the three failing sessions contain.
+
+**It was reproduced by accident, which is the strongest evidence here.**
+A probe run during this session started a window from a background shell,
+so it had no foreground rights; Firefox was in front of it. Every window
+of ours was `visible=yes`, all five drop targets were registered, and
+`WindowFromPoint` at the centre of our own window returned
+`MozillaWindowClass`. A drop there would have gone to Firefox and
+produced precisely the log the owner has.
+
+Two facts from the owner's side fit it. The 15:39:58 tray agent never
+removed `bridge.json`, so it was killed rather than closed — he confirms
+killing tray agents repeatedly while getting the install to a testable
+state, and two agent windows are centred on the same point of the same
+monitor, which is the arrangement [[D-129]] already measured returning
+the wrong window from `WindowFromPoint`. And v0.9.0 has no console fix,
+so by [[D-254]] each of those three processes also put an empty
+1129x635 terminal on the screen.
+
+### What is not established, stated plainly
+
+**The cause.** Nothing here proves what was in front of the window, or
+that anything was. What is established is that the fault is not in the
+drag code, not in the registration, and not in any difference between
+the artefacts — and that the one state which would produce it exactly
+has never been checked, because checking it required somebody to notice
+before closing the window. [[D-257]] and [[D-258]] make the next
+occurrence answer the question by itself.
+
+### A method note, because four predictions failed in one session
+
+Each was a mechanism reasoned to from a structural difference that had
+just been measured: the compositor window's missing registration, the
+re-registration after navigation, the toolchain, the launch path. Every
+measurement was real and every mechanism was wrong. [[D-123]]'s own rule
+— *do not have a theory about which window receives the drop* — was
+written for exactly this, and the answer to a fault nobody can reproduce
+is an instrument rather than a fifth theory.
+
+**Rejected.**
+- **Shipping a change against any of the four.** [[D-255]] refused this
+  before the round and was right; the round refuted all four.
+- **Editing the guide to remove the promise.** [[D-255]]'s reasoning is
+  unchanged and is now stronger: dragging works in every configuration
+  this project can construct, so the guide is true and the defect is
+  somewhere nobody has looked.
+- **Calling it fixed because it no longer reproduces.** It stopped
+  reproducing without anything being changed, which is a reason to
+  instrument rather than to close.
+
+---
