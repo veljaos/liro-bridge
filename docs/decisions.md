@@ -19863,3 +19863,230 @@ and the two should not be reported as one.
   [[D-129]]'s test then finds one of them over the window it is asking
   about. That test is right and this one was the newcomer. The check
   opens and closes its own windows.
+
+---
+
+## D-260 — The drag that does nothing is closed as cannot-reproduce: what two days eliminated, why the queued run cannot be performed, and the two things the trap got wrong about itself
+
+**Date:** 2026-09-13
+**Phase:** F10
+
+**Decision. This is closed as not reproducible and not explained.** No
+further run is constructed. The instrument [[D-257]] and [[D-258]]
+shipped stays in the product, and the next occurrence is the
+deliverable.
+
+### What is being closed
+
+A document dragged onto the signing window did nothing, on the installed
+v0.9.0, on 2026-09-12. [[D-255]] established that it had worked — the
+agent's own log carries thirty-eight delivered drops across 5 and 6
+September, 47 paths between them, every one to
+`Chrome_RenderWidgetHostHWND` — and that it then stopped, with no `drag
+entered` line at all in the failing sessions.
+
+[[D-256]] then took six drags from the owner's own hands. **Every one
+worked.** Seven successes across the two entries, no failure reproduced
+by anybody since.
+
+What those six eliminated, each by measurement rather than by argument:
+
+| Eliminated | How |
+|---|---|
+| the Windows updates of 09-09 and 09-11 | the pre-[[D-207]] binary at `775dfa3` still takes a drop today |
+| [[D-207]]'s one-thread, one-apartment change | both binaries work; the apartment model is not the difference |
+| the binary | `go version -m` reads `vcs.revision=c10ead5`, the `v0.9.0` tag exactly, and nothing after it touches `internal/ui` |
+| the build flags | `-trimpath`, `-s -w`; both strip and rewrite and cannot change behaviour |
+| the toolchain | bracketed rather than eliminated — go1.26.5 against go1.27.1; the same source built two ways both work |
+| the home | the installed binary took a drop against the real `%LOCALAPPDATA%\Liro` |
+| the launch path | 15:40:51 was already `open`, the Start menu shortcut's own argument, and the same command worked seven hours later |
+| navigation | four navigations through the flow, and a drop after each |
+| UIPI | the installed binary measures `MEDIUM (S-1-16-8192)`, the same integrity as `explorer.exe` |
+| the compositor window's missing registration | drops arrived on fresh windows where it had no target at all; [[D-257]] closed the asymmetry anyway and says plainly it is not the fix |
+
+[[D-256]]'s own finding is what makes the closure honest rather than a
+shrug: `entered=0` is not a refusal. In all three failing sessions
+`DragEnter` was never called on any registered window, which is what the
+screen looks like when the drop was never aimed at a window of ours —
+and that state is invisible from inside the process. It was reproduced
+by accident in that session, and again in this one (below).
+
+### The queued run cannot be performed as designed, and that is a fact about the arrangement
+
+`docs/drag-handover.md` §2 queues a two-drag demonstration: Settings
+centred over the signing window, 9a onto the dead centre, 9b onto a
+visible strip down the side, seconds apart.
+
+The owner reports that the arrangement does not exist. Settings covers
+the signing window almost completely: the dashed drop area is not
+visible and there is no usable strip either side. Reaching anything
+means moving the Settings window by hand, which changes the geometry the
+run is about.
+
+Artefacts already in this repository say the same thing without needing
+the screen. `docs/guide/slike` holds `PrintWindow` captures of both
+windows at the same scaling, so their outer widths can simply be read
+off: the signing window is **576** wide (`01-dokumenti-prazno.png`,
+`02`, `05`, `06`) and Settings is **536** (`08-podesavanja.png`). Both
+are centred on the same point — [[D-129]] measured that as the reason
+one can sit exactly on top of the other — so what shows down each side
+is `(576 − 536) / 2` = **20 points**, and Settings is 190 points taller
+than the signing window's 690, so it covers the drop area completely.
+
+The handover's §2 says "about 28 px … down each side". That is what you
+get by comparing the signing window's *outer* width against Settings'
+*client* width — 576 against 520 — which is the arithmetic of a
+measurement nobody took. Either number is a sliver rather than a target;
+the point is that the whole arrangement was reasoned out and nobody
+stood in front of it until the owner did.
+
+**So the run is not re-planned.** Its purpose was to demonstrate a
+mechanism nobody disputes — a drop aimed at a covered window goes to the
+coverer — and the demonstration would still not be evidence about
+2026-09-12. [[D-255]]'s §4 and [[D-256]] both say so; this entry
+declines to spend the owner's hands proving a thing that was never in
+doubt in order to imply a thing that is.
+
+**Do not upgrade a demonstration into an explanation.** Nothing
+established in three entries shows that anything was in front of the
+window that afternoon.
+
+### The thing from two days that will pay off, and it is already paying
+
+[[D-258]]'s covering notice works, and it fires unprompted.
+
+It was written because the state that explains `entered=0` is on the
+screen at that moment and gone a second later, and because the owner's
+own words were that an answer living only in a probe he has to remember
+to run will be missed. Since then it has fired by itself every time the
+condition arose, without anybody arranging it — in [[D-258]]'s own test
+run (Firefox), and five more times in this session, on three different
+programs, in two different homes:
+
+```
+13:19:19  DirectUIHWND                 pid 6120    (Explorer)
+13:19:24  MozillaWindowClass           pid 16948   (Firefox)
+13:19:28  Chrome_RenderWidgetHostHWND  pid 15828   (another browser)
+13:25:15  DirectUIHWND                 pid 6120
+13:25:21  Chrome_RenderWidgetHostHWND  pid 12516
+14:14:12  DirectUIHWND                 pid 13852   (a folder window, deliberately)
+```
+
+Only the last was arranged. The other five are the agent noticing,
+once a second, that a drop aimed at it would have gone somewhere else —
+which is precisely the fact three sessions of investigation could not
+recover afterwards. **When the fault next occurs, its log will contain
+the answer or its absence, and either is conclusive.** That is the
+deliverable.
+
+### Two things the trap got wrong about itself
+
+**(a) The report covered the window it was reporting on.**
+
+Launched by double-clicking `dragreport.cmd`, its own terminal opens
+near the middle of the display, which is exactly where an agent window
+is centred. The centre reading then found the report's own console over
+the agent and announced it:
+
+```
+at the centre (738,500) sits 'CASCADIA_HOSTING_WINDOW_CLASS' pid 3132 (WindowsTerminal)
+*** THIS IS NOT PART OF THE AGENT'S WINDOW ***
+A drop at that point goes to that window. The agent is never told, and
+its log will show a perfect registration and no drag at all.
+```
+
+Reproduced deterministically rather than described: a console started
+the way double-clicking starts one, the agent's window moved under it
+with `SetWindowPos` at `HWND_BOTTOM | SWP_NOACTIVATE` (a window API —
+nothing touches the cursor, [[D-094]]), and the console's own handle
+taken from `GetForegroundWindow` so that the harness does not set the
+test up with the code under test.
+
+It reads as a finding, in a file written to be read later by somebody
+who was not there. It is not one. It is the report getting in its own
+way, and it says nothing about the drag, because that window was not on
+the screen when the drag happened.
+
+`dragreport.ps1` now identifies its own console and says so instead:
+
+```
+at the centre (738,500) sits 'CASCADIA_HOSTING_WINDOW_CLASS' pid 3132 (WindowsTerminal)
+That is certainly this report's own console window, not a finding.
+It opened when you ran this report, so it was not on the screen when you
+dragged, and this reading says nothing about the drag. What the agent
+itself saw at the time is below: the 'covered' column, and any
+'in front of this one' lines.
+```
+
+and the window section is prefaced with the same point, pointing at the
+log for the moment that actually matters.
+
+**Both branches were measured, because a check that cannot still fire is
+worse than the one it replaced.** With a genuinely foreign window in
+front — an Explorer folder window, a separate process, launched and
+closed by `WM_CLOSE` — the loud finding is unchanged:
+
+```
+at the centre (827,492) sits 'DirectUIHWND' pid 13852 (explorer)
+*** THIS IS NOT PART OF THE AGENT'S WINDOW ***
+```
+
+**A measurement that corrects an assumption, and it is [[D-254]]'s.**
+That entry found `GetConsoleWindow` returning a hidden, zero-sized
+`PseudoConsoleWindow` under Windows Terminal and concluded the console
+window cannot be hidden. True, and it does not mean the visible window
+cannot be *identified*: the pseudo console window is **owned** by the
+terminal frame, so `GetAncestor(GA_ROOTOWNER)` climbs from it to the
+window a person sees. Measured here, in a console started exactly as
+double-clicking starts one:
+
+```
+GetConsoleWindow    0xa303a8  visible=True
+GA_ROOTOWNER of it  0x2d0334  pid 3132 (WindowsTerminal), visible=True
+                              - and the foreground window, the same handle
+```
+
+So "which visible window is my console displayed in" has an answer even
+under Windows Terminal; "can I hide it" still does not. That is the
+mechanism that fires, and it is why the line reads "certainly". Two
+weaker ones sit behind it for hosts where it does not hold — the
+console's own process list, then `WT_SESSION` plus a terminal-host
+process name, which is reported as "almost certainly" because a person
+really can have a second terminal covering the agent.
+
+**(b) Nothing else about the trap changed**, and `dragreport.cmd` is
+unchanged. The instrument stays as it is.
+
+### What stays open, and is not this entry's
+
+The owner keeps four: [[D-246]]'s installer WebView2 refusal, still
+never exercised because this machine has the runtime; [[D-249]]'s
+standard account on a machine that never held a Go toolchain; his own
+Windows machines as a first sieve; and the stranger.
+
+### Rejected
+
+- **Constructing another run.** Two days, six drags, seven successes.
+  What another demonstration would show is what the last one would have
+  shown, and it is not the question.
+- **Re-planning the geometry so 9a and 9b can be aimed at.** It can be
+  done — a smaller coverer, or the windows deliberately offset — and it
+  would demonstrate the same mechanism under an arrangement chosen to
+  make it demonstrable, which is further from 2026-09-12 rather than
+  nearer.
+- **Recording the closure as "fixed".** Nothing was fixed. It stopped
+  reproducing without anything being changed, which is a reason to
+  instrument and wait, not to close as solved. [[D-256]] rejected the
+  same thing and was right.
+- **Editing the guide or the window to stop promising that dragging
+  works.** [[D-255]] and [[D-256]] both declined this and the reasoning
+  is now stronger, not weaker: dragging works in every configuration
+  anyone can construct, so the promise is true and the defect is
+  somewhere nobody has looked.
+- **Having the report take its centre reading before its own console
+  appears.** There is no such moment — the console exists before the
+  script's first line runs.
+- **Having the report hide or move its own console.** [[D-254]] measured
+  that the visible window is not the process's to hide, and moving
+  somebody's terminal to take a reading is a worse manner than
+  explaining the reading.

@@ -1,4 +1,4 @@
-# Collects everything that bears on "I dragged a document onto the
+﻿# Collects everything that bears on "I dragged a document onto the
 # window and nothing happened" into one file, in one reading.
 #
 # Run it WHILE the window is still open, before closing anything. It
@@ -30,8 +30,12 @@ public class DR {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, int flags);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L,T,R,B; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+
+  [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+  [DllImport("kernel32.dll")] public static extern int GetConsoleProcessList(uint[] pids, int count);
 
   [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr OpenProcess(int a, bool inh, int pid);
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
@@ -46,6 +50,67 @@ $out = New-Object System.Collections.ArrayList
 function Say([string]$s) { [void]$out.Add($s); Write-Host $s }
 
 function ClassOf([IntPtr]$h) { $sb = New-Object System.Text.StringBuilder 256; [void][DR]::GetClassNameW($h,$sb,256); $sb.ToString() }
+
+# This report is itself a window on the screen, and when it is launched
+# by double-clicking dragreport.cmd its console opens near the middle of
+# the display - which is exactly where an agent window is centred. The
+# centre reading below then finds this tool's own terminal over the
+# agent and, before this existed, announced it as "NOT PART OF THE
+# AGENT'S WINDOW": a finding, in a report written to be read later by
+# somebody who was not there. It is not a finding. It is the report
+# getting in its own way, and it says nothing whatever about the drag,
+# because this window was not on the screen when the drag happened.
+#
+# OwnConsoleWindow answers "is that window this report's own console".
+#
+# The first mechanism is the one that actually fires, and it was
+# measured here rather than assumed, because D-254 says something that
+# reads like the opposite. That entry found GetConsoleWindow returning a
+# hidden, zero-sized PseudoConsoleWindow under Windows Terminal, and
+# concluded the console window cannot be hidden. Both are true and they
+# answer different questions: the pseudo console window is *owned* by
+# the terminal frame, so GetAncestor(GA_ROOTOWNER) climbs from it to the
+# window a person can see. Measured on this machine, in a console
+# started exactly as double-clicking the .cmd starts one:
+#
+#   GetConsoleWindow    0xa303a8  visible=True
+#   GA_ROOTOWNER of it  0x2d0334  pid 3132 (WindowsTerminal), visible=True
+#                                 - and the foreground window, the same handle
+#
+# So "which visible window is my console displayed in" has an answer
+# even under Windows Terminal; "can I hide it" still does not.
+#
+# The other two are there for hosts where that does not hold. The
+# console's own process list catches a classic conhost; WT_SESSION plus
+# a terminal-host process name is a last resort, and is reported as
+# "almost certainly" rather than as fact, because a person really can
+# have a second terminal covering the agent.
+#
+# Either way the answer is a reason to disregard the reading, never a
+# reason to report a problem.
+$ownConsoleHwnds = @()
+$ownConsolePids  = @()
+try {
+  $cw = [DR]::GetConsoleWindow()
+  if ($cw -ne [IntPtr]::Zero) {
+    $ownConsoleHwnds += $cw
+    $root = [DR]::GetAncestor($cw, 3)   # GA_ROOTOWNER
+    if ($root -ne [IntPtr]::Zero) { $ownConsoleHwnds += $root }
+  }
+  $buf = New-Object uint32[] 64
+  $n = [DR]::GetConsoleProcessList($buf, 64)
+  if ($n -gt 0) { $ownConsolePids = @($buf[0..([Math]::Min($n,64)-1)]) }
+} catch { }
+
+$underTerminal = [bool]($env:WT_SESSION -or $env:WT_PROFILE_ID)
+$terminalHosts = @('WindowsTerminal','conhost','OpenConsole')
+
+function OwnConsoleWindow([IntPtr]$h, [int]$procId, [string]$procName) {
+  foreach ($o in $ownConsoleHwnds) { if ($h -eq $o) { return 'certainly' } }
+  foreach ($p in $ownConsolePids)  { if ($procId -eq [int]$p) { return 'certainly' } }
+  if ($underTerminal -and ($terminalHosts -contains $procName)) { return 'almost certainly' }
+  return ''
+}
 
 function IntegrityOf([int]$procId) {
   $h = [DR]::OpenProcess(0x1000, $false, $procId)
@@ -119,6 +184,10 @@ foreach ($p in (Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
 # ---- the windows ------------------------------------------------------
 Say ""
 Say "---- every Liro Bridge window, and what is really in front of it ----"
+Say "  This is the screen as it is NOW, with this report's own window on it."
+Say "  For what was in front of the agent at the moment of the drag, read the"
+Say "  'covered' column and the 'in front of this one' lines further down: the"
+Say "  agent watches for that itself, once a second, and writes it to its log."
 $tops = New-Object System.Collections.ArrayList
 $cb = [DR+EnumProc]{ param($h, $l) if ((ClassOf $h) -eq 'LiroBridgeWindow') { [void]$tops.Add($h) }; return $true }
 [void][DR]::EnumWindows($cb, [IntPtr]::Zero)
@@ -162,10 +231,19 @@ foreach ($top in $tops) {
   if ($inTree) {
     Say ("    at the centre ({0},{1}) sits {2} - part of this window. A drop here reaches the agent." -f $pt.X, $pt.Y, (ClassOf $under))
   } else {
+    $own = OwnConsoleWindow $under $uPid $uName
     Say ("    at the centre ({0},{1}) sits '{2}' pid {3} ({4})" -f $pt.X, $pt.Y, (ClassOf $under), $uPid, $uName)
-    Say  "    *** THIS IS NOT PART OF THE AGENT'S WINDOW ***"
-    Say  "    A drop at that point goes to that window. The agent is never told, and"
-    Say  "    its log will show a perfect registration and no drag at all."
+    if ($own) {
+      Say ("    That is {0} this report's own console window, not a finding." -f $own)
+      Say  "    It opened when you ran this report, so it was not on the screen when you"
+      Say  "    dragged, and this reading says nothing about the drag. What the agent"
+      Say  "    itself saw at the time is below: the 'covered' column, and any"
+      Say  "    'in front of this one' lines."
+    } else {
+      Say  "    *** THIS IS NOT PART OF THE AGENT'S WINDOW ***"
+      Say  "    A drop at that point goes to that window. The agent is never told, and"
+      Say  "    its log will show a perfect registration and no drag at all."
+    }
   }
 }
 
