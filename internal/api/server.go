@@ -143,7 +143,94 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v2/sign/pdf", s.handleSignDocuments)
 	mux.HandleFunc("/v2/jobs/{id}/events", s.handleJobEvents)
 	mux.HandleFunc("/v2/jobs/{id}/result", s.handleJobResult)
-	return withProtocolRules(mux)
+	// Everything else. Without this, net/http's own ServeMux answers an
+	// unknown path with a plain-text "404 page not found" and no code
+	// at all — which PROTOCOL.md §7 says is impossible ("every error
+	// body is {code, details?}"), and which a caller can do nothing
+	// with. It is not hypothetical: it is what an SDK asking a stale
+	// agent for GET /v2/certificates actually received (D-264).
+	mux.HandleFunc("/", s.handleUnknownEndpoint)
+	return withProtocolRules(recoverPanics(mux))
+}
+
+// handleUnknownEndpoint answers every path this agent does not serve.
+//
+// It is deliberately unauthenticated. Which routes exist is a fact
+// about this agent's version, not about the caller's pairing, and
+// answering NOT_PAIRED here would send an integrator to re-pair over
+// and over against an agent that simply needs updating. Nothing is
+// disclosed that GET /v2/health does not already give away for free.
+func (s *Server) handleUnknownEndpoint(w http.ResponseWriter, r *http.Request) {
+	fail(w, errs.WithDetails(errs.CodeEndpointNotFound,
+		errors.New("no such endpoint"),
+		// Facts the caller already sent, handed back so a log line says
+		// which call was wrong without the caller instrumenting it.
+		// Never the query string: it is the one part of a URL that
+		// might carry something a caller did not mean to echo.
+		map[string]any{"path": r.URL.Path, "method": r.Method}))
+}
+
+// recoverPanics turns a panicking handler into INTERNAL rather than a
+// dropped connection.
+//
+// The signing goroutine already has this (runJob's own recover, which
+// fails the job); the HTTP handlers did not, so a panic in one reached
+// net/http, which closes the connection without writing anything. To a
+// caller that is a network error rather than an answer — the same
+// defect as the bare 404 and found by the same audit (D-264).
+func recoverPanics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &recordingWriter{ResponseWriter: w}
+		defer func() {
+			p := recover()
+			if p == nil {
+				return
+			}
+			// http.ErrAbortHandler is net/http's own documented way of
+			// abandoning a response, and is not a defect to report.
+			if err, ok := p.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+				panic(p)
+			}
+			slog.Error("api: a handler panicked", "path", r.URL.Path, "method", r.Method, "panic", p)
+			if rec.wrote {
+				// The status line is already gone, and on the event
+				// stream so is part of the body. There is nothing
+				// truthful left to write; the caller sees the stream
+				// end, which is what a dropped connection means.
+				return
+			}
+			fail(rec, errs.New(errs.CodeInternal, errors.New("the handler panicked")))
+		}()
+		next.ServeHTTP(rec, r)
+	})
+}
+
+// recordingWriter remembers whether a response has been started, so a
+// recovered panic knows whether it may still write one.
+//
+// It forwards Flush because GET /v2/jobs/{id}/events type-asserts
+// http.Flusher and refuses to stream without it: a wrapper that
+// swallowed that assertion would turn the progress stream into one
+// buffered delivery at the end, which is not progress.
+type recordingWriter struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (w *recordingWriter) WriteHeader(status int) {
+	w.wrote = true
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *recordingWriter) Write(b []byte) (int, error) {
+	w.wrote = true
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *recordingWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // withProtocolRules applies the rules that hold for every endpoint,
@@ -231,7 +318,7 @@ func statusFor(code errs.Code) int {
 		return http.StatusForbidden
 	case errs.CodePairingExpired:
 		return http.StatusGone
-	case errs.CodeJobNotFound:
+	case errs.CodeJobNotFound, errs.CodeEndpointNotFound:
 		return http.StatusNotFound
 	case errs.CodePairingInProgress, errs.CodeJobInProgress:
 		return http.StatusConflict

@@ -188,6 +188,23 @@ const (
 	// gain.
 	CodeCertificateListingDisabled Code = "CERTIFICATE_LISTING_DISABLED"
 
+	// CodeEndpointNotFound means the agent has no such endpoint. It is
+	// almost never a typo: the overwhelmingly common cause is an SDK
+	// newer than the agent it is talking to, asking for a route that
+	// was added after that agent was built.
+	//
+	// It is its own code rather than REQUEST_INVALID because the two
+	// need opposite things from the caller. REQUEST_INVALID says "fix
+	// your request", which is wrong and misleading advice here — the
+	// request is exactly right and the agent is old. And it is not
+	// JOB_NOT_FOUND, which shares the 404 but means a job that is gone
+	// rather than a route that was never there.
+	//
+	// Introduced after a stale agent answered GET /v2/certificates with
+	// net/http's own bare 404 — no JSON, no code — which is the one
+	// thing PROTOCOL.md §7 says can never happen (D-264).
+	CodeEndpointNotFound Code = "ENDPOINT_NOT_FOUND"
+
 	CodeInternal Code = "INTERNAL"
 )
 
@@ -236,6 +253,7 @@ func AllCodes() []Code {
 		CodeJobNotFound,
 		CodeDocumentSigningDisabled,
 		CodeCertificateListingDisabled,
+		CodeEndpointNotFound,
 		CodeInternal,
 	}
 }

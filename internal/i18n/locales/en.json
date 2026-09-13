@@ -102,6 +102,7 @@
   "error.consent_denied": "The operation was cancelled.",
   "error.consent_timeout": "No answer was given in time, so nothing was signed.",
   "error.document_signing_disabled": "Signing whole documents is switched off in this copy of Liro Bridge. Turn it on in Settings.",
+  "error.endpoint_not_found": "This version of Liro Bridge does not have what the application asked for. Update Liro Bridge.",
   "error.input_unreadable": "The document could not be read. It may be open in another program, or no longer where it was.",
   "error.internal": "An unexpected error occurred.",
   "error.job_in_progress": "This application already has a signing job running. Wait for it to finish.",

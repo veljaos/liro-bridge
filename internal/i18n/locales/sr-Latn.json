@@ -102,6 +102,7 @@
   "error.consent_denied": "Operacija je otkazana.",
   "error.consent_timeout": "Odgovor nije stigao na vreme, pa ništa nije potpisano.",
   "error.document_signing_disabled": "Potpisivanje celih dokumenata je isključeno u ovoj kopiji Liro Bridge-a. Uključite ga u Podešavanjima.",
+  "error.endpoint_not_found": "Ova verzija Liro Bridge-a nema ono što je aplikacija zatražila. Ažurirajte Liro Bridge.",
   "error.input_unreadable": "Dokument nije mogao da se pročita. Možda je otvoren u drugom programu ili više nije na istom mestu.",
   "error.internal": "Došlo je do neočekivane greške.",
   "error.job_in_progress": "Ova aplikacija već ima posao potpisivanja u toku. Sačekajte da se završi.",

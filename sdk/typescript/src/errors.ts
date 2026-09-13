@@ -36,6 +36,7 @@ export type KnownLiroErrorCode =
   | 'CERTIFICATE_LISTING_DISABLED'
   | 'JOB_IN_PROGRESS'
   | 'JOB_NOT_FOUND'
+  | 'ENDPOINT_NOT_FOUND'
   // Signing
   | 'CONSENT_DENIED'
   | 'CONSENT_TIMEOUT'
@@ -117,6 +118,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<KnownLiroErrorCode>([
   'CERTIFICATE_LISTING_DISABLED',
   'JOB_IN_PROGRESS',
   'JOB_NOT_FOUND',
+  'ENDPOINT_NOT_FOUND',
   'CONSENT_DENIED',
   'CONSENT_TIMEOUT',
   'NO_READER',
@@ -207,6 +209,9 @@ const MESSAGES: Record<LiroErrorCode, string> = {
   JOB_IN_PROGRESS: 'This application already has a signing job running. One at a time; wait for it to finish.',
   JOB_NOT_FOUND:
     'No such job: it never existed, it belongs to another application, its result has already been collected, or it expired. Submit again.',
+  ENDPOINT_NOT_FOUND:
+    'This agent has no such endpoint. Your request is almost certainly right and the agent is older than this SDK — ' +
+    'compare its version from GET /v2/health against what this SDK expects, and update the agent. `details.path` says which call.',
 
   // ---- signing ----
   CONSENT_DENIED: 'The person pressed Cancel, closed the window, or stopped the batch. This is an answer, not a failure.',

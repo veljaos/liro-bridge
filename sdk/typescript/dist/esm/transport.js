@@ -250,8 +250,18 @@ function errorFromResponse(response, spec) {
     const body = parsed;
     const code = typeof body?.code === 'string' ? body.code : null;
     if (code === null) {
+        // A bare 404 is the one uncoded answer with a known cause, and it
+        // is worth naming. An agent built before this endpoint existed has
+        // no route for it, so net/http's own ServeMux answers with
+        // plain-text "404 page not found" — no JSON and no code. Newer
+        // agents answer ENDPOINT_NOT_FOUND instead, but the ones already
+        // installed will not, and this SDK is the only thing in a position
+        // to explain what an integrator is looking at.
+        const hint = response.status === 404
+            ? '. The agent is probably older than this SDK and has no such endpoint — check its version with GET /v2/health, and update it'
+            : '';
         return new LiroError('PROTOCOL_VIOLATION', {
-            detail: `${spec.method} ${spec.path} answered ${response.status} with no error code`,
+            detail: `${spec.method} ${spec.path} answered ${response.status} with no error code${hint}`,
             httpStatus: response.status,
         });
     }

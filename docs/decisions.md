@@ -20553,3 +20553,122 @@ will first be seen on the first tag pushed after it.
   else would then catch a field this project's own tooling wrote by
   mistake, and `verifyrelease` is exactly the step whose job is to
   refuse what an agent would refuse.
+
+## D-264 — Every route answers with a code, including the ones that do not exist: a bare 404 from net/http's own ServeMux is the one answer PROTOCOL.md §7 forbids
+
+**Date:** 2026-09-13
+**Phase:** F11 (found while demonstrating the protocol path)
+
+**What this is about.** An SDK asked an agent for `GET /v2/certificates`
+and got HTTP 404 with `Content-Type: text/plain` and the body `404 page
+not found`. No JSON. No code. The SDK could only report
+`PROTOCOL_VIOLATION`, which is accurate and useless.
+
+PROTOCOL.md §7 opens with "Every error body is `{code, details?}` ...
+and nothing else." That was not true, and had never been true, for every
+path this agent does not serve.
+
+### What actually produced it
+
+Not what it looked like. The first guess — and a reasonable one — was a
+lost or superseded pairing that should have answered `NOT_PAIRED`. It
+was not that.
+
+The agent being talked to was a **stale binary**: `liro-bridge.exe`
+built on 7 September, before `/v2/certificates` and `/v2/echo` existed.
+`git show` on the commit it was built from registers only
+`/v2/pair/request` and `/v2/pair/confirm`; grepping the binary for the
+route strings finds `/v2/sign/pdf` and `/v2/health` present and
+`/v2/certificates` absent. So the request reached an agent with no such
+route, `http.ServeMux` fell through to its built-in `NotFoundHandler`,
+and that handler knows nothing about this protocol.
+
+The stale binary is an accident of a demonstration and not itself a
+defect. **The defect is that the fall-through was possible at all**, and
+it will keep happening for as long as agents are deployed: every
+integrator whose SDK is newer than the agent in front of it hits exactly
+this, and the answer tells them nothing.
+
+### The audit, which is the point of the entry
+
+If one route can answer without a code, others can. Two holes, both now
+closed:
+
+1. **Every unmatched path.** `Handler()` registered nine patterns and no
+   catch-all, so anything else got net/http's plain-text 404 —
+   `/v2/certificates/` with a trailing slash, a route from a future
+   protocol version, an unknown tail on a `{id}` wildcard, `/`, `/v2`.
+2. **Every panicking handler.** `runJob` has recovered its own panics
+   since it was written — a panicking *job* fails with `INTERNAL`. The
+   HTTP handlers had no such guard, so a panic in one reached net/http,
+   which closes the connection without writing anything. To a caller
+   that is a network error rather than an answer: the same defect one
+   layer up.
+
+Checked and found sound: every handler's method guard (`requireGET` /
+`requirePOST` both return `REQUEST_INVALID`), the preflight refusal in
+`withProtocolRules`, and `writeJSON`'s marshal-failure path, which
+already writes `{"code":"INTERNAL"}` by hand rather than a half body.
+
+### `ENDPOINT_NOT_FOUND` rather than an existing code
+
+`REQUEST_INVALID` was the obvious candidate and is wrong, because the
+two need **opposite things** from the caller. `REQUEST_INVALID` means
+"fix your request"; here the request is exactly right and the agent is
+old. Sending an integrator to debug a correct request is worse than the
+bare 404, because it is confidently misleading rather than merely empty.
+
+`JOB_NOT_FOUND` shares the 404 and means a job that is gone, not a route
+that was never there. `NOT_PAIRED` is what the symptom first suggested
+and is the worst of all: it sends an integrator to re-pair, repeatedly,
+against an agent that needs updating.
+
+So a new code. PROTOCOL.md §7 already allows this — "new situations get
+new codes" — and the SDK's own `LiroErrorCode` union documents `UNKNOWN`
+as the forward-compatible case, so an older SDK meeting the new code
+reports it verbatim rather than mislabelling it.
+
+**The answer is unauthenticated,** deliberately. Which routes exist is a
+fact about the agent's version, not about the caller's pairing, and
+requiring auth to learn it would mean an integrator with a perfectly
+good pairing still cannot find out why their call fails. Nothing is
+disclosed that `GET /v2/health` does not already give away.
+
+**`details` carries `path` and `method` and not the query string.** Both
+are facts the caller already sent; the query string is the part of a URL
+most likely to carry something it did not mean to have echoed back.
+
+### The half of this that cannot be fixed in the agent
+
+**Every agent already installed still answers a bare 404**, including
+0.9.1. The fix helps the next release and nothing before it. So the SDK
+does the other half: a 404 with no code now carries the sentence the
+agent could not send — that the agent is probably older than the SDK and
+should be updated — and PROTOCOL.md §7 says the same thing out loud, so
+that a bare uncoded 404 and `ENDPOINT_NOT_FOUND` are read as the same
+condition.
+
+### Rejected
+
+- **Authenticating the catch-all.** Above: it withholds from a paired
+  caller the one fact that would explain the failure, and discloses
+  nothing `/v2/health` does not.
+- **Returning `REQUEST_INVALID`.** Above: confidently wrong advice.
+- **Answering 404 with no body but the right `Content-Type`.** Still not
+  `{code}`; §7 says a body, not a status.
+- **Registering the catch-all inside `withProtocolRules` instead of on
+  the mux.** The mux's own fall-through happens inside `next.ServeHTTP`,
+  so a wrapper cannot see it without inspecting the status after the
+  fact — which means buffering every response to catch one case.
+- **A `recover` around each handler rather than one wrapper.** Nine
+  copies of one rule is how they stop agreeing ([[D-108]], [[D-124]],
+  [[D-138]]).
+- **Letting the panic guard write over a response already started.** Once
+  the status line is gone there is nothing truthful left to write, and on
+  the event stream part of the body has shipped too. `recordingWriter`
+  tracks whether anything was written; if it was, the caller sees the
+  stream end, which is what a dropped connection means. It forwards
+  `Flush` for the same reason — `GET /v2/jobs/{id}/events` type-asserts
+  `http.Flusher` and refuses to stream without one, so a wrapper that
+  swallowed the assertion would silently turn progress into a single
+  delivery at the end.
