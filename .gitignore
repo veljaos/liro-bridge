@@ -47,3 +47,9 @@ Thumbs.db
 node_modules/
 sdk/typescript/.dist-check/
 *.tgz
+
+# The protocol demos' own state (sdk/examples/demo-*.mjs). pairing-*.json
+# holds a live deviceSecret in cleartext — an application's whole
+# authority to ask this machine for a signature — and out/ holds signed
+# PDFs. Neither belongs in a public repository.
+/liro-demo/

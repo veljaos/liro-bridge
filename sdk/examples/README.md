@@ -19,6 +19,36 @@ its language's standard library.
 the others. It does the same thing in a fifth of the lines, and the difference is
 the whole argument for the SDK.
 
+## Two demonstrations, which are not examples
+
+These three files are a different thing from the seven above, and are kept
+apart on purpose. The seven are programs to copy into an integration. These are
+programs to **watch**: they drive the agent down the protocol path so that the
+windows a person would see can be seen, one question at a time.
+
+| File | Run it with |
+|---|---|
+| [`demo-a-application-decides.mjs`](demo-a-application-decides.mjs) | `node sdk/examples/demo-a-application-decides.mjs` — the application answers every question |
+| [`demo-b-person-places-stamp.mjs`](demo-b-person-places-stamp.mjs) | `node sdk/examples/demo-b-person-places-stamp.mjs` — the same request with `stamp` removed, so the person answers it |
+| [`demo-protocol-common.mjs`](demo-protocol-common.mjs) | not run directly; the plumbing both share, so the difference between them is one object literal |
+
+**Read [`DEMO-WALKTHROUGH.md`](DEMO-WALKTHROUGH.md) before running either.** It
+says screen by screen what to expect and — more usefully — which screens are
+*deliberately absent*, so that a step which does not appear is noticed as an
+absence rather than assumed to be something you missed. It also explains why
+demo B cannot open the placement picker, which is a real property of the
+protocol path rather than a fault in the demo.
+
+### Which of these two have been run
+
+| Demo | Run against a real agent? |
+|---|---|
+| `demo-a-application-decides.mjs` | **Partly.** Paired with a window on screen, listed the certificates, and reached the approval. A full run through to a written PDF has not been confirmed. |
+| `demo-b-person-places-stamp.mjs` | **No.** Its first run failed at `GET /v2/certificates` against an agent too old to have that route — which is what found [D-264](../../docs/decisions.md), the bare uncoded 404. Not yet re-run against a current agent. |
+
+Both need an agent **built from current source**. A stale binary is exactly
+what produced that failure, and the walkthrough says how to build and check one.
+
 ## Which of these have actually been run
 
 An example that does not run is worse than no example: the reader copies it, it
