@@ -20430,6 +20430,26 @@ struct and noticing something missing.
 Taking a field out of the manifest ought to be free. It was not, and
 the measurement is the reason this entry is long.
 
+**How it was found, which is the part worth keeping.** Not by reading
+anything. The field was removed, the tree was built, and the new build
+was then handed the manifest that is *published right now* — v0.9.0's
+real `release.json` and its real signature, fetched from the Releases
+page — to answer what looked like a formality: does taking a field out
+break anything already in the world? It refused them.
+
+Reading the code would not have shown it. `dec.DisallowUnknownFields()`
+is one line with no comment, in a function whose name says it parses;
+its consequence is a fact about *documents that already exist
+elsewhere*, and there is nothing on the screen next to that line to
+suggest the question. A reviewer would have read it as ordinary care,
+because that is what it looks like.
+
+What turned it into a finding was having a real published artefact to
+try the new build against, and trying it before believing the change
+was safe. That is [[D-247]]'s lesson pointed at a different kind of
+thing: not "a feature nothing calls", but *a check nobody measured the
+reach of*.
+
 `ParseManifest` called `dec.DisallowUnknownFields()`. There was **no
 comment saying why**. With the field removed, this build was handed the
 manifest that is published *right now* — v0.9.0's real `release.json`
