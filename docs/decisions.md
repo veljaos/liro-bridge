@@ -20090,3 +20090,176 @@ Windows machines as a first sieve; and the stranger.
   that the visible window is not the process's to hide, and moving
   somebody's terminal to take a reading is a worse manner than
   explaining the reading.
+
+---
+
+## D-261 — The SmartScreen publisher figure is recaptured from the real v0.9.0 on a path with nothing personal in it; all eleven figures in both guides were checked, and one other carries the owner's own certificate
+
+**Date:** 2026-09-13
+**Phase:** F10
+
+**What this closes.** [[D-253]]'s last section recorded a defect in a
+figure it did not add, and left it: `09-upozorenje-izdavac.png` showed
+
+```
+Name:  ...a1ce6a98\scratchpad\ssdemo\liro-bridge-1.0.2-x64.exe
+From:  C:\Users\Veljko\AppData\Local\Temp\claude\C--User...
+```
+
+Two things wrong with a picture a stranger reads. **`1.0.2` is a version
+that has never existed** — the only release is 0.9.0 — so the guide
+showed a reader a file name they cannot have. And the `From` line named
+the owner's own profile and an agent working directory, which is the
+sort of thing SPEC §18.3 keeps out of a log file and has no more
+business in a shipped document.
+
+### How it was recaptured
+
+The owner's conditions were: the real v0.9.0 file, a path with nothing
+personal in it, and no installation — raise the dialog, capture, cancel.
+
+*The file is the published artefact, and that is checked rather than
+assumed.* `liro-bridge-0.9.0-x64.exe` was fetched from the Releases page
+and compared against the release's own signed manifest:
+
+```
+size    want 11,361,280  got 11,361,280   OK
+sha256  want 3aa562bd0b7f5921e6409fc88302fea8a84193a1e2d1a60cbaabc1ee97ecf3d0
+        got  3aa562bd0b7f5921e6409fc88302fea8a84193a1e2d1a60cbaabc1ee97ecf3d0
+```
+
+That is the exact artefact [[D-245]]'s update check would verify, so the
+figure is of the file a reader actually downloads.
+
+*The path is `C:\Preuzimanja`* — "Downloads" in Serbian, at the root of
+the drive, containing no user name and no agent directory. It is
+plausible to a Serbian reader and says nothing about whose machine it
+is. It was removed afterwards.
+
+*The Mark of the Web was written by hand*, which is the authorisation
+[[D-253]] said this needed and does not need a browser:
+
+```
+liro-bridge-0.9.0-x64.exe:Zone.Identifier
+  [ZoneTransfer]
+  ZoneId=3
+```
+
+*The dialog was raised by `ShellExecute` and cancelled by `WM_CLOSE`* —
+a window message, never synthetic input ([[D-094]]) — and photographed
+with `PrintWindow`, so taking the picture did not take the foreground
+from whoever was using the machine ([[D-122]]). The launch's own result
+is the evidence that nothing ran:
+
+```
+ShellExecute refused or was cancelled: The operation was canceled by the user.
+```
+
+Checked afterwards: no `liro-bridge` process, nothing new in any
+Uninstall hive (the "Liro Bridge 0.9.0" row is the hand-installed
+product that was there before), and both registry keys re-exported
+byte-for-byte identical to the exports taken before any of this began.
+
+### What the new figure says
+
+```
+Open File - Security Warning
+The publisher could not be verified. Are you sure you want to run this software?
+  Name:       C:\Preuzimanja\liro-bridge-0.9.0-x64.exe
+  Publisher:  Unknown Publisher
+  Type:       Application
+  From:       C:\Preuzimanja\liro-bridge-0.9.0-x64.exe
+  [ Run ]  [ Cancel ]
+  [x] Always ask before opening this file
+```
+
+`Unknown Publisher`, capital P — which is the spelling [[D-253]] went to
+the trouble of establishing for *this* dialog, as against SmartScreen's
+lower-case `publisher`. Both guides already quote it that way and neither
+needed changing.
+
+**480 × 332 becomes 480 × 351.** Same width, nineteen points taller: the
+new capture carries the **"Always ask before opening this file"**
+checkbox row, which the old one did not. That is what this Windows shows
+and it is ticked by default; neither guide's text mentions it, neither
+needs to, and leaving it alone is the correct thing for a reader to do.
+
+The file name is unchanged, so `build/msi/build.ps1`'s
+`$expectedImages` and `liro-bridge.wxs`'s eleven `GuideImg` components
+are untouched, and [[D-107]]'s `.gitattributes` protection still applies
+(`git check-attr` reports `text: unset`).
+
+### Every other figure, checked
+
+**Eleven figures. All eleven checked. Each is referenced by both
+`Uputstvo.html` and `Guide.html` — 11 references, 11 distinct, in each.**
+Every one was looked at, not grepped.
+
+| Figure | Version shown | Identity on it | Verdict |
+|---|---|---|---|
+| 01 dokumenti-prazno | — | none | clean |
+| 02 dokumenti | — | invented file names (`Faktura 2026-114.pdf`, `Ugovor o delu.pdf`, `Izjava.pdf`) | clean |
+| 03 sertifikat | — | **invented** signer `Ana Petrović`, thumbprint `7E5B3F2A` | clean |
+| 04 metod | — | none | clean |
+| 05 napredak | — | the same invented file names | clean |
+| 06 izvestaj | — | invented path `C:\Users\Ana\Dokumenti\Fakture` | clean |
+| 07 dnevnik | — | **`B3D1ECCE`, four times** | **finding, below** |
+| 08 podesavanja | — | every field empty or a default | clean |
+| 09 upozorenje-izdavac | **was 1.0.2** | **was the owner's profile and an agent directory** | recaptured here |
+| 10 smartscreen | — | none | clean |
+| 11 smartscreen-vise-informacija | 0.9.0, real | none | clean |
+
+Eight of the eleven are clean because somebody took care: the signer is
+invented, her documents are invented, her folder is invented, and the
+settings window was photographed empty. That is worth saying, because it
+is the reason this sweep found one thing rather than nine.
+
+### The one other finding, reported rather than fixed
+
+**`07-dnevnik.png` shows `B3D1ECCE` on all four audit entries. That is
+the owner's own MUP certificate**, named in [[D-209]] in as many words:
+"The MUP certificate on this machine (`…B3D1ECCE`, ВЕЉКО СТАНОЈЕВИЋ, MUP
+Gradjani CA 4)".
+
+It is the same class as the defect this entry fixes — real data from the
+owner's machine in a document a stranger reads — and it is inconsistent
+with the guide's own care three figures earlier, where the certificate
+step shows an invented signer with an invented thumbprint `7E5B3F2A`.
+SPEC §6.7 puts the thumbprint in the audit log precisely because it
+identifies the signer's certificate; publishing eight characters of the
+real one is a smaller thing than a name or a path and is not nothing.
+
+**Not fixed here**, for the reason [[D-253]] gives for not fixing 09
+while it was in there: recapturing it means writing invented entries
+into an audit store and photographing the window, which is a step the
+owner has not asked for, and a fix made quietly inside a change about
+something else is how a step nobody chose ships. It is a small piece of
+work — [[D-093]] already did exactly that once, building four audit
+entries by hand to photograph their colours — and it needs one
+instruction.
+
+### What this does not establish
+
+The figure is of 0.9.0's plain EXE on this machine's **English**
+Windows. A Serbian Windows shows this dialog in Serbian and there is no
+picture of that; both guides already say so in words and name every
+button in both languages, which is the trade [[D-242]] made and
+[[D-253]] reaffirmed, and this entry does not reopen it.
+
+### Rejected
+
+- **Building the EXE locally instead of downloading the published
+  one.** The dialog shows only a file name and a folder, so no pixel
+  would differ — and the figure would then be of a file that is not the
+  one anybody can download, which is the same kind of untruth as
+  `1.0.2`, just harder to notice.
+- **Capturing in `C:\Users\Public\Downloads`.** Writable without
+  elevation and free of a user name, and it reads as a place nobody's
+  downloads actually go. `C:\Preuzimanja` is short, plausible and
+  equally anonymous.
+- **Leaving the "Always ask before opening this file" row out by
+  cropping to the old figure's height.** The guide's whole instruction
+  in that section is *read what is on the screen*; a figure edited to
+  match an older screenshot is a figure that no longer matches the
+  screen.
+- **Recapturing `07-dnevnik.png` in the same pass.** Above.
