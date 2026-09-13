@@ -41,26 +41,21 @@ const keyEnv = "LIRO_RELEASE_SIGNING_KEY"
 func main() {
 	dir := flag.String("dir", "", "the directory holding the release artefacts (required)")
 	version := flag.String("version", "", "the released version, without a leading v (required)")
-	notes := flag.String("notes", "", "the release page URL (defaults to the tag's own page)")
 	flag.Parse()
 
-	if err := run(*dir, *version, *notes); err != nil {
+	if err := run(*dir, *version); err != nil {
 		fmt.Fprintln(os.Stderr, "signrelease:", err)
 		os.Exit(1)
 	}
 }
 
-func run(dir, version, notes string) error {
+func run(dir, version string) error {
 	if dir == "" || version == "" {
 		return fmt.Errorf("--dir and --version are both required")
 	}
 	if _, err := update.ParseVersion(version); err != nil {
 		return err
 	}
-	if notes == "" {
-		notes = "https://github.com/veljaos/liro-bridge/releases/tag/v" + version
-	}
-
 	priv, err := privateKeyFromEnv()
 	if err != nil {
 		return err
@@ -81,7 +76,6 @@ func run(dir, version, notes string) error {
 		// machine was, which is a needless difference between two
 		// otherwise identical builds.
 		Released:  time.Now().UTC().Truncate(time.Second),
-		NotesURL:  notes,
 		Artefacts: artefacts,
 	}
 	manifestBytes, err := json.MarshalIndent(m, "", "  ")

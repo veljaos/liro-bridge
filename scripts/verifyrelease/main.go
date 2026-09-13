@@ -50,6 +50,17 @@ func run(dir string) error {
 	}
 	fmt.Printf("release.json verifies against the keys this agent embeds (version %s)\n", m.Version)
 
+	// The stricter question, asked here and deliberately not by the
+	// agent: is this manifest exactly the shape this build's own
+	// tooling produces? An installed agent tolerates a field it does
+	// not know, because refusing would take it off the update channel
+	// entirely; the build that is about to publish one does not,
+	// because such a field is a mistake in the tooling and this is the
+	// last moment it can be caught.
+	if err := update.CheckManifestShape(manifestBytes); err != nil {
+		return fmt.Errorf("release.json carries something this build does not write: %w", err)
+	}
+
 	// Every artefact the manifest names must be there and must hash to
 	// what it says. This is the check the agent makes after it
 	// downloads one; making it here means a release cannot be published

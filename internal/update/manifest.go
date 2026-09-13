@@ -40,10 +40,14 @@ type Manifest struct {
 	// person beside the version; nothing branches on it.
 	Released time.Time `json:"released"`
 
-	// NotesURL is the release page. It is what the person is offered
-	// when the agent cannot install for them — an update they decline
-	// still has to be findable.
-	NotesURL string `json:"notesURL"`
+	// There is deliberately no field here for the release page. What a
+	// person is offered when the agent cannot install for them is
+	// ReleasesPageURL (check.go), a constant this binary was built
+	// with — not a URL read out of a document fetched over the network.
+	// A signature says the manifest is ours; it does not make every
+	// address inside it safe to send somebody to, which is the same
+	// rule downloadBase's own comment states for artefacts. See
+	// docs/decisions.md.
 
 	// Artefacts is every file the release published, with the digest
 	// the agent checks a download against. A digest that is inside the
@@ -96,14 +100,28 @@ const maxManifestBytes = 64 * 1024
 // authentic — that is VerifyManifest's question, and a caller must ask
 // it first (SPEC §15.2: verify the signature before doing anything
 // with what was downloaded).
+// A field this build does not know is ignored rather than refused, and
+// that is deliberate. It used to be refused, with no comment saying
+// why, and the consequence was never written down: a release that
+// described itself with one more field than an installed agent knew
+// would not merely lose that field, it would make the whole manifest
+// unreadable to that agent — so every agent already in the field would
+// stop seeing releases, silently, from the day the field was added.
+// That is the worst failure an update channel has, and it arrives at
+// the moment somebody is trying to ship a fix.
+//
+// Refusing bought nothing against an attacker either. VerifyManifest
+// checks the signature before this runs, so by the time a field can be
+// seen here the document is one we signed; an unknown field can only
+// have come from this project's own tooling. Catching *that* is the
+// release pipeline's job and it still has it — CheckManifestShape
+// below, which verifyrelease runs before anything is published.
 func ParseManifest(b []byte) (Manifest, error) {
 	if len(b) > maxManifestBytes {
 		return Manifest{}, fmt.Errorf("%w: %d bytes is larger than a release manifest can be", ErrManifestInvalid, len(b))
 	}
 	var m Manifest
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&m); err != nil {
+	if err := json.Unmarshal(b, &m); err != nil {
 		return Manifest{}, fmt.Errorf("%w: %v", ErrManifestInvalid, err)
 	}
 	if _, err := ParseVersion(m.Version); err != nil {
@@ -130,6 +148,33 @@ func ParseManifest(b []byte) (Manifest, error) {
 		seen[a.Name] = true
 	}
 	return m, nil
+}
+
+// CheckManifestShape is the release pipeline's own, stricter question,
+// and the only place strictness belongs: is this manifest exactly the
+// shape this project's tooling produces, with no field in it that this
+// build does not know?
+//
+// It exists because ParseManifest deliberately stopped asking (see its
+// comment). The difference is who is being protected. An installed
+// agent meeting an unfamiliar field should carry on — the alternative
+// is that it stops seeing releases altogether. The build that is about
+// to *publish* a manifest should stop dead, because a field this build
+// does not know, in a document this build just wrote, is a mistake in
+// the tooling and there is still time to fix it.
+//
+// verifyrelease runs this before anything reaches a release page.
+func CheckManifestShape(b []byte) error {
+	if len(b) > maxManifestBytes {
+		return fmt.Errorf("%w: %d bytes is larger than a release manifest can be", ErrManifestInvalid, len(b))
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	var m Manifest
+	if err := dec.Decode(&m); err != nil {
+		return fmt.Errorf("%w: %v", ErrManifestInvalid, err)
+	}
+	return nil
 }
 
 // checkDigest rejects anything that is not 64 lower-case hex

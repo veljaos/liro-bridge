@@ -46,7 +46,6 @@ func testManifest(version string, artefacts ...Artefact) Manifest {
 	return Manifest{
 		Version:   version,
 		Released:  time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC),
-		NotesURL:  "https://github.com/veljaos/liro-bridge/releases/tag/v" + version,
 		Artefacts: artefacts,
 	}
 }

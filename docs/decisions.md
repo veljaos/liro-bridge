@@ -20381,3 +20381,155 @@ real person, a real path, or a version that has not existed.
   asked for, on figures that are otherwise correct — and it would need
   the whole signing flow driven by hand to reproduce the five that show
   it.
+
+---
+
+## D-263 — `notesURL` comes out of the release manifest; the agent stops refusing a manifest with a field it does not know, and the release pipeline keeps refusing one
+
+**Date:** 2026-09-13
+**Phase:** F10
+
+**What this is about.** `update.Manifest.NotesURL` was written into
+every release by `signrelease` and **read by nothing**. Its doc comment
+claimed a purpose — "what the person is offered when the agent cannot
+install for them" — and no code anywhere fulfilled it. That is
+[[D-247]]'s shape exactly: a thing that exists, describes itself as
+working, and is discovered later by somebody who assumes it does.
+
+Two answers were possible: wire it into the update prompt, or take it
+out. **It comes out**, and establishing why turned up a second, larger
+defect that is the more important half of this entry.
+
+### Why it comes out rather than being wired in
+
+**The need it names is already met, by something better.** `updateFailed`
+(`cmd/liro-bridge/update_windows.go`) already tells a person where to
+go when the install does not happen, and the address it uses is
+`update.ReleasesPageURL` — a constant compiled into the binary, whose
+own doc comment reads "where a person goes when the agent will not or
+cannot install for them". That is the same sentence `NotesURL` claimed
+for itself, already implemented, already reached.
+
+**And wiring it in would have broken a rule this project states
+elsewhere in the same package.** [[D-245]] built the artefact URL from a
+fixed base, the tag and the artefact's name, and `downloadBase`'s own
+comment says why: "never from anything inside the manifest, so a
+manifest cannot point a download at another host even after it has
+verified". Opening a browser at an address read out of the manifest is
+that rule broken for a different verb. A signature says the document is
+ours; it does not make every address inside it somewhere to send
+somebody.
+
+So the field had no reader, no need, and no safe way to acquire one.
+`Manifest` now carries a comment where it used to carry the field,
+saying that and why, so it is not added back by someone reading the
+struct and noticing something missing.
+
+### The defect this uncovered, which is worth more than the removal
+
+Taking a field out of the manifest ought to be free. It was not, and
+the measurement is the reason this entry is long.
+
+`ParseManifest` called `dec.DisallowUnknownFields()`. There was **no
+comment saying why**. With the field removed, this build was handed the
+manifest that is published *right now* — v0.9.0's real `release.json`
+and its real signature, fetched from the Releases page — and refused it:
+
+```
+REFUSED: update: the release manifest is not valid: json: unknown field "notesURL"
+```
+
+Read the other way round, that is the serious direction: **a release
+that described itself with one field more than an installed agent knew
+would not merely lose that field — it would make the whole manifest
+unreadable to that agent.** Every agent already in the field would stop
+seeing releases, from the day the field was added, silently, because a
+failed check only reaches the log. It is the worst failure an update
+channel has and it would arrive at the exact moment somebody was trying
+to ship a fix.
+
+**And the strictness was guarding nothing.** `VerifyManifest` checks the
+Ed25519 signature *before* `ParseManifest` runs, so by the time an
+unknown field can be seen, the document is one this project signed. An
+attacker cannot put a field there; only our own tooling can.
+
+**So the strictness moved to where it belongs.**
+
+| | asks | why |
+|---|---|---|
+| `ParseManifest` — the agent | can I act on this? | an unknown field is ignored. Refusing takes the agent off the update channel entirely, and the thing it would be refusing is something we signed. |
+| `CheckManifestShape` — `verifyrelease` | is this exactly the shape our own tooling writes? | an unknown field is refused. In a document this build just wrote, it is a mistake in the tooling, and this is the last moment before publication that it can be caught. |
+
+**This had to ship now rather than later**, and that is the argument for
+doing it in the same pass as a field removal nobody asked to be
+accompanied by a parser change. Forward compatibility only helps if it
+is already installed when it is needed: an agent that is strict today is
+still strict on the day a future release grows a field. Every agent
+shipped between now and that day would be one that has to be reinstalled
+by hand. Doing it in 0.9.1 costs ten lines; doing it in 0.9.2 costs
+every 0.9.1 installation.
+
+### Measured
+
+**The published manifest, before and after.** Against this build, the
+real v0.9.0 `release.json` + `release.json.sig` from the Releases page:
+
+```
+before   REFUSED: ... json: unknown field "notesURL"
+after    verified: version 0.9.0, released 2026-09-11T14:46:05Z, 3 artefacts
+```
+
+**Both directions of the version skew, reasoned from what the decoder
+does and confirmed by the above:** a *missing* field was always
+accepted, so a v0.9.0 agent meeting v0.9.1's manifest — which no longer
+carries `notesURL` — reads it exactly as before. An *unknown* field is
+now accepted, so this build meets v0.9.0's. The removal is compatible in
+both directions, which it was not an hour ago.
+
+**The tests, each confirmed against the behaviour it replaces.**
+`TestAnAgentStillSeesAReleaseThatCarriesAFieldItDoesNotKnow` signs a
+manifest with one extra field and requires it to verify and parse; run
+against the strict parser it fails with the runner's own message, `json:
+unknown field "notesURL"`. `TestTheReleasePipelineStillRefusesAManifestOfTheWrongShape`
+requires `CheckManifestShape` to refuse that same manifest **and** to
+accept one of this build's own shape, because a check that refuses
+everything means nothing.
+`TestTheManifestCarriesNoAddressToSendAPersonTo` is what keeps the field
+from growing back: it fails if the manifest this build writes carries
+any of five spellings of a URL field.
+
+**The pipeline still behaves.** `signrelease` with no key refuses with
+its own sentence and writes neither `release.json` nor
+`release.json.sig` — [[D-239]]'s check, unchanged. The release workflow
+never passed `--notes`, so removing the flag changes nothing there; it
+was a flag with a default that nobody ever overrode.
+
+### What is not claimed
+
+The release job has still never run ([[D-239]]), and nothing here
+changes that. What `verifyrelease`'s new check does on a real release
+will first be seen on the first tag pushed after it.
+
+### Rejected
+
+- **Wiring `NotesURL` into the update prompt.** Above: the need is met
+  by a constant, and reading an address out of the manifest is the rule
+  [[D-245]] states for downloads, applied to a different verb.
+- **Building the notes URL from the tag instead of reading it, and
+  offering that.** It would be safe, and it would offer a person a page
+  whose contents [[D-250]] deliberately keeps free of any account of
+  what changed — so the button would lead somewhere with nothing on it
+  for the decision being made. `ReleasesPageURL` already covers the case
+  where somebody needs to find the release by hand.
+- **Keeping the field, unread, with a comment.** That is what was there,
+  and it is the thing [[D-247]] is about.
+- **Removing the field and leaving `DisallowUnknownFields` alone.** It
+  would have shipped: "latest" only moves forward, so an agent refusing
+  an older manifest is a window that closes as soon as 0.9.1 is
+  published. It would also have left every 0.9.1 installation unable to
+  read any future manifest that gains a field — which is a bill that
+  falls due later and larger.
+- **Dropping the strict check entirely rather than moving it.** Nothing
+  else would then catch a field this project's own tooling wrote by
+  mistake, and `verifyrelease` is exactly the step whose job is to
+  refuse what an agent would refuse.
