@@ -20263,3 +20263,121 @@ button in both languages, which is the trade [[D-242]] made and
   match an older screenshot is a figure that no longer matches the
   screen.
 - **Recapturing `07-dnevnik.png` in the same pass.** Above.
+
+---
+
+## D-262 — The audit-log figure is recaptured against an invented signer; the guide's fiction is now consistent, and the capture is a truer photograph than the ten beside it
+
+**Date:** 2026-09-13
+**Phase:** F10
+
+**What this closes.** [[D-261]] swept every figure in both guides and
+found one carrying something real: `07-dnevnik.png` showed `B3D1ECCE` on
+all four audit entries, which [[D-209]] names as the owner's own MUP
+certificate — three figures after the certificate step shows an invented
+signer with an invented thumbprint `7E5B3F2A`. It was reported and left.
+
+**The owner's reasoning for fixing it is worth keeping, because it is
+not the one the entry assumed.** A certificate thumbprint is public
+information and nothing bad happens if it stays. What is wrong is that
+*every other figure in that guide is an invention* — Ana Petrović, her
+three documents, her folder — and a stranger reading it should meet one
+consistent fiction rather than eight invented screens and one real
+person's certificate. The defect is inconsistency, not disclosure.
+
+### How it was recaptured
+
+Four entries written into a scratch profile's audit store — the method
+[[D-093]] already used once, to photograph the four outcome colours —
+and the window then opened from the tray by posting its own
+`WM_COMMAND`, which is a window message and not synthetic input
+([[D-094]]).
+
+The entries are **the shipped figure's own four rows**: same dates, same
+counts, same outcomes, three signed and one declined, which is what the
+guide's alt text describes (*"ishod potpisano ili otkazano"*). Only the
+certificate changed. The thumbprint is forty uppercase hexadecimal
+characters ending in the eight the certificate step shows, because those
+eight are the whole of what reaches the window
+(`auditThumbprintTail`) and the rest has to look like what a SHA-1
+thumbprint looks like.
+
+The chain was written through `audit.Store.Append` rather than by
+hand, so it is a real chain: `audit.Verify` reports it intact before the
+window is opened, which is what keeps a discontinuity notice
+([[D-166]]) off the figure.
+
+### What differs from the figure it replaces, measured rather than eyeballed
+
+Both are 476 × 559. Differences by magnitude, against the shipped
+figure:
+
+| | |
+|---|---|
+| pixels differing at all | 15 100 of 266 084 (5.7%) |
+| pixels differing by more than 40 in any channel | 4 838 |
+| where those are | rows 131-138, 205-212, 279-286, 353-360 — **the four thumbprints** — and the button row |
+| everything else | ≤ 40, which is text antialiasing; the heading differs by a maximum of **1** |
+
+No positional shift: comparing against the old figure offset by one
+pixel in each of eight directions gives six to eight times as many
+strong differences as no offset at all, so the layout is identical and
+only the ink moved.
+
+### Two things the recapture had to get right that nobody had written down
+
+**The title bar.** The first capture came out with an *active* frame —
+`(238,244,249)` — because a window opened from the tray takes the
+foreground itself. Every one of the guide's other nine window figures
+has an inactive frame, `(243,243,243)`, measured across all of them;
+they were taken by a harness that held the foreground, which is
+[[D-122]]'s whole point about `PrintWindow`. The window is now sent
+`WM_NCACTIVATE(FALSE)` — the message Windows itself sends when a window
+loses activation — so it paints its frame the way it does when a
+person's attention is elsewhere, which is how the other nine look.
+
+**The primary button is a different blue from the other figures', and
+this one is the correct blue.** Measured: every shipped figure with a
+primary button renders it `(48,120,208)`; this capture renders
+`(0,120,212)`, which is `#0078d4` exactly — `--liro-color-brand` in
+`internal/ui/assets/tokens.css`. The same pixel count, 3 661, in both.
+
+The cause was chased far enough to rule out the obvious: no PNG carries
+a colour-profile chunk, none is palettised (all are 8-bit truecolour),
+and the difference is not activation — both of this session's captures
+gave `(0,120,212)`, active and inactive alike. So the shipped figures
+went through some path that shifted the value and this one does not.
+
+**It is not corrected to match**, and that is deliberate. Editing a
+screenshot so it agrees with other screenshots produces a figure that is
+a photograph of nothing. What ships is a straight `PrintWindow` capture
+of the program rendering its own token colour. The consequence is worth
+stating plainly for whoever recaptures the next figure: **every figure
+taken this way will differ slightly in that one blue from the ones taken
+before**, until they are all retaken. It is a saturation shift in one
+button, in a document where no two figures are ever on screen together.
+
+### The sweep's result, restated
+
+Eleven figures. **Ten now carry one consistent invention and one
+(`11-smartscreen-vise-informacija.png`) carries the real 0.9.0 file
+name, which is the point of that one.** Nothing in any figure names a
+real person, a real path, or a version that has not existed.
+
+### Rejected
+
+- **Changing the dates, counts or outcomes while recapturing.** The
+  figure's four rows already tell a coherent story — three signed
+  batches and one declined, the most recent of three documents, which is
+  the batch figures 02, 05 and 06 follow. Reinventing them would have
+  made the diff unreadable and proved nothing.
+- **Adding a signature-level line to the entries.** `AchievedLevel` is
+  rendered when set ([[D-095]]), and setting it would add a line to
+  every row that the shipped figure does not have and the alt text does
+  not describe. A recapture is not the place to redesign a figure.
+- **Post-processing the blue to match the other ten.** Above.
+- **Recapturing all eleven so the blue agrees everywhere.** It would
+  make them consistent and it is a much larger change than the one
+  asked for, on figures that are otherwise correct — and it would need
+  the whole signing flow driven by hand to reproduce the five that show
+  it.
