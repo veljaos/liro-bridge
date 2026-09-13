@@ -397,6 +397,18 @@ var (
 		Release:        syscall.NewCallback(releaseThunk),
 		Invoke:         syscall.NewCallback(executeScriptCompletedInvoke),
 	}
+	navigationStartingVtbl = &simpleHandlerVtbl{
+		QueryInterface: syscall.NewCallback(queryInterfaceThunk),
+		AddRef:         syscall.NewCallback(addRefThunk),
+		Release:        syscall.NewCallback(releaseThunk),
+		Invoke:         syscall.NewCallback(navigationStartingInvoke),
+	}
+	newWindowRequestedVtbl = &simpleHandlerVtbl{
+		QueryInterface: syscall.NewCallback(queryInterfaceThunk),
+		AddRef:         syscall.NewCallback(addRefThunk),
+		Release:        syscall.NewCallback(releaseThunk),
+		Invoke:         syscall.NewCallback(newWindowRequestedInvoke),
+	}
 )
 
 // comCall invokes the method at vtable slot index (0 = QueryInterface)

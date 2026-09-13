@@ -89,13 +89,22 @@ type window struct {
 	cw2        uintptr // ICoreWebView2 (base)
 	cw2v3      uintptr // ICoreWebView2_3, QueryInterface'd once at setup
 
-	// Both handlers must outlive their subscriptions — see
+	// Every handler must outlive its subscription — see
 	// coreWebView2AddWebMessageReceived's doc comment. They are this
 	// package's own COM references to those objects, and closeWebView
 	// releases them after ICoreWebView2Controller::Close has released
 	// WebView2's.
 	webMessageHandler *webMessageReceivedHandler
 	navHandler        *navigationCompletedHandler
+
+	// The three guards of navguard_windows.go: this window refuses to
+	// become any document but one of its own pages, and refuses to open
+	// a second browser window at all. Subscribed before the first
+	// Navigate, so there is no moment in the window's life during which
+	// it is unguarded.
+	navGuard    *navigationStartingHandler
+	frameGuard  *navigationStartingHandler
+	windowGuard *newWindowRequestedHandler
 
 	widthPts, heightPts int
 
@@ -371,24 +380,62 @@ func (w *window) setUpWebView2(t *uiThread, opts Options) error {
 		}
 	}
 
-	// F6 §1, first half: switch WebView2's own external-drop handling
-	// off, before the page is ever navigated, so Chromium never
-	// registers a drop target of its own to displace. The page could
-	// only ever see a File object anyway, never a path (D-114).
+	// Switch WebView2's own external-drop handling off, before the page
+	// is ever navigated, so Chromium never registers a drop target of
+	// its own.
 	//
-	// The second half — registering this side's drop targets — waits
-	// until the bottom of this function, once the page has loaded and
-	// the browser's window tree has stopped changing shape.
-	if opts.OnFilesDropped != nil {
-		controller4, err := queryInterface(controller, iidCoreWebView2Controller4)
-		if err != nil {
-			return fmt.Errorf("ui: querying ICoreWebView2Controller4 for AllowExternalDrop: %w", err)
-		}
-		defer comRelease(controller4)
-		if err := controllerSetAllowExternalDrop(controller4, false); err != nil {
-			return fmt.Errorf("ui: put_AllowExternalDrop(FALSE): %w", err)
-		}
+	// This is unconditional, for every window. It was not: F6 §1 needed
+	// it only for the window that takes documents, and so only that
+	// window asked for it — which left Chromium's drop target in place
+	// on all seven others, where dropping a PDF made the window
+	// *navigate to it*, because that is what dropping a file on a
+	// browser means. Measured on Settings, Certificates and the audit
+	// log: one drop target under each, owned by the msedgewebview2
+	// process, registered by nobody here.
+	//
+	// A window that takes no drops has nothing to gain from Chromium's
+	// handling of them and everything to lose, so the switch belongs to
+	// every window rather than to the one that happened to need it
+	// first. The page could only ever see a File object anyway, never a
+	// path (D-114).
+	//
+	// The other half — registering this side's drop targets, for the
+	// one window that wants them — waits until the bottom of this
+	// function, once the page has loaded and the browser's window tree
+	// has stopped changing shape.
+	controller4, err := queryInterface(controller, iidCoreWebView2Controller4)
+	if err != nil {
+		return fmt.Errorf("ui: querying ICoreWebView2Controller4 for AllowExternalDrop: %w", err)
 	}
+	defer comRelease(controller4)
+	if err := controllerSetAllowExternalDrop(controller4, false); err != nil {
+		return fmt.Errorf("ui: put_AllowExternalDrop(FALSE): %w", err)
+	}
+
+	// The navigation guards (navguard_windows.go). Subscribed here,
+	// before anything is navigated to and before the page can run a
+	// line of script, so the window is guarded for the whole of its
+	// life rather than from some point during it. A window with no
+	// virtual host has no page of its own to allow, and the rule then
+	// refuses everything but about:blank, which is correct: such a
+	// window is never navigated by this program either.
+	navGuard, err := coreWebView2AddNavigationStarting(cw2, opts.VirtualHost)
+	if err != nil {
+		return fmt.Errorf("ui: add_NavigationStarting: %w", err)
+	}
+	w.navGuard = navGuard
+
+	frameGuard, err := coreWebView2AddFrameNavigationStarting(cw2, opts.VirtualHost)
+	if err != nil {
+		return fmt.Errorf("ui: add_FrameNavigationStarting: %w", err)
+	}
+	w.frameGuard = frameGuard
+
+	windowGuard, err := coreWebView2AddNewWindowRequested(cw2)
+	if err != nil {
+		return fmt.Errorf("ui: add_NewWindowRequested: %w", err)
+	}
+	w.windowGuard = windowGuard
 
 	if opts.OnMessage != nil {
 		// The handler WebView2 calls queues; it never calls the caller's
@@ -733,6 +780,18 @@ func (w *window) closeWebView() {
 	if w.webMessageHandler != nil {
 		w.webMessageHandler.release()
 		w.webMessageHandler = nil
+	}
+	if w.navGuard != nil {
+		w.navGuard.release()
+		w.navGuard = nil
+	}
+	if w.frameGuard != nil {
+		w.frameGuard.release()
+		w.frameGuard = nil
+	}
+	if w.windowGuard != nil {
+		w.windowGuard.release()
+		w.windowGuard = nil
 	}
 }
 

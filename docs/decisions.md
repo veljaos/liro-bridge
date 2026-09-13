@@ -19594,3 +19594,272 @@ It matches a prefix now.
 - **Shipping `dragreport.cmd` inside the MSI.** It is a support tool for
   whoever has the repository, not part of what a signer installs. F10's
   artefacts are unchanged.
+
+---
+
+## D-259 — Every window refuses to become any document but one of its own pages; the browser's own drop handling was off on one window in eight, and that is what rendered a dropped PDF inside Settings
+
+**Date:** 2026-09-13
+**Phase:** F10
+
+**The report.** A PDF dragged onto the Settings window does not get
+refused. The WebView2 inside it navigates to the file and renders it —
+the owner has a screenshot of `TEST.pdf` displayed inside the agent's own
+Settings window, with `C:/Users/Veljko/Desktop/TEST.pdf` in a viewer's
+address bar. The same on every window with no drop handler of its own.
+
+This is filed as its own decision and not as a drag defect. It is not
+about a drop failing to arrive; it is about a window of this program
+displaying content nobody chose. The window that renders the consent
+screen is the same kind of window as the one that renders Settings, and
+SPEC §6.5 calls that screen the only real gate. A way to make such a
+window display arbitrary content is an entry point nobody designed,
+whether or not anyone can show it being used.
+
+### The premise that was wrong, and why it looked right
+
+`docs/drag-handover.md` §3 says:
+
+> `OnFilesDropped` is set on exactly one window in this program …
+> Settings, Certificates, the audit log, pairing and placement have no
+> drop target at all, so a file dragged onto any of them is refused
+> silently with a no-entry cursor.
+
+The first half is true. The second does not follow, and [[D-123]]'s own
+measurement is what says so — it is quoted here because the sentence
+that was wrong was written by somebody who had read it:
+
+> With `AllowExternalDrop` left at its default, exactly one window in
+> the tree carries a registered `IDropTarget`: `Chrome_WidgetWin_1`.
+> `put_AllowExternalDrop(FALSE)` makes Chromium revoke precisely that,
+> which leaves **nothing anywhere under the cursor that accepts anything
+> at all**.
+
+So "nothing accepts a drop" is the state *after* `AllowExternalDrop` is
+switched off — and it was switched off inside
+`if opts.OnFilesDropped != nil`, for the one window that takes
+documents. On the other seven, Chromium's own target was never revoked,
+and what Chromium does with a file dropped on a page is navigate to it,
+because that is what dropping a file on a browser means.
+
+The inference slipped from "this program registers no drop target
+there" to "nothing is registered there". The first is about us; the
+second is about the window.
+
+### Measured, before anything was changed
+
+The built binary at `e4135aa`, run against a scratch `%LOCALAPPDATA%`,
+with each window opened by posting the tray's own `WM_COMMAND` to its
+message-only window (a window message, never synthetic input — [[D-094]]),
+and the hosted tree read from outside the process through each window's
+`OleDropTargetInterface` property:
+
+| Window | tree | accepts a drop |
+|---|---|---|
+| Settings | frame, `Chrome_WidgetWin_0`, `Chrome_WidgetWin_1`, `Intermediate D3D Window` | `Chrome_WidgetWin_1`, **pid 9488** |
+| Certificates | the same four | `Chrome_WidgetWin_1`, **pid 2212** |
+| Audit log | the same four | `Chrome_WidgetWin_1`, **pid 16864** |
+
+Those pids are not the agent's. They are **msedgewebview2**. The one
+window under each of these that accepts a drop is the browser's own,
+registered by nobody in this program, on a window this program does not
+own.
+
+**Seven of the eight windows were in that state**, which is more than
+the report names: Settings, Certificates, the audit log, **pairing**,
+the placement picker, the signing-method step, and **the update
+prompt**. Pairing is a security screen in its own right — [[D-177]]
+makes the six-digit code the approval — and the update prompt is the
+screen that asks whether to replace the program.
+
+### The consent window specifically, since the report asks
+
+**The drop path was already closed there, and the navigation path was
+not.**
+
+The consent screen is not a window; it is a page of the signing window
+([[D-148]]: one window whose content changes). That window is the one
+window that sets `OnFilesDropped`, so it has had
+`put_AllowExternalDrop(FALSE)` since F6 §1 ([[D-114]]), and a file
+dropped on it reaches this program's own `IDropTarget` and becomes a
+document in the queue. Confirmed here rather than assumed: with the
+consent page loaded in a window of that shape, something under it
+accepts a drop, and `get_AllowExternalDrop` reads back FALSE.
+
+What was **not** guarded there, or anywhere, is navigation by any other
+route. Until this entry no window in this program refused a link, a
+redirect, or a `window.open` — the consent screen included. Nothing in
+its own content offers one (SPEC §6.6 renders every caller-supplied
+string with `textContent`), so there is no known way to reach it; but
+"no known way in" is not the same as "closed", and it is the screen
+where the difference matters most.
+
+### Decision
+
+**A window of this program refuses to become any document but a page
+served from its own virtual host.** That is stated as the one thing
+allowed, not as a list of things refused, and the shape is the point: a
+list can be got round by a vector nobody thought of, which is exactly
+how this arrived.
+
+*(a) The browser's own external-drop handling is off on every window*,
+unconditionally, whether or not the window takes documents
+(`setUpWebView2`). A window that takes no drops has nothing to gain from
+Chromium's handling of them and everything to lose.
+
+*(b) Three guards, subscribed before the first `Navigate`*, so there is
+no moment in a window's life during which it is unguarded
+(`navguard_windows.go`):
+
+| Event | What it does |
+|---|---|
+| `NavigationStarting` | cancels unless the target is `https://<this window's host>` or `about:blank` |
+| `FrameNavigationStarting` | the same rule; this program's pages have no frames, so any frame navigating is already something it did not ask for |
+| `NewWindowRequested` | `put_Handled(TRUE)` with no window supplied, so `window.open` and `target="_blank"` open nothing |
+
+`allowedNavigation` is pure and table-tested. It does **not** match on a
+prefix alone: `https://liro.invalid.example.com`, `https://liro.invalidextra`,
+`https://liro.invalid:8443` and `https://liro.invalid@example.com` all
+begin with the allowed string and are all refused, because what follows
+the host must end it — a path, a query, a fragment, or nothing.
+
+*(c) A refusal is logged with the scheme and, for a hierarchical URL,
+the host. Never the path.* The one navigation this guard exists to
+refuse carries the name of a document somebody is about to sign, and
+SPEC §18.3 keeps document names out of log files.
+`TestARefusalNeverCarriesAPathIntoTheLog` checks the property directly
+against `file:///C:/Users/Veljko/Desktop/TAJNI-UGOVOR-2026.pdf`.
+
+*(d) A URI that cannot be read at all is cancelled.* This runs in front
+of the consent screen, and the safe answer to "I could not tell what
+this is" is not to show it.
+
+### The slots and IIDs, read from the IDL
+
+[[D-080]]'s discipline. `WebView2.idl` from `Microsoft.Web.WebView2`
+1.0.4191.47 (package SHA-256
+`f492bbf547d0da329553b6727435b677579b1e9f91cc9e4a1ad029366d5f23d0`),
+parsed for declaration order rather than read by eye:
+
+```
+ICoreWebView2                      76eceacb-0462-4d94-ac83-423a6793775e
+    7  add_NavigationStarting
+   17  add_FrameNavigationStarting
+   44  add_NewWindowRequested
+ICoreWebView2NavigationStartingEventHandler  9adbe429-f36d-432b-9ddc-f8881fbd76e3
+ICoreWebView2NavigationStartingEventArgs     5b495469-e119-438a-9b18-7604f25f2e49
+    3 get_Uri  4 get_IsUserInitiated  5 get_IsRedirected  8 put_Cancel
+ICoreWebView2NewWindowRequestedEventHandler  d4c185fe-c81c-4989-97af-2d3fa7ab5651
+ICoreWebView2NewWindowRequestedEventArgs     34acb11c-fc37-4418-9132-f9c21d1eafb9
+    3 get_Uri  6 put_Handled
+```
+
+The same parse reproduces every identifier this package already uses and
+knows works — `Navigate` 5, `add_NavigationCompleted` 15,
+`ExecuteScript` 29, `add_WebMessageReceived` 34, `ICoreWebView2_3`
+`A0D6DF20-…` slot 71, `ICoreWebView2Controller4` `97d418d5-…` slot 37 —
+which is the cross-check [[D-114]] used for the same purpose.
+
+### Confirmed to fail against the behaviour it replaces
+
+Every one of these was run against the old code before the new code was
+believed, and each fails in its own direction:
+
+```
+TestAWindowRefusesToBecomeSomebodyElsesDocument
+  the guard refused nothing; the window is now at chrome-error://chromewebdata/
+  the window became a different document:
+    was https://guard.liro.invalid/pages/probe.html
+    now chrome-error://chromewebdata/
+  the page is no longer ours
+
+TestAWindowRefusesARedirectOutOfItsOwnPages
+  the window followed the refresh: now at chrome-error://chromewebdata/
+
+TestAWindowRefusesToOpenASecondBrowserWindow
+  window.open was not refused
+
+TestNothingUnderAWindowThatTakesNoDropsAcceptsADrop
+  a window with no drop handler still accepts drops on [Chrome_WidgetWin_1]
+```
+
+The first is the report's own defect in miniature: the window really did
+stop being a page of this program and became somebody else's document.
+It reached an error page rather than a PDF only because
+`example.invalid` does not resolve — the navigation itself was not
+refused by anything.
+
+`TestNoWindowLetsTheBrowserHandleADroppedFile` (`cmd/liro-bridge`) does
+the same for all **nine** real window shapes at their own sizes on their
+own pages, because a rule covering eight of them would look identical
+from inside `internal/ui`.
+
+### And after, on the built binary
+
+The same three windows, the same procedure:
+
+```
+Settings      Chrome_WidgetWin_1  droptarget  -    nothing under this window accepts a drop
+Certificates  Chrome_WidgetWin_1  droptarget  -    nothing under this window accepts a drop
+Audit log     Chrome_WidgetWin_1  droptarget  -    nothing under this window accepts a drop
+```
+
+### What could not be measured, stated rather than implied
+
+**A real drag was not performed, and no test here performs one.** Two
+things stop it, both established rather than assumed:
+
+- The window that carries Chromium's target belongs to the
+  **msedgewebview2** process, so the `IDropTarget*` in its window
+  property is a pointer in another process's address space. A probe that
+  called it directly was written and got as far as
+  `CO_E_NOTINITIALIZED` before the deeper problem was noticed: there is
+  nothing valid there to call.
+- OLE's own delivery path, `DoDragDrop`, is a modal loop that tracks the
+  real mouse. [[D-094]] does not allow that to be simulated, and
+  [[D-123]] and [[D-127]] already record what a drag costs in the
+  owner's time.
+
+So what stands in for it is a different and stronger statement about the
+drop path: **there is nothing under those windows to drop on.** A drop
+that reaches no target cannot navigate anything, and that is checkable
+from outside the process, which is how the two tables above were made.
+`get_AllowExternalDrop` reading back FALSE is the same fact from inside.
+
+**Whether a drop-initiated navigation raises `NavigationStarting` is not
+established here.** It very likely does, and the guard would then refuse
+it as a second line — but the drop path is closed by
+`AllowExternalDrop`, not by the guard, as far as anything measured says,
+and the two should not be reported as one.
+
+### Rejected
+
+- **Fixing only the drop path.** It is what the report describes and it
+  is one vector of several. A link in rendered content and a redirect
+  were both measured taking a window away from its own page, and neither
+  goes near a drop target.
+- **A list of schemes to refuse — `file:`, `data:`, `blob:`.** A rule
+  that enumerates what is forbidden is a rule that is one unknown scheme
+  from being wrong. The rule here enumerates what is allowed, which is
+  one thing and is known.
+- **Cancelling only when the navigation is not user-initiated.** A drop
+  is user-initiated. So is clicking a link. `IsUserInitiated` is logged
+  because it is useful to whoever reads the line; it decides nothing.
+- **Logging the refused URI.** It is the name of a document somebody is
+  about to sign (SPEC §18.3).
+- **Allowing the scratch host as well.** Page images load from it as
+  subresources, which raise no navigation at all; this program never
+  navigates there, so a navigation there is not one it asked for.
+- **Leaving `put_AllowExternalDrop` behind the drop-handler test and
+  relying on the navigation guard alone.** It would leave the browser's
+  own drop target registered under seven windows, doing whatever a
+  future WebView2 decides a dropped file means, with this program's
+  guarantee resting on a cancellation rather than on there being nothing
+  there.
+- **Borrowing the package's shared test windows for the nine-window
+  check.** Tried, and measured to break
+  `TestAWindowOpenedFromSettingsIsReachable`: it leaves seven windows on
+  screen earlier in the run than they would otherwise be, and
+  [[D-129]]'s test then finds one of them over the window it is asking
+  about. That test is right and this one was the newcomer. The check
+  opens and closes its own windows.
