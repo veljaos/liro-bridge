@@ -20672,3 +20672,348 @@ condition.
   `http.Flusher` and refuses to stream without one, so a wrapper that
   swallowed the assertion would silently turn progress into a single
   delivery at the end.
+
+---
+
+## D-265 — The text pass: four rules over all three catalogues, and the two places counting them was better than reading them
+
+**Date:** 2026-09-14
+**Phase:** Text pass (between F10 and F11)
+
+**Decision.** `internal/i18n/locales/sr-Latn.json` is the source of truth
+and was settled first; `sr-Cyrl.json` was generated from it and `en.json`
+written by hand. All three hold **361 keys** — six deleted, two added,
+and about fifty rewritten. `docs/ui-text-review.md` is the survey this
+pass worked from and now carries a dateline saying so, because it
+describes the catalogue as it stood at 609a5fc and quoting it as current
+misled a reading of demo B once already (see its own C3).
+
+Four rules were applied to every key rather than to the ones the survey
+happened to name: **fajl → datoteka** (13 keys), **folder → fascikla**
+(5), **program → aplikacija** where it means a *calling* application, and
+**Odustani → Otkaži** where it means Cancel. The last is not a
+preference: `user32.dll.mui` string 801 is *Otkaži* (Cancel) and 802 is
+*&Odustani* (Abort), and the placement picker's Cancel sat a few pixels
+from a file dialog saying Otkaži.
+
+**Six dead keys, each decided rather than swept.** `app.name`,
+`tray.open`, `settings.explorer_menu_verb_short`, `sign.timestamp_label`
+and `sign.no_timestamp` are deleted — nothing read any of them, and the
+verb-short key had nothing left to be shorter than once the Explorer verb
+became `Potpiši`. `main.document_count_one` went with the count recasting
+below. **`consent.window_title` stays dead on purpose**: the signing
+window keeps `main.title` through all three steps and the owner has
+decided against a title per step, so the key is a deliberate spare rather
+than an oversight.
+
+### Serbian's 2–4 plural: stop inflecting rather than get it right
+
+Seven places counted documents and three strategies were in use — get it
+right (`chainCountKey`, which is correct and is untouched), print
+"dokument(a)", or move the number to the end of the sentence. All seven
+now use a form that is correct for every number: **"Broj dokumenata: %d"**.
+It needs no rule, so it cannot be got wrong by the next person.
+
+The seventh, `sign.stamp_adjusted_many` ("na %d dokumenata", wanting
+*dokumenta* for 2–4), was in neither the survey's table nor the owner's
+list. It was found by asking what else counts documents rather than by
+working the list.
+
+**English deliberately does not follow four of the seven.** English
+inflects correctly, so "2 documents were skipped" is right and the recast
+would be worse English for a problem English does not have. It follows
+only where it was forced: `main.document_count`, whose singular key is
+gone, and the two `%d document(s)` strings, where the "(s)" was the same
+dodge in both languages.
+
+### Two things counting settled that reading would not have
+
+**The ellipsis.** The survey reported "almost a rule" — U+2026 for
+progress, three dots for a button that opens something — and recommended
+picking one. Counting instead: this machine's own `sr-Latn-RS` resources
+carry **77 trailing three-dot ellipses and zero U+2026**, across
+`shell32`, `comdlg32`, `user32` and `explorerframe`, and Windows uses
+three dots for **both** senses the catalogue was splitting on — "Otvori
+pomoću..." for a button and "Kopiranje...", "Premeštanje...",
+"Računanje stavki..." for work in progress. So there is no rule to pick
+between; there is one convention, and the survey's own observation was
+the artefact. Five keys in each of sr-Latn and en were re-punctuated.
+
+**"ulaz".** It survives in the five `sign.already_signed_*` strings after
+being removed from `error.pdf_invalid` as programmer's language, and the
+reason is a fact rather than a preference: all five are produced only by
+`internal/cli/sign_noconsent.go`, which carries `//go:build softtoken`,
+so they **cannot exist in a release binary** ([[D-222]], [[D-228]]).
+Their only reader is whoever typed `--in`, and *ulaz*/*izlaz* is the
+vocabulary of the flags themselves.
+
+### The Cyrillic generator, and the three places the old file contradicts itself
+
+Transliteration is not character-for-character in two ways. `lj`, `nj`
+and `dž` are one letter each **except** across a morpheme boundary
+(*nadživeti*, *injekcija*, *konjunkcija*, *podžanr*); and some text is
+not Serbian at all, which is a judgement per token rather than a rule.
+
+So the generator was made to reproduce the existing catalogue before it
+was trusted on a line of new text: **362 of 365 shared keys come out
+byte-for-byte.** The three that do not are the three places the existing
+sr-Cyrl disagrees with itself:
+
+| Key | It said | The rest of the catalogue |
+|---|---|---|
+| `error.pdf_invalid`, `error.pdf_encrypted` | ПДФ | Latin `PDF`, in 7 other keys |
+| `main.aborted_pin` | Latin `PUK` | ПИН in all 6 PIN keys, ПУК in `error.pin_locked` |
+
+Resolved by a rule the catalogue was already mostly following: technical
+identifiers stay Latin (`PDF`, `URL`, `TSA`, `QSCD`, `PKCS#12`, `B-LT`,
+`Liro Bridge`, `Windows`), and words a person says about their own card
+transliterate (`ПИН`, `ПУК`). **`main.aborted_pin` is the one key outside
+this pass's list whose text changes** — `PUK` → `ПУК` — because the
+alternative was hand-coding an exception into a generator whose whole
+point is not being hand-written.
+
+**Exception words needed: none.** Sixty-five distinct words in the
+catalogue contain `lj`, `nj` or `dž`; every one is a genuine digraph, and
+no word contains `dž` at all. The mechanism is implemented and carries
+the known cases so it is right for text that has not been written yet.
+
+Two things the verification caught that hand-checking would have missed:
+`%d s.` needs the unit protected **together with its number**, or the
+seconds symbol becomes `с` — and the protection has to be ordered before
+the bare fmt-verb pattern, which would otherwise consume the `%d` and
+leave the unit behind. And `Kancelarija za IT i eUpravu` **does**
+transliterate, to `Канцеларија за ИТ и еУправу`, while `RS-GOV TSA`
+beside it does not.
+
+### A check the repository did not have
+
+`TestCataloguesHaveIdenticalKeySets` compares the key *sets*. Nothing
+compared what is inside the values, so a translation that drops a `%s`,
+adds one, or reorders two compiled, passed every test here, and rendered
+`%!s(MISSING)` — or silently printed the wrong argument — **in exactly
+one locale**. That is the defect a user finds rather than CI, because the
+developer's own locale is the one that looks right.
+
+`TestCataloguesAgreeOnFormatVerbs` closes it, and
+`TestTheFormatVerbCheckWouldActuallyFire` covers the matcher itself,
+because a matcher that finds nothing passes for ever. Confirmed against a
+real catalogue rather than only its own fixtures: dropping ` to %s` from
+`certs.valid_range` and adding a `%s` to `consent.state_signing` in
+`en.json` reports both, naming the key and both sides. `en.json` was
+restored byte-identically afterwards.
+
+### The UI defects, and a height taken off the screen
+
+Four, all as asked: the pairing origin in Settings renders in the page's
+own face (the monospace said "technical detail" about the one value SPEC
+§6.2 wants read as carefully as the name above it); the daily-update
+checkbox joins `Pokreće se sa Windows-om` instead of sitting alone
+between two rows of buttons; and the pairing success screen is lucide's
+`circle-check-big`, `Uspešno povezano`, and Zatvori — nothing else.
+
+The mark is used as supplied and strokes with `currentColor`, so its
+green comes from `.connected-check`'s own `--liro-color-positive` and
+there is no hex value in the markup. There was already a token for it;
+none was invented.
+
+**`pairingConnectedHeight` is 176, and it was measured.** Walking the
+viewport down, the screen fits at 160 and does not at 158, identically in
+all three locales. 176 is that plus one `--liro-space-4`, the slack
+[[D-202]] chose. Reasoning it out would have given 198 — the old layout
+minus the name and its gap — which is 38 points of white nobody asked
+for. Both entries that set this number before shipped a scrollbar by
+arithmetic ([[D-202]], [[D-208]]); this one was photographed as well as
+measured.
+
+### One string split, because it was doing two jobs
+
+`place.unavailable` said a document "cannot be displayed", which is true
+of a local document the renderer cannot draw and wrong for a batch that
+arrived over the protocol, where there is no file at all. Both producers
+were measured live before the split — `stampwindow_windows.go` for the
+first, `signflow_windows.go`'s `signAtAChosenPosition` for the second —
+which is why the answer is two strings rather than a reworded one.
+`place.unavailable_no_file` is the second, and the owner confirmed it on
+screen in demo B against the soft token: it appears directly under the
+option, with no picker and no file dialog.
+
+**A flow question this leaves open, deliberately.** The method screen
+still offers "Potpiši birajući poziciju potpisa" on a path where it
+cannot work. It refuses clearly and at once, which is the right way to
+refuse; not offering it at all would be better. That is a change to what
+the screen *shows* rather than what it *says*, and it belongs to its own
+pass.
+
+**Rejected.**
+- **Changing `auditwindow.export` from *Izvezi* to the noun *Izvoz*.**
+  Asked for, and answered by looking at where it is drawn first:
+  `auditlog.html:25` is a `<button>`, in the same row as Zatvori, and
+  Settings' own equivalent button says *Izvezi dnevnik revizije*. A noun
+  there would put one in a row of imperatives and make the program's two
+  export buttons disagree in kind.
+- **Carrying the count recasting into English.** Above.
+- **`pairing.origin_label` → "Address" in English.** Serbian *poreklo*
+  was a literal rendering nobody parses and is now *Adresa*. English
+  *origin* is the term, the protocol field is `origin`, the code is
+  `PAIRING_ORIGIN_MISMATCH` and `docs/PROTOCOL.md` is written around the
+  word — an integrator reading "Address" on screen loses the connection.
+  Changed, raised, and reverted.
+- **Normalising `error.internal`'s path to `%LOCALAPPDATA%\Liro\logs`.**
+  Pasteable into Explorer, and `%` is this catalogue's format-verb
+  character; a `%L` in a string some future call site hands to
+  `fmt.Sprintf` renders as `%!L(NOVERB)`. It names
+  `AppData\Local\Liro\logs` instead.
+- **Keeping a trailing full stop on the strings the recast ends with a
+  number.** In Serbian `…: 2.` reads as an ordinal.
+
+---
+
+## D-266 — A test run changed the owner's audit log, and four attempts to reproduce it all came back clean; what is established and what is not
+
+**Date:** 2026-09-14
+**Phase:** Text pass (between F10 and F11) — measured, restored, not fixed
+
+**Recorded because of what the file is.** SPEC §6.7 makes the audit log
+the record of what a person has actually signed, hash-chained so that an
+entry cannot be removed or altered without breaking every entry after
+it. It is the one file in this program whose whole value is that nothing
+writes to it except signing. A test run appending to it is not
+housekeeping.
+
+### What happened, measured
+
+A snapshot was taken before any work — `reg export` for the Explorer
+verb and the `Run` key, and **copies** (not hashes: [[D-153]],
+[[D-243]]) of `config.json`, the `audit` directory, `pairings.json` and
+`secrets.*`. Comparing against it partway through this session:
+
+| | |
+|---|---|
+| `audit\2026-09-001.jsonl` | **18 → 20 entries** |
+| `pairings.json` | 281 → 538 bytes — a pairing added |
+| `secrets.json` | 441 → 845 bytes — a device secret added |
+| `update-state.json` | 50 → 80 bytes — an update check recorded |
+| `config.json` | rewritten, same length |
+| Explorer verb | re-registered at a `go-build` cache path, with this pass's new verb text |
+| `HKCU\…\Run\LiroBridge` | written, twice, each time at a temporary binary — the value was **absent** before |
+
+Everything was restored from the copies and verified byte-for-byte
+against them, and the chain re-checked afterwards: 18 entries, sequences
+0..17 contiguous, every `PrevHash` linking its predecessor's `Hash`, the
+last entry the owner's own hundred-document batch of 11 September.
+
+### What is NOT established, and an earlier claim of mine that was wrong
+
+The two halves have different answers, and this session got that wrong
+once before settling it.
+
+**The registry half is reproducible, and the test is named.**
+`TestAConsoleTheAgentIsAloneOnIsGivenBack` starts a real agent, whose
+startup registrations write `HKCU\…\Run\LiroBridge` pointing at its own
+temporary binary. Measured directly — value removed, exported, the two
+console tests run alone, value read back:
+
+```
+before: absent
+ok      github.com/veljaos/liro-bridge/cmd/liro-bridge  30.374s
+after : "…\Temp\TestAConsoleTheAgentIsAloneOnIsGivenBack36977669\001\alone.exe" tray
+```
+
+It happened three times in this session and reproduced on demand at the
+end of it. An earlier comparison in this same session reported the
+registry unchanged across a full `go test ./...`; that reading was taken
+through a shell whose path handling was not verified, and the
+measurement above — taken directly, before and after, with the value
+deliberately cleared first — is the one to trust. Recorded because the
+wrong reading is the more instructive half: a check of a check is worth
+taking when the answer is "nothing happened".
+
+**The `%LOCALAPPDATA%` half is not reproducible.** The session first
+reported that "`go test ./cmd/liro-bridge/` writes into the real
+`%LOCALAPPDATA%\Liro`". That is not what the measurements say, and it is
+corrected here rather than left standing. Four attempts, each against a
+fresh copy of the restored state:
+
+| Command | `config`, `pairings`, `secrets`, `update-state` | Audit chain |
+|---|---|---|
+| `go test ./cmd/liro-bridge/` | unchanged | 18 → 18 |
+| `go test ./internal/...` | unchanged | 18 → 18 |
+| `go test ./...` | unchanged | 18 → 18 |
+| the exact filtered `-run` command run earlier | unchanged | 18 → 18 |
+
+So **what appended to the audit log is not identified.** The change is
+real and was measured against a copy; no ordinary test invocation
+reproduces it. That is recorded as an open question rather than closed
+with a plausible cause, which is [[D-256]]'s own discipline: it stopped
+reproducing without anything being changed, and a mechanism reasoned to
+from a structural difference is not a finding.
+
+### What IS established
+
+**`tempConfigHome` is used by 14 of 252 test functions in
+`cmd/liro-bridge`** — the console pair, the seven no-card tests, the
+three settings-persistence tests, the guide-shot capture and the sign
+consent regression test. The other 238 run against whatever
+`%LOCALAPPDATA%` the developer has.
+
+**It redirects `LOCALAPPDATA` and nothing else.** It is one
+`t.Setenv("LOCALAPPDATA", dir)`, so `platform.ConfigDir` moves and
+**`HKCU` does not**. Autostart and the Explorer verb are registry
+registrations, so any test that starts a real agent writes them to the
+developer's own hive **however well the config home is isolated** —
+which is exactly what the console test does, and it is one of the
+fourteen that *do* call `tempConfigHome`. Isolating the files was never
+going to isolate the registry. [[D-134]] and [[D-153]] already record
+the same shape for `internal/platform`'s own tests; this is the third
+place it has appeared.
+
+**A guard for the audit log already exists and is not enough.**
+`TestTheBatchLoopNeverRecordsIntoTheRealAuditLog` asserts that a
+`mainWindow` from the test helper records somewhere of the test's own
+choosing while `newMainWindow` still records where the product does. Its
+comment carries the reason it was written: real test entries were once
+found in a real log, at sequences 308 and 310, matching four batch tests
+by document count. So this has now happened **at least twice, on
+different profiles, years of entries apart** — and the guard covers the
+seam it names rather than the property, which is that nothing but
+signing appends.
+
+### Why it is not fixed here
+
+This pass is a text pass. The remedy is not a text change and it is not
+one line: it is a decision about how the test suite gets a config home at
+all — `tempConfigHome` on every test that can reach a store rather than
+on fourteen, or a `TestMain` that redirects once for the package, or a
+seam for `HKCU` the way `auditStore` is already a seam for the log. The
+third is the one nothing addresses today, and it is the one that reaches
+the registry.
+
+Whoever takes it should start from the property rather than from the
+seams: **nothing but a signature may append to the audit log, and no test
+may write to `HKCU`.** Both are checkable from outside the process, which
+is what would have caught this without a person noticing a byte count.
+
+**Rejected.**
+- **Reporting a clean machine.** It was restored and it is clean, and
+  saying only that would have buried the fact that it needed restoring.
+  The owner's copies are why it could be.
+- **Naming a cause from the four files that changed.** They point
+  squarely at the pairing store, the update check and the signing loop,
+  which is a plausible story and is not a measurement. Four commands
+  that should have reproduced it did not.
+- **Letting this entry stand as first written.** Its registry column
+  said "unchanged" four times, on a reading taken through a shell whose
+  path handling had not been checked. The value was reproduced on
+  demand minutes later. The entry was corrected before it was pushed,
+  rather than published wrong and superseded: SPEC §17's rule against
+  editing entries protects a record somebody may have read, and nobody
+  had.
+- **Fixing it in this pass.** It is not a text change, and a change to
+  how every test in the package gets its config home, made quietly
+  inside a pass about strings, is how a design nobody chose ships
+  ([[D-201]], [[D-227]], [[D-233]], [[D-249]] each left a finding to its
+  own pass for the same reason).
+- **Deleting the two entries by editing the file.** They were removed by
+  restoring the copy taken before anything ran — the whole file, byte
+  for byte — not by rewriting a hash chain, which is the one thing an
+  append-only log must never have done to it.
