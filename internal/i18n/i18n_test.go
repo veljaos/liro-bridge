@@ -36,6 +36,133 @@ func TestCataloguesHaveIdenticalKeySets(t *testing.T) {
 	}
 }
 
+// formatVerbs returns the fmt verbs in a message, in the order they
+// appear. %% is a literal per cent and is not one.
+//
+// The pattern is deliberately wider than what this project writes: it
+// accepts flags, widths, precisions, argument indices and any verb
+// letter, so a translation that turns %s into %-10s or %[1]d is
+// reported rather than passed over as "close enough".
+func formatVerbs(s string) []string {
+	var out []string
+	for i := 0; i < len(s); i++ {
+		if s[i] != '%' {
+			continue
+		}
+		j := i + 1
+		if j < len(s) && s[j] == '%' { // an escaped per cent, not a verb
+			i = j
+			continue
+		}
+		if j < len(s) && s[j] == '[' { // an explicit argument index
+			for j < len(s) && s[j] != ']' {
+				j++
+			}
+			j++
+		}
+		for j < len(s) && strings.ContainsRune("-+# 0123456789.*", rune(s[j])) {
+			j++
+		}
+		if j < len(s) {
+			out = append(out, s[i:j+1])
+			i = j
+		}
+	}
+	return out
+}
+
+// TestCataloguesAgreeOnFormatVerbs is the other half of the key-set
+// test above, and the half that was missing.
+//
+// Identical key sets say nothing about what is inside the values. A
+// translation that drops a %s, adds one, or reorders two of them
+// compiles, passes every other test in this repository, and then
+// renders %!s(MISSING) — or silently prints the wrong argument — in
+// exactly one locale. That is a defect a user finds rather than CI: the
+// developer's own locale is the one that looks right.
+//
+// Every string in this catalogue reaches fmt.Sprintf on some path, so
+// the check is over all three catalogues rather than over a list of
+// keys somebody keeps in step (D-158's method: a list maintained by
+// hand is a check that quietly stops checking).
+func TestCataloguesAgreeOnFormatVerbs(t *testing.T) {
+	const reference = "sr-Latn" // the source of truth; the other two follow it
+	ref := Load(reference)
+
+	for _, locale := range []string{"sr-Cyrl", "en"} {
+		c := Load(locale)
+		for key, want := range ref.data {
+			got, ok := c.data[key]
+			if !ok {
+				continue // the key-set test above owns that failure
+			}
+			a, b := formatVerbs(want), formatVerbs(got)
+			if len(a) != len(b) {
+				t.Errorf("%s: %s has %d format verbs %v, %s has %d %v",
+					key, reference, len(a), a, locale, len(b), b)
+				continue
+			}
+			for i := range a {
+				if a[i] != b[i] {
+					t.Errorf("%s: verb %d is %s in %s and %s in %s (%v vs %v)",
+						key, i+1, a[i], reference, b[i], locale, a, b)
+					break
+				}
+			}
+		}
+	}
+}
+
+// TestTheFormatVerbCheckWouldActuallyFire is the other half of the
+// check above, because a matcher that finds nothing passes for ever.
+// Each case is a way a translation really does go wrong.
+func TestTheFormatVerbCheckWouldActuallyFire(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want []string
+	}{
+		{"nothing here", nil},
+		{"%d dokumenata, %s", []string{"%d", "%s"}},
+		{"%s do %s", []string{"%s", "%s"}},
+		{"x %.0f y %.0f", []string{"%.0f", "%.0f"}},
+		{"100%% sigurno", nil},     // escaped, not a verb
+		{"%%d is not a verb", nil}, // nor is this
+		{"%[2]s then %[1]s", []string{"%[2]s", "%[1]s"}},
+		{"%-10s padded", []string{"%-10s"}},
+		{"trailing %", nil},                 // nothing follows it
+		{"AppData\\Local\\Liro\\logs", nil}, // a path, no verbs
+	} {
+		got := formatVerbs(tc.in)
+		if len(got) != len(tc.want) {
+			t.Errorf("formatVerbs(%q) = %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("formatVerbs(%q) = %v, want %v", tc.in, got, tc.want)
+				break
+			}
+		}
+	}
+
+	// And the comparison itself: a dropped verb, an added one and a
+	// reordered pair must each be caught.
+	for _, tc := range []struct{ a, b string }{
+		{"%d of %d", "%d of"},        // dropped
+		{"%d documents", "%d of %d"}, // added
+		{"%s do %d", "%d do %s"},     // reordered
+	} {
+		x, y := formatVerbs(tc.a), formatVerbs(tc.b)
+		same := len(x) == len(y)
+		for i := 0; same && i < len(x); i++ {
+			same = x[i] == y[i]
+		}
+		if same {
+			t.Errorf("formatVerbs(%q)=%v and formatVerbs(%q)=%v compare equal; the check would miss it", tc.a, x, tc.b, y)
+		}
+	}
+}
+
 func TestLoadFallsBackOnUnknownLocale(t *testing.T) {
 	c := Load("fr")
 	if c.locale != defaultLocale {
@@ -70,8 +197,12 @@ func TestLoadExactMatches(t *testing.T) {
 
 func TestTReturnsMessage(t *testing.T) {
 	c := Load("en")
-	if got := c.T("app.name"); got != "Liro Bridge" {
-		t.Fatalf("T(app.name) = %q", got)
+	// main.title rather than the app.name key this used to read: that
+	// key was never referenced by anything but this test, and every
+	// window that needs the product name uses main.title, so it was
+	// deleted rather than left for someone to wire up later.
+	if got := c.T("main.title"); got != "Liro Bridge" {
+		t.Fatalf("T(main.title) = %q", got)
 	}
 }
 

@@ -225,21 +225,28 @@ func renderTSL(w io.Writer, prov tsl.Provenance, c *i18n.Catalogue, now time.Tim
 	}
 
 	fprintf(w, c.T("certs.tsl_heading")+"\n", prov.Sequence, prov.IssuedAt.Format("2006-01-02"), ageDays, source)
-	if tslNeedsStaleWarning(prov, now) {
-		fprintln(w, strings.TrimSpace(c.T("certs.tsl_stale_warning")))
+	if key := tslWarningKey(prov, now); key != "" {
+		fprintln(w, strings.TrimSpace(c.T(key)))
 	}
 }
 
-// tslNeedsStaleWarning reports whether the agent has gone too long
-// without successfully fetching the Trusted List (Task 9) — never
-// whether the *published* list itself is old. A list issued long ago can
-// still be the current one; what actually needs a warning is this agent
-// being unable to confirm that, either because it is still running on
-// the embedded seed (no fetch has ever succeeded) or because its last
-// successful fetch is more than staleWarningAge old.
-func tslNeedsStaleWarning(prov tsl.Provenance, now time.Time) bool {
+// tslWarningKey names the warning this provenance calls for, or "" for
+// a list this agent has confirmed recently enough.
+//
+// There are two situations, and they need different sentences. A list
+// that was refreshed and has since gone stale is the one the 30-day
+// wording describes. A list that has never been refreshed at all is
+// not 30 days behind anything — it is the seed compiled into the
+// binary, and telling that person their list has not been refreshed
+// "in the last 30 days" points at the wrong problem and invites them
+// to wait it out. Saying so in one sentence made the commoner of the
+// two (a fresh install with no network) the one it fitted worst.
+func tslWarningKey(prov tsl.Provenance, now time.Time) string {
 	if prov.Source == tsl.SourceEmbedded {
-		return true
+		return "certs.tsl_never_refreshed"
 	}
-	return now.Sub(prov.FetchedAt) > staleWarningAge
+	if now.Sub(prov.FetchedAt) > staleWarningAge {
+		return "certs.tsl_stale_warning"
+	}
+	return ""
 }

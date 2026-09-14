@@ -4,9 +4,16 @@ The source is `internal/i18n/locales/sr-Latn.json`, in full: all 365 keys,
 nothing omitted. The two guides, `docs/guide/Uputstvo.html` and
 `docs/guide/Guide.html`, are deliberately not here.
 
-Read it top to bottom and write on it. Nothing in the catalogues has been
-changed. Once the wording is settled, the same changes go into `en.json`
-and `sr-Cyrl.json`.
+Read it top to bottom and write on it. Once the wording is settled, the
+same changes go into `en.json` and `sr-Cyrl.json`.
+
+> **This document describes the catalogue as it stood at 609a5fc, before
+> the text pass.** The pass has since changed about 50 strings, deleted
+> six keys and added two, so a sentence quoted here is not necessarily
+> the sentence the program says today — a reading of demo B was misled
+> by exactly that once (see C3). The tables are kept as written, because
+> what they are for is the record of what was surveyed and why; where a
+> finding has been settled, the finding says so underneath itself.
 
 **How it is ordered.** By where the text appears in the running program,
 not by the JSON file's alphabetical order: the signing window's three
@@ -167,7 +174,8 @@ One window (`main.title`) whose content changes across steps. The step header is
 | `place.use` | Koristi ovu poziciju | Footer, the primary button. |
 | `place.cancel` | Odustani | Footer, the secondary button. |
 | `place.preview_partial` | Ova strana je previše složena da bi bila iscrtana u celosti, pa pregled prikazuje njen deo. Pečat i dalje ide tačno tamo gde ga postavite. | Note drawn over the page when the renderer could not draw all of it. |
-| `place.unavailable` | Ovaj dokument ne može da se prikaže, pa se pečat postavlja po uglu. | Status line on the *method* screen when the document cannot be previewed at all, so the picker never opens. |
+| `place.unavailable` | Ovaj dokument ne može da se prikaže, pa se pečat postavlja po uglu. | Status line on the *method* screen when a document **on this machine** cannot be drawn by the renderer, so the picker never opens. Since the text pass this is its only job — `stampwindow_windows.go` is the one producer. |
+| `place.unavailable_no_file` | Ovi dokumenti su stigli od aplikacije i nisu datoteke na ovom računaru, pa nema strane koja bi se prikazala. Pečat se postavlja po uglu. | The same status line for a batch that arrived over the protocol, where there is no file to draw at all. Added by the text pass — see C3. |
 
 ## 6. Signing window — questions asked after the approval, before the card
 
@@ -1002,3 +1010,33 @@ real reason is different: the documents arrived over a socket and are
 not files at all, so there is nothing to open, drawable or not
 (`signflow_windows.go`, `signAtAChosenPosition`). One string is doing
 two jobs and is only right about one of them.
+
+**Settled, and done in the text pass.** The string was split in two,
+one per reason, and each now has exactly one producer:
+
+| Key | Producer | The reason it names |
+|---|---|---|
+| `place.unavailable` | `stampwindow_windows.go` | a document on this machine the renderer cannot draw |
+| `place.unavailable_no_file` | `signflow_windows.go`, `signAtAChosenPosition` | a batch from an application, with no file to draw |
+
+Both are reachable — that was measured before the split rather than
+assumed, and it is why the answer is two strings rather than a reworded
+one. The second was then confirmed on screen: choosing "Potpiši
+birajući poziciju potpisa" in demo B, against the soft token, put it
+directly under the option, with no picker and no file dialog.
+
+**A correction to this document, recorded because it misled once.** A
+reading of demo B reported the program saying the *second* sentence and
+concluded that this finding was stale or that two strings already
+existed. Neither: the second sentence is new, written by the text pass,
+and this document describes the catalogue as it stood before it. The
+demo was run against a binary built from the working tree.
+
+**A flow question this leaves open, for its own pass and not for a text
+one.** The method screen still offers "Potpiši birajući poziciju
+potpisa" on a path where it cannot work. It refuses clearly and at once
+— the sentence appears directly under the option, nothing opens, and
+the corners are there to choose instead — which is the right way to
+refuse. Not offering it at all would be better than refusing it well.
+That is a change to what the screen shows rather than to what it says,
+so the text pass deliberately left it alone.

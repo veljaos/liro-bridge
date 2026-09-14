@@ -853,9 +853,12 @@ func (m *mainWindow) countText() string {
 	if !complete {
 		size += " " + m.c.T("main.size_unknown")
 	}
-	if n == 1 {
-		return fmt.Sprintf(m.c.T("main.document_count_one"), size)
-	}
+	// One form for every number. Serbian inflects the noun after 2-4
+	// differently from 5+, so a "%d dokumenata" line is wrong for two
+	// and a separate singular is a second string to keep in step;
+	// "Broj dokumenata: %d" is correct for all of them and needs no
+	// rule. The same recasting is applied to every count a person
+	// reads -- see the catalogue's other "Broj ...: %d" lines.
 	return fmt.Sprintf(m.c.T("main.document_count"), n, size)
 }
 

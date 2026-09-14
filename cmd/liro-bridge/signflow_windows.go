@@ -620,7 +620,12 @@ func (m *mainWindow) signAtAChosenPosition(ctx context.Context) bool {
 		// draw (F6b §5).
 		m.method = stampMethodCorners
 		m.postStampStep()
-		postWindowStatus(m.win, m.c.T("place.unavailable"), ui.IntentWarning)
+		// Its own sentence, not place.unavailable's. That one says the
+		// document cannot be *displayed*, which is true of a local
+		// document this project's renderer cannot draw and wrong here:
+		// there is no document on disk to display at all. One string
+		// was doing both jobs and was only right about one of them.
+		postWindowStatus(m.win, m.c.T("place.unavailable_no_file"), ui.IntentWarning)
 		return false
 	}
 	out := placementResult(m.cfg, func(in config.Config) (config.Config, bool, string) {

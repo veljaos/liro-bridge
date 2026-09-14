@@ -50,8 +50,12 @@
 
       var meta = document.createElement("div");
       meta.className = "audit-meta";
-      var metaText = entry.applicationText + " — " + entry.documentCountText;
-      if (entry.isTestKey) metaText += " — " + entry.testKeyLabel;
+      // One separator down the whole line. The count now reads
+      // "Broj dokumenata: 3" — a labelled value, like the thumbprint
+      // after it — so an em dash between it and the application name
+      // read as a sentence joining two things that are not a sentence.
+      var metaText = entry.applicationText + " · " + entry.documentCountText;
+      if (entry.isTestKey) metaText += " · " + entry.testKeyLabel;
       window.liroSetText(meta, metaText);
       meta.appendChild(document.createTextNode(" · "));
       var thumb = document.createElement("span");

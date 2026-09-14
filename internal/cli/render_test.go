@@ -121,9 +121,16 @@ func TestRenderTextStaleWarningPastThirtyDays(t *testing.T) {
 	report := sampleReport()
 	report.TSL.FetchedAt = referenceTime.AddDate(0, 0, -31)
 	var buf bytes.Buffer
-	RenderText(&buf, report, i18n.Load("en"), referenceTime, false)
-	if !strings.Contains(buf.String(), "warning") {
+	c := i18n.Load("en")
+	RenderText(&buf, report, c, referenceTime, false)
+	// The *stale* sentence specifically, not merely "a warning": the
+	// two situations have two sentences, and a test that accepts
+	// either would pass with them the wrong way round.
+	if !strings.Contains(buf.String(), strings.TrimSpace(c.T("certs.tsl_stale_warning"))) {
 		t.Fatalf("expected the staleness warning when the last successful fetch is more than 30 days old, got: %s", buf.String())
+	}
+	if strings.Contains(buf.String(), strings.TrimSpace(c.T("certs.tsl_never_refreshed"))) {
+		t.Fatalf("a list that was fetched 31 days ago has been refreshed; it must not say it never was: %s", buf.String())
 	}
 }
 
@@ -158,14 +165,24 @@ func TestRenderTextNoStaleWarningWhenRecentlyFetchedDespiteOldIssueDate(t *testi
 // 9's other required case: running on the embedded seed means no fetch
 // has ever succeeded, which always warrants a warning — independent of
 // how recent the embedded list's own issue date happens to be.
+//
+// It asserts the sentence written for *that* situation. Both cases used
+// to share one, and "not refreshed in the last 30 days" is untrue of a
+// fresh install that has never refreshed at all: it names a number to
+// wait out where the real answer is that the machine has never reached
+// the network.
 func TestRenderTextStaleWarningOnEmbeddedSeedRegardlessOfIssueDate(t *testing.T) {
 	report := sampleReport()
 	report.TSL.Source = tsl.SourceEmbedded
 	report.TSL.FetchedAt = time.Time{}
 	var buf bytes.Buffer
-	RenderText(&buf, report, i18n.Load("en"), referenceTime, false)
-	if !strings.Contains(buf.String(), "warning") {
-		t.Fatalf("expected a warning when running on the embedded seed with no successful fetch, got: %s", buf.String())
+	c := i18n.Load("en")
+	RenderText(&buf, report, c, referenceTime, false)
+	if !strings.Contains(buf.String(), strings.TrimSpace(c.T("certs.tsl_never_refreshed"))) {
+		t.Fatalf("expected the never-refreshed warning when running on the embedded seed, got: %s", buf.String())
+	}
+	if strings.Contains(buf.String(), strings.TrimSpace(c.T("certs.tsl_stale_warning"))) {
+		t.Fatalf("a seed that has never been refreshed must not be reported as 30 days behind: %s", buf.String())
 	}
 }
 

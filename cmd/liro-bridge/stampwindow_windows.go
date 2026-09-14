@@ -281,7 +281,11 @@ func runStampWindow(cfg config.Config, locale string, owner uintptr) (config.Con
 func placeStamp(cfg config.Config, c *i18n.Catalogue, locale string, doc stampWindowDoc, owner uintptr) (_ config.Config, placed bool, note string) {
 	path := doc.path
 	if path == "" {
-		chosen, ok, err := ui.ChooseFiles(owner, c.T("place.title"),
+		// main.choose_files, not place.title: this is the file dialog,
+		// and place.title names the window that opens *after* it. The
+		// signing window's own chooser already uses this string, and
+		// the two filters beside it were already shared.
+		chosen, ok, err := ui.ChooseFiles(owner, c.T("main.choose_files"),
 			c.T("main.file_filter_pdf"), c.T("main.file_filter_all"))
 		if err != nil {
 			slog.Warn("stamp window: the file chooser failed", "error", err)
