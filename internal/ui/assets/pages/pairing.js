@@ -15,7 +15,6 @@
       window.liroSetText(document.getElementById("app-name"), payload.model.applicationName);
       window.liroSetText(document.getElementById("app-origin"), payload.model.origin);
       window.liroSetText(document.getElementById("pairing-code"), payload.model.code);
-      window.liroSetText(document.getElementById("connected-name"), payload.model.applicationName);
       show("code");
       // Nothing affirmative is ever the initially focused control in
       // this program (F5 §5.6); here the only button is the refusal, so

@@ -142,12 +142,16 @@ func TestALongApplicationNameStaysReadableInThePairingWindow(t *testing.T) {
 			}
 			assertPageDoesNotScroll(t, win, "pairing connected, long name ("+locale+")", ".identity")
 			assertButtonsVisible(t, win, "pairing connected, long name ("+locale+")", ".identity")
-			assertNameStartsInsideTheWindow(t, win, "pairing connected, long name ("+locale+")", "connected-name")
 
-			// The mark and the word are outside the scrolling region
-			// for this case and no other: a screen whose whole message
-			// is "connected" must not push that message off its own top
-			// to make room for the caller's padding (D-208).
+			// The connected screen is now the mark, the words and the
+			// way out, and the caller's name is not on it at all — so
+			// there is no longer a name here for 120 characters of
+			// padding to push off the top. What is worth pinning is
+			// that: a name that reached this screen would bring the
+			// whole finding back with it.
+			if body := evalText(t, win, "document.getElementById('state-connected').textContent"); strings.Contains(body, "Knjigovodstvo") {
+				t.Errorf("pairing connected (%s): the caller's name is on the connected screen: %q", locale, body)
+			}
 			assertNameStartsInsideTheWindow(t, win, "pairing connected, long name ("+locale+")", "connected-check")
 			assertNameStartsInsideTheWindow(t, win, "pairing connected, long name ("+locale+")", "connected-title")
 		})
@@ -312,7 +316,7 @@ func TestTheConnectedScreenMarkIsDrawnInThePositiveIntentColour(t *testing.T) {
 		"return [svg.tagName.toLowerCase(),"+
 		"svg.querySelectorAll('circle').length+'+'+svg.querySelectorAll('path').length,"+
 		"getComputedStyle(svg).color,want,"+
-		"getComputedStyle(svg.querySelector('circle')).stroke,"+
+		"getComputedStyle(svg.querySelector('path')).stroke,"+
 		"root.getPropertyValue('--liro-icon-size-lg').trim(),"+
 		"getComputedStyle(svg).width].join('|');})()")
 
@@ -324,14 +328,19 @@ func TestTheConnectedScreenMarkIsDrawnInThePositiveIntentColour(t *testing.T) {
 	if tag != "svg" {
 		t.Errorf("the mark is a <%s>; it is meant to be inline SVG drawn in the page", tag)
 	}
-	if shapes != "1+1" {
-		t.Errorf("the mark is %s circles+paths, want a circle and a check", shapes)
+	// Two paths and no circle: lucide's circle-check-big draws the ring
+	// as an arc, left open where the check crosses it. Used as supplied
+	// — the shapes are the mark's, and the only thing this project
+	// decides about it is the colour, which comes from the token below
+	// and is why there is no hex value in the markup.
+	if shapes != "0+2" {
+		t.Errorf("the mark is %s circles+paths, want lucide's two paths", shapes)
 	}
 	if colour != want {
 		t.Errorf("the mark renders in %s; --liro-color-positive is %s", colour, want)
 	}
 	if stroke != want {
-		t.Errorf("the mark's circle is stroked %s, not the colour the SVG was given (%s)", stroke, want)
+		t.Errorf("the mark is stroked %s, not the colour the SVG was given (%s)", stroke, want)
 	}
 	if width != token {
 		t.Errorf("the mark renders %s wide; --liro-icon-size-lg is %s", width, token)
@@ -351,12 +360,12 @@ func TestAnOrdinaryNameLeavesTheIdentityBlockUnscrolled(t *testing.T) {
 			win, _ := sharedPairingWindow(t, i18n.Load(locale), testPrompt())
 			assertRegionDoesNotScroll(t, win, "pairing ("+locale+")", "#state-code .identity")
 
-			resizeAndSettle(t, win, pairingWindowWidth, pairingConnectedHeight)
-			defer resizeAndSettle(t, win, pairingWindowWidth, pairingWindowHeight)
-			if err := win.PostJSON(map[string]any{"type": "connected"}); err != nil {
-				t.Fatalf("PostJSON(connected): %v", err)
-			}
-			assertRegionDoesNotScroll(t, win, "pairing connected ("+locale+")", "#state-connected .identity")
+			// The connected screen has no identity block any more: the
+			// name came off it, and with it the only thing on that
+			// screen whose length this program does not control. What
+			// replaces this assertion is that the screen does not
+			// scroll at all, which is a stronger statement and is made
+			// in TestASuccessfulPairingShowsTheConnectedScreen.
 		})
 	}
 }
@@ -476,21 +485,43 @@ func TestASuccessfulPairingShowsTheConnectedScreen(t *testing.T) {
 				"getComputedStyle(document.getElementById('state-connected')).display"); display == "none" {
 				t.Fatal("the connected screen did not appear")
 			}
-			// What that screen says is now three things and no
-			// sentence (D-208): the mark, the word, and who it is
-			// that connected.
-			body := evalString(t, win, "document.body.textContent")
-			if !strings.Contains(body, c.T("pairing.connected_title")) {
-				t.Fatalf("the connected screen does not say that it connected:\n%s", body)
+			// What that screen says is the mark, the words, and the way
+			// out — and nothing else. The application's name came off
+			// it: the screen is up for the few seconds between a code
+			// being confirmed and somebody pressing Zatvori, and a name
+			// there is read by nobody while being the one value on the
+			// screen whose length this program does not control.
+			// Scoped to the screen under test, not to the whole body:
+			// the code screen is still in the DOM behind this one and
+			// legitimately carries the application's name, so a
+			// body-wide search would report the name as present no
+			// matter what this screen shows — a check that could never
+			// fail for the right reason.
+			screen := evalString(t, win, "document.getElementById('state-connected').textContent")
+			if !strings.Contains(screen, c.T("pairing.connected_title")) {
+				t.Fatalf("the connected screen does not say that it connected:\n%s", screen)
 			}
-			if !strings.Contains(body, testPrompt().Name) {
-				t.Fatalf("the connected screen does not say which application connected:\n%s", body)
+			if strings.Contains(screen, testPrompt().Name) {
+				t.Fatalf("the connected screen still names the application:\n%s", screen)
 			}
-			if strings.Contains(body, "042317") {
+			// The spent code, on the other hand, must be gone from the
+			// window entirely rather than merely hidden behind the
+			// screen in front — so this one is body-wide on purpose.
+			if body := evalString(t, win, "document.body.textContent"); strings.Contains(body, "042317") {
 				t.Fatal("the spent code is still on screen")
 			}
+			// The whole screen, not a region of it: with the identity
+			// block gone there is nothing on it that is allowed to
+			// scroll, which is a stronger property than the one this
+			// used to assert.
 			assertPageDoesNotScroll(t, win, "pairing connected ("+locale+")", ".identity")
 			assertButtonsVisible(t, win, "pairing connected ("+locale+")", ".identity")
+			if h := evalNumbers(t, win,
+				"document.getElementById('state-connected').scrollHeight",
+				"document.getElementById('state-connected').clientHeight",
+			); h[0] > h[1]+layoutEpsilon {
+				t.Errorf("pairing connected (%s): the screen needs %.3f in %.3f — it scrolls", locale, h[0], h[1])
+			}
 		})
 	}
 }

@@ -34,9 +34,19 @@
       </select>
     </label>
 
+    <!-- The two settings about how the agent behaves on this machine,
+         together. The update one used to sit alone near the foot of
+         the form, wedged between two rows of buttons, where it read as
+         a stray line rather than as a setting. Its own "check now"
+         button stays down there with the version, which is where a
+         person looks for "what am I running, and is there more". -->
     <label class="liro-check">
       <input type="checkbox" id="start-with-windows" />
       <span data-i18n="settings.start_with_windows"></span>
+    </label>
+    <label class="liro-check">
+      <input type="checkbox" id="check-updates-daily" />
+      <span data-i18n="settings.check_updates_daily"></span>
     </label>
 
     <fieldset>
@@ -170,10 +180,6 @@
       <button id="export-audit-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.export_audit_log"></button>
     </div>
 
-    <label class="liro-check">
-      <input type="checkbox" id="check-updates-daily" />
-      <span data-i18n="settings.check_updates_daily"></span>
-    </label>
     <div class="actions-row">
       <button id="check-updates-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.check_updates_now"></button>
     </div>

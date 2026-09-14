@@ -35,20 +35,26 @@ const (
 	pairingWindowWidth  = 420
 	pairingWindowHeight = 369
 
-	// The screen shown once the pairing has succeeded carries a mark,
-	// one word and the name — no code, no origin — so it needs about
-	// two thirds of the height. The window shrinks to it rather than
-	// leaving half of itself empty, measured by looking at it.
+	// The screen shown once the pairing has succeeded is now the mark,
+	// the words and the way out — the application's name came off it,
+	// and with it the identity block whose height used to set this
+	// number. The window shrinks to what is left rather than leaving a
+	// third of itself empty.
 	//
-	// 228 rather than the 226 it was: the sentence that used to sit
-	// under the name is gone (D-208) and a 40-point mark stands above
-	// it, and what the height is set by is unchanged — the identity
-	// block must not scroll for an ordinary two-line company name.
-	// Measured: that name needs 45 points, and at 228 the block can be
-	// given 61 — one --liro-space-4 of slack, which is the margin
-	// D-202 chose so that a one-word label change in any of the three
-	// catalogues does not put the scrollbar straight back.
-	pairingConnectedHeight = 228
+	// 176 rather than the 228 it was, and measured rather than reasoned
+	// out: walking the viewport down, the screen fits at 160 and does
+	// not at 158, identically in all three locales — its content is
+	// three fixed things and a button, so nothing about it varies with
+	// the catalogue. 176 is that plus one --liro-space-4, the same
+	// slack D-202 chose so that a one-word label change cannot put a
+	// scrollbar straight back, and it leaves about 25 points between
+	// the words and the button rather than the 9 a snug fit would.
+	//
+	// Reasoning it out would have given 198 — the old layout minus the
+	// name and its gap — which is 38 points of white nobody asked for.
+	// Both entries that set this number before shipped a scrollbar by
+	// arithmetic (D-202, D-208); this one was taken off the screen.
+	pairingConnectedHeight = 176
 )
 
 // pairingUI opens the agent's own pairing window (F7 §2.1). It is what

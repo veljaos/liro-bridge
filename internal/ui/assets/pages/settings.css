@@ -132,8 +132,16 @@ legend {
   overflow-wrap: anywhere;
 }
 
+/* The origin renders in the page's own face. Monospace said
+   "technical detail" about the one value on this row a person is meant
+   to read as carefully as the name above it — SPEC §6.2's reason for
+   showing it verbatim is that somebody who sees http:// where they
+   expected https:// must be able to notice. What still distinguishes
+   it from the name is the size and the colour, which is what those are
+   for. overflow-wrap stays: an origin is one unbroken token by nature,
+   and without it a long one widens the window. The pairing window's
+   own origin is deliberately not touched. */
 .pairing-origin {
-  font-family: var(--liro-font-family-mono);
   font-size: var(--liro-font-size-small);
   color: var(--liro-color-text-secondary);
   overflow-wrap: anywhere;

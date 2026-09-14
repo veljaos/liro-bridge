@@ -71,17 +71,25 @@
      §10.1). aria-hidden, because the word beside it already says
      "Connected" — a screen reader that announced both would say it
      twice. -->
+<!-- The mark, the words, and the way out. Nothing else: this screen is
+     on for the few seconds between a code being confirmed and somebody
+     pressing Zatvori, and a mark and two words are read in one glance
+     where a name and a sentence are read by nobody.
+
+     The mark is lucide's circle-check-big, used as supplied. It strokes
+     with currentColor and carries no colour of its own, so the green
+     comes from .connected-check's own --liro-color-positive and there
+     is no hex value in the markup — the same arrangement the mark it
+     replaces already had. -->
 <main id="state-connected" hidden>
   <svg id="connected-check" class="connected-check" viewBox="0 0 24 24"
+       fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" stroke-linejoin="round"
        aria-hidden="true" focusable="false">
-    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" />
-    <path d="M7.4 12.4 10.6 15.6 16.6 9.2" fill="none" stroke="currentColor"
-          stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M21.801 10A10 10 0 1 1 17 3.335" />
+    <path d="m9 11 3 3L22 4" />
   </svg>
   <p class="liro-display" id="connected-title" data-i18n="pairing.connected_title"></p>
-  <div class="identity liro-scroll-region">
-    <p class="field-value" id="connected-name"></p>
-  </div>
   <div class="actions">
     <button id="close-btn" class="liro-btn liro-btn-primary" data-i18n="pairing.close"></button>
   </div>
