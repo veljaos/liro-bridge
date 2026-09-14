@@ -21017,3 +21017,200 @@ is what would have caught this without a person noticing a byte count.
   restoring the copy taken before anything ran — the whole file, byte
   for byte — not by rewriting a hash chain, which is the one thing an
   append-only log must never have done to it.
+
+---
+
+## D-267 — An option that cannot work on this path is not offered on it; the method screen loses its first option for a batch whose documents are not files, and the refusal it replaces is kept as the backstop
+
+**Date:** 2026-09-14
+**Phase:** Between F10 and F11 — one flow change
+
+**What was wrong.** The method screen offered *Potpiši birajući poziciju
+potpisa* — sign, choosing where the signature goes — on a batch that
+arrived over the protocol. Measured on the owner's own machine with demo
+B: choosing it shows the refusal immediately under the option, with no
+picker and no page, and a corner is then chosen instead.
+
+Nothing about that refusal is badly made. It is prompt, it is in the
+person's own language, and [[D-265]] split `place.unavailable_no_file`
+out of `place.unavailable` precisely so that it says the true thing:
+these documents are not files on this machine, so there is no page to
+show. [[D-265]] closed with the observation and left it — "not offering
+it at all would be better. That is a change to what the screen *shows*
+rather than what it *says*, and it belongs to its own pass."
+
+This is that pass. **Refusing after the person has chosen is worse than
+not offering.**
+
+### The check first: is the protocol path the only one with no file?
+
+Asked before anything was built, because the answer decides how wide the
+rule is. **Yes**, and it is established rather than reasoned.
+`interactiveInput` is constructed in exactly three places and only one of
+them leaves `path` empty:
+
+| Built at | path | when |
+|---|---|---|
+| `interactive_windows.go` `newInteractiveInput` | the file it opened | `sign --in`, and every queued document |
+| `mainwindow_windows.go` `readInputs` | `it.Path` | a document that could not be read for its digest — still a file |
+| `protocolflow_windows.go` | **empty** | a batch that arrived over the protocol |
+
+`interactiveInput.label`'s own doc comment says the same thing from the
+other side: it exists "for a batch whose documents have no path — one
+that arrived over the protocol ... Empty for a local batch, where the
+name comes from the path, which is the only place it can."
+
+So the two strings are two strings for two genuinely different
+conditions, and only one of them is this entry's:
+
+- **No file at all** — the protocol documents path, and nothing else.
+  The picker has nothing to open. This is the case that loses the
+  option.
+- **A file that cannot be drawn** — local only. The document is on disk;
+  this project's own rasteriser cannot produce a page from it.
+  **All three options stay, and the existing refusal stays**, for two
+  reasons: the file is real and a later release may well be able to draw
+  it ([[D-136]]'s list of what the renderer does not do is explicit and
+  meant to shrink), and the refusal is the only place the reason can be
+  said. `place.unavailable` is unchanged, and so is everything that
+  produces it.
+
+The hash path (`POST /v2/sign`) and a request that named its own stamp
+position never reach this screen at all — `asksHowToSign` has been false
+for both since F7 and [[D-124]]. So on the method screen, "the batch came
+from an application" is by itself the whole condition; "and the request
+did not name a position" is already true of every batch that gets there.
+
+### Decision
+
+**One predicate, `mainWindow.canPlaceByLooking` — does this batch's
+first document exist as a file — used everywhere the answer matters.**
+
+- `methodsOffered` returns all three when it is true and
+  `{corners, none}` when it is false. `buildStampInit` takes that set,
+  and the page draws exactly it.
+- `signAtAChosenPosition` already refused on precisely this condition and
+  now asks the same predicate. **It is unreachable from the screen and
+  deliberately kept**: it is what protects the path if anything ever
+  reaches the method by another route, and an unreachable branch with no
+  test is one that gets deleted or broken with nothing to say so — so it
+  now has one.
+- `sizeOf` uses it for the window's height (below).
+
+One fact, one function, so the screen and the refusal cannot come to
+disagree about it — the objection this project has had to remove for a
+rule ([[D-108]]), a question ([[D-124]]) and a margin ([[D-138]]).
+
+**Settings always offers all three.** A standing preference is about how
+this person's own documents should look, and every method is reachable
+for a document they dropped themselves. Nothing about a protocol batch
+reaches that role.
+
+### Absent, not disabled — the owner's decision, and what followed from it
+
+The card is not rendered at all: `display: none`, so it is in no tab
+order, no arrow-key group and no accessibility tree, and there is no
+greyed row to ask "why not" about. The reason is the owner's own and is
+worth keeping in his words — a greyed row invites the question, which is
+a sentence that would then have to be written, translated three ways and
+placed on a screen whose whole value is being small.
+
+Two consequences followed from it rather than from taste:
+
+**Go never names an un-offered method as the chosen one.**
+`buildStampInit` clamps: a method not in `offered` is replaced by the
+first that is. Without it a configuration meaning a placed position would
+arrive at a screen that cannot show it, and the page would check a
+control nobody can see, change or tab to. The page carries the same rule
+on its own side of the boundary — `select` will not check a hidden card
+and falls back to the first visible one — because the page is this
+project's own and is still the outside of a boundary.
+
+**The window is 46 points shorter.** Measured, not subtracted: a card and
+its gap are 46 points, identically in all three catalogues. Left at 380
+the two-method screen shows **71.4** points of white between the last
+card and the actions, against the three-method screen's **25.4**. At
+334 — `stepMethodTwoHeight` — the two-method screen's slack is
+**25.40625**, the same headroom, and its form needs 171 of the 171 it
+has.
+
+It is a second height rather than a lower single one because that was
+measured too: at 334 the three-method screen asks for **208 of 171** and
+scrolls. That is [[D-208]]'s objection to reasoning a height out instead
+of looking at one, and [[D-202]]'s and [[D-208]]'s own record of shipping
+a scrollbar by arithmetic, avoided by taking both numbers off a real
+window.
+
+### Measured
+
+Every new test was confirmed to fail against the behaviour it replaces,
+in both directions where there are two:
+
+| Reverted | What failed, and how it read |
+|---|---|
+| the page's `showMethods` call | `the screen offers "placed,corners,none", want "corners,none"` / `the absent option still takes 38 points of the screen`, in all three locales |
+| `methodsOffered` always all three | `a protocol batch is offered [placed corners none], want [corners none]` |
+| `methodsOffered` always the two | `a local batch is offered [corners none], want all three` |
+| `buildStampInit`'s clamp | `the payload names "placed" as chosen while offering [corners none]` |
+| `stepMethodTwoHeight` left at 380 | `71.40625 points of white under the last card, which is more than a card and its gap` |
+| one height for both, at 334 | `the form needs 208 of the 171 it has, so it scrolls` |
+
+The third row is the one that matters most on its own: without it the
+first two tests would pass just as happily against a screen that never
+offers the picker to anybody.
+
+**And looked at**, which is this project's standing requirement
+([[D-087]], [[D-122]], [[D-161]], [[D-172]], [[D-219]], [[D-247]]): both
+screens photographed at their own size, in all three locales, with
+`PrintWindow` so taking the picture did not take the foreground from
+whoever was using the machine ([[D-122]]), driven only through `Eval`
+inside the page's own DOM ([[D-094]]), from a harness created and deleted
+in the same session ([[D-100]]) that wrote outside the repository and
+never into `docs/guide/slike`. The two-method screen reads as a screen
+with two options on it rather than one with a hole in it: the corners are
+preselected, their grid is under the option that names them, and the
+status line is hidden because nothing was refused.
+
+One thing in those captures is a harness artefact, said here so that it
+is not read as a finding: they show three step dots, because the harness
+built the header from a local window. The real protocol flow's method
+screen is **step 2 of 2** — `stepsFor` drops the documents step for a
+batch whose documents were supplied — confirmed directly, and unchanged
+by this pass.
+
+### What was not measured here
+
+The two runs that need a hand: a drag, and demo B against a real agent.
+Both are the owner's, for the reason [[D-094]] gives — no synthetic input
+on this machine — and the flow they exercise end to end is the one thing
+a rendered-payload capture cannot prove.
+
+### Rejected
+
+- **Greying the option out.** The owner's decision, and his reasoning is
+  the one recorded above: a disabled row is a question the program then
+  has to answer in a sentence, in three languages, on the screen least
+  able to afford one.
+- **Keying the rule on `m.remote != nil`.** True today and the wrong
+  fact. What the picker needs is a page to open; `remote` is where the
+  batch came from. Keying on the file is what lets the screen and the
+  refusal share one predicate, and it stays correct if a future pass
+  teaches the picker to draw a protocol batch's own bytes — which
+  [[D-206]] already records as a real feature nobody has built.
+- **Removing the refusal now that the screen cannot reach it.** It is the
+  backstop, and an unreachable branch is exactly the kind that gets
+  deleted by somebody who cannot see what reaches it. Kept, and now
+  tested.
+- **Applying the same rule to a local document the renderer cannot
+  draw.** A different condition: the file exists, and the person may have
+  a document the next release can draw. All three options stay there,
+  with the refusal that says why.
+- **Leaving the window at 380.** 46 points of white nobody asked for, on
+  a screen whose whole value is being small — [[D-208]]'s own objection,
+  measured here rather than argued.
+- **One lower height for both.** Measured to scroll the three-method
+  screen, which is the defect [[D-106]] built the scrolling rules to make
+  impossible.
+- **Changing anything the person reads.** No catalogue key was added,
+  changed or deleted. `place.unavailable_no_file` is untouched and still
+  says the true thing on the one path that can still produce it.

@@ -126,6 +126,24 @@ const (
 	// option was cut off on screen.
 	stepMethodWidth  = 440
 	stepMethodHeight = 380
+
+	// stepMethodTwoHeight is the same screen with two methods on it,
+	// which is what a batch whose documents are not files is offered
+	// (mainWindow.methodsOffered).
+	//
+	// Measured, not subtracted, in a real window at this size, in all
+	// three catalogues, with the corners chosen — the fullest the
+	// two-method screen gets, for the same reason 380 was measured that
+	// way: the four corners are taller than anything the other method
+	// reveals. The form needs 171 points of the 171 it is given, and
+	// the gap between the last card and the actions comes out at 25.4 —
+	// the same headroom the three-method screen has at 380, rather than
+	// the 71.4 that leaving the height alone would have shown.
+	//
+	// A card and its gap are 46 points. That is why this is a second
+	// height and not a lower single one: three cards do not fit at 334,
+	// measured — the form asks for 208 of 171 and scrolls.
+	stepMethodTwoHeight = 334
 )
 
 func (s flowStep) size() (width, height int) {
@@ -137,6 +155,21 @@ func (s flowStep) size() (width, height int) {
 	default:
 		return stepDocumentsWidth, stepDocumentsHeight
 	}
+}
+
+// sizeOf is one step's size for this run.
+//
+// Every step but the method screen has one size. That screen's height
+// follows how many methods this batch is offered, because a window
+// sized for three cards showing two is a card and a gap — 46 points,
+// measured — of white nobody asked for, which is the objection D-208
+// made to arriving at a height by reasoning instead of by looking.
+func (m *mainWindow) sizeOf(step flowStep) (width, height int) {
+	w, h := step.size()
+	if step == stepMethod && !m.canPlaceByLooking() {
+		h = stepMethodTwoHeight
+	}
+	return w, h
 }
 
 // jsStep is the step header: where you are, and the way back.
@@ -240,7 +273,7 @@ func (m *mainWindow) show(step flowStep) {
 	}
 	m.step = step
 	m.showingReport = false
-	w, h := step.size()
+	w, h := m.sizeOf(step)
 	m.resize(w, h)
 
 	switch step {
@@ -510,6 +543,48 @@ func (m *mainWindow) fail(err error) {
 
 // ---- the method step -----------------------------------------------
 
+// canPlaceByLooking reports whether this batch has a page the placement
+// picker could be opened on: the first document has to be a file on
+// this machine.
+//
+// It is only ever false for a batch that arrived over the protocol.
+// Measured rather than assumed: interactiveInput is built in three
+// places and exactly one of them leaves path empty
+// (protocolflow_windows.go). A local batch's documents are files by
+// construction — that is where their names come from.
+//
+// A local document this project's rasteriser cannot draw is a different
+// condition and is not this one. There the file exists; only the
+// picture cannot be made. That case keeps all three methods and keeps
+// its own refusal (place.unavailable), because the person may well have
+// a document the next release can draw, and because the refusal is the
+// only place the reason can be said.
+func (m *mainWindow) canPlaceByLooking() bool {
+	return firstInputPath(m.inputs) != ""
+}
+
+// methodsOffered is which of the three signing methods this batch's
+// method screen shows.
+//
+// An option that cannot work on this path is not offered on it.
+// Choosing to place the stamp by looking at the page, for a batch whose
+// documents are not files, could only ever end in a refusal — and
+// refusing after the person has chosen is worse than not offering. The
+// first method is therefore absent rather than disabled: a greyed row
+// invites the question "why not", which is a sentence that would then
+// have to be written, translated three ways and placed on a screen
+// whose whole value is being small.
+//
+// The same predicate decides what signAtAChosenPosition does if that
+// method is somehow reached anyway, so the screen and the refusal cannot
+// come to disagree about one fact (D-108, D-124, D-138).
+func (m *mainWindow) methodsOffered() []string {
+	if m.canPlaceByLooking() {
+		return allStampMethods
+	}
+	return offeredStampMethods
+}
+
 // postStampStep posts the method screen: the three methods, the step
 // header, and Sign.
 //
@@ -518,7 +593,7 @@ func (m *mainWindow) fail(err error) {
 // asked nothing and then opened the picker; the picker opens from here
 // now, so every method ends this screen the same way.
 func (m *mainWindow) postStampStep() {
-	payload := buildStampInit(m.c, m.cfg, stampRoleStep, m.method)
+	payload := buildStampInit(m.c, m.cfg, stampRoleStep, m.method, m.methodsOffered())
 	payload["step"] = m.headerFor(stepMethod)
 	payload["primaryLabel"] = m.primaryLabelFor(stepMethod)
 	if err := m.win.PostJSON(payload); err != nil {
@@ -609,7 +684,13 @@ func (m *mainWindow) signAtAChosenPosition(ctx context.Context) bool {
 		path: firstInputPath(m.inputs),
 		cert: certificateFor(m.certs, m.selected),
 	}
-	if doc.path == "" {
+	if !m.canPlaceByLooking() {
+		// Unreachable from the screen since methodsOffered stopped
+		// offering this method for a batch with no files, and kept
+		// deliberately: it is the same predicate, and it is what
+		// protects the path if anything ever reaches it by another
+		// route. What it does is unchanged.
+		//
 		// A protocol batch's documents arrived over a socket and are
 		// nowhere on disk, so there is no page to open the picker on.
 		// placeStamp's no-path branch opens a file chooser, which here

@@ -478,7 +478,7 @@ func TestStampWindowFitsBothRolesWithoutScrolling(t *testing.T) {
 		for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
 			c := i18n.Load(locale)
 			for _, method := range []string{stampMethodPlaced, stampMethodCorners, stampMethodNone} {
-				payload := buildStampInit(c, cfg, role, method)
+				payload := buildStampInit(c, cfg, role, method, allStampMethods)
 				if role == stampRoleStep {
 					// With the step header the real screen carries. Measuring
 					// without it is how this test passed at 345 points while
@@ -619,7 +619,7 @@ func TestStepThreeIsTitledForWhatItAsksAndSaysNothingElse(t *testing.T) {
 
 		// Settings' way in is the same window and does still explain
 		// itself.
-		if err := win.PostJSON(buildStampInit(c, config.Default(), stampRoleSettings, stampMethodCorners)); err != nil {
+		if err := win.PostJSON(buildStampInit(c, config.Default(), stampRoleSettings, stampMethodCorners, allStampMethods)); err != nil {
 			t.Fatal(err)
 		}
 		if evalBool(t, win, "document.getElementById('stamp-subtitle').hidden") {

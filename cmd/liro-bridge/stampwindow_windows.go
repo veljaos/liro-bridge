@@ -42,6 +42,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
@@ -97,6 +98,16 @@ const (
 	// stampMethodNone signs with nothing drawn on the page at all.
 	stampMethodNone = "none"
 )
+
+// allStampMethods is every signing method, in the order the screen
+// shows them. It is what Settings offers, always: a standing preference
+// is about how this person's own documents should look, and every one
+// of the three is reachable for a document they dropped themselves.
+var allStampMethods = []string{stampMethodPlaced, stampMethodCorners, stampMethodNone}
+
+// offeredStampMethods is the two that are left when there is no page to
+// open a picker on. See mainWindow.methodsOffered for when that is.
+var offeredStampMethods = []string{stampMethodCorners, stampMethodNone}
 
 // stampMethodOf is which of the three a configuration already means.
 //
@@ -190,7 +201,7 @@ func runStampWindow(cfg config.Config, locale string, owner uintptr) (config.Con
 	}
 	defer func() { _ = win.Close() }()
 
-	if err := win.PostJSON(buildStampInit(c, cfg, stampRoleSettings, stampMethodOf(cfg))); err != nil {
+	if err := win.PostJSON(buildStampInit(c, cfg, stampRoleSettings, stampMethodOf(cfg), allStampMethods)); err != nil {
 		slog.Warn("stamp window: could not post the form", "error", err)
 		return cfg, false
 	}
@@ -200,7 +211,7 @@ func runStampWindow(cfg config.Config, locale string, owner uintptr) (config.Con
 	// could not be previewed leaves the remembered position untouched
 	// on disk while the window has to come back showing the corners.
 	repost := func(method string) bool {
-		if err := win.PostJSON(buildStampInit(c, cfg, stampRoleSettings, method)); err != nil {
+		if err := win.PostJSON(buildStampInit(c, cfg, stampRoleSettings, method, allStampMethods)); err != nil {
 			slog.Warn("stamp window: could not repost the form", "error", err)
 			return false
 		}
@@ -319,7 +330,16 @@ func placeStamp(cfg config.Config, c *i18n.Catalogue, locale string, doc stampWi
 // case that matters is a document the renderer cannot draw, where the
 // remembered position stays on disk and the corners are what the person
 // is being offered instead.
-func buildStampInit(c *i18n.Catalogue, cfg config.Config, role stampWindowRole, method string) map[string]any {
+//
+// offered is which of the three this screen shows at all. An option
+// that cannot work on this path is not offered on it: see
+// mainWindow.methodsOffered. A method that is not offered is never
+// reported as the chosen one either, because the page would then have
+// to check a control nobody can see.
+func buildStampInit(c *i18n.Catalogue, cfg config.Config, role stampWindowRole, method string, offered []string) map[string]any {
+	if !slices.Contains(offered, method) {
+		method = offered[0]
+	}
 	keys := []string{
 		"stampwindow.title",
 		"stampwindow.method_placed", "stampwindow.method_corners",
@@ -362,6 +382,12 @@ func buildStampInit(c *i18n.Catalogue, cfg config.Config, role stampWindowRole, 
 		// The standing preferences are Settings' business; a step of
 		// signing does not show them at all.
 		"showMore": role == stampRoleSettings,
+		// Which methods this screen has. The page renders what it is
+		// given and works nothing out for itself (D-194): a card whose
+		// value is not here is not drawn, so it is absent rather than
+		// greyed — a greyed row invites "why not", which is a sentence
+		// that would then have to be written and placed.
+		"methods": offered,
 		"positions": []jsOption{
 			// The four corners in the order they sit on a page, so the
 			// two-by-two grid the page draws reads as a page rather than

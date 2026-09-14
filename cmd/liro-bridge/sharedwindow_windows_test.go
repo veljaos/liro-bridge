@@ -204,6 +204,14 @@ func sharedMainWindow(t *testing.T) (ui.Window, chan ui.Message) {
 // with cfg's init payload freshly posted in the given role.
 func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config, role stampWindowRole) (ui.Window, chan ui.Message) {
 	t.Helper()
+	return sharedStampWindowOffering(t, c, cfg, role, allStampMethods)
+}
+
+// sharedStampWindowOffering is the same window with an explicit set of
+// methods on offer, which is what a batch whose documents are not files
+// gets (mainWindow.methodsOffered).
+func sharedStampWindowOffering(t *testing.T, c *i18n.Catalogue, cfg config.Config, role stampWindowRole, offered []string) (ui.Window, chan ui.Message) {
+	t.Helper()
 	stampShared.once.Do(func() {
 		stampShared.messages = make(chan ui.Message, 16)
 		stampShared.win, stampShared.err = ui.NewWindow(ui.Options{
@@ -221,7 +229,7 @@ func sharedStampWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config, role 
 		t.Fatalf("NewWindow(stamp): %v", stampShared.err)
 	}
 	drain(stampShared.messages)
-	if err := stampShared.win.PostJSON(buildStampInit(c, cfg, role, stampMethodOf(cfg))); err != nil {
+	if err := stampShared.win.PostJSON(buildStampInit(c, cfg, role, stampMethodOf(cfg), offered)); err != nil {
 		t.Fatalf("PostJSON(stamp init): %v", err)
 	}
 	return stampShared.win, stampShared.messages

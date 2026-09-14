@@ -77,6 +77,13 @@
     window.liroSetText(document.getElementById("cancel-btn"), payload.secondaryLabel || "");
     document.getElementById("cancel-btn").hidden = !payload.secondaryLabel;
 
+    // Which methods this screen has, before anything is chosen: a card
+    // Go did not offer is not drawn at all, so it is absent rather than
+    // greyed — it is in no tab order, no arrow-key group and no
+    // accessibility tree, and there is no disabled row to ask "why
+    // not" about. Go decides; the page renders what it is given.
+    showMethods(payload.methods || ["placed", "corners", "none"]);
+
     var m = payload.model || {};
     // The method Go says is chosen, never one this page works out for
     // itself: after a document that could not be previewed, the chosen
@@ -117,14 +124,45 @@
     document.getElementById("cancel-btn").focus();
   };
 
+  // showMethods hides the card of every method this screen does not
+  // offer, and shows the rest. Every init re-applies it, because a
+  // window is reposted into — the method screen comes back after a
+  // document that could not be drawn — and a page holds no state of its
+  // own beyond what Go last told it (D-120, D-121).
+  function showMethods(methods) {
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="stamp-method"]'),
+      function (input) {
+        input.parentElement.hidden = methods.indexOf(input.value) < 0;
+      }
+    );
+  }
+
   function select(name, value) {
     var wanted = document.querySelector('input[name="' + name + '"][value="' + value + '"]');
-    if (wanted) wanted.checked = true;
+    // A card that is not on screen must never be the chosen one: it
+    // cannot be seen, changed or tabbed to, so a person would have no
+    // way of knowing what they were about to sign with. Go already
+    // refuses to name an un-offered method as chosen; this is the same
+    // rule on the other side of the boundary.
+    if (wanted && !hiddenCard(wanted)) wanted.checked = true;
     else {
-      var first = document.querySelector('input[name="' + name + '"]');
+      var first = firstVisible(name);
       if (first) first.checked = true;
     }
     syncSelectedCards(name);
+  }
+
+  function hiddenCard(input) {
+    return input.parentElement.hidden === true;
+  }
+
+  function firstVisible(name) {
+    var inputs = document.querySelectorAll('input[name="' + name + '"]');
+    for (var i = 0; i < inputs.length; i++) {
+      if (!hiddenCard(inputs[i])) return inputs[i];
+    }
+    return null;
   }
 
   // The chosen card carries a class rather than only the :checked

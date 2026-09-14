@@ -367,7 +367,7 @@ func runMainWindowWatching(ctx context.Context, cfg config.Config, locale string
 // open creates the window on first and runs the flow until the window
 // closes.
 func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep) int {
-	width, height := first.size()
+	width, height := m.sizeOf(first)
 	win, err := ui.NewWindow(ui.Options{
 		Title:  m.c.T("main.title"),
 		Width:  width,
