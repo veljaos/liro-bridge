@@ -96,3 +96,39 @@ go run -tags softtoken ./cmd/liro-bridge sign-digest --thumbprint <hex> --digest
 `LIRO_SOFTTOKEN_P12`/`LIRO_SOFTTOKEN_PASSWORD` are environment variables
 only — never settable from the config file, so a user cannot turn the
 soft token on by editing JSON.
+
+## Smart card middleware, and which issuers are actually verified (F11)
+
+On Windows the agent reaches cards through the operating system's own
+Cryptography API, and that is the default and stays the default. A PKCS#11
+backend exists beside it, speaking to an issuer's middleware directly, for the
+cards CNG does not see — and because it is the only route on macOS and Linux,
+where CNG does not exist.
+
+**What is verified, and what is not, stated at the line the verification stops
+at.** An untested issuer claimed as supported is the defect; naming the line is
+the honest form.
+
+| Issuer | Middleware | Module loads and answers | A signature this project verifies |
+|---|---|---|---|
+| **Pošta Srbije** | SafeSign | yes | **yes** — a real card, signed and independently verified |
+| **MUP e-ID** | NetSeT (TrustEdgeID, MUP RS) | yes, both builds | not through PKCS#11; MUP signs through CNG today |
+| **Halcom** | Nexus Personal | yes | **no — there is no Halcom card** |
+
+**Halcom is written and unverified, and the line is exactly here:** the module
+loads, `C_GetFunctionList` answers, `C_Initialize` succeeds, and the slot,
+token and mechanism lists read correctly. What has never been shown is that a
+Halcom card produces a signature this project can verify, because no Halcom
+card has ever been in the reader.
+
+Two further things worth knowing before relying on this backend:
+
+- **A signature made with a Serbian card through PKCS#11 reaches B-T at best,
+  not the B-LT the specification defaults to.** Neither card carries its own
+  issuing certificate, so the chain the token can supply is empty and there is
+  nothing for a `/DSS` to carry. Completing the chain is the caller's work and
+  is not built yet.
+- **Adobe Reader will say "signature validity unknown" for these documents.**
+  That is a statement about the trust anchor — Adobe does not carry the Serbian
+  CAs in its own store — and not about the signature. Any program signing with
+  these cards produces the same verdict.

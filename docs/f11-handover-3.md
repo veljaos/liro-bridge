@@ -3,12 +3,20 @@
 **Written:** 2026-09-15, at the end of the third session of F11.
 **Master:** pushed, working tree clean.
 
-> **Updated the same day, after the build.** §3's decision is settled (the
-> native dialog — [[D-277]]) and **item 3 is built**: the login step, the PIN
-> dialog in three locales, `SignDigest`, and their tests ([[D-279]]). Nothing
-> in it has touched the card. §§4–6 below were written before the work and are
-> left as they were, because what they predicted is most of what happened;
-> §9 at the end says what actually remains, which is three things and a PIN.
+> **CLOSED, 2026-09-15. This document is history — read `docs/f11-report.md`
+> instead.**
+>
+> It was written mid-phase to carry item 3 across a session boundary, and item
+> 3 is done: the native dialog was chosen ([[D-277]]), built in three locales
+> and looked at, the login step and `SignDigest` were written to the guard
+> ([[D-279]]), and **the exit condition was met on one PIN, first attempt**
+> ([[D-280]]). §9's three remaining things are all answered there.
+>
+> What is left of F11 is §4 and it is gated; the report's §7 says what that
+> means and `cmd/liro-bridge/pkcs11reach_test.go` enforces it. Nothing below
+> is a live instruction. It is kept because §2 is the argument that produced
+> [[D-277]] and SPEC §10's amendment, and that reasoning is worth more than
+> the summary of it.
 
 **This is not a summary of the phase.** `docs/f11-handover-2.md` is that, and
 D-272 through D-276 carry everything this session established. This document is

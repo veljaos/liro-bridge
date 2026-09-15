@@ -23242,3 +23242,296 @@ The first costs one of three attempts if the PIN is wrong, and nothing retries.
 - **Running the dialog on the shared UI thread** ([[D-207]]). It blocks until
   answered, and blocking the thread every other window is pumped by would
   freeze all of them — [[D-129]]'s defect from the other direction.
+
+---
+
+## D-280 — F11's exit condition is met: a Pošta card signed a PDF through SafeSign's PKCS#11 module, on one PIN, first attempt, and the independent verifier accepts it
+
+**Date:** 2026-09-15
+**Phase:** F11 — the exit condition, with the owner at the machine
+
+**The measurement.** One `C_Login`, one PIN typed by the owner, no retry and no
+second call anywhere in the path:
+
+```
+Open took 7.789s, asked for the PIN 1 time(s)
+logged in, and the private key was found
+private keys visible BEFORE the login: 0
+signed: posta-pkcs11-signed.pdf  66714 bytes
+        sha256=51b1d792367230eb6b27d4da2a62d7229ace370861234ba7a84d3d8b925fc8c5
+achieved level: B-B
+chain the token supplied: 0 certificates
+signature 0: ByteRangeDigestOK=true SignatureOK=true
+             SigningCertificateOK=true errors=[]
+```
+
+**That is a real card, a real module, and a card this project had never signed
+with** — F11 §6's condition in its own words. The card is a Pošta e-ID
+("Savka Odžić 200100123", serial 2353120973204924), the module is
+`C:\Windows\System32\aetpkss1.dll`, SafeSign 3.9.32.1, and the path taken is
+PKCS#11 rather than CNG from `C_Initialize` to `C_Sign`.
+
+### The independent verifier is the whole of the evidence, and F11 §2.1 is why
+
+`ByteRangeDigestOK`, `SignatureOK` and `SigningCertificateOK` all true, no
+errors, from `internal/pades/verify` — the second, from-scratch implementation
+[[D-044]] built specifically so that a bug in a shared helper cannot pass both
+ways.
+
+This is the check F11 §2.1 says nothing else substitutes for. `CKM_RSA_PKCS`
+signs the bytes it is given and adds no DigestInfo; hand it a bare digest, or
+use `CKM_SHA256_RSA_PKCS` and sign a hash of a hash, and **every layer reports
+success while the signature verifies against nothing**. [[D-279]] §4 proved
+this package builds the same DigestInfo the standard library does, by signing
+one key two ways and requiring identical signatures. That proved the bytes.
+This proves the card turns them into a signature that verifies, which is the
+half no amount of care off the card could establish.
+
+### The predictions, and the one that was right when I expected it to be wrong
+
+`scratchpad/predictions-login.md`, written before the call:
+
+| | Predicted | Outcome |
+|---|---|---|
+| a | `C_Login` returns CKR_OK with a correct PIN | **yes** |
+| b | SafeSign raises no dialog of its own | **yes** — this program's was the only one |
+| c | the three user-PIN flags are **unchanged** afterwards | **yes** — `0x40D`, re-read after |
+| d | the PIN buffer reads as zeroes after `login` returns | yes, by the deferred wipe |
+| e | `privateKeyFor` finds exactly one key by CKA_ID **and CKA_SIGN** | **yes** |
+| f | a public session sees **zero** private keys | **yes**, measured in the same run |
+| g | `C_Sign` returns 256 bytes | **yes** — the certificate's key is RSA-2048 |
+| h | the independent verifier accepts it | **yes** |
+| i | the level is B-B, no TSA contacted | **yes** |
+| j | `Chain()` is empty | **yes** — 0 certificates |
+
+**All ten held, and the interesting one is (e).** I named it as the one I
+expected to fail, and named the reason: the `CKA_SIGN` clause in the
+private-key search was the only thing in the path added this session for
+correctness rather than measured off a real card, and "more correct in
+principle" is exactly the shape of thing that turns out not to match a real
+token. It matched. SafeSign does set `CKA_SIGN` on this card's signing key.
+
+The owner asked for that to be recorded, and he is right that it is worth
+recording: **a prediction written down and then not needed is still worth
+having.** Its value was never in being right — it was that if the search had
+returned nothing, the error would have said *"no private key with the
+certificate's CKA_ID"*, which would have been misleading, because the
+identifier would have been right and the extra clause wrong. Written down in
+advance, that failure would have been read correctly in a minute instead of
+chased; and the honest next step would have cost a second login, which is the
+kind of thing worth knowing before rather than after.
+
+Prediction (c) is worth its own line because [[D-268]] got the same prediction
+wrong. There, "the counter is unchanged" was wrong because the call was a
+*failed* one and an attempt was consumed. Here a *successful* login left the
+counter exactly as it found it: `0x40D` before, `0x40D` after, all three
+user-PIN flags clear. The card has spent nothing.
+
+### Adobe: amber, and what that verdict is about
+
+SPEC §16.7's first validator, opened by the owner: **"Signature validity
+unknown"** — amber rather than red.
+
+**That is a verdict about the trust anchor and not about the signature.** Adobe
+does not carry Pošta Srbije CA in its own trust store, so it cannot build a
+path to a root it recognises; it is not reporting that anything about the bytes
+is wrong, and red is what it would show if it were. SPEC §16.7 already
+documents exactly this shape for MUP — *"Adobe will report 'identity unknown'
+for MUP-signed documents, because MUP's CA is not in Adobe's AATL trust list.
+This is not a defect and cannot be fixed in code"* — and this records that it
+holds for Pošta as well.
+
+**It is also what any program signing with this card would produce in Adobe**,
+which is the sentence that keeps it from being read as this project's problem.
+Between it and the independent verifier, F11 §6's "verified by the independent
+verifier and by one external tool" is met.
+
+### The level is B-B, and that is the card rather than the phase
+
+`Chain()` returned 0 certificates, exactly as [[D-274]] measured and predicted.
+The card carries the signer and the **root**; the signer's issuer is "Pošta
+Srbije CA 1", the intermediate, which is on neither Serbian card. So the chain
+handed to `dss.CollectRevocation` is one certificate long, [[D-159]]'s sharp
+edge applies — a chain of one expects no evidence — `/DSS` comes out empty,
+[[D-079]] correctly writes no revision, and the document is B-T at best.
+
+Here it is B-B rather than B-T, and that is a deliberate choice of this run
+rather than a property of the card: no TSA was configured, so none was
+contacted at all. [[D-243]] made the same call for the same reason — a network
+round trip is one more thing to go wrong on a single PIN entry, and the level
+is orthogonal to what the run was establishing. A timestamp can be added later
+without a card.
+
+**What is not orthogonal, and what [[D-281]] then measured, is that B-LT is out
+of reach on this path for a second reason as well.**
+
+### How it was run, and why that is a test rather than the agent
+
+The harness was a `_test.go` file in `internal/keysource/pkcs11`, not a command
+and not the agent's own flow. [[D-275]]'s gate refuses `cmd/liro-bridge`
+importing this backend, because that connects [[D-272]]'s crash path to the
+shipped binary before the out-of-process remedy exists, and `go list -deps` of
+the binary excludes test imports.
+
+So what this establishes is F11 §6's condition — the card, the module, the
+verification — and **not** the agent's window flow signing through PKCS#11,
+which is F11 §4's and is gated. Stated plainly rather than allowed to read as
+more than it is, which is [[D-243]]'s own discipline about an install that was
+a real result and was not the exit condition.
+
+It named SafeSign's module directly rather than going through `Sources()`,
+deliberately: discovery also loads `MUP RS\Celik`, which [[D-272]] measured
+dying inside its own `C_Initialize` about once in a hundred calls.
+
+**The harness is deleted rather than kept**, and the reason is [[D-279]]'s own
+rejected option, which this run was the single authorised exception to: *a test
+that spends a PIN attempt when an environment variable is set is a test
+somebody sets that variable for while running the whole suite.* Keeping it
+would contradict the entry that refused to write it. What it did is recorded
+here instead: enumerate, pick the certificate with `contentCommitment` (SPEC
+§11.4), `Open` once with a `PINEntry` backed by `ui.CollectPIN`, sign
+`testdata/pdfs/blank.pdf` with `pades.Options{TSA: nil}`, verify with
+`verify.FindSignatures` and `verify.VerifySignature`.
+
+### The dialog, looked at before anything was typed into it
+
+All three locales, by the owner, with Cancel pressed each time and no PIN
+entered into any of them. His reading: the heading carries more weight than the
+hint, the labels render properly rather than as grey blocks, and *"Liro Bridge
+traži PIN vaše kartice"* does the work SPEC §6.5.1's sixth clause asks of it.
+
+Both of those defects existed and were found by looking at a capture
+([[D-279]] §5), after every test passed. That is the sixth time this project
+has recorded the same thing and the first time on this screen.
+
+### The machine
+
+The owner stopped his own tray agent by exact PID before the run ([[D-122]]),
+as [[D-268]]'s precondition requires, so nothing else could reach the card.
+The card's three user-PIN flags are clear afterwards and the counter was never
+raised.
+
+**Rejected.**
+
+- **Reporting the run as the phase's exit condition met by the agent.** It is
+  met by this project against a real card through the real module; it is not
+  the agent's own flow, and [[D-275]]'s gate is why. Two different claims, and
+  only one of them is true.
+- **Keeping the harness so the run is repeatable.** Above: [[D-279]] rejected
+  exactly this shape, and a recipe in an entry is repeatable by anybody who
+  reads it.
+- **Retrying anything.** Nothing did, nothing can, and the run needed nothing
+  retried.
+- **Adding a timestamp to reach B-T in the same run.** One more thing to go
+  wrong on a single PIN entry, for a level that is orthogonal to what was being
+  established and reachable later without a card.
+
+---
+
+## D-281 — Pošta publishes its issuer over LDAP, so AIA chain completion cannot reach it: B-LT on this card needs a bundled store or an LDAP client, and that is a decision
+
+**Date:** 2026-09-15
+**Phase:** F11 — measured during the exit condition run
+
+**The measurement**, from the signing run that met the exit condition
+([[D-280]]), for both the intermediate and the root:
+
+```
+AIA caIssuers fetch failed
+  url="ldap://ldap-ocsp.ca.posta.rs/CN=Pošta Srbije CA 1,…?cACertificate;binary"
+  error="unsupported protocol scheme \"ldap\""
+```
+
+So chain completion from AIA **does not work for Pošta at all**, and the reason
+is not the one that would have been guessed: the certificate carries a perfectly
+good `caIssuers` extension, pointing at a real directory entry that really does
+hold the certificate. It is published over **LDAP**, and `cms.HTTPAIAFetcher`
+is an HTTP client.
+
+### Why this matters more than a failed fetch usually would
+
+[[D-274]] established that the Pošta card does not carry its own issuer: it
+holds the signer and the **root**, the signer's issuer is the intermediate
+"Pošta Srbije CA 1", and the intermediate is on neither Serbian card. Its
+closing paragraph then said the chain "has to be completed from the
+certificate's own AIA `caIssuers` or from a bundled trust store", and treated
+AIA as the obvious first answer — which it is for MUP, whose AIA is HTTP.
+
+**This measures that the obvious answer is closed.** Both routes [[D-274]]
+named are unavailable on this card at once: the token does not carry the
+intermediate, and the address the certificate gives for it is one this project
+cannot dial.
+
+The consequence is the one [[D-271]] and [[D-159]] already spell out and is
+worth restating with the new fact attached: `Chain()` is empty, so the chain is
+one certificate long, so `/DSS` has nothing to carry, so [[D-079]] writes no
+revision, so **SPEC §12.6's default level is unreachable on a Pošta card by any
+route this program currently has.** Not degraded — unreachable.
+
+### What it would take, which is the decision rather than the finding
+
+Two answers, and they are not close to equivalent.
+
+**(a) A bundled trust store.** The Trusted List this project already fetches,
+verifies and caches (F1, [[D-018]]) carries the CA/QC service certificates for
+every recognised Serbian provider, and `tsl.List.CACertificates()` already
+exists — [[D-222]] moved it into that package for an unrelated reason.
+`pades.Options.TrustStore` is already the field chain completion searches
+*first*, before AIA. So this is plausibly small: hand the signing path the
+Trusted List's own CA certificates and the intermediate is found without any
+network call at all.
+
+What has to be checked before believing that: whether "Pošta Srbije CA 1"
+specifically is among the service certificates in the list, rather than only
+the root. [[D-018]] measured the list as carrying seven named service
+certificates; which ones they are for Pošta has never been looked at, and this
+entry does not claim it.
+
+**(b) An LDAP client.** Correct in general, reaches issuers no bundled list
+happens to carry, and it is a new network protocol in a program whose outbound
+requests SPEC §6.8 *enumerates* — TSA, OCSP/CRL, TSL and the update check, and
+"any other outbound connection is a bug". Adding a fifth kind is a SPEC change
+before it is a dependency, and an LDAP client is not in the standard library.
+
+**(a) is the one to try first**, and the reason is not only that it is smaller:
+it needs no new outbound protocol, no new dependency, and no amendment to §6.8
+— and if the intermediate is in the Trusted List, it is *better* evidence than
+AIA, because the Trusted List is the thing SPEC §11.1 makes authoritative about
+which CAs this program trusts at all. Fetching an issuer over AIA and then
+checking it against the Trusted List is two steps to reach what step two
+already had.
+
+**Neither is built here.** This entry is the measurement and the two options;
+choosing between them is the owner's, and it belongs to whichever phase takes
+B-LT on rather than to a phase closing on a signature.
+
+### One thing this does not say
+
+It does not say MUP is fine. [[D-076]] measured MUP's OCSP responder refusing a
+TCP connection outright and its CRL at 30 MB, over [[D-076]]'s own embedding
+cap. So B-LT is out of reach on *both* Serbian cards this project has, for
+three different reasons between them: MUP's chain is absent from the card and
+its revocation is unreachable; Pošta's chain is absent from the card and its
+issuer is unfetchable.
+
+That is worth stating in one place because the three have been recorded
+separately and read as separate problems. They have one consequence: **SPEC
+§12.6 makes B-LT the default, and no card this project has can currently reach
+it.**
+
+**Rejected.**
+
+- **Treating this as a bug in the AIA fetcher.** It is an HTTP client being
+  handed an LDAP URL, which is the correct thing for it to refuse. Making it
+  fail quietly would be worse than the failure.
+- **Building (a) while closing the phase.** It is small and it is not this
+  phase's, and the check it rests on — whether the intermediate is in the
+  Trusted List — has not been made. A fix shipped on an unchecked premise is
+  how a phase ends badly.
+- **Building (b) at all without the owner.** A fifth kind of outbound request
+  in a program that enumerates four is a SPEC §6.8 amendment, and this project
+  does not make those in passing ([[D-225]], [[D-232]], [[D-276]], [[D-278]]).
+- **Recording it only in the phase report.** A report is read once;
+  `docs/decisions.md` is the file a future phase reads in full (SPEC §17), and
+  this is the measurement that will be quoted at whoever next proposes that
+  B-LT is one AIA fetch away.
