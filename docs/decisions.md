@@ -23030,3 +23030,215 @@ of the price rather than left as a gap somebody finds later.
   blunt because it is addressed to a specific future action.
 - **Amending anything else while here.** [[D-225]], [[D-232]] and [[D-276]] each
   record the same discipline. Two edits were ruled on; two edits were made.
+
+---
+
+## D-279 — The login step, the PIN dialog and `SignDigest` are built and stop short of the card: what is measured, what the guard shaped, and the three things only a real `C_Login` can answer
+
+**Date:** 2026-09-15
+**Phase:** F11 §2 and §5 — item 3, built to the last line before the card
+
+**Decision.** Everything F11 §3's login step, §2.1's signing and [[D-277]]'s
+PIN dialog need exists, and **nothing in it has been run against the card**.
+The owner's instruction was to stop before the first real `C_Login`, not to
+work around needing one, and the shape of the tests below is that instruction
+rather than a limitation discovered afterwards.
+
+`Source.Open` no longer returns `ErrLoginNotBuilt`. The sentinel is kept and
+deprecated rather than deleted, because it is exported and a sentinel that
+disappears turns a handled condition into an unhandled one.
+
+### 1. The guard shaped the code, which is what it was written first for
+
+[[D-269]] put `pin_test.go` in this package before the backend existed, so that
+the backend would have to be built to satisfy it rather than around it. It did:
+
+- **There is no `login(session, pin []byte)`**, because a parameter named after
+  a PIN that could hold one is refused. The PIN is a local variable in
+  `session.login`, which is the function that obtains it, passes it to
+  `C_Login` and wipes it. Nothing carries it out, because there is nothing to
+  carry it out in.
+- **The seam is therefore a callback that fills a buffer the caller owns**
+  (`PINEntry`), not a function that returns a PIN. A returned `string` could
+  never be overwritten; a returned `[]byte` would be the callee's, and this
+  layer would be wiping a copy while the original stayed where it was made.
+
+That is the inconvenience [[D-269]] predicted and called "the rule working",
+and it is worth recording that it produced a better interface than the obvious
+one rather than a worse one.
+
+**Two PIN-named declarations had to be typed explicitly** — `var ErrNoPINEntry
+error = …` and `var ErrPINCancelled error = …` — because a var with no type
+expression and a function call for an initialiser is one the checker cannot see
+through, and it is right to be conservative there. Naming the type answers its
+question truthfully: an `error` cannot hold a PIN's characters. The alternative
+was renaming correct code to dodge a matcher, which [[D-270]] rejected in as
+many words. The same thing was needed twice in `internal/ui`.
+
+### 2. `internal/ui` collects a PIN now, so it has a guard — a different one
+
+The four existing guards ([[D-025]], [[D-269]]) are the wrong shape for this
+package, for a reason [[D-270]] already recorded: **`internal/ui` uses "pin" as
+a verb everywhere** — `pinPtr`, `pinUTF16`, `pinHandler` — because it pins Go
+memory crossing into WebView2 and Win32. A name-based rule over the package
+would report the memory-pinning code constantly and be worked around within a
+week.
+
+So the guard is scoped to the one file that touches PIN material, and its main
+check is a different question: **`pindialog_windows.go` may not call
+`UTF16ToString` or `UTF16PtrToString`, and may not convert its buffers to a
+string.** Those are the two ways this package turns wide text into a Go string
+— `webview2_windows.go` uses one legitimately — and in this file either would
+undo the reason the file exists. Both directions measured: a synthetic fixture
+containing all three ways is caught, and the real file is clean.
+
+### 3. What is measured, and what each measurement is worth
+
+| | |
+|---|---|
+| **the wipe** | `wipe` fills, then reads the bytes back **through the pinned address** with `unsafe.Add` rather than through the slice header — the owner's own instruction, and the reason is that a loop that was elided and a loop that ran look identical through the slice. The fixture asserts the bytes were non-zero first, so a wipe that did nothing cannot pass. |
+| **the wipe, in `login`** | The `PINEntry` captures the buffer it was handed — the same backing array — writes a PIN into it, then reports a failure. Every path out of `login` runs the same deferred wipe, so what is measured on the error path is the statement that also runs on the success path. |
+| **clause 7, the length** | Four lengths refused before `C_Login`: empty, one under the minimum, one over the maximum, and a negative from a broken entry. The empty case is [[D-268]]'s, which cost one of three attempts on a MUP token because the module range-checked nothing and handed it to the card. |
+| **clause 5, no retry** | A counting entry: `login` asks exactly once. There is no loop and no caller that calls it twice. |
+| **clause 1, the protected path** | Where a token advertises one, the PIN screen is never reached. Measured by the branch reaching `C_Login` on a nil module and panicking, which is what makes "did not ask" and "went the other way" distinguishable without a card. |
+| **clause 6, on screen** | The dialog rendered in all three locales, read back from the **controls** rather than from the payload, asserting it names Liro Bridge, names the card, and states the token's own 5 and 15. |
+| **the DigestInfo** | §4 below. |
+
+**Every one of those runs with a nil module and cannot reach `C_Login`.** That
+is not incidental: each takes a path that returns before any `m.call`, which
+was checked by construction rather than by care. This card has three attempts
+and all three of its user-PIN flags are clear.
+
+### 4. The DigestInfo is proven against the standard library, and F11 §2.1 is why that matters
+
+`CKM_RSA_PKCS` pads and signs **the bytes it is given**. It does not add a
+DigestInfo, and the CNG backend has no equivalent code because
+`BCRYPT_PAD_PKCS1` builds one inside Windows from the algorithm identifier
+(`windowscng/conn_windows.go`). So this is a structure that exists on one
+backend and not the other, which is exactly how it gets forgotten — and F11
+§2.1 is explicit that getting it wrong produces a signature that verifies
+against nothing while every layer reports success.
+
+The prefix is not transcribed and trusted. `crypto/rsa` can be asked the same
+question two ways: `SignPKCS1v15(…, crypto.SHA256, digest)` builds the
+DigestInfo itself, and `SignPKCS1v15(…, crypto.Hash(0), info)` treats its input
+as one already built. **The two signatures are byte-identical**, which they can
+be for no other reason, since PKCS#1 v1.5 padding is deterministic and the
+inputs differ only in what this package supplies. It shares no code with
+`digestinfo.go` ([[D-044]]'s rule for the CMS verifier, applied to a much
+smaller structure).
+
+And the check is shown to be capable of failing: signing a **bare digest** the
+same way produces a different signature, so the comparison can tell the two
+apart. Without that, a check that passed would have meant nothing.
+
+Two more, because the first proves the bytes and not the reason: the structure
+is re-parsed with `encoding/asn1` — a third implementation — and its OID and
+digest checked; and `digestInfoPrefix` is asserted to hold exactly one entry,
+so SPEC §18.8's "no SHA-1 anywhere" is a property of what exists rather than of
+what is called. Both NetSeT builds and SafeSign offer `CKM_SHA1_RSA_PKCS`
+([[D-271]], [[D-273]]); this layer cannot produce one even if asked.
+
+### 5. Looking at the dialog found two things the tests did not
+
+This project's standing requirement ([[D-087]], [[D-122]], [[D-161]],
+[[D-172]], [[D-219]], [[D-247]]), and it earned itself again. The dialog was
+photographed in all three locales with `PrintWindow`, so taking the picture did
+not take the foreground ([[D-122]]), from a harness created and deleted in the
+same session ([[D-100]]). Every test passed before the first capture, and the
+capture showed:
+
+- **Every label was a grey block on a white ground.** The class background was
+  `COLOR_WINDOW` while every `STATIC` paints itself against `COLOR_3DFACE`. A
+  Win32 dialog's own background *is* 3DFACE; matching it is what makes this
+  look like a dialog rather than like something this program drew.
+- **The heading had no more weight than the hint under the edit control** — and
+  the heading is clause 6. The file's own doc comment said "in the heavier
+  face" and there was no heavier face. There is now: a second font at FW_BOLD,
+  and both are `DeleteObject`ed on the way out, because a GDI object leaked per
+  window is invisible until somebody counts across many ([[D-169]] measured
+  exactly that, six per window, for the two icons).
+
+Neither is subtle and neither was visible to an assertion about the strings.
+
+### 6. What the dialog does about the memory it does not own
+
+[[D-277]] chose a native window because a page's memory is not this program's.
+A native dialog's is *mostly* this program's, and the part that is not is named
+rather than glossed:
+
+- The caller's `dst` and the dialog's UTF-16 buffer are this program's, are
+  pinned, and are wiped.
+- **The edit control's own copy is Windows' memory.** It cannot be wiped, but
+  it can be overwritten through the control's own interface, and it is —
+  `WM_SETTEXT` to empty before the window is destroyed, rather than relying on
+  destruction to do it.
+- The characters never become a Go string: the UTF-16 goes rune by rune into
+  UTF-8 in the caller's buffer, and §2's guard is what keeps it that way.
+
+### 7. The gate caught something real, which is the best evidence it was worth building
+
+[[D-275]] put `cmd/liro-bridge/pkcs11reach_test.go` in the way of anything
+importing this backend from the agent. Writing the adapter that turns a
+`PINRequest` into a localised `PINPrompt` is exactly such an import, and the
+gate is what stopped it being written here.
+
+So **the two halves exist and are not joined.** `pkcs11.PINEntry` is a func
+type and `ui.CollectPIN` fills a buffer; joining them is a dozen lines that
+belong with F11 §4's wiring, behind the gate, after [[D-275]]'s remedy.
+
+**One consequence, stated rather than left to be noticed:** the eight
+`pindialog.*` catalogue keys have no production reader yet. [[D-132]] and
+[[D-265]] delete catalogue keys nothing reads, and these are deliberately not
+deleted — they have a named reader arriving with §4, they are read now by the
+three-locale test, and deleting and re-adding them would lose the wording that
+was looked at on screen. Recorded so that the next sweep for dead keys finds
+the reason here rather than removing them.
+
+### 8. What only a real `C_Login` can answer, and what it will cost
+
+Three things, and no amount of care here substitutes for them:
+
+1. **That `C_Login` with a correct PIN succeeds on this token**, and that
+   `privateKeyFor` then finds a key that was invisible a moment earlier.
+2. **That `CKM_RSA_PKCS` over this DigestInfo produces a signature the
+   independent verifier of SPEC §16.4 accepts.** §4 proves this package builds
+   the same bytes the standard library does; it cannot prove the card signs
+   them into something that verifies, and F11 §2.1 forbids accepting "bytes
+   came back" as evidence of that.
+3. **That the protected-path branch's `C_Login(NULL)` works**, which nothing on
+   either machine can exercise, because no module measured so far advertises
+   one ([[D-268]], [[D-273]]).
+
+The first costs one of three attempts if the PIN is wrong, and nothing retries.
+
+**Rejected.**
+
+- **Testing `login` against the real card on a path that returns before
+  `C_Login`.** It would have been better evidence and it is a gamble on this
+  code being right about its own control flow. If it were wrong, the cost is an
+  attempt — and [[D-268]] already demonstrated that this exact shape costs one
+  when an assumption about who range-checks what turns out to be false. A nil
+  module makes the claim structural instead.
+- **A `t.Skip`-guarded test that does call `C_Login`, for the owner to run.**
+  Considered, and it is the natural way to hand this over. Not written: a test
+  that spends a PIN attempt when an environment variable is set is a test
+  somebody sets that variable for while running the whole suite. The first
+  `C_Login` should be a deliberate act with a person watching, not a test case.
+- **Wiring the dialog to the backend so the locales have a production
+  reader.** §7: that is the import the gate exists to refuse.
+- **`ES_NUMBER` on the edit control**, to accept digits only. Both Serbian
+  cards this project has met use numeric PINs and PKCS#11 does not say a PIN
+  is numeric; a control that silently discards a character a person's card
+  accepts would produce a wrong PIN and cost an attempt.
+- **Reading the edit control with `WM_GETTEXT` into a Go string and converting
+  afterwards.** One line shorter and it is the whole defect [[D-277]] is about.
+- **`SystemParametersInfoW(SPI_GETNONCLIENTMETRICS)` for the dialog font.** The
+  properly correct answer, and it needs the 500-byte `NONCLIENTMETRICSW` laid
+  out by hand — a struct layout measured by nobody, in a package whose whole
+  subject is not getting layouts wrong ([[D-080]]). Segoe UI at 9pt, DPI-scaled,
+  is an assumption a comment can state; a wrong offset would be one nothing
+  could see.
+- **Running the dialog on the shared UI thread** ([[D-207]]). It blocks until
+  answered, and blocking the thread every other window is pumped by would
+  freeze all of them — [[D-129]]'s defect from the other direction.

@@ -1,7 +1,15 @@
 # F11 handover 3 — item 3, and the one thing to decide before writing any of it
 
 **Written:** 2026-09-15, at the end of the third session of F11.
-**Master:** `907d825`, pushed, working tree clean.
+**Master:** pushed, working tree clean.
+
+> **Updated the same day, after the build.** §3's decision is settled (the
+> native dialog — [[D-277]]) and **item 3 is built**: the login step, the PIN
+> dialog in three locales, `SignDigest`, and their tests ([[D-279]]). Nothing
+> in it has touched the card. §§4–6 below were written before the work and are
+> left as they were, because what they predicted is most of what happened;
+> §9 at the end says what actually remains, which is three things and a PIN.
+
 **This is not a summary of the phase.** `docs/f11-handover-2.md` is that, and
 D-272 through D-276 carry everything this session established. This document is
 about **item 3 — the login step, the PIN screen and `SignDigest`** — and it
@@ -231,3 +239,75 @@ check which build answered.
 2026-09-05 by `CertPropSvc` and re-touched whenever the card is inserted. It is
 not something this project put there and not something to restore; it is worth
 knowing before a snapshot comparison reports it as a change.
+
+---
+
+## 9. What actually remains, written after the build
+
+Item 3 is done to the last line before the card. [[D-279]] is the entry;
+this is the short form for whoever picks it up.
+
+### Three things, and all three need the card
+
+1. **`C_Login` with a correct PIN**, and `privateKeyFor` then finding a key
+   that was invisible a moment earlier. **One call. No retry.** The card has
+   three attempts and all three of its user-PIN flags are clear.
+2. **A signature verified with the independent verifier of SPEC §16.4.**
+   [[D-279]] §4 proves this package builds the same DigestInfo the standard
+   library does, by signing one key two ways and requiring the signatures to be
+   identical. That is not the same as the card signing it into something that
+   verifies, and F11 §2.1 forbids accepting "bytes came back" as evidence.
+3. **The exit condition**: that PDF, verified by the independent verifier and
+   by one external tool.
+
+### What the owner does, in order
+
+| | |
+|---|---|
+| 1 | Look at the PIN dialog. Three captures were taken and two defects came out of looking at the first — it is worth one more pair of eyes before a PIN goes into it. |
+| 2 | Type the PIN, once, at the machine. |
+| 3 | Approve, at the machine, for the exit condition. |
+
+### Two things to expect rather than to diagnose
+
+**The document will be B-T, not B-LT**, and that is [[D-274]]: this card
+carries the root, its signer's issuer is the intermediate, and the intermediate
+is on neither Serbian card, so `Chain` is empty and `/DSS` has nothing to
+carry. It is the measured consequence of the card, not a failure of the phase,
+and the report should say so in those words.
+
+**`go test ./internal/keysource/pkcs11/` goes red about once in a hundred
+runs.** Four occurrences measured, the last two out of routine check runs
+([[D-272]]'s table). It is not your change. Do not chase it — [[D-275]] defers
+the remedy and gates the only thing that would make it matter.
+
+### Three things not to do
+
+- **Do not wire the backend into the agent.**
+  `cmd/liro-bridge/pkcs11reach_test.go` will fail and say why. It already
+  stopped this session writing the `PINRequest`→`PINPrompt` adapter, which is
+  the dozen lines that join the two halves; they belong with §4's wiring,
+  after [[D-275]]'s remedy.
+- **Do not delete the eight `pindialog.*` catalogue keys** as unread surface.
+  They have a named reader arriving with §4 and are read now by the
+  three-locale test ([[D-279]] §7).
+- **Do not add a `t.Skip`-guarded test that calls `C_Login`.** Considered and
+  rejected: a test that spends a PIN attempt when an environment variable is
+  set is a test somebody sets that variable for while running the whole suite.
+  The first `C_Login` is a deliberate act with a person watching.
+
+**`TestOpenTakesNoArgumentsAndPointsAtSignInstead` fails on this machine, and
+it is not yours either.** Measured 4 of 4 on the working tree *and* 4 of 4 in a
+worktree at the commit before this session's build, so it predates the work:
+
+```
+testing.go:1617: TempDir RemoveAll cleanup:
+  unlinkat ...\AppData\Local\Liro\webview2\WebView2Loader-163680.dll: Access is denied.
+```
+
+It is a cleanup failure rather than an assertion — `t.TempDir` cannot remove
+the extracted WebView2 loader because something still has it loaded — which is
+the family [[D-172]] recorded as C-6, "1.26 GB of temporary directories the
+suite could not delete". Left alone: it is not this phase's, and a fix is a
+change to how the suite gets and releases a config home, which is the same
+decision [[D-266]] left open and named as bigger than one line.

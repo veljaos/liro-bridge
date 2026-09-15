@@ -17,6 +17,25 @@ import (
 // possible (F11 §4).
 type Source struct {
 	modulePath string
+
+	// entry collects the PIN when a token needs one and offers no protected
+	// authentication path. Nil until something wires one up, and a token that
+	// needs it then fails with ErrNoPINEntry rather than silently.
+	//
+	// It holds a way to obtain a PIN and never a PIN: SPEC §6.5.1 clause 2
+	// forbids the second, and pin_test.go is what makes that structural rather
+	// than a promise.
+	entry PINEntry
+}
+
+// WithPINEntry returns a copy of this Source that collects PINs with entry.
+//
+// A copy rather than a mutation because Source is a value type and Sources
+// hands out several of them; a setter would make which module got the screen
+// depend on the order somebody called it in.
+func (s Source) WithPINEntry(entry PINEntry) Source {
+	s.entry = entry
+	return s
 }
 
 // NewSource returns a Source over the module at path.
@@ -157,16 +176,9 @@ func (s Source) List(ctx context.Context) ([]keysource.Certificate, error) {
 	return dedupe(found), nil
 }
 
-// Open implements keysource.Source, and stops at the wall.
-//
-// See ErrLoginNotBuilt. Everything above this line is read-only and cannot
-// spend a PIN attempt; this is the one method that would, and it is not built.
-func (s Source) Open(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return nil, ErrLoginNotBuilt
-}
+// Open is implemented in sign_windows.go, where the login step and the
+// signing session it produces live together. It is the one method in this
+// package that can cost a PIN attempt; everything else here is read-only.
 
 // ChainFor returns the issuing chain the token itself carries for one of its
 // certificates, which is what keysource.Session.Chain will return once a

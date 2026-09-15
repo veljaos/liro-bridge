@@ -6,18 +6,23 @@ import (
 	"github.com/veljaos/liro-bridge/internal/keysource"
 )
 
-// ErrLoginNotBuilt is returned by Open. It is the wall F11 stops at.
+// ErrLoginNotBuilt was the wall F11 §2 stopped at: Open returned it while
+// SafeSign had not been asked whether its token offers a protected
+// authentication path, because building §6.5.1's fallback before that answer
+// would have been building for a question nobody had closed (D-269, D-271).
 //
-// C_Sign on a token's private key needs a logged-in session, and the login
-// step is deliberately not built: SPEC §6.5.1 requires the protected
-// authentication path wherever a module offers one and only falls back to
-// asking for the PIN where it does not, and SafeSign — the module F11's own
-// exit condition turns on — has not been asked which it is. That reading costs
-// nothing and spends no PIN attempt; building the fallback before it exists
-// would be building for a question nobody has closed (D-269).
+// The answer is measured — it does not (D-273) — and Open is built, so nothing
+// returns this any more. It is kept rather than deleted because it is
+// exported: something outside this package may branch on it, and a sentinel
+// that disappears turns a handled condition into an unhandled one at compile
+// time in the best case and at run time in the worst. It may go when F11 §4
+// has wired this backend up and nothing is left that could have held it.
 //
 // It lives here, unconstrained, so that anything above this layer branches on
 // one sentinel whatever it is compiled for.
+//
+// Deprecated: Open no longer returns this. A token needing a PIN with nothing
+// wired up to collect one returns ErrNoPINEntry instead.
 var ErrLoginNotBuilt = errors.New("pkcs11: signing needs a logged-in session and the login step is not built yet (F11 §5)")
 
 // CertificateInfo is one certificate found on one token, with enough about

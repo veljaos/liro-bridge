@@ -18,10 +18,22 @@ var ErrPlatform = errors.New("pkcs11: not supported on this platform yet (see F1
 // Source implements keysource.Source over one PKCS#11 module.
 type Source struct {
 	modulePath string
+	entry      PINEntry
 }
 
 // NewSource returns a Source over the module at path.
 func NewSource(modulePath string) Source { return Source{modulePath: modulePath} }
+
+// WithPINEntry returns a copy of this Source that collects PINs with entry.
+//
+// It exists here so that the type a caller has to satisfy, and the method they
+// call, are the same on every platform — wiring written once compiles for
+// F12's macOS and F13's Linux without being written again. Nothing on this
+// platform will call it, because Open refuses before it could.
+func (s Source) WithPINEntry(entry PINEntry) Source {
+	s.entry = entry
+	return s
+}
 
 // ModulePath is which module this Source speaks to.
 func (s Source) ModulePath() string { return s.modulePath }

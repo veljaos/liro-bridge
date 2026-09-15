@@ -79,7 +79,32 @@ const (
 	iFindObjectsInit
 	iFindObjects
 	iFindObjectsFinal
+	iEncryptInit
+	iEncrypt
+	iEncryptUpdate
+	iEncryptFinal
+	iDecryptInit
+	iDecrypt
+	iDecryptUpdate
+	iDecryptFinal
+	iDigestInit
+	iDigest
+	iDigestUpdate
+	iDigestKey
+	iDigestFinal
+	iSignInit
+	iSign
 )
+
+// The eleven names between C_FindObjectsFinal and C_SignInit are declared
+// rather than skipped with a count. This layer calls none of them — it does
+// not encrypt, decrypt or digest, and PKCS#11's own digesting is the mechanism
+// F11 §2.1 forbids using — but writing `iSignInit = iFindObjectsFinal + 14`
+// would be the same arithmetic with the working shown once and then trusted,
+// and this const block's own comment records what that cost the last time:
+// every index came out 12, C_FindObjectsInit became C_OpenSession, and two
+// modules answered CKR_ARGUMENTS_BAD while a third crashed the process. Naming
+// each one keeps iota doing the counting.
 
 // CK_TOKEN_INFO flags.
 const (
