@@ -34,6 +34,7 @@ package pinname
 
 import (
 	"go/ast"
+	"go/token"
 	"strings"
 	"unicode"
 )
@@ -93,7 +94,7 @@ func Names(identifier string) bool {
 func CouldCarryAPIN(expr ast.Expr) bool {
 	switch t := expr.(type) {
 	case nil:
-		return true // an inferred type; be conservative
+		return true // an inferred type; be conservative. See DeclarationCouldCarryAPIN.
 	case *ast.Ident:
 		return t.Name == "string" || t.Name == "any"
 	case *ast.InterfaceType:
@@ -113,6 +114,61 @@ func CouldCarryAPIN(expr ast.Expr) bool {
 		// named type. None of these is how a PIN would plausibly be held by
 		// accident.
 		return false
+	}
+}
+
+// DeclarationCouldCarryAPIN reports whether a var or const declaration could
+// hold a PIN, given its type — which a Go declaration is entitled not to have
+// — and whatever it is initialised to.
+//
+// It exists because CouldCarryAPIN alone is conservative about a nil type, and
+// an untyped constant has none. That conservatism produced a false positive
+// the first time internal/keysource/pkcs11 declared the PKCS#11 token flags:
+//
+//	const ckfUserPINLocked = 0x00040000
+//
+// which names a PIN, has no type expression, and is an integer. Reading the
+// initialiser answers it: an integer literal, an expression over integer
+// constants, or a bare name in a const block — which repeats or increments the
+// previous expression, iota included — cannot hold a PIN's characters. A
+// string or character literal can, and so can anything this cannot see
+// through, which stays conservative.
+func DeclarationCouldCarryAPIN(typ ast.Expr, values []ast.Expr) bool {
+	if typ != nil {
+		return CouldCarryAPIN(typ)
+	}
+	if len(values) == 0 {
+		// A bare name in a const block. It takes the previous expression,
+		// which is a constant expression and not a PIN.
+		return false
+	}
+	for _, v := range values {
+		if valueCouldCarryAPIN(v) {
+			return true
+		}
+	}
+	return false
+}
+
+func valueCouldCarryAPIN(v ast.Expr) bool {
+	switch e := v.(type) {
+	case *ast.BasicLit:
+		return e.Kind == token.STRING || e.Kind == token.CHAR
+	case *ast.BinaryExpr:
+		return valueCouldCarryAPIN(e.X) || valueCouldCarryAPIN(e.Y)
+	case *ast.ParenExpr:
+		return valueCouldCarryAPIN(e.X)
+	case *ast.UnaryExpr:
+		return valueCouldCarryAPIN(e.X)
+	case *ast.Ident, *ast.SelectorExpr:
+		// iota, or another constant, or a value from elsewhere. None of these
+		// is a PIN's characters written down here; if one names a PIN it was
+		// caught where it was declared.
+		return false
+	default:
+		// A call, a composite literal, a conversion. Not seen through, so
+		// conservative.
+		return true
 	}
 }
 

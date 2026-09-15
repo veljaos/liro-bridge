@@ -3,6 +3,7 @@ package pinname
 import (
 	"go/ast"
 	"go/parser"
+	"go/token"
 	"regexp"
 	"strings"
 	"testing"
@@ -91,6 +92,50 @@ func parseType(t *testing.T, src string) ast.Expr {
 		t.Fatalf("parsing type %q: %v", src, err)
 	}
 	return expr
+}
+
+// TestDeclarationCouldCarryAPINReadsTheInitialiserWhenThereIsNoType covers the
+// case that a real declaration found the moment internal/keysource/pkcs11
+// first declared the PKCS#11 token flags: a constant that names a PIN, has no
+// type expression, and is an integer.
+func TestDeclarationCouldCarryAPINReadsTheInitialiserWhenThereIsNoType(t *testing.T) {
+	for _, c := range []struct {
+		src  string // a single var/const spec's source
+		want bool
+		why  string
+	}{
+		{"const ckfUserPINLocked = 0x00040000", false, "a PKCS#11 flag; an integer"},
+		{"const iInitPIN = 11", false, "an index into CK_FUNCTION_LIST"},
+		{"const userPINCounterFlags = ckfUserPINCountLow | ckfUserPINFinalTry", false, "an expression over constants"},
+		{"const defaultPin = \"0000\"", true, "a string literal is a PIN's characters"},
+		{"var cachedPIN []byte", true, "a byte slice"},
+		{"var cachedPIN = readIt()", true, "a call; not seen through, so conservative"},
+		{"var pinPolicy signing.PINPolicy", false, "a named enum from another package"},
+		{"var perSignaturePIN bool", false, "a bool"},
+	} {
+		typ, values := parseSpec(t, c.src)
+		if got := DeclarationCouldCarryAPIN(typ, values); got != c.want {
+			t.Errorf("DeclarationCouldCarryAPIN for %q = %v, want %v — %s", c.src, got, c.want, c.why)
+		}
+	}
+
+	// A bare name continuing a const block has neither a type nor a value: it
+	// repeats or increments the previous expression, iota included.
+	if DeclarationCouldCarryAPIN(nil, nil) {
+		t.Error("a bare name in a const block was reported as able to carry a PIN; " +
+			"it takes the previous constant expression")
+	}
+}
+
+func parseSpec(t *testing.T, src string) (ast.Expr, []ast.Expr) {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "x.go", "package x\n"+src+"\n", 0)
+	if err != nil {
+		t.Fatalf("parsing %q: %v", src, err)
+	}
+	gen := file.Decls[0].(*ast.GenDecl)
+	spec := gen.Specs[0].(*ast.ValueSpec)
+	return spec.Type, spec.Values
 }
 
 // TestTheWordBoundaryPatternMissesRealNames measures the claim this package's

@@ -69,7 +69,7 @@ func findPINsThatOutliveTheCall(fset *token.FileSet, file *ast.File) []finding {
 				continue
 			}
 			for _, id := range value.Names {
-				if pinname.Names(id.Name) && pinname.CouldCarryAPIN(value.Type) {
+				if pinname.Names(id.Name) && pinname.DeclarationCouldCarryAPIN(value.Type, value.Values) {
 					add(id.Pos(), "package-level "+gen.Tok.String(), id.Name)
 				}
 			}
