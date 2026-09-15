@@ -22066,8 +22066,10 @@ survive the second.
 | the full discovery order, twice per process, 20 rounds | 20 | 0 |
 | the package suite, later in the session | 1 | **1** |
 | the package suite, immediately after | 25 | 0 |
+| the package suite, during a later check run | 1 | **1** |
+| the package suite, immediately after that | 12 | 0 |
 
-**Three in roughly 400, spread across the session — with the card in the reader
+**Four in roughly 450, spread across the session — with the card in the reader
 throughout.** The owner saw two this morning on the same card.
 
 The third is the one that ties the two signatures together. It came out of
@@ -22077,22 +22079,70 @@ ends with — so **this machine has now produced both terminations**: the C++
 throw through the suite, the CRT fail-fast through the isolated probe. Twenty-
 five suite runs immediately afterwards were clean.
 
+The fourth arrived the same way, out of a routine check run near the end of the
+session, with the only change to that package since the third being a doc
+comment. Twelve runs immediately afterwards were clean. It is recorded because
+it is the shape this fault will take for whoever meets it next: **a suite that
+goes red once, passes on the re-run, and has nothing to do with the change
+being tested.** That is the reading most likely to get it dismissed, and this
+table is what a person should be pointed at instead.
+
 So the fault is intermittent at something like one per cent, and it does not
 cluster: three occurrences, an hour apart, with hundreds of clean runs between
-them. **The consequence for the reading that produced this entry: "card OUT →
-ok, card IN → dies" was one run each.** Against a fault that needs about a
-hundred runs to show once, a single card-out run establishes nothing, and
-**whether the card is the variable at all is not established.**
+them.
 
-That is [[D-161]]'s finding from a new side. There, a test asserted the right
-property against the wrong fixture. Here, a control was run at a sample size
-that could not have seen the thing it was controlling for — which is
-[[D-172]]'s "a per-instance cost is invisible to one instance" applied to a
-*rate* rather than to a leak.
+### The reasoning error, which is the most useful thing in this entry
 
-What *is* established about the card is narrower and still worth having: the
-crash has only been seen with a card present, by two people on two machines,
-and never with one absent. Four observations of a correlation, not a mechanism.
+**Two runs against a fault that shows once in a hundred is not a control, and
+it was presented as one.** The reading that produced this entry paired one
+card-out run with one card-in run and drew a conclusion from the difference:
+
+```
+card OUT → ok                              0.468s
+card IN  → Exception 0xe06d7363, process death, 0.477s
+```
+
+Both readings are true. Neither supports what was concluded from them. At a
+one-per-cent rate, a single card-out run had about a **99% chance of passing
+whether or not the card matters**, so it could not have distinguished the
+hypothesis it was run to test from its opposite. The card-in run is evidence
+that the fault exists; the card-out run is evidence of nothing at all.
+
+The owner caught this himself on reading it back, and asked for it to be stated
+here in preference to the correlation, which is the right call: the correlation
+is one fact about one fault, and the error is a shape this project will meet
+again.
+
+**The shape, stated so it is recognisable next time: a control has a sample
+size, and the sample size is set by the rate of the thing being controlled
+for — which is exactly what an intermittent fault does not tell you in
+advance.** The first observation of a new fault is therefore never enough to
+build a control around, because the number of runs the control needs is not yet
+known. The cheap defence is to establish the rate first and the variable
+second; the cheaper one is to notice that "it did not happen once" is not a
+measurement.
+
+This is [[D-161]] and [[D-172]] arriving from a third direction. [[D-161]]: a
+test asserting the right property against the wrong *fixture* keeps passing.
+[[D-172]]: a per-instance cost is invisible to a test that makes one instance.
+Here: **a control run at a sample size smaller than the fault's own period
+returns "clean" and means nothing** — and unlike the other two it does not
+merely fail to catch something, it actively produces a wrong conclusion, which
+in this case was "it is not one bad module".
+
+**So whether the card is the variable at all is not established.** What *is*
+established is narrower and still worth having: the crash has only been seen
+with a card present, by two people on two machines, and never with one absent.
+Four observations of a correlation, not a mechanism.
+
+**A card-out control at a sample size that would mean something — roughly two
+hundred runs — was considered and deliberately not taken.** It needs the
+owner's hands, since removing a card is not something this session may simulate
+([[D-094]]), and it would change nothing: §4 rules out every in-process remedy
+whatever the trigger turns out to be, and §5 says the remedy is the same
+whether the card is involved or not. Recorded so that nobody re-derives the
+question and spends an evening on it. If the fault ever becomes reproducible on
+demand, the control becomes cheap and worth taking then.
 
 Nothing was found that moves the rate. Checked and rejected: something the
 module writes on first contact with an unknown card — the only thing the
@@ -22159,11 +22209,13 @@ reproducible on demand. Three things follow and only the third is open:
   wanted, never on a schedule" ([[D-271]]). The remaining question is whether
   `Modules` runs each candidate's `C_Initialize` in a child process, so that a
   module which kills it becomes a `Failure` in a list — which is exactly what
-  F11 §3 asks for and what the owner asked for in as many words. It is a change
-  to this program's arrangement rather than to a function, and §5 says there is
-  room to choose it rather than react to it, so it is put to the owner here for
-  the reason [[D-223]] gives for the audit chain and [[D-227]] for
-  `sign-digest`: a design nobody chose is how one ships.
+  F11 §3 asks for. It is a change to this program's arrangement rather than to
+  a function, and §5 says there is room to choose it rather than react to it,
+  so it was put to the owner rather than built here, for the reason [[D-223]]
+  gives for the audit chain and [[D-227]] for `sign-digest`.
+
+  **Ruled on: the remedy is named and deferred to its own phase, and wiring
+  discovery in is now conditional on it. See [[D-275]].**
 
 ### The machine
 
@@ -22531,3 +22583,137 @@ a fix.
   F11 §6 names the Pošta card and SafeSign deliberately, because it is a card
   this project has never signed with. An empty chain costs a signature level
   that is equally absent on the other card.
+
+---
+
+## D-275 — The remedy for the module crash is to probe out of process; it is deferred to its own phase, and wiring discovery into the agent is made conditional on it by a test that fails on the import
+
+**Date:** 2026-09-15
+**Phase:** F11 — the owner's ruling on [[D-272]]
+
+**Decision, in three parts.** The remedy is named. It is not built in this
+phase. And the condition it is deferred under is a check rather than a
+sentence.
+
+### 1. The remedy: `Modules` probes each candidate in a child process
+
+[[D-272]] established that there is no in-process remedy — measured, not
+argued: `recover()` catches neither of the two terminations one real module
+produces, and a vectored exception handler does not help. A `__fastfail`
+bypasses exception dispatch by design. So the only way a program survives a
+module that does this is for the call not to be in that program's process.
+
+The shape: `Modules` re-executes the agent's own binary, once per candidate, in
+a mode that does nothing but `LoadLibrary`, `C_GetFunctionList`,
+`C_Initialize`, `C_GetInfo`, `C_Finalize`, `FreeLibrary` and report the answer.
+A child that exits non-zero — for any reason, including being killed by an
+exception nothing in it could catch — becomes a `Failure` in the second return
+value, with its path and what happened, and the search carries on. That is
+exactly what F11 §3 already asks for and what the crash currently makes
+impossible:
+
+> A module that fails to load is not a crash. Say which path, say the module
+> did not load, carry on with the sources that did.
+
+### 2. Why it is not built here
+
+**It is a change to the program's shape rather than to a function**, and this
+project has a standing answer for those: [[D-223]] left the audit chain's
+cross-process guard to its own pass, [[D-227]] left `sign-digest`, [[D-201]]
+left a layout defect, [[D-249]] left a measurement — each because a design
+made quietly inside a pass about something else is a design nobody chose.
+
+The specific thing it would introduce is a **hidden mode in a release binary**,
+which is the surface [[D-222]] and [[D-228]] spent two consecutive phases
+removing. Whatever it is called and however it is reached, it is a way to make
+the shipped agent load a named DLL and call into it, and that needs the same
+care those two entries gave the signing paths: a symbol-table check, a test
+that it cannot sign, an answer to what `--help` says about it, and a decision
+about whether an environment variable or a subcommand is the lesser evil. None
+of that fits in a corner of a phase.
+
+**And there is room, which is the part that makes deferring a choice rather
+than an excuse.** [[D-272]] §5 measured it: `go list -deps
+./cmd/liro-bridge/` does not contain `internal/keysource/pkcs11`, nothing
+outside the package imports it, and the only mentions elsewhere in the tree are
+four comments. The agent never loads a module. **What the crash kills today is
+`go test ./internal/keysource/pkcs11/`**, not the program — so nobody outside
+this repository can reach it, and the remedy can be designed rather than
+reacted to.
+
+### 3. The condition is a check, because a sentence is not one
+
+The whole of the above holds only while nothing wires discovery into the agent.
+F11 §4 is *supposed* to wire it in — that is the phase's own next step — and
+the person who does it will be editing `cmd/liro-bridge`, not reading this
+entry.
+
+So `cmd/liro-bridge/pkcs11reach_test.go` fails the moment anything in the
+agent's dependency graph imports `internal/keysource/pkcs11`, and its failure
+message says what the import costs, names this entry, and says that deleting
+the test is part of building the remedy rather than a way around it.
+
+**It lives beside the wiring rather than beside the package it guards.** A gate
+in `internal/keysource/pkcs11` is one whoever writes §4 meets *after* their
+change, when they run the whole suite and wonder why an unrelated package went
+red. A gate in the package they are editing is one they meet *during* it. That
+is [[D-108]]'s "one rule, one place" applied to where the rule is read rather
+than to where it is about.
+
+**It is not a `checkdeps` rule**, deliberately. `scripts/checkdeps` holds SPEC
+§4.2's rules, which are permanent architecture; this one has an expiry, and
+putting a temporary condition in the file whose whole authority is that its
+rules never change would be the wrong kind of durable.
+
+**Both directions were measured, because a check that has never been seen to
+fail is not a check** ([[D-031]]'s discipline, and [[D-224]]'s). With a
+one-line blank import of the package added to `cmd/liro-bridge`, the test fails
+with the message above naming the package; with it removed, it passes. It also
+carries a positive control — `go list -deps` of the pkcs11 package itself must
+list the package — so a renamed package, a typo in the constant, or a `go list`
+that answered nothing fails loudly instead of passing for the wrong reason.
+
+`GOOS=windows` is pinned in the child environment rather than inherited. The
+artefact this is about is the Windows agent, and a Linux runner asking about
+its own view would answer a different question: the backend is Windows-only
+past `module_other.go`, so the Linux view could report it absent for a reason
+that has nothing to do with whether the agent imports it.
+
+### What this does not do
+
+It does not stop anyone importing the package from a test, a script or another
+`internal/` package — only from the agent's own graph, which is the only place
+the crash reaches a person. `go test ./internal/keysource/pkcs11/` still dies
+about once in a hundred runs, and that is left alone on purpose: it is the one
+place the fault is still observable, and hiding it would cost the next
+measurement.
+
+It also does not make the remedy correct in advance. The child-process shape
+above is the one [[D-272]] §4 leaves available; whether it is a subcommand or
+an environment variable, what it prints, how a child that hangs rather than
+dies is bounded, and what `--help` says are all open and belong to the phase
+that builds it.
+
+**Rejected.**
+
+- **Building it now anyway, since the shape is obvious.** The shape is obvious
+  and the surface it introduces is the one two phases were spent removing. That
+  is the definition of a change that deserves its own pass.
+- **A comment in `discover_windows.go` instead of a test.** It is read by
+  whoever opens that file, which is not whoever wires the agent up, and
+  [[D-247]] is this project's own entry about a thing that existed, described
+  itself as working, and had no caller. A sentence is not a condition.
+- **A rule in `scripts/checkdeps`.** Above: permanent machinery for a temporary
+  condition, in the one file whose authority is that its rules do not change.
+- **Removing `MUP RS\Celik` from `knownModulePaths` so the agent could be wired
+  up safely today.** [[D-272]] rejected this and the reasoning is unchanged: it
+  is the module a MUP card's own middleware installs, [[D-271]] measured it
+  reading that card correctly, and a list that drops a working module to dodge
+  an intermittent fault silently makes somebody's card unusable. It would also
+  be a guess that the fault is confined to one build, which nothing establishes
+  — the same module at a different version is on this machine at a *different*
+  version from the other machine's ([[D-272]]).
+- **Deferring without a check.** The owner's instruction, and the reason it is
+  the right one: *"Whoever does §4 must not be able to connect a crash path to
+  the agent without meeting this entry first."* A deferral whose only
+  enforcement is that somebody remembers is a deferral that expires silently.
