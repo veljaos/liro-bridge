@@ -4,8 +4,8 @@ import "crypto/x509"
 
 // maxChainDepth bounds the walk. A certificate whose issuer is itself, or a
 // pair that issue each other, would otherwise loop; the tokens this project
-// has measured carry two certificates and no CA at all, so any depth beyond a
-// handful means the token is lying about something.
+// has measured carry two certificates and at most one CA, so any depth beyond
+// a handful means the token is lying about something.
 const maxChainDepth = 8
 
 // issuersFor returns the issuing chain for signerDER, built only from
@@ -22,12 +22,31 @@ const maxChainDepth = 8
 //
 // # What this returns for a Serbian card, and what that costs
 //
+// It returns empty for both cards this project has, and for two different
+// reasons. The second one is why the exact-bytes rule above is not
+// fastidiousness (D-274).
+//
 // Measured on a MUP e-ID card through both NetSeT modules: the token carries
 // two certificates, the signing one and its authentication twin, and **no CA
 // certificate at all**. Both are issued by "MUP Gradjani CA 4", which is not
-// on the card. So this returns empty, and SPEC §11.8 already says why — MUP
-// embeds one certificate in the CMS of a signed document where Halcom and
-// Pošta embed three.
+// on the card. Nothing here could adopt anything.
+//
+// Measured on a Pošta card through SafeSign: the token carries the signer and
+// **a CA — the wrong one**. The signer is issued by "Pošta Srbije CA 1"; the
+// certificate on the card is "Pošta Srbije CA Root", one level too high, and
+// the intermediate that binds them is on neither Serbian card. So this returns
+// empty here too — but a rule that matched by distinguished-name string, by
+// prefix, or by "the CA the token happens to carry" would build a chain that is
+// **wrong rather than short**: nothing signed the signer with that root, a
+// validator would reject the path as a broken signature rather than a missing
+// certificate, and D-046 would collect revocation evidence for the wrong
+// certificate and embed it in a /DSS as long-term validation evidence. An empty
+// chain announces itself; that one would not.
+//
+// SPEC §11.8 says Pošta embeds three certificates in the CMS of a signed
+// document where MUP embeds one. That remains true and the card is not where
+// they come from: whatever produced such a document had the intermediate from
+// its own store, from AIA, or from a bundled trust store.
 //
 // That is not a cosmetic gap. SPEC §12.6 makes B-LT the default signature
 // level, B-LT is B-T plus a /DSS carrying revocation evidence, and revocation
@@ -36,7 +55,7 @@ const maxChainDepth = 8
 // has to be completed from the certificate's own AIA caIssuers or from a
 // bundled trust store (SPEC §11.8 requires exactly that for MUP) before a
 // document signed through this path can reach the level the specification
-// defaults to.
+// defaults to. That holds for both cards, not only for MUP.
 //
 // The completion already exists for the CNG path and is not this layer's to
 // do: keysource.Session.Chain's own contract is "the issuing chain if the

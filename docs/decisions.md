@@ -21981,3 +21981,553 @@ recognise the condition rather than matching a string.
 - **Probing every module at startup.** It loads four DLLs, runs four
   `DllMain`s and produces stderr output this program does not control. Probe
   when a listing is wanted.
+
+---
+
+## D-272 — The crash is one module dying inside its own `C_Initialize`, alone; it is a rate rather than a state, no Go process can survive it, and the agent cannot reach it yet
+
+**Date:** 2026-09-15
+**Phase:** F11 — the home machine, Pošta card in the reader
+
+**This entry corrects the conclusion it was given, in three places.** The
+owner's reading said: *"So it is not one bad module. It is `Modules()` walking
+all of them in one process while a card is present."* Measured, each of those
+three clauses is wrong, and the last one changes what the remedy has to be.
+
+### The predictions, written before the instrument was run
+
+`scratchpad/predictions.md`, ranked most to least likely:
+
+| | Predicted | What happened |
+|---|---|---|
+| 1 | one module throws on its **second** `C_Initialize` in one process | no |
+| 2 | one module throws on its **first** `C_Initialize` with a card present | **yes** |
+| 3 | an interaction — a module throws only after another has been loaded and freed | no |
+| 4 | it is SafeSign | no |
+
+And separately: **"Go cannot catch it"** — that a `defer recover()` around the
+call cannot work, so the fix cannot be one. **That one held**, and it is the
+prediction that decides the shape of everything below.
+
+The ranking was wrong and the second guess was right, which is the same scoring
+as [[D-268]]. What the ranking got wrong is worth naming: it assumed the
+owner's card-out control had already eliminated the single-module case. It had
+not, for the reason in §3.
+
+### 1. It is one module, and it needs nothing beside it
+
+A throwaway instrument, created and deleted in the same session ([[D-100]]),
+doing `LoadLibrary`, `C_GetFunctionList`, `C_Initialize`, `C_GetInfo`,
+`C_Finalize`, `FreeLibrary` and **nothing else** — no session, no `C_Login`, no
+path that could spend a PIN attempt. It prints a line before and after every
+call, and `os.Stdout` is unbuffered in Go ([[D-269]]), so a process that dies
+mid-call has printed the arrow going in and not the one coming out. That is
+what names the call, rather than a line number in a stack.
+
+First batch, each module alone in its own process, card in the reader:
+
+```
+C:\Windows\System32\aetpkss1.dll                    -> C_Initialize  <- rv=0x0  ... end   exit 0
+C:\Program Files\MUP RS\Celik\netsetpkcs11_x64.dll  -> C_Initialize  [process died]       exit 0xC0000417
+C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll   -> C_Initialize  <- rv=0x0  ... end   exit 0
+```
+
+**`MUP RS\Celik\netsetpkcs11_x64.dll`, NetSeT 1.1.0.0, built 2019-03-27**, in a
+process that had loaded no other module, on its first `C_Initialize`. Twelve
+further runs isolating the predecessor — SafeSign alone then Celik alone, both
+in one process, three rounds — are all clean, so hypothesis 3 is refuted as
+well.
+
+### 2. It dies in at least two different ways, from the same call
+
+The owner measured `Exception 0xe06d7363` — `0xE0000000 | 'msc'`, a Microsoft
+C++ exception raised by `throw` with nothing catching it. This session measured
+**`0xC0000417`, `STATUS_INVALID_CRUNTIME_PARAMETER`**, which is the C runtime's
+invalid-parameter handler reaching `__fastfail`. Same module, same call, two
+terminations.
+
+That is not bookkeeping. A C++ throw at least travels through the exception
+dispatcher; a `__fastfail` goes straight to the kernel and cannot be observed
+by anything in the process at all. A remedy sized for the first would not
+survive the second.
+
+### 3. It is a rate, and the card-out control could not have seen it
+
+| | runs | died |
+|---|---|---|
+| Celik alone, first batch | 1 | **1** |
+| Celik alone, immediately after | 5 | 0 |
+| predecessor isolation, four shapes, three rounds | 12 | 0 |
+| `TestSourcesAreOnePerUsableModule`, the owner's own reproduction | 3 | 0 |
+| Celik alone, 40 rapid sequential | 40 | **1** |
+| Celik alone, 150 sequential | 150 | 0 |
+| Celik alone, 120 rapid sequential | 120 | 0 |
+| two Celik processes overlapping, 30 rounds | 60 | 0 |
+| the full discovery order, twice per process, 20 rounds | 20 | 0 |
+| the package suite, later in the session | 1 | **1** |
+| the package suite, immediately after | 25 | 0 |
+
+**Three in roughly 400, spread across the session — with the card in the reader
+throughout.** The owner saw two this morning on the same card.
+
+The third is the one that ties the two signatures together. It came out of
+`go test ./internal/keysource/pkcs11/` itself, mid-session, unprompted, and its
+last line is the same `gs 0x2b` register dump the `0xE06D7363` instrument in §4
+ends with — so **this machine has now produced both terminations**: the C++
+throw through the suite, the CRT fail-fast through the isolated probe. Twenty-
+five suite runs immediately afterwards were clean.
+
+So the fault is intermittent at something like one per cent, and it does not
+cluster: three occurrences, an hour apart, with hundreds of clean runs between
+them. **The consequence for the reading that produced this entry: "card OUT →
+ok, card IN → dies" was one run each.** Against a fault that needs about a
+hundred runs to show once, a single card-out run establishes nothing, and
+**whether the card is the variable at all is not established.**
+
+That is [[D-161]]'s finding from a new side. There, a test asserted the right
+property against the wrong fixture. Here, a control was run at a sample size
+that could not have seen the thing it was controlling for — which is
+[[D-172]]'s "a per-instance cost is invisible to one instance" applied to a
+*rate* rather than to a leak.
+
+What *is* established about the card is narrower and still worth having: the
+crash has only been seen with a card present, by two people on two machines,
+and never with one absent. Four observations of a correlation, not a mechanism.
+
+Nothing was found that moves the rate. Checked and rejected: something the
+module writes on first contact with an unknown card — the only thing the
+machine wrote in the window was
+`AppData\Roaming\Microsoft\SystemCertificates\My\Certificates\AF5063BB…AA54`,
+the Pošta signing certificate, **created 2026-09-05** and merely re-touched
+today by Windows' own `CertPropSvc`, which is that service doing its job with a
+card in the reader and not this session's doing; the preceding module; a second
+pass in one process; and two processes overlapping.
+
+### 4. No Go process can survive either termination — measured, not argued
+
+This is the finding that decides the remedy, so it was measured directly rather
+than reasoned from what SEH is documented to do. A second throwaway instrument
+raises each signature deliberately, from `kernel32`, with no module and no card
+anywhere near it:
+
+| | guard | result |
+|---|---|---|
+| `RaiseException(0xE06D7363)` | none | `Exception 0xe06d7363 0x19930520 …`, process dead |
+| `RaiseException(0xE06D7363)` | `defer recover()` | **identical**; `recover` never runs |
+| `RaiseException(0xE06D7363)` | vectored handler **and** `defer recover()` | **identical** |
+| `RaiseFailFastException` | none | `0xC0000502`, process dead |
+| `RaiseFailFastException` | `defer recover()` | **identical**; `recover` never runs |
+
+The first three reproduce the owner's own crash line character for character,
+from a program that has never loaded a PKCS#11 module. That is what makes this
+an instrument rather than a coincidence ([[D-184]]: check the instrument before
+relying on it).
+
+**So there is no in-process remedy.** Not a `recover`, not a vectored handler,
+not a guard around `callN`. `__fastfail` in particular is designed to be
+uncatchable: it bypasses exception dispatch entirely. The only way a program
+survives this is for the call not to be in that program's process.
+
+### 5. The agent cannot reach this today, and that changes the urgency
+
+The reading's consequence — *"somebody with a Pošta card and MUP's middleware
+installed cannot start the program at all"* — is not true yet, and the
+difference is worth stating rather than discovering during a fix.
+
+Measured: `go list -deps ./cmd/liro-bridge/` does not contain
+`internal/keysource/pkcs11`, and nothing outside that package imports it. The
+only mentions of it anywhere else in the tree are four comments in
+`internal/pinname`. The agent never loads a PKCS#11 module, because F11 §2
+stopped at the wall and F11 §4 — which is where a `Source` reaches the layer
+above — has not been written.
+
+**What the crash kills today is `go test ./internal/keysource/pkcs11/`.** What
+it *would* kill is the agent, on the day F11 §4 wires discovery in — which is a
+day this project chooses, so the remedy belongs before it rather than after it.
+
+### What this leaves, and it is one decision rather than a puzzle
+
+The fault is in somebody else's 2019 DLL, it cannot be caught, and it is not
+reproducible on demand. Three things follow and only the third is open:
+
+- **Not a blocklist.** `MUP RS\Celik` is a real module a real person's
+  middleware installed, and on a MUP card it is one of the two that reads the
+  card correctly ([[D-271]]). Refusing it because it is occasionally fatal
+  refuses the card it exists for.
+- **Not a guard.** §4.
+- **Out of process, or not at all.** Probing is already "when a listing is
+  wanted, never on a schedule" ([[D-271]]). The remaining question is whether
+  `Modules` runs each candidate's `C_Initialize` in a child process, so that a
+  module which kills it becomes a `Failure` in a list — which is exactly what
+  F11 §3 asks for and what the owner asked for in as many words. It is a change
+  to this program's arrangement rather than to a function, and §5 says there is
+  room to choose it rather than react to it, so it is put to the owner here for
+  the reason [[D-223]] gives for the audit chain and [[D-227]] for
+  `sign-digest`: a design nobody chose is how one ships.
+
+### The machine
+
+Snapshotted before anything ran, by copy and not by hash ([[D-153]],
+[[D-243]]): `reg export` of the Explorer verb key and the `Run` key, and copies
+of `config.json`, the audit directory, `pairings.json`, `secrets.*`,
+`update-state.json`, `bridge.json` and `tsl-cache.xml`. Nothing here writes
+outside the scratchpad, and `go test ./cmd/liro-bridge/` was not run
+([[D-266]]).
+
+**Two things about this machine differ from the one every previous session
+used**, recorded because [[D-271]] left the question open as "discovery cannot
+assume a version" versus "discovery cannot assume a path", and the answer is
+both:
+
+| Vendor | Path | Here | On the other machine |
+|---|---|---|---|
+| A.E.T. Europe (SafeSign) | `%SystemRoot%\System32\aetpkss1.dll` | **3.9.32.1**, 2026-02-27 | 3.9.24.1 |
+| NetSeT (TrustEdgeID) | `%ProgramFiles%\TrustEdgeID\netsetpkcs11_x64.dll` | **1.1.3.2**, 2024-06-05 | 1.1.3.3 |
+| NetSeT (MUP RS) | `%ProgramFiles%\MUP RS\Celik\netsetpkcs11_x64.dll` | 1.1.0.0, 2019-03-27 | 1.1.0.0 |
+| Nexus Personal | `%ProgramFiles(x86)%\Personal\bin64\personal64.dll` | **absent** | 5.17.0 |
+
+Two of the three present modules are at a *different* version from the machine
+[[D-271]] measured, one of them **older** than the other machine's. So
+discovery can assume neither a path nor a version — and a measurement taken
+through a module is a measurement of that build, which is worth remembering
+before quoting [[D-271]]'s mechanism lists or [[D-268]]'s `minPin` at a second
+machine.
+
+Also here and not there: `C:\Program Files\TrustEdgeID\netsetpkcs11_x86.dll`,
+which `LoadLibrary` refuses as not a valid Win32 application. The entry-point
+test never gets to run, and the refusal is already a `Failure` rather than a
+crash — which is the one shape of bad module this layer already survives.
+
+**Rejected.**
+
+- **Reporting the owner's conclusion as confirmed.** It reads well and three of
+  its clauses are wrong. The one that matters is the third: if the fault needed
+  `Modules()` walking all of them, a remedy could reorder or isolate the walk.
+  It does not, so no arrangement of the walk can help.
+- **Calling it fixed because it stopped reproducing.** It stopped without
+  anything being changed, which is [[D-256]]'s own reason to instrument rather
+  than to close.
+- **Constructing more runs to find the trigger.** 350 runs across nine shapes
+  moved nothing. [[D-260]] closed a fault at that point and was right to; the
+  difference here is that the remedy does not need the trigger, because §4 rules
+  out every in-process remedy whatever causes it.
+- **Building the out-of-process probe inside this entry.** Above: it is a change
+  of shape, and §5 says there is room to choose.
+- **Removing `MUP RS\Celik` from `knownModulePaths`.** It is the module a MUP
+  card's own middleware installs, and [[D-271]] measured it reading that card
+  correctly. A list that leaves out a working module to avoid an intermittent
+  fault in it is a list that silently makes somebody's card unusable.
+- **Reading the two terminations as two faults.** They come from one call in one
+  module and nothing distinguishes the runs that produced them. Two faults would
+  be a claim; two signatures is what was measured.
+
+---
+
+## D-273 — SafeSign's Pošta token advertises no protected authentication path: [[D-269]]'s open question closes on `false`, all eight clauses of §6.5.1 are live, and they are live on the exit condition's own path
+
+**Date:** 2026-09-15
+**Phase:** F11 — the home machine, Pošta card in the reader
+
+**This closes the one thing the whole phase was waiting on.** [[D-269]] ended
+with it in as many words: *"SafeSign has still not been asked whether its token
+advertises a protected authentication path… It is now first on the home list,
+ahead of everything else there."* [[D-271]] stopped `Source.Open` at
+`ErrLoginNotBuilt` for the same reason, and the handover's §7 laid out the two
+futures. This is the answer.
+
+### The measurement
+
+`C:\Windows\System32\aetpkss1.dll`, **SafeSign 3.9.32.1**, Pošta card in the
+reader. `C_GetTokenInfo` and nothing else — no `--login`, no `C_Login`, no PIN
+attempt spent, and none could have been ([[D-268]]'s guard is a property of the
+probe rather than of anybody's discipline).
+
+```
+slot 52481  label   "Savka Odžić 200100123"
+            serial  "2353120973204924"
+            model   "19C11A06010D0000"
+            flags   0x40D   RNG | LOGIN_REQUIRED | USER_PIN_INITIALIZED | TOKEN_INITIALIZED
+            PROTECTED_AUTHENTICATION_PATH: false
+            minPin  5        maxPin 15
+C_GetInfo   cryptoki 2.20  manufacturer "A.E.T. Europe B.V."
+            library "Cryptographic Token Interface" 3.0
+```
+
+Taken by the owner and re-taken independently here through the package's own
+tests, which report the same flags word and the same two limits.
+
+**`0x40D` is `RNG | LOGIN_REQUIRED | USER_PIN_INITIALIZED | TOKEN_INITIALIZED`,
+and `CKF_PROTECTED_AUTHENTICATION_PATH` is `0x100`, which is not in it.** The
+token requires a login and does not collect the PIN itself.
+
+Worth noting alongside: the three user-PIN flags are all clear, so this card is
+not in the state [[D-268]] left the MUP one in.
+
+### What it settles
+
+**The answer is `false`, so the right-hand column of the handover's table is
+the live one.** All eight clauses of SPEC §6.5.1 are requirements on the path
+F11's own exit condition travels:
+
+| clause | what it now costs |
+|---|---|
+| 1. the protected path is used wherever a module offers one | live, and **not taken by any module measured so far** — the check is written (`tokenInfo.HasProtectedAuthenticationPath`) and branches per token, always |
+| 2. the PIN exists only for the length of `C_Login`, then overwritten | **live, on the exit condition's own path** |
+| 3. never logged, never in an error, never in a dump, never in a report | live |
+| 4. never retained between signatures | live |
+| 5. nothing retries a PIN, ever | live unconditionally |
+| 6. the screen says whose PIN it is | **live — new UI surface, three locales** |
+| 7. `minPin`/`maxPin` enforced in *this* layer | live, and the numbers are **5 and 15** |
+| 8. the CNG path untouched | live unconditionally |
+
+**So the amendment bites on more cards rather than fewer, and it bites on the
+one the phase is judged by.** The hoped-for outcome — SafeSign collecting the
+PIN itself, no PIN box, a fallback built only for the Windows case where CNG
+has failed — is not available. The PIN screen is required before the exit
+condition can be met, and it is real work in three locales rather than a
+backend detail.
+
+### Three things this answer is narrower than it looks
+
+**It is a fact about this token through this module, not about SafeSign.**
+`CKF_PROTECTED_AUTHENTICATION_PATH` is reported per token by
+`C_GetTokenInfo`, so a reader with a pinpad, or a different card, could answer
+differently through the same DLL. The rule [[D-269]] wrote is conditioned on
+the module's answer rather than on the issuer precisely so that this cannot
+falsify it: clause 1 is checked every time and this measurement only says which
+branch this card takes.
+
+**It is a fact about SafeSign 3.9.32.1**, which is not the version on the
+machine every previous session used (3.9.24.1 — [[D-272]]). Nothing suggests
+this flag moves between builds, and nothing here establishes that it does not.
+
+**`minPin=5` and `maxPin=15` are this token's, and they differ from the MUP
+token's `4` and `8`** ([[D-268]]). Clause 7 says this layer enforces the limits
+the token declares; it does not say what the limits are, and a PIN screen that
+hard-coded either pair would be wrong for the other card in the same person's
+drawer. The numbers come from `C_GetTokenInfo` at the moment the screen is
+built, or the clause means nothing.
+
+### What the `false` does *not* excuse
+
+[[D-268]]'s own lesson stands and is the reason clause 7 exists: **a module's
+declared limits describe what the card accepts, not what the module enforces.**
+The MUP module handed a zero-length PIN straight to the card and spent an
+attempt on it. Nothing measured here says SafeSign is different, and nothing
+should be built on the assumption that it is. The length check is this layer's
+before `C_Login` is reached, for both ends of the range — `maxPin=15` bounds
+the buffer as well as the input ([[D-269]]).
+
+### One sentence in SPEC is now stale, and it is raised rather than edited
+
+SPEC §6.5.1 ends: *"This bites only on the PKCS#11 path, and within it only on
+modules that do not advertise a protected path. Whether SafeSign advertises one
+is not yet known."*
+
+It is known. The rule above it is untouched by the answer — that is what
+[[D-269]] built it to be — so nothing in the amendment needs changing; only
+that last clause is now a statement about a question that has closed.
+
+**It is not edited here.** Every SPEC edit in this project has been the owner's
+([[D-269]] was written only after he had read both the text and the entry), and
+[[D-225]] and [[D-232]] each record the same discipline for the same reason: a
+phase that edits the specification freely is a phase that can soften a
+constraint by rewording it. Named here for whoever makes the next one, with the
+measurement it would rest on.
+
+### What is now unblocked, and what is still not
+
+Unblocked: the login step, and therefore `SignDigest` behind it — the wall
+[[D-271]] put at `Source.Open` was waiting on exactly this reading.
+
+Still not measured, and still not to be guessed at:
+
+- **Whether `C_Login` with a correct PIN succeeds on this token**, which needs a
+  PIN typed by the owner and is his ([[D-094]]). Nothing here may retry one
+  ([[D-269]] clause 5), and this card has three attempts.
+- **Nexus/Halcom.** No Halcom card, and no Nexus on this machine at all
+  ([[D-272]]) — so the module F11 §6 could interrogate on the other machine
+  cannot even be loaded on this one.
+- **Which mechanism `C_Sign` is actually asked for**, which F11 §2.1 is explicit
+  can only be established with the independent verifier of SPEC §16.4 and never
+  by observing that bytes came back.
+
+**Rejected.**
+
+- **Reading `false` as bad news and looking for a second opinion.** It is the
+  answer, it was the more expensive of the two outcomes, and [[D-269]] was built
+  so that either one leaves the rule intact. Asking a second module the same
+  question about the same token would be asking a question nobody has.
+- **Taking a `C_Login` now that the branch is known.** [[D-268]] cost an attempt
+  and answered its question; this card has three and the branch does not need
+  one. The next login on this token should be a real signature with a real PIN.
+- **Hard-coding 5 and 15, or 4 and 8, anywhere.** Above.
+- **Editing SPEC.** Above.
+
+---
+
+## D-274 — The Pošta card carries a CA certificate and `Chain` is still empty: it is the root, and the signer's issuer is the intermediate, which is on neither card
+
+**Date:** 2026-09-15
+**Phase:** F11 — the home machine, Pošta card in the reader
+
+**Decision: nothing changes in the code, and the reason it does not is the
+finding.** [[D-271]] measured the MUP card as carrying no CA at all and drew
+the consequence. The obvious reading of SPEC §11.8 — Pošta embeds three
+certificates in a signed document where MUP embeds one — is that the Pošta card
+would be the better case. It is not the better case. It is a differently
+incomplete one, and the difference is a trap rather than an improvement.
+
+### What is on the card
+
+Measured through SafeSign 3.9.32.1, read-only, and independently re-taken here:
+
+```
+slot 52481: 2 certificates on the token, 1 of them CAs
+
+object 10  label    "Savka Odžić 200100123"
+           subject  "Savka Odžić 200100123"
+           issuer   "Pošta Srbije CA 1"
+           serial   54849CDCD4415E3BCA
+           sha1     AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+           keyUsage 3
+
+object 14  label    "Root CA Certificate"
+           subject  "Pošta Srbije CA Root"
+           serial   5ABC9028C31E2F4A40
+           sha1     F2E88F597862C490F36C38474C51CC338DCDFB0D
+           keyUsage 96
+```
+
+`keyUsage 3` is `digitalSignature + contentCommitment`, which is SPEC §11.4's
+Pošta row exactly. `keyUsage 96` is `keyCertSign + cRLSign`, which is a CA.
+
+**The signer is issued by "Pošta Srbije CA 1". The CA on the card is "Pošta
+Srbije CA Root". They are not the same certificate**, and the intermediate that
+actually issued the signer is on neither this card nor a MUP one.
+
+### So `Chain` is empty, and it is empty for a different reason
+
+`issuersFor` walks upward from the signer's immediate issuer and the only thing
+that counts as an issuer is an **exact byte match** between a candidate's
+`RawSubject` and the child's `RawIssuer` — never a distinguished-name string
+comparison, which is parser-dependent and format-fragile ([[D-271]], SPEC
+§11.6). The signer's `RawIssuer` is "Pošta Srbije CA 1"'s subject; no object on
+the token has it; the walk stops on its first step.
+
+| | on the card | `Chain` |
+|---|---|---|
+| MUP | signer + its authentication twin, **no CA** | empty — nothing to match |
+| Pošta | signer + the **root**, intermediate absent | empty — **a CA is present and does not match** |
+
+**The outcome is identical and the failure mode is not.** On a MUP card there
+is nothing on the token a loose rule could wrongly adopt. On this one there is:
+a genuine, correctly-labelled Pošta CA certificate, sitting one level too high.
+
+### That is the part worth writing down, because it is a trap and not a gap
+
+A chain-completion routine that matched by name, by prefix, by "the token's own
+CA", or by anything short of the exact issuer bytes would build
+
+```
+Savka Odžić 200100123  ->  Pošta Srbije CA Root
+```
+
+which is **a chain that is wrong rather than short**. Nothing signed the first
+with the second. The consequences are worse than an empty chain in every
+direction that matters:
+
+- a validator building a path would reject it, and reject it in a way that
+  reads as a broken signature rather than as a missing certificate;
+- [[D-046]] collects revocation evidence **per certificate in the chain**, so a
+  `/DSS` would carry an OCSP response or a CRL **for the wrong certificate**,
+  attached to a document as long-term validation evidence;
+- and it would look complete, which is the only property that makes any of the
+  above expensive. An empty chain announces itself.
+
+**So `issuersFor`'s exact-bytes rule is not fastidiousness, and this card is the
+first measurement that would have caught a looser one.** [[D-271]] rejected
+distinguished-name matching on the general argument SPEC §11.6 makes about
+parsing; this is the specific card on which that argument stops being general.
+
+### What it does to SPEC §11.8
+
+§11.8's table says Pošta embeds **3** certificates in the CMS of a signed
+document where MUP embeds **1**. Nothing here contradicts it — and it is now
+measured that **the card is not where those three come from.**
+
+The card holds two objects, of which one is the signer and one is the root. The
+intermediate that binds them appears in neither, so a Pošta-signed document
+carrying root + intermediate + signer was assembled by something that had the
+intermediate from somewhere else: the middleware's own store, the certificate's
+AIA `caIssuers`, or a bundled trust store.
+
+That is a distinction §11.8 does not draw and did not need to, because it is a
+table about *documents*. It matters here because the natural inference from it —
+"Pošta is the issuer whose card supplies its own chain" — is false, and it is
+the inference F11's own home list made when it wrote *"if the Pošta card carries
+its own issuers, a document signed through this path reaches SPEC §12.6's
+default level without the chain being completed from AIA"*. It does not carry
+them, and it does not.
+
+### What it does to reaching B-LT on this path
+
+Nothing, which is to say: exactly what [[D-271]] established for MUP, with no
+improvement from the CA being present.
+
+SPEC §12.6 makes **B-LT the default**. B-LT is B-T plus a `/DSS` carrying
+revocation evidence. The chain this layer supplies is empty, so the chain
+handed to `dss.CollectRevocation` is one certificate long; [[D-159]] measured
+the sharp edge — a chain of exactly one expects no evidence at all, so `/DSS`
+comes out empty; [[D-079]] then correctly writes no revision; and **the document
+is B-T.**
+
+So on the Pošta path, as on the MUP path, SPEC §12.6's default is reached only
+once the chain is completed from the certificate's own AIA `caIssuers` or from a
+bundled trust store — which SPEC §11.8 already requires for MUP and which
+`keysource.Session.Chain`'s own contract makes the caller's work rather than
+this layer's. **A missing chain is a missing signature level, not a missing
+field**, and that sentence now covers both Serbian cards this project has rather
+than one.
+
+One thing this makes cheaper for whoever writes the completion: Pošta's
+intermediate is the only certificate needed, the root is already in hand from
+the card, and SPEC §11.9 gives Pošta a working OCSP responder
+(`http://ldap-ocsp.ca.posta.rs/ocsp`) — unlike MUP's, which [[D-076]] measured
+as refusing a TCP connection outright. So Pošta is the issuer on which B-LT is
+actually reachable once the one missing certificate is found, which is a better
+prospect than MUP's and still not a property of the card.
+
+### The code change this does need, and it is one comment
+
+`chain.go`'s doc comment carries the measured fact as *"the tokens this project
+has measured carry two certificates and no CA at all"* and *"Measured on a MUP
+e-ID card through both NetSeT modules… no CA certificate at all."* Both were
+true of everything measured when they were written and the first is now false.
+
+Left alone, it tells the next reader that a CA on the token would mean a chain —
+which is the exact inference this entry exists to prevent, sitting in the doc
+comment of the function that would be changed to act on it. The comment now
+carries both cards and says which one is the dangerous shape. No logic changed;
+`issuersFor` already did the right thing, which is why this is a comment and not
+a fix.
+
+**Rejected.**
+
+- **Adopting the root when the intermediate is absent**, on the reasoning that a
+  chain of two is closer to three than a chain of one. It is not closer; it is
+  wrong, and §"a trap and not a gap" above is the whole argument.
+- **Matching an issuer by distinguished-name string**, which would have adopted
+  it. [[D-271]] rejected this on SPEC §11.6's general grounds; this card is what
+  makes the general argument concrete.
+- **Completing the chain here, from AIA or a bundled store.** [[D-271]]'s own
+  rejection, unchanged: it is the caller's, the CNG path needs the same
+  completion for the same cards, and doing it twice is how two answers to one
+  question come to disagree ([[D-108]], [[D-124]], [[D-138]]).
+- **Reading SPEC §11.8's "3" as wrong.** It is a measurement of signed
+  documents and this is a measurement of a card. Both are right and they are
+  about different things, which is the finding.
+- **Treating this as a reason to prefer the MUP card for the exit condition.**
+  F11 §6 names the Pošta card and SafeSign deliberately, because it is a card
+  this project has never signed with. An empty chain costs a signature level
+  that is equally absent on the other card.
