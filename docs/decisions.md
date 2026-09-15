@@ -22947,3 +22947,86 @@ being written, which is the order [[D-269]] set and [[D-276]] kept.
   see the boundary of.
 - **Writing the cost as an aside.** The owner's instruction, and the reason is
   that a cost recorded as a footnote is a cost the next tidy-up does not find.
+
+---
+
+## D-278 — SPEC §10 records the one window that is not HTML, and §10.2's table says why that window in particular must say who is asking
+
+**Date:** 2026-09-15
+**Phase:** F11 — the amendment [[D-277]] left drafted
+
+**Decision.** Two edits to `docs/SPEC.md`, drafted and shown to the owner
+before being written — the order [[D-269]] set and [[D-276]] kept — and
+committed with this entry, because a repository in which the specification
+changed and the log did not is one that has lost the reason.
+
+### 1. §10's opening paragraph gains its own exception
+
+§10 opened by saying the agent's windows are HTML rendered in an embedded
+browser view. After [[D-277]] one is not, so the claim was false as written.
+
+The new paragraph carries the reason rather than only the fact — the clause,
+why a page cannot satisfy it, and that the browser runs the page in a separate
+process whose heap this program can neither reach nor overwrite. **It is in §10
+rather than only in §10.2's table** because the table row is where a reader
+looks to find out *that* the window exists, and the opening sentence is where
+they would otherwise read a flat claim that is now wrong. The row alone would
+have left it wrong.
+
+It also carries the owner's own reason, which is independent of the memory
+argument and outlives it: Windows already collects the PIN in its own window on
+the CNG path, so a native dialog is the familiar shape and an HTML PIN box
+would be the novel one.
+
+**And it carries one sentence the owner asked to be kept for what it will stop
+rather than for what it says:**
+
+> The cost is accepted deliberately and is not to be tidied away later.
+
+His reasoning, recorded because it is the point of the sentence: it is the only
+thing standing between this decision and somebody a year from now folding the
+one odd window back into the page **because it looks inconsistent**. Looking
+inconsistent is what it is *for*. A reader who meets the exception with no note
+of its price will read it as an oversight, and tidying an oversight is a
+virtue; a reader who meets it with the price attached reads it as a choice.
+
+### 2. §10.2's table gains a PIN row, and the row's last clause is doing work
+
+The row names three things: that the window exists, that it is native, and that
+it is the PKCS#11 path only — never the CNG path, where the operating system
+collects the PIN and §6.5's arrangement is unchanged (clause 8).
+
+Its last clause is the one that was in question and it is kept, on the owner's
+instruction:
+
+> It says it is Liro Bridge asking (§6.5.1), which matters more here than
+> elsewhere precisely because it looks like a system dialog.
+
+**That is [[D-277]]'s tension, put where the person who needs it will meet it.**
+A dialog that looks like a system dialog is the familiar shape, which is why it
+was chosen — and it is exactly why it has to say who is asking. The two pull
+against each other and clause 6 wins. Left only in a decision entry, that gets
+missed by whoever is designing the window, which is the one reader it is for.
+
+The sentence above the table gains one clause saying all but one window are
+HTML, so a reader counting rows against "all small, all keyboard-navigable, all
+trilingual" is not left to notice the exception for themselves.
+
+### What did not change
+
+No clause of §6.5.1, no rule in §10.1, and nothing about the other four
+windows. `scripts/checkcss` is unaffected either way — it walks CSS, and a
+native window has none, which is itself recorded in the new paragraph as part
+of the price rather than left as a gap somebody finds later.
+
+**Rejected.**
+
+- **The table row alone.** Above: it leaves §10's opening sentence false.
+- **Dropping the row's last clause and leaving the tension to [[D-277]].**
+  Offered in the draft as the narrower option and declined by the owner, for
+  the right reason: the entry is read by whoever is auditing the decision and
+  the table is read by whoever is building the window.
+- **Softening "is not to be tidied away later" to something less blunt.** It is
+  blunt because it is addressed to a specific future action.
+- **Amending anything else while here.** [[D-225]], [[D-232]] and [[D-276]] each
+  record the same discipline. Two edits were ruled on; two edits were made.

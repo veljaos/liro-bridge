@@ -552,6 +552,8 @@ Certificate subject fields, file names, error codes, and log lines are data. The
 
 The agent's windows are HTML rendered in an embedded browser view. They must look like Liro applications, but the agent has **no dependency on the Liro Design System** — that is a React monorepo and cannot run here.
 
+**One window is not HTML, and it is the PIN dialog.** §6.5.1's second clause requires the PIN to exist only for the length of one `C_Login` and to be overwritten immediately afterwards. That is a statement about this program's memory, and a page rendered in an embedded browser view is not this program's memory — the browser runs the page in a separate process, and the PIN would exist in a DOM node, a script engine's heap and an inter-process message this program can neither reach nor overwrite. So the PIN dialog is a native window this program draws itself, and it is the only one. **The cost is accepted deliberately and is not to be tidied away later**: its own code, its own three locales, and no design tokens, since §10.1's rule is enforced over CSS and a native window has none. It is also the familiar shape rather than the novel one — Windows already collects the PIN in its own window on the CNG path, and every other program that touches a Serbian card does the same.
+
 The bridge between them is **design tokens as CSS custom properties**.
 
 ### 10.1 The token rule
@@ -564,7 +566,7 @@ If a value is needed that does not exist as a token, the answer is to add a toke
 
 ### 10.2 Windows
 
-All small, all keyboard-navigable, all trilingual:
+All small, all keyboard-navigable, all trilingual. All but one are HTML; the exception is noted in the table and in §10.
 
 | Window | Purpose |
 |---|---|
@@ -572,6 +574,7 @@ All small, all keyboard-navigable, all trilingual:
 | Placement | The page of a document with the stamp on it, dragged where it belongs. Opened from the signing window and returning to it. |
 | Pairing | "«App» wants to connect." Approve / Deny. |
 | Settings | Language, TSA, output naming, audit export, update preferences. |
+| PIN | The card's PIN, on the PKCS#11 path only — never on the CNG path, where Windows collects it (§6.5). A native window rather than HTML, for the reason in §10. It says it is Liro Bridge asking (§6.5.1), which matters more here than elsewhere precisely because it looks like a system dialog. |
 
 Plus a tray icon with a short menu.
 
