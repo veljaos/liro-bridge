@@ -79,6 +79,15 @@ meet.
 
 ## 3. So the first decision is not how to plumb it — it is where the PIN screen lives
 
+> **Settled, 2026-09-15: (a), the native Win32 dialog — see [[D-277]].** The
+> options below stand as the reasoning that produced the ruling rather than as
+> a live question. D-277 also carries the owner's own reason, which is not
+> below: Windows already collects the PIN in its own window on the CNG path, so
+> a native dialog is the *familiar* thing and an HTML PIN box would be the
+> novel one — and novelty is the wrong quality for that screen. It records the
+> price as a price, the clause 6 tension the choice creates, and that the
+> dialog is not to be tidied into a page later.
+
 **Do not start writing the login step until this is answered.** Its shape
 depends entirely on the answer, and building the backend first is building for
 a question nobody has closed — which is the mistake [[D-271]] avoided at the

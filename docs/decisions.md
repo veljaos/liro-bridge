@@ -22804,3 +22804,146 @@ and the four consequences under it, are not touched at all.
 - **Committing the amendment and this entry separately.** [[D-269]]'s own
   instruction, unchanged: a repository in which the specification changed and
   the log did not is a repository that has lost the reason.
+
+---
+
+## D-277 — The PIN dialog is a native window, and it is the only one in the product that is not HTML: clause 2 is a statement about this program's memory, and a WebView2 page is not this program's memory
+
+**Date:** 2026-09-15
+**Phase:** F11 — the owner's ruling on `docs/f11-handover-3.md` §3
+
+**Decision.** The PIN screen §6.5.1 clause 6 requires is a **native Win32
+dialog**, drawn by this program: a window class of its own, an edit control
+with `ES_PASSWORD`, `WM_GETTEXT` into a buffer this program allocated,
+`C_Login`, the buffer zeroed, the control cleared, the window destroyed. It is
+the only window in this product not rendered in WebView2, and that is accepted
+as a price rather than tolerated as an oddity.
+
+### Why, in the order the reasons actually weigh
+
+**1. The clause cannot be honoured any other way.** The sentence the owner
+asked to have recorded verbatim, because it is the whole argument in one line:
+
+> **Clause 2 is a statement about this program's memory, and a WebView2 page is
+> not this program's memory.**
+
+Traced to the source rather than described. `Eval` is
+`func (w *window) Eval(script string) (string, error)`
+(`internal/ui/window_windows.go:825`), and `executeScriptCompletedInvoke`
+copies WebView2's result out with `windows.UTF16PtrToString`
+(`internal/ui/webview2_windows.go:212`). **A Go string cannot be overwritten**,
+so clause 2's "not merely dropped" is unachievable by construction the moment
+the PIN is one — and that is the *best* of the places it would be. Upstream sit
+the DOM node's value, V8's heap and whatever copies a collection has made, the
+IPC message, and WebView2's own `[in]` buffer, none of them this program's to
+wipe. [[D-259]] measured the deeper half while chasing a different defect: the
+page does not run in this process at all, and the window carrying its drop
+target belongs to `msedgewebview2` at a pid that is not the agent's.
+
+**2. The alternative was a promise being resized to fit an implementation.**
+The other option was to amend clause 2 to whatever a page can achieve. The
+owner's ruling, and his words: amending the paragraph the specification calls
+its most important *because it is hard to satisfy* is the one thing this
+project has spent three weeks not doing. [[D-269]] amended §6.5 once, on a
+measurement that forced it, after the owner had read both the text and the
+entry; that is what an amendment costs here, and convenience does not meet it.
+
+**3. A native dialog is the familiar thing, not the novel one — and this is the
+owner's reason, which the handover did not have.** On the CNG path Windows'
+own smart card provider already collects the PIN in its own window ([[D-025]],
+SPEC §6.5), and so does every other program that touches a Serbian card. So a
+native dialog is what a person has been trained to expect. **A PIN box drawn in
+HTML would be the novel thing**, and novelty is the wrong quality for the
+screen where somebody types the secret that protects their identity card.
+
+That reason is independent of clause 2 and would stand even if the memory
+argument did not. It is recorded because it is the one that will still make
+sense to a reader who has forgotten what `UTF16PtrToString` does.
+
+### The familiarity that makes it right also makes clause 6 harder, and that is the design problem
+
+> **The PIN screen says whose it is.** A person must be able to tell they are
+> giving their PIN to Liro Bridge rather than to the card or to Windows.
+
+A native dialog looks like Windows'. That is reason 3 and it is exactly what
+clause 6 exists to defeat. **The two pull against each other and the clause
+wins**: the window must be unmistakably Liro Bridge's — its name, its mark, and
+the certificate being signed with — while being a native window a person
+recognises the *shape* of. Familiar in form, unambiguous in attribution.
+
+This is the hard part of the screen, and it is a design problem rather than a
+plumbing one. It is written here so that whoever builds it knows the tension is
+deliberate rather than discovering it as a contradiction.
+
+### The price, stated as the price
+
+The owner's instruction was that this go in as a cost rather than as an aside,
+so that nobody later tidies it into the page. It is:
+
+- **The only non-HTML window in the product.** SPEC §10.2's "all small, all
+  keyboard-navigable, all trilingual" was written about pages; this one is not
+  one, and SPEC §10 needs the edit that follows.
+- **Its own code**: a window class, an edit control, layout, DPI, focus order,
+  keyboard handling, and a teardown in a layer with seven recorded lifetime
+  defects ([[D-099]], [[D-101]], [[D-114]], [[D-129]], [[D-169]], [[D-170]],
+  [[D-207]]).
+- **Its own three locales.** The catalogue is Go-side and reusable, so the
+  strings are not the cost; the drawing is.
+- **No design tokens, and no check that would notice.** SPEC §10.1 makes a hex
+  literal in agent CSS a lint failure and `scripts/checkcss` enforces it — over
+  CSS. A native dialog has none, so it either takes system colours or names
+  values `checkcss` cannot see. **That is a real gap in a rule this project
+  treats as absolute**, and it is named here rather than discovered when
+  somebody greps for why the PIN window is the wrong blue.
+- **One thing it gets for free**, which is worth setting against the rest: SPEC
+  §10.3's keyboard reachability and visible focus are Windows' own behaviour
+  for a native control, rather than something the page has to be made to do.
+
+**And it is not to be moved into a page later.** That should be a check rather
+than a sentence, on [[D-275]]'s own reasoning — a deferral or a prohibition
+whose only enforcement is that somebody remembers is one that expires silently.
+The cheapest exact one: a test that fails if any asset under
+`internal/ui/assets` contains a password input. It fires on precisely the
+tidying-up move and on nothing else. It belongs with the build rather than
+here, because there is nothing yet for it to guard.
+
+### Three things carried into the build, from the owner
+
+1. **There is no `login(session, pin []byte)` to write.** The function that
+   obtains the PIN is the function that calls `C_Login` — because the AST guard
+   ([[D-269]], [[D-270]]) forbids a parameter, a field or a named result that
+   could carry one, so there is nothing to pass it through and no second
+   function that has ever seen it. The guard is the reason the shape is what it
+   is, which is what [[D-269]] wrote it first for.
+2. **Verify the wipe by reading the bytes back through the pinned address**,
+   not by trusting a loop the compiler is allowed to notice. The buffer is
+   pinned for the `C_Login` call anyway ([[D-101]]), so the address is there to
+   read through.
+3. **The exit condition's report says the document lands at B-T rather than
+   B-LT, naming [[D-274]]** — so that it reads as the measured consequence of a
+   card that does not carry its own issuer, and not as a failure of this phase.
+
+### SPEC §10
+
+It says the agent's windows are HTML in an embedded browser view, and after
+this ruling one is not. The amendment is drafted and shown to the owner before
+being written, which is the order [[D-269]] set and [[D-276]] kept.
+
+**Rejected.**
+
+- **Amending clause 2 to what a page can achieve.** Above, and it is the
+  ruling's own reason.
+- **The page collecting nothing and only opening the dialog.** [[D-148]]: a
+  step that asks nothing is not a step.
+- **A native edit control parented into the WebView2 host window, floating over
+  the page** — which keeps the visual system *and* the PIN in this process, and
+  is the clever option somebody will propose. Rejected: it positions a native
+  control in one coordinate system over content laid out in another, with DPI,
+  zoom and scroll moving independently, on top of a window tree that
+  [[D-123]] and [[D-257]] both measured **changing shape underneath you** — the
+  compositor window is created after the navigation the registration snapshot
+  is taken at. A control that lands in the wrong place is a defect on every
+  screen; on this one it is a person typing a PIN into something they cannot
+  see the boundary of.
+- **Writing the cost as an aside.** The owner's instruction, and the reason is
+  that a cost recorded as a footnote is a cost the next tidy-up does not find.
