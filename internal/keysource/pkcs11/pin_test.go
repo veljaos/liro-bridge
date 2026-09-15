@@ -6,11 +6,11 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
-	"unicode"
+
+	"github.com/veljaos/liro-bridge/internal/pinname"
 )
 
 // This is the guard SPEC §6.5.1's second clause rests on, and it was written
@@ -41,73 +41,6 @@ import (
 // closes the hole that can be closed mechanically and leaves the rest
 // visible rather than pretending to cover it.
 
-// pinWords are the identifier components that mean a PIN. A component is
-// matched whole, so "pinner" and "spinner" are not PINs and "userPIN" is.
-//
-// "pins" is deliberately not here. This package will pin Go memory that
-// crosses into a foreign module — runtime.Pinner, for the reason D-101
-// records — so "pins" and "pinner" are near-certain to appear meaning
-// something else entirely. A rule that fired on the memory-pinning code would
-// be a rule people rename around, and §6.5.1 forbids holding even one PIN, so
-// a plural is not the shape the defect would take.
-var pinWords = map[string]bool{"pin": true, "puk": true}
-
-// regexpFromD025 is the pattern the three older packages use, kept here only
-// so that TestTheOlderPatternWouldHaveMissedThese can measure the gap rather
-// than assert it.
-func regexpFromD025() *regexp.Regexp { return regexp.MustCompile(`(?i)\bpin\b`) }
-
-// identifierWords splits a Go identifier into its camelCase and
-// underscore-separated components, lower-cased.
-//
-// This is deliberately stronger than the `(?i)\bpin\b` regexp D-025 uses in
-// the three older packages. A regexp word boundary is between a word
-// character and a non-word character, and a Go identifier is one word: so
-// `\bpin\b` matches "pin" and "PIN" and does not match "userPIN", "pinBytes"
-// or "cachedPin" — which are exactly the names a field holding a PIN would
-// plausibly have. TestTheOlderPatternWouldHaveMissedThese pins that gap so
-// the claim is measured rather than asserted.
-func identifierWords(name string) []string {
-	var out []string
-	r := []rune(name)
-	start := 0
-	flush := func(end int) {
-		if end > start {
-			out = append(out, strings.ToLower(string(r[start:end])))
-		}
-	}
-	for i := 1; i < len(r); i++ {
-		switch {
-		case r[i] == '_':
-			flush(i)
-			start = i + 1
-		case unicode.IsUpper(r[i]) && !unicode.IsUpper(r[i-1]):
-			// lower or digit, then upper: "userPIN" -> "user" | "PIN"
-			flush(i)
-			start = i
-		case unicode.IsUpper(r[i-1]) && unicode.IsUpper(r[i]) &&
-			i+1 < len(r) && unicode.IsLower(r[i+1]):
-			// run of upper, then Upper+lower: "PINCode" -> "PIN" | "Code"
-			flush(i)
-			start = i
-		}
-	}
-	flush(len(r))
-	return out
-}
-
-func namesAPIN(identifier string) bool {
-	if identifier == "_" {
-		return false
-	}
-	for _, w := range identifierWords(identifier) {
-		if pinWords[w] {
-			return true
-		}
-	}
-	return false
-}
-
 type finding struct {
 	line int
 	kind string
@@ -136,7 +69,7 @@ func findPINsThatOutliveTheCall(fset *token.FileSet, file *ast.File) []finding {
 				continue
 			}
 			for _, id := range value.Names {
-				if namesAPIN(id.Name) {
+				if pinname.Names(id.Name) && pinname.CouldCarryAPIN(value.Type) {
 					add(id.Pos(), "package-level "+gen.Tok.String(), id.Name)
 				}
 			}
@@ -150,7 +83,7 @@ func findPINsThatOutliveTheCall(fset *token.FileSet, file *ast.File) []finding {
 			return true
 		}
 		for _, id := range field.Names {
-			if namesAPIN(id.Name) {
+			if pinname.Names(id.Name) && pinname.CouldCarryAPIN(field.Type) {
 				add(id.Pos(), "field or parameter", id.Name)
 			}
 		}
@@ -247,33 +180,4 @@ func loginOnce() error {
 			}
 		}
 	}
-}
-
-// TestTheOlderPatternWouldHaveMissedThese measures the claim in
-// identifierWords' own comment rather than asserting it: D-025's
-// `(?i)\bpin\b` does not match a PIN inside a Go camelCase identifier.
-//
-// This is a finding about internal/keysource/windowscng,
-// internal/keysource/softtoken and internal/signing, which all still use that
-// pattern. It is recorded here, where the stronger matcher lives, rather than
-// changed in three packages this phase was not given.
-func TestTheOlderPatternWouldHaveMissedThese(t *testing.T) {
-	older := regexpFromD025()
-	for _, name := range []string{"userPIN", "pinBytes", "cachedPin", "PINCode", "card_pin"} {
-		if !namesAPIN(name) {
-			t.Errorf("this package's rule misses %q, and it must not", name)
-		}
-	}
-	missed := []string{}
-	for _, name := range []string{"userPIN", "pinBytes", "cachedPin", "PINCode"} {
-		if !older.MatchString(name) {
-			missed = append(missed, name)
-		}
-	}
-	if len(missed) == 0 {
-		t.Fatal("D-025's pattern matched all of these, so the comment in " +
-			"identifierWords is wrong and should be corrected")
-	}
-	t.Logf("D-025's `(?i)\\bpin\\b` does not match %v — a gap in the three "+
-		"packages that still use it", missed)
 }

@@ -8,12 +8,11 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
-)
 
-var pinPattern = regexp.MustCompile(`(?i)\bpin\b`)
+	"github.com/veljaos/liro-bridge/internal/pinname"
+)
 
 // TestNoPINFieldOrParameterExistsAnywhere mirrors the identical guard in
 // internal/keysource/windowscng: the soft token has no PIN either (F2
@@ -37,7 +36,7 @@ func TestNoPINFieldOrParameterExistsAnywhere(t *testing.T) {
 		ast.Inspect(file, func(n ast.Node) bool {
 			if field, ok := n.(*ast.Field); ok {
 				for _, id := range field.Names {
-					if pinPattern.MatchString(id.Name) {
+					if pinname.Names(id.Name) && pinname.CouldCarryAPIN(field.Type) {
 						t.Errorf("%s: field/parameter %q must not exist — the agent never handles a PIN (SPEC §6.5)", name, id.Name)
 					}
 				}

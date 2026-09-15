@@ -21606,3 +21606,166 @@ call that might block on a dialog.
   instruction, and right: the amendment and the reasoning for it are one
   thing, and a repository in which the specification changed and the log did
   not is a repository that has lost the reason.
+
+---
+
+## D-270 — The PIN guard in three packages matched only the names nobody would use; one matcher now, and it asks what a declaration can hold rather than only what it is called
+
+**Date:** 2026-09-15
+**Phase:** F11 — before §2's backend, because a hole in an existing guard is not
+something to carry alongside new code that relies on the guard working
+
+**The gap, and it is the owner's finding.** [[D-025]] put an AST test in
+`internal/keysource/windowscng`, `internal/keysource/softtoken` and
+`internal/signing` that fails if a struct field or function parameter is named
+after a PIN. It is the mechanical half of enforcing SPEC §6.5, the paragraph
+the specification calls its most important. The matcher was
+`(?i)\bpin\b`.
+
+A regular-expression word boundary sits between a word character and a
+non-word character. **A Go identifier is one word, so the only boundaries in
+it are its two ends.** The pattern therefore matches an identifier that is
+exactly `pin`, `PIN` or `Pin`, and misses every compound:
+
+```
+userPIN     not matched          pinBytes    not matched
+cachedPin   not matched          PINCode     not matched
+card_pin    not matched
+```
+
+Those are the names a field holding a PIN would actually be given. The ones it
+did catch are the names nobody writes, because a bare `pin` as a struct field
+is unusual Go. **So for three phases the guard fired on almost nothing.**
+Measured rather than argued: `pinname.TestTheWordBoundaryPatternMissesRealNames`
+runs the old pattern against all five and fails if it ever starts matching
+them.
+
+The gap surfaced while writing [[D-269]]'s new guard for
+`internal/keysource/pkcs11`, and the owner read the consequence out of the
+mechanism rather than out of the report: a boundary at the ends of an
+identifier is a boundary that catches exactly the names nobody uses.
+
+### The scan came before the fix, and it changed the fix
+
+Before deciding anything, every PIN-named declaration in `internal/`, `cmd/`
+and `scripts/` was listed with its type. **Not one of them holds a PIN:**
+
+| Declaration | Type | What it is |
+|---|---|---|
+| `signing.PINPolicy` and its three constants | a named enum | which policy the *card* enforces — SPEC §12.9's own vocabulary |
+| `signing.TimingReport.PINPolicy` | `PINPolicy` | the detected policy ([[D-028]]) |
+| `consent.PerSignaturePIN`, `jobs.PerSignaturePIN` | `bool` | whether a batch will ask per signature |
+| `consent.pinPolicy` | `signing.PINPolicy` | the same enum, one layer up |
+| `errs.CodePINRequired/Incorrect/Locked` | `errs.Code` | error codes (SPEC §7) |
+| `jobs.JobAwaitingPIN` | `jobs.JobState` | a protocol state ([[D-190]]) |
+| `scripts/p11probe`'s `ckfUserPIN*`, `iInitPIN`, `iSetPIN` | integer constants | PKCS#11 flag and index values |
+| **`internal/ui`'s `pinPtr`, `pinUTF16`, `pinHandler`, `handlerPinCount`** | function names | **"pin" as a verb — pinning Go memory ([[D-101]])** |
+
+So a rule keyed on the name alone would have demanded that
+`signing.PINPolicy` be renamed. That name is correct, it is traceable straight
+to SPEC §12.9, and it is public surface three packages use. **Renaming real,
+correctly-named code to satisfy a name-matching test is the tail wagging the
+dog**, and it is how a guard becomes something people work around rather than
+something that protects anything.
+
+The last row is the sharper version of the same point: this codebase already
+uses "pin" as a verb, in the layer [[D-269]]'s new backend will have to pin
+memory in.
+
+### So the rule has two halves
+
+`internal/pinname` is one package answering one question, imported by all four
+guards rather than copied into each — three copies had already agreed with
+each other, which is the only reason it was not already the defect this
+project has had to remove for a classification rule ([[D-108]]), a question
+asked twice ([[D-124]]) and a margin ([[D-138]]).
+
+- **`Names`** splits an identifier into its camelCase and underscore
+  components and matches one whole. `userPIN`, `pinBytes`, `cachedPin`,
+  `PINCode` and `card_pin` are all caught; `pinner`, `pinned`, `spinner`,
+  `unpin` and `pinning` are not.
+- **`CouldCarryAPIN`** asks what the declared type can hold: `string`,
+  `[]byte`, `[]rune`, `[8]byte`, `[]string`, `any`, an interface, pointers to
+  those, and an inferred type (conservatively). Not a named enum, not a bool,
+  not an error code, not a selector like `signing.PINPolicy`.
+
+SPEC §6.5 forbids the agent *handling* a PIN, which is about the material
+rather than about the vocabulary. Asking what a declaration can carry is
+closer to the rule's own purpose than asking what it is called, and it is what
+lets `PINPolicy` keep its name.
+
+**`"pins"` is deliberately not in the word set**, for the `internal/ui` reason
+above: `internal/keysource/pkcs11` will pin memory that crosses into a foreign
+module, so `pins` and `pinner` are near-certain to appear there meaning
+something else. §6.5.1 forbids holding even one PIN, so a plural is not the
+shape the defect would take.
+
+### Measured
+
+**All four guards fire.** A field `userPIN []byte` added deliberately to each
+of the four packages is reported with file and line by each; the same file's
+`PINPolicy PINPolicyKind` is reported by none. Before this change all four
+missed `userPIN` entirely. Removed again afterwards.
+
+**`internal/pinname` is not in the shipped binary.** `go list -deps
+./cmd/liro-bridge/...` returns 236 packages and it is not among them; the only
+importers anywhere in the tree are the four `pin_test.go` files. That is
+[[D-063]]'s method, applied to an internal package rather than to a
+dependency, and it is checked rather than asserted because a test-support
+package that quietly acquired a runtime caller would be worth knowing about.
+
+`gofmt`, `go vet -unsafeptr=false`, `golangci-lint` in both the Windows and
+Linux views, `checkdeps` (44 packages) and `checkcss` are clean; the tree
+builds for windows, linux and darwin; `internal/...` passes with and without
+the `softtoken` tag.
+
+**One test was deleted rather than kept.** `internal/keysource/pkcs11`'s own
+`TestTheOlderPatternWouldHaveMissedThese` existed to record this gap while it
+was still open, and its message said "a gap in the three packages that still
+use it". None of them uses it now, so the claim would have been false the
+moment this landed. The finding lives in `internal/pinname`, where it stays
+true, as a test over the old pattern rather than a sentence about it.
+
+### What this still does not catch, said rather than implied
+
+- **A PIN behind a named type** — a field declared as some `secretBytes`
+  rather than as `[]byte`. Guessing at named types would put the false
+  positives straight back, and this is a far less likely accident than the
+  eight real declarations above, which were already in the tree.
+- **Local variables in the three legacy packages.** Their scope is unchanged:
+  fields, parameters and named results. In `internal/keysource/pkcs11` a local
+  is deliberately allowed ([[D-269]]); in the other three nothing stops one,
+  and nothing did before.
+- **`internal/consent` and `internal/jobs` have no guard at all.** Both carry
+  PIN-named fields today and both are harmless — a `bool` and an enum — but
+  the absence is a fact about the tree rather than a decision anyone made.
+  Raised rather than fixed: adding guards to two more packages is wider than
+  the change this was given, and the right answer may be one project-wide
+  check rather than a fifth and sixth copy.
+
+**Rejected.**
+
+- **Renaming `signing.PINPolicy` and the seven declarations like it.** Above:
+  correct names, traceable to SPEC §12.9, public surface — changed to satisfy
+  a matcher rather than to fix a defect.
+- **Four copies of the stronger matcher, one per package.** It is what
+  [[D-025]] left behind and it is the shape this project has removed three
+  times. The copies agreeing is luck, not a property.
+- **An exception list naming `PINPolicy` and friends.** [[D-158]]'s finding:
+  a list kept in step by hand is a check that quietly stops checking, and this
+  one would need an entry every time a legitimate PIN-named constant is added.
+- **Keeping the name-only rule and accepting that `PINPolicy` must be
+  renamed.** The measurement is what ruled this out: eight real declarations,
+  none of them a PIN, in five packages.
+- **A project-wide `scripts/checkpin` beside `checkdeps` and `checkcss`.**
+  Genuinely attractive — it would cover `internal/consent`, `internal/jobs`
+  and every package added later, with no list and no per-package copy, and the
+  precedent exists ([[D-003]]). It is also a new CI step and a change of shape
+  rather than a fix to a matcher, and this was given as "one commit, the three
+  packages, and an entry". Recorded as the better end state for whoever is
+  next given the room for it.
+- **Carrying the gap into §2's backend and fixing it afterwards.** The owner's
+  instruction and the right order: the backend's own guard is the thing
+  [[D-269]] put first precisely so the code would be built to satisfy it, and
+  building that code while three neighbouring guards were known not to fire
+  would be relying on a check nobody had checked.

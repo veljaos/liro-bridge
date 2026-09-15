@@ -6,14 +6,11 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
-)
 
-// pinPattern matches "pin" as a whole word, case-insensitively, so it
-// catches PIN, Pin, pin but not unrelated identifiers.
-var pinPattern = regexp.MustCompile(`(?i)\bpin\b`)
+	"github.com/veljaos/liro-bridge/internal/pinname"
+)
 
 // TestNoPINFieldOrParameterExistsAnywhere is the failing test SPEC §6.5
 // and F2 §2.3 require: the agent must never collect, transport or store
@@ -41,7 +38,7 @@ func TestNoPINFieldOrParameterExistsAnywhere(t *testing.T) {
 			switch decl := n.(type) {
 			case *ast.Field: // struct fields and function parameters/results
 				for _, id := range decl.Names {
-					if pinPattern.MatchString(id.Name) {
+					if pinname.Names(id.Name) && pinname.CouldCarryAPIN(decl.Type) {
 						t.Errorf("%s: field/parameter %q must not exist — the agent never handles a PIN (SPEC §6.5)", name, id.Name)
 					}
 				}
