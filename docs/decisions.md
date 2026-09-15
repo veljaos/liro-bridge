@@ -22717,3 +22717,90 @@ that builds it.
   the right one: *"Whoever does §4 must not be able to connect a crash path to
   the agent without meeting this entry first."* A deferral whose only
   enforcement is that somebody remembers is a deferral that expires silently.
+
+---
+
+## D-276 — SPEC §6.5.1 is amended twice: SafeSign's answer replaces the open question, and the seventh clause carries the two cards' different PIN limits
+
+**Date:** 2026-09-15
+**Phase:** F11 — the owner's ruling on [[D-273]]
+
+**This is the second amendment to §6.5.1 and the first since it was written.**
+[[D-269]] created the subsection; this corrects the one sentence in it that
+measurement has falsified and puts a measured fact where it stops a mistake
+rather than only where it is recorded. The owner read both drafts before either
+was written, which is the order [[D-269]] itself set.
+
+**Decision.** Two lines of `docs/SPEC.md` change and nothing else.
+
+### 1. The closing paragraph
+
+It read: *"This bites only on the PKCS#11 path, and within it only on modules
+that do not advertise a protected path. Whether SafeSign advertises one is not
+yet known."*
+
+It is known ([[D-273]]), and a specification carrying a stale claim is worse
+than one that is silent — the owner's own framing and the reason this is
+amended rather than left. The replacement states the measurement, states which
+branch the exit condition travels, and then does one more thing:
+
+> The first clause is nonetheless checked per token every time, because the
+> flag is a property of a token through a module rather than of an issuer, and
+> a reader with a pinpad would answer differently through the same DLL.
+
+**That sentence is the owner's, and it is the half worth keeping.** Without it
+the paragraph reads as "no module offers a protected path", which is a summary
+of four measurements and would be wrong the first time somebody plugs in a
+pinpad reader. With it, the paragraph records what was measured *and* keeps the
+rule conditional on the answer rather than on the answer's history. It is the
+same property [[D-269]] built the amendment around — conditioned on the module,
+not on the issuer, so that no later measurement can falsify it — applied to the
+prose that describes it.
+
+### 2. The seventh clause
+
+`ulMinPinLen`/`ulMaxPinLen` gains:
+
+> And the limits are the token's, read when they are needed: measured, a MUP
+> token declares 4 and 8 where a Pošta token declares 5 and 15, and both live
+> in one person's drawer. A screen built around either pair is wrong for the
+> other card.
+
+**It goes in the clause rather than only in [[D-273]], and the reason is where
+each is read.** An entry records; a clause is what somebody building the PIN
+screen has in front of them. Left only in the log, the fact stops nobody from
+hard-coding 4 and 8 — the numbers the only measurement that had ever been taken
+produced ([[D-268]]). In the clause it is the reason the clause is phrased as
+an instruction instead of a pair of numbers.
+
+The two cards are the whole argument: SPEC §14.1's bookkeeper is not the edge
+case here, one person with both a MUP e-ID and a Pošta card is, and 4/8 and
+5/15 do not overlap at either end.
+
+### Both edits are narrow on purpose
+
+No clause is weakened, none is added, and the rule is untouched. Both changes
+are a measurement replacing an absence — the direction [[D-225]] identifies as
+the only one that cannot make a future implementation wrong. §6.5's own text,
+and the four consequences under it, are not touched at all.
+
+**Rejected.**
+
+- **Leaving the stale sentence.** The owner's ruling, and right: the paragraph
+  that governs this phase's own next commit cannot say the question is open
+  when the log says it closed.
+- **Carrying the `minPin`/`maxPin` point only in [[D-273]].** Above. It is a
+  fact that exists to prevent one specific mistake, and it has to be where that
+  mistake would be made.
+- **Rewording the clause as "read `ulMinPinLen`/`ulMaxPinLen` from
+  `C_GetTokenInfo` at the moment the screen is built".** More precise and more
+  brittle: it names a call, and a clause that names a call is one an
+  implementation can satisfy literally while missing the point. The point is
+  that the numbers are the token's.
+- **Amending anything else while here.** [[D-225]] and [[D-232]] each record the
+  same discipline: a phase that widens a SPEC edit beyond what it was given is a
+  phase that can soften a constraint by relocating it. Two lines were ruled on;
+  two lines changed.
+- **Committing the amendment and this entry separately.** [[D-269]]'s own
+  instruction, unchanged: a repository in which the specification changed and
+  the log did not is a repository that has lost the reason.

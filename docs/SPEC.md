@@ -338,10 +338,10 @@ Every clause below is a requirement.
 - **It is never retained between signatures, including between documents of one batch.** A card whose policy is one PIN per signature (§12.9) is asked again.
 - **Nothing retries a PIN automatically, ever, for any reason.** One wrong PIN is one attempt. Three block the card, and for a national identity card unblocking means a visit to a police station.
 - **The PIN screen says whose it is.** A person must be able to tell they are giving their PIN to Liro Bridge rather than to the card or to Windows. Other programs do not draw that distinction; this one does.
-- **This layer enforces `ulMinPinLen` and `ulMaxPinLen` itself.** Measured: the token declares them and the module enforces neither — an empty PIN went straight to the card and cost an attempt. A declared limit describes what the card accepts, not what the module checks.
+- **This layer enforces `ulMinPinLen` and `ulMaxPinLen` itself.** Measured: the token declares them and the module enforces neither — an empty PIN went straight to the card and cost an attempt. A declared limit describes what the card accepts, not what the module checks. And the limits are the token's, read when they are needed: measured, a MUP token declares 4 and 8 where a Pošta token declares 5 and 15, and both live in one person's drawer. A screen built around either pair is wrong for the other card.
 - **The CNG path is untouched.** On Windows, where the operating system's own smart card provider collects the PIN, §6.5's arrangement is unchanged and none of this applies.
 
-This bites only on the PKCS#11 path, and within it only on modules that do not advertise a protected path. Whether SafeSign advertises one is not yet known.
+This bites only on the PKCS#11 path, and within it only on modules that do not advertise a protected path. **Measured on a Pošta card through SafeSign: it does not advertise one either — `CKF_PROTECTED_AUTHENTICATION_PATH` is clear, so every clause above is live on the path this project's PKCS#11 work is judged by. No module measured so far offers a protected path. The first clause is nonetheless checked per token every time, because the flag is a property of a token through a module rather than of an issuer, and a reader with a pinpad would answer differently through the same DLL.**
 
 ### 6.6 What the consent screen shows
 
