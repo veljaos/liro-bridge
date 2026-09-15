@@ -21214,3 +21214,395 @@ a rendered-payload capture cannot prove.
 - **Changing anything the person reads.** No catalogue key was added,
   changed or deleted. `place.unavailable_no_file` is untouched and still
   says the true thing on the one path that can still produce it.
+
+---
+
+## D-268 — The MUP token's module takes a NULL PIN as an empty one and spends an attempt on it; §5 is answered and OPEN, and no ruling has been made
+
+**Date:** 2026-09-15
+**Phase:** F11 §5 — measured, recorded, **not ruled on**
+
+**This entry is a finding, not a resolution.** It records one measurement,
+the predictions written down before it, and what it cost. **F11 §5 is
+answered and still open: the owner has made no ruling, SPEC §6.5 is
+unamended, nothing is designed around this, and §2 has not been started.**
+The shape is [[D-223]]'s and [[D-266]]'s — establish the fact, say plainly
+what is not established, and leave the decision to whoever it belongs to.
+
+### The measurement
+
+One call, authorised by the owner with two conditions, taken with him at the
+machine and his own tray agent stopped first so that nothing else could
+reach the card:
+
+```
+C_Login(session, CKU_USER, pPin=NULL, ulPinLen=0)   ->   CKR_PIN_INCORRECT (0xA0)
+```
+
+Module: `C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll`, NetSeT 1.1.3.3,
+built 2024-12-12 — chosen over the five-year-older `MUP RS\Celik` build
+because SPEC §11.11 names TrustEdgeID as the middleware MUP and Pošta both
+use, so one answer covers two issuers. Cryptoki 2.20, `CardEdge PKCS#11
+Library` 1.0. Token `NetSeT's CardEdge Token`, model `SSCD v1`, serial
+`ID011445479`, `minPin=4 maxPin=8`. A read-only public session
+(`CKF_SERIAL_SESSION` alone), handle 32776, state `CKS_RO_PUBLIC_SESSION`.
+
+**The PIN counter, read immediately before and immediately after, so that
+whether an attempt was consumed is measured rather than inferred:**
+
+| | flags | `USER_PIN_COUNT_LOW` | `USER_PIN_FINAL_TRY` | `USER_PIN_LOCKED` |
+|---|---|---|---|---|
+| before | `0x10040D` | false | false | false |
+| after | `0x11040D` | **true** | false | false |
+
+**An attempt was consumed.** That was the authorised risk and it
+materialised. `CKF_USER_PIN_FINAL_TRY` is clear, and PKCS#11 defines that
+flag as "supplying an incorrect user PIN will cause it to become locked" —
+so the card is **not** on its last attempt.
+
+**The flag is the card's own state, not one module's opinion of it.** Read
+back afterwards through `MUP RS\Celik` 1.1.0.0 — `C_GetTokenInfo` only, no
+login — the token reports `0x11040D` there too.
+
+### Both of the owner's conditions were honoured, and one of them was built into the program
+
+*Exactly one call, whatever it returned.* There was no retry and no second
+attempt, and the probe has no code path that could take one.
+
+*The counter read before and after.* And the first condition's precondition —
+"if the before-reading shows anything other than a full counter, stop" — is a
+check inside the probe rather than a thing anybody had to remember: it
+refuses to call `C_Login` at all unless all three user-PIN flags are clear.
+Recorded because the owner named it as the right instinct and it generalises:
+**a condition that lives only in the operator's discipline is a condition
+that gets missed once.**
+
+### No dialog appeared, and that is recorded rather than merely unnoticed
+
+The whole question was whether the module raises its own PIN dialog despite
+not advertising `CKF_PROTECTED_AUTHENTICATION_PATH`. An answer that depended
+on somebody noticing a window before closing it would be an answer that gets
+missed ([[D-258]]), so the probe watched for one: every 250 ms it enumerated
+every visible top-level window belonging to its own process, and the
+foreground window whenever it was not one of its own. It observes only —
+nothing in it touches the cursor, the keyboard or the foreground ([[D-094]]).
+
+**It recorded no window in the probe's process at all.** Its single line names
+`CASCADIA_HOSTING_WINDOW_CLASS`, title `◑ Phase F11 §5 measurement` — the
+terminal the measurement was running in. That is the report getting in its
+own way, the same artefact [[D-260]] recorded when `dragreport`'s own console
+covered the window it was reporting on. **Not a finding, and said so here so
+that it is not read as one later.**
+
+The instrument was checked before it was relied on ([[D-184]]): a
+`--watch-test` mode that loads no module and touches no card ran first and
+correctly named the foreground window. A watcher that silently saw nothing
+would have made "no dialog appeared" mean nothing.
+
+### The four predictions, written down before the call, and all four wrong
+
+This is why the entry is worth anything. `scratchpad/predictions.md` was
+written before `--login` was ever passed, and it ranked the outcomes:
+
+| | Predicted | Predicted cost | What happened |
+|---|---|---|---|
+| 1 | `CKR_ARGUMENTS_BAD` (0x07) — the by-the-book reading of PKCS#11 §11.6, which ties a NULL `pPin` to the protected-path case | nothing | no |
+| 2 | the module raises its own dialog anyway | nothing, if cancelled | no |
+| 3 | `CKR_PIN_LEN_RANGE` (0xA2) — NULL read as an empty PIN and rejected against `minPin=4` before anything reaches the card | nothing | no |
+| 4 | `CKR_PIN_INCORRECT` (0xA0) — NULL read as an empty PIN and presented to the card | **one attempt** | **yes** |
+
+And the counter was predicted **unchanged**. It changed.
+
+So the outcome ranked least likely of the four is the one that happened, and
+the one prediction with a cost attached is the one that came true. The
+reasoning that failed is worth naming rather than just the ranking: **it
+assumed a length check would sit in front of the card.** The token declares
+`minPin=4`; an empty PIN is length 0 and cannot be a valid PIN for it. The
+module range-checks nothing and hands it straight down. Every one of
+predictions 1, 2 and 3 was a different way of assuming somebody between this
+program and the card would notice that, and nobody does.
+
+That generalises past this call: **a module's declared limits are a
+description of what the card accepts, not a promise that the module enforces
+them.** Anything this layer builds on `minPin`/`maxPin` has to enforce them
+itself.
+
+### What is established
+
+- This module **does not** raise a dialog for a NULL PIN. `C_Login` returns.
+- It passes NULL to the card as an empty PIN, and the card rejects it as a
+  wrong PIN rather than as a malformed request.
+- **So `C_Login` on this token takes the PIN as an argument**, which means the
+  PIN would exist in this program's memory — the amendment F11 §5 says is to
+  be raised rather than built around.
+- One attempt of the user PIN was consumed, and the card is not on its last.
+
+### What is NOT established, stated rather than implied
+
+- **The card's total attempt count.** "Two left" is the owner's own figure and
+  the measurement is consistent with it; nothing here measured it
+  independently. What is measured is that `FINAL_TRY` is clear.
+- **That a successful PIN entry clears the flag.** PKCS#11 defines
+  `CKF_USER_PIN_COUNT_LOW` as "an incorrect user PIN has been entered at
+  least once since the last successful authentication", so it should. That is
+  the specification's wording, not a measurement, and it is checkable
+  read-only after the owner's next ordinary signature at no cost.
+- **SafeSign's answer.** Still unasked. It returns `CKR_TOKEN_NOT_RECOGNIZED`
+  for the MUP card, so this question needs the Pošta card and the home
+  machine. It stays on the list, and it is the module F11's exit condition
+  actually turns on.
+- **Nexus/Halcom.** No Halcom card exists, and asking this question of another
+  card would cost another attempt on it.
+- **Whether a non-NULL PIN, or another `userType`, behaves differently.** Not
+  asked, deliberately, and not to be asked: the authorisation was one call.
+
+### The probe, so it does not have to be rediscovered
+
+The F11 handover records that the previous session's probe lived in a
+scratchpad and is gone. **This one is in a session scratchpad too, and will
+go the same way unless somebody moves it** — said here rather than pointed
+at, so that this paragraph does not become a dead path. It is a single
+`main.go` importing nothing but the standard library, and everything
+expensive about rebuilding it is in that handover's §1. This session added
+four things to it:
+
+- **`C_GetInfo` is not callable before `C_Initialize`.** TrustEdgeID answers
+  `CKR_CRYPTOKI_NOT_INITIALIZED` (0x190), which is the module being right —
+  `C_GetFunctionList` is the only function that may precede `C_Initialize`.
+  The handover's behavioural confirmation of the index map therefore has to
+  come after initialisation, not before.
+- **`CK_TOKEN_INFO` is 160 bytes packed**, with `flags` at offset 96, and
+  `ulMaxPinLen`/`ulMinPinLen` at 116/120. `CK_SESSION_INFO` is 16 with
+  `state` at 4. `CK_INFO` is 72 with `libraryDescription` at 38, which is the
+  handover's own `34 + 4`.
+- **The index map used**, counting function pointers only, the `+2` handled
+  separately: `C_Initialize` 0, `C_GetInfo` 2, `C_GetSlotList` 4,
+  `C_GetTokenInfo` 6, `C_OpenSession` 12, `C_GetSessionInfo` 15,
+  **`C_Login` 18**, `C_Logout` 19. Written with `iota` for the reason the
+  handover gives.
+- **Every Go buffer whose address crosses into the module is pinned** with
+  `runtime.Pinner`, not merely kept alive. [[D-101]]'s finding applies here
+  unchanged: `KeepAlive` stops memory being collected and says nothing about
+  it being *copied*, and a synchronous out-parameter that moves between its
+  address being taken and the call using it is exactly the bug [[D-101]]
+  measured in `controllerGetCoreWebView2`.
+
+`go vet`'s `unsafeptr` fires throughout, as the handover predicted and as
+[[D-080]] already disabled it project-wide for.
+
+### The machine
+
+Snapshotted before anything ran, by copy and not by hash ([[D-153]],
+[[D-243]]): `reg export` of the Explorer verb key and the `Run` key, plus
+copies of `config.json`, the audit directory, `pairings.json`, `secrets.*`,
+`update-state.json` and `bridge.json`.
+
+Afterwards: every file byte-identical to its copy, the audit chain still 20
+entries at sequences 0–19, the `Run` key still six values with
+`LiroBridge` pointing at the repository-root build, and the Explorer verb
+present. The probe only ever loaded a DLL and talked to the card; it wrote
+nothing outside the scratchpad. The owner's tray agent remains stopped —
+that was his own action and restarting somebody's process is not this
+session's to do.
+
+**Rejected.**
+
+- **Recording this as a resolution.** It answers §5's question and it does
+  not decide what follows from it, and those are different things. The owner
+  said in as many words that the ruling is his and will be made with him
+  before anything is written.
+- **Amending SPEC §6.5 now.** Same reason, and SPEC is "the rules that never
+  change" (§0): a phase that edits it on the strength of its own measurement
+  is a phase that can soften the specification's most important paragraph by
+  rewording it.
+- **Taking a second call to narrow it** — a different `userType`, or a
+  deliberately wrong non-NULL PIN, to see whether the module distinguishes
+  them. Every one of those costs another attempt, and the authorisation was
+  one call. The question they would answer is not §5's.
+- **Building a PIN box, or designing around the result.** F11 §5's own
+  instruction.
+- **Waiting for the ruling before recording this.** The owner asked for the
+  opposite and he is right: the predictions are only worth something because
+  they were written before the measurement, and an entry written after a
+  decision is an entry that will be read as having supported it.
+- **Leaving it in the phase report alone.** A report is read once.
+  `docs/decisions.md` is the file a future phase reads in full (SPEC §17),
+  and this is the measurement that will be quoted at whoever next proposes
+  that a PKCS#11 PIN can stay out of this program's memory.
+
+---
+
+## D-269 — SPEC §6.5 gains §6.5.1: a PKCS#11 PIN may exist in this program's memory for the length of one `C_Login`, under eight requirements
+
+**Date:** 2026-09-15
+**Phase:** F11 §5 — the owner's ruling on [[D-268]]
+
+**This is the first amendment to the paragraph the specification calls its
+most important**, and the owner read both the SPEC text and this entry before
+either was written.
+
+**Decision.** SPEC §6.5 gains §6.5.1, quoted in full there and not duplicated
+here. §6.5's own text is untouched, and so are the four consequences listed
+under it. The amendment is additive and conditional: it permits the PKCS#11
+path to collect a PIN and pass it to `C_Login`, **only** for a module that
+does not advertise `CKF_PROTECTED_AUTHENTICATION_PATH`, under eight clauses
+each of which is a requirement rather than a guideline.
+
+**The rule is conditioned on the module, not on the issuer.** That is what
+makes it survivable: no future measurement of SafeSign, Nexus or anything
+else can falsify it, because it says what to do for each of the two cases
+rather than asserting which case a given card is in. A module that turns out
+to have a protected path is covered by the first clause and never reaches the
+rest. The worst any later measurement can do is narrow how many cards the
+fallback applies to.
+
+**Why — and the reasoning is §6.5's own, turned on itself.** §6.5 is built on
+a measurement: the card caches the PIN in its own state independent of which
+process is talking to it, so a second process can sign without being asked
+for as long as the session lives. The conclusion §6.5 draws from that is that
+the PIN is *not* an access-control boundary between applications, and that the
+only thing which reliably prevents an unauthorised signature is a human
+clicking Approve in the agent's own window.
+
+If that is true — and it is the measured foundation of the whole security
+model — then a PIN existing momentarily in the memory of a program that has
+*already* been given human approval does not change who can sign what. The
+protection was never the PIN. Refusing to hold one for the length of a single
+call would be defending a boundary the specification itself says does not
+exist.
+
+**That premise now has a second, independent measurement, and it arrived by
+accident.** [[D-268]] left open whether a successful authentication clears
+`CKF_USER_PIN_COUNT_LOW`, and marked it explicitly as the specification's
+wording rather than a measurement. It is measured now: the owner signed a PDF
+**through Adobe, on the CNG path**, and the flag cleared — `0x11040D` →
+`0x10040D`, read back through both NetSeT modules with `C_GetTokenInfo` alone,
+no login, nothing spent.
+
+**A CNG signature reset a counter a PKCS#11 login had raised.** The card's
+authentication state is genuinely the card's, shared by every interface
+talking to it — which is exactly what §6.5 asserts, measured from a direction
+§6.5 never used, and it is why the conclusion drawn from it holds well enough
+to build an amendment on.
+
+**The alternatives, rejected rather than unconsidered — the owner's own
+framing.**
+
+- **Refuse any module with no protected authentication path.** It is the
+  reading that protects §6.5 literally, and it costs the product its reason to
+  exist on two platforms: there is no CNG on macOS or Linux, so a MUP card
+  would simply not work there. F12 and F13 would ship for an issuer most
+  Serbian users do not hold.
+- **Rely on CNG and never collect a PIN.** The same outcome by a different
+  route — Windows only, which is what F11 exists to stop being true.
+- **A PIN box with fewer than the eight clauses.** The clauses *are* the
+  amendment. Without the zeroing, without the retry prohibition, without
+  `minPin`/`maxPin` enforced in this layer, what is permitted is not what was
+  ruled on.
+- **Amending SPEC §18's hard prohibitions as well.** Several of the clauses
+  read like prohibitions and could be argued to belong there. Not done,
+  deliberately, and the reason is worth keeping: **a phase that widens a SPEC
+  edit beyond what it was given is a phase that can soften a constraint by
+  relocating it.** The ruling was to amend §6.5 narrowly. Raised here for
+  whoever makes the next SPEC edit.
+
+**What forced it.** [[D-268]], and specifically that the module raises no
+dialog of its own and hands a NULL PIN to the card as an empty one. There is
+no third arrangement available: either the module collects the PIN or this
+program does.
+
+### The `minPin` clause exists because the measurement was not free
+
+The seventh clause requires this layer to enforce `ulMinPinLen` and
+`ulMaxPinLen` itself. It is there for a specific reason and the reason is
+worth more than the clause: **had it been in force yesterday, [[D-268]] would
+have cost nothing.** The token declares `minPin=4`; an empty PIN is length 0
+and cannot be a valid PIN for it; a layer enforcing the token's own declared
+minimum would have refused the call before it reached the card, and the
+measurement would have been free.
+
+It is also the correction to the reasoning that failed. All three of
+[[D-268]]'s no-cost predictions assumed a length check sat somewhere between
+this program and the card. None does. **A module's declared limits describe
+what the card accepts, not what the module enforces**, and anything built on
+`minPin`/`maxPin` has to check them at the only layer that will.
+
+### The AST test comes first, and it is what makes the second clause true
+
+[[D-025]] established that `internal/keysource`, `internal/keysource/softtoken`
+and `internal/signing` each carry a test walking their own package's syntax
+tree, failing if a struct field or function parameter matching `(?i)\bpin\b`
+is ever added. That is the discipline this project already uses for a property
+about what is *declared* rather than what runs ([[D-158]], [[D-185]],
+[[D-224]]).
+
+`internal/keysource/pkcs11` does not exist yet and will need one. The
+amendment's second clause — the PIN in no struct field, no closure outliving
+the call — is precisely what such a test enforces, and the owner's ruling is
+that it governs the shape of §2 rather than being added to it:
+
+> The PIN is a local variable in one function because a test makes it
+> impossible for it to be anything else. Carry that test into the new package
+> as its first commit, before the backend exists — so it cannot be added
+> after, to code already written around it.
+
+That ordering is the substance and not a formality. A test written after a
+backend is a test written around whatever that backend already does; a test
+written before it is a constraint the backend has to be built to satisfy. The
+first commit of §2 is therefore the test and the package doc, and nothing
+else.
+
+**Two further consequences, raised rather than built, because §2 has only
+just begun.**
+
+- **The PIN screen is new UI surface**, in three locales, with its own layout,
+  its own tests and a clause requiring it to name Liro Bridge. It is not a
+  detail of the backend and it does not belong to whoever writes the backend.
+- **`ulMaxPinLen` bounds the buffer as well as the input.** The token here
+  reports `maxPin=8`; a PIN longer than the token's own maximum is refused in
+  this layer rather than truncated, for the same reason the minimum is.
+
+**What is not established.** SafeSign has still not been asked whether its
+token advertises a protected authentication path. Reading
+`CKF_PROTECTED_AUTHENTICATION_PATH` costs nothing and spends no attempt —
+`scripts/p11probe` with no `--login` does exactly that — but it needs the
+Pošta card and the home machine, because SafeSign answers
+`CKR_TOKEN_NOT_RECOGNIZED` for the MUP card. **It is now first on the home
+list, ahead of everything else there**: if SafeSign has a protected path, this
+amendment bites on fewer cards than it presently appears to, and the module
+F11's own exit condition turns on never needs the fallback at all.
+
+**The probe is in the repository**, at `scripts/p11probe`, on the owner's
+instruction and because this project has already lost one and paid to rebuild
+it. A `scripts/` developer tool imported by nothing that ships, Windows-only
+with the `_windows`/`_other` split SPEC §8.2 specifies, standard library only,
+built and run at `CGO_ENABLED=0`. Read-only unless `--login` is passed, and
+`--login` refuses to run at all unless the token's three user-PIN flags are
+clear first — [[D-268]]'s second condition, kept as a property of the program.
+`gofmt`, `go vet -unsafeptr=false`, `golangci-lint` in both the Windows and
+Linux views and `checkdeps` are clean; it builds for windows, linux and
+darwin.
+
+Its `errcheck` findings were fixed rather than suppressed (`//nolint` is
+forbidden), and one of them was worth the trip: the `os.Stdout.Sync()` calls
+it flagged were pointless, because `os.Stdout` is unbuffered in Go and every
+line is already on the terminal before the next statement runs — which is the
+property that actually mattered, on the one line printed immediately before a
+call that might block on a dialog.
+
+**Rejected.**
+
+- **Recording the amendment without the measurement that forced it.**
+  [[D-268]] is the entry this one rests on and it cost a PIN attempt; an
+  amendment to §6.5 that did not point at it would be an amendment resting on
+  an argument.
+- **Writing either before the owner had read both.** He asked to read the SPEC
+  text and this entry first, and for this paragraph that is the right order.
+- **Treating the Adobe/CNG counter reset as incidental bookkeeping.** It is
+  the cleanest confirmation this project has that §6.5's premise holds across
+  interfaces, and it turned up while closing an item [[D-268]] had listed as
+  unmeasured.
+- **Committing the SPEC edit and this entry separately.** The owner's
+  instruction, and right: the amendment and the reasoning for it are one
+  thing, and a repository in which the specification changed and the log did
+  not is a repository that has lost the reason.

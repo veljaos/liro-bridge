@@ -322,6 +322,27 @@ Consequences that must be implemented:
 - The consent window must be brought to the foreground and must not be suppressible by the caller.
 - Session lifetime is bounded. A session is closed when the batch completes, when the window closes, or after a short idle timeout.
 
+#### 6.5.1 When the module has no protected authentication path
+
+**Measured on a MUP e-ID card through NetSeT's module:** the token does not advertise `CKF_PROTECTED_AUTHENTICATION_PATH`, and `C_Login` with a NULL PIN returns `CKR_PIN_INCORRECT` and consumes one of the card's three attempts. The module raises no dialog of its own. On such a token the PIN is an argument to `C_Login`, and therefore exists in this program's memory.
+
+That is permitted, narrowly, and only because of what §6.5 above already establishes: the card caches the PIN in its own state regardless of which process is talking to it, so the PIN is not an access-control boundary between applications and never was. The gate is the consent screen. A PIN held for the length of one `C_Login`, by a program a human has already approved, does not change who can sign what.
+
+The alternatives are worse. Refusing modules with no protected path leaves the MUP card unusable on macOS and Linux, where there is no CNG to pick it up; relying on CNG makes the same cards Windows-only. Either would make F12 and F13 pointless for most Serbian users.
+
+Every clause below is a requirement.
+
+- **The protected authentication path is used whenever the module advertises it.** `pPin` is `NULL_PTR` and the module or the reader collects the PIN. Asking for the PIN is the fallback for modules that do not offer one — never a choice between two supported arrangements.
+- **The PIN exists only for the duration of `C_Login`,** and is overwritten immediately afterwards. It is not left for the garbage collector, not held in a struct field, not captured by a closure that outlives the call, and not merely dropped.
+- **It is never logged, never in an error, never in a crash dump, never in a report.**
+- **It is never retained between signatures, including between documents of one batch.** A card whose policy is one PIN per signature (§12.9) is asked again.
+- **Nothing retries a PIN automatically, ever, for any reason.** One wrong PIN is one attempt. Three block the card, and for a national identity card unblocking means a visit to a police station.
+- **The PIN screen says whose it is.** A person must be able to tell they are giving their PIN to Liro Bridge rather than to the card or to Windows. Other programs do not draw that distinction; this one does.
+- **This layer enforces `ulMinPinLen` and `ulMaxPinLen` itself.** Measured: the token declares them and the module enforces neither — an empty PIN went straight to the card and cost an attempt. A declared limit describes what the card accepts, not what the module checks.
+- **The CNG path is untouched.** On Windows, where the operating system's own smart card provider collects the PIN, §6.5's arrangement is unchanged and none of this applies.
+
+This bites only on the PKCS#11 path, and within it only on modules that do not advertise a protected path. Whether SafeSign advertises one is not yet known.
+
 ### 6.6 What the consent screen shows
 
 Decided: **document count, batch fingerprint, and the list of file names.**
