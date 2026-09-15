@@ -1,0 +1,116 @@
+package pkcs11
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+)
+
+// knownModulePaths is where each issuer's own installer actually puts its
+// module, read off a real machine rather than recalled (F11 §3, measured
+// 2026-09-14 and confirmed 2026-09-15):
+//
+//	A.E.T. Europe (SafeSign)  aetpkss1.dll         3.9.24.1  2024-12-13
+//	NetSeT (TrustEdgeID)      netsetpkcs11_x64.dll 1.1.3.3   2024-12-12
+//	NetSeT (MUP RS\Celik)     netsetpkcs11_x64.dll 1.1.0.0   2019-03-27
+//	Nexus Personal            personal64.dll       5.17.0    2025-03-19
+//
+// # Two things this list is shaped by
+//
+// NetSeT ships at two paths in two builds five years apart. That is not one
+// file in two places, which would be the easy case — they are different builds
+// of one vendor's module, and whichever one a given person's machine prefers,
+// the other one is somebody else's machine. Both are here, and neither is
+// treated as the canonical one.
+//
+// The directories are built from the environment rather than written out as
+// C:\Program Files, because that is not where they are on every Windows: a
+// machine can have ProgramFiles somewhere else, and a non-English install
+// certainly does. The literal paths above are what they resolve to here.
+//
+// # What is deliberately not in the list
+//
+// C:\Program Files\SecurityTray\lib\pkcs11wrapper_64.dll. It has "pkcs11" in
+// its name, it is on this machine, and it is IAIK's Java JNI wrapper — which
+// consumes PKCS#11 modules rather than being one, and exports no
+// C_GetFunctionList. It is the reason Modules tests for the entry point rather
+// than for a promising file name, and leaving it out of the list is not what
+// protects against it; the entry-point test is.
+func knownModulePaths() []Candidate {
+	programFiles := os.Getenv("ProgramFiles")
+	programFilesX86 := os.Getenv("ProgramFiles(x86)")
+	systemRoot := os.Getenv("SystemRoot")
+	if systemRoot == "" {
+		systemRoot = `C:\Windows`
+	}
+
+	var out []Candidate
+	add := func(vendor string, parts ...string) {
+		if parts[0] == "" {
+			return // the environment does not define that directory
+		}
+		out = append(out, Candidate{Path: filepath.Join(parts...), Vendor: vendor, Origin: OriginKnown})
+	}
+
+	add("A.E.T. Europe (SafeSign)", systemRoot, "System32", "aetpkss1.dll")
+	add("NetSeT (TrustEdgeID)", programFiles, "TrustEdgeID", "netsetpkcs11_x64.dll")
+	add("NetSeT (MUP RS)", programFiles, "MUP RS", "Celik", "netsetpkcs11_x64.dll")
+	add("Nexus Personal", programFilesX86, "Personal", "bin64", "personal64.dll")
+	return out
+}
+
+// Modules loads each candidate and returns the ones that are really PKCS#11
+// modules, alongside every candidate that was not, with its reason.
+//
+// A file is a module if it exports C_GetFunctionList and answers C_GetInfo
+// with something — never because its name looks promising. That is not a
+// hypothetical distinction: this project's development machine carries
+// C:\Program Files\SecurityTray\lib\pkcs11wrapper_64.dll, which is IAIK's
+// Java JNI wrapper. It has "pkcs11" in its name, it sits in a directory a
+// reasonable search would look in, and it *consumes* PKCS#11 modules rather
+// than being one — it exports no C_GetFunctionList at all.
+//
+// Nothing here is fatal. A module that will not load is a Failure in the
+// second return value and the search carries on, because a person with three
+// middlewares installed and one of them broken should still be able to sign
+// with the other two (F11 §3).
+//
+// # Probing is not free and not silent
+//
+// Every candidate is loaded, which runs its DllMain. Measured on this machine:
+// loading Nexus's personal64.dll writes a line of its own to stderr —
+//
+//	Personal::config::file::read: Personal config file '...Personal.cfg' does not exist
+//
+// — which is a foreign library talking to a console this program did not open
+// for it. Nothing here can stop that, and a caller probing on a schedule
+// rather than once would be paying for it repeatedly. Probe when a listing is
+// actually wanted.
+func Modules(configured string) ([]Candidate, []Failure) {
+	var ok []Candidate
+	var bad []Failure
+	for _, c := range Candidates(configured) {
+		m, err := openModule(c.Path)
+		if err != nil {
+			bad = append(bad, Failure{Candidate: c, Err: err})
+			continue
+		}
+		// Answering C_GetInfo with recognisable strings is the check that
+		// actually holds. Comparing the function list's fourth entry against
+		// the exported C_GetFunctionList does not: SafeSign's export is a
+		// jmp rel32 thunk and does not match, where three other modules do.
+		info, err := m.info()
+		_ = m.close()
+		switch {
+		case err != nil:
+			bad = append(bad, Failure{Candidate: c, Err: err})
+		case info.LibraryDescription == "" && info.Manufacturer == "":
+			bad = append(bad, Failure{Candidate: c, Err: errNothingRecognisable})
+		default:
+			ok = append(ok, c)
+		}
+	}
+	return ok, bad
+}
+
+var errNothingRecognisable = errors.New("C_GetInfo returned nothing recognisable")

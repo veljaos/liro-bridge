@@ -149,6 +149,116 @@ func TestTheMechanismListAnswersSection21(t *testing.T) {
 	}
 }
 
+// TestWhatIsVisibleWithoutALogin measures the thing List's shape turns on: can
+// this layer tell, without logging in, which certificates have a private key
+// behind them on the card?
+//
+// Private objects are hidden from a public session by design, so the expected
+// answer is no. It is measured rather than assumed, because if private keys
+// *were* visible the usable/unusable question could be answered before anyone
+// is asked for a PIN.
+func TestWhatIsVisibleWithoutALogin(t *testing.T) {
+	m := moduleForTest(t)
+	slots, err := m.slots(true)
+	if err != nil || len(slots) == 0 {
+		t.Skip("no slot with a token present")
+	}
+	for _, slot := range slots {
+		if _, err := m.tokenInfo(slot); err != nil {
+			continue
+		}
+		s, err := m.openSession(slot)
+		if err != nil {
+			t.Fatalf("openSession(%d): %v", slot, err)
+		}
+		count := func(class uint32) int {
+			objs, err := s.findObjects([]attribute{{typ: ckaClass, value: u32Bytes(class)}})
+			if err != nil {
+				t.Errorf("findObjects(class=%d): %v", class, err)
+				return -1
+			}
+			return len(objs)
+		}
+		t.Logf("slot %d, public session: certificates=%d publicKeys=%d privateKeys=%d",
+			slot, count(ckoCertificate), count(ckoPublicKey), count(ckoPrivateKey))
+		if err := s.close(); err != nil {
+			t.Errorf("session close: %v", err)
+		}
+	}
+}
+
+// TestWhetherTheTokenCarriesItsOwnIssuer measures what Chain can return, which
+// is not a cosmetic question: SPEC §12.6 makes B-LT the default level and B-LT
+// needs the issuing chain, so a token that carries only the signer certificate
+// means the chain has to be completed from AIA or a bundled store before a
+// document can reach that level.
+func TestWhetherTheTokenCarriesItsOwnIssuer(t *testing.T) {
+	m := moduleForTest(t)
+	slots, err := m.slots(true)
+	if err != nil || len(slots) == 0 {
+		t.Skip("no slot with a token present")
+	}
+	for _, slot := range slots {
+		if _, err := m.tokenInfo(slot); err != nil {
+			continue
+		}
+		s, err := m.openSession(slot)
+		if err != nil {
+			t.Fatalf("openSession(%d): %v", slot, err)
+		}
+		objs, err := s.certificateObjects()
+		if err != nil {
+			t.Fatalf("certificateObjects: %v", err)
+		}
+		var all []*x509.Certificate
+		for _, obj := range objs {
+			der, err := s.attributeValue(obj, ckaValue)
+			if err != nil || len(der) == 0 {
+				continue
+			}
+			if cert, err := x509.ParseCertificate(der); err == nil {
+				all = append(all, cert)
+			}
+		}
+		cas := 0
+		for _, c := range all {
+			if c.IsCA {
+				cas++
+				t.Logf("slot %d: a CA certificate is on the token: %q", slot, c.Subject.CommonName)
+			}
+		}
+		for _, c := range all {
+			if c.IsCA {
+				continue
+			}
+			found := false
+			for _, issuer := range all {
+				if issuer != c && bytesEqual(issuer.RawSubject, c.RawIssuer) {
+					found = true
+				}
+			}
+			t.Logf("slot %d: %q issued by %q — issuer on the token: %v",
+				slot, c.Subject.CommonName, c.Issuer.CommonName, found)
+		}
+		t.Logf("slot %d: %d certificates on the token, %d of them CAs", slot, len(all), cas)
+		if err := s.close(); err != nil {
+			t.Errorf("session close: %v", err)
+		}
+	}
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // TestCertificatesComeOffTheCardAndParse is the acceptance check for the whole
 // binding: the packed CK_ATTRIBUTE marshalling, the two-call
 // C_GetAttributeValue, and the find loop. A certificate that crypto/x509

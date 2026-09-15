@@ -21769,3 +21769,215 @@ true, as a test over the old pattern rather than a sentence about it.
   [[D-269]] put first precisely so the code would be built to satisfy it, and
   building that code while three neighbouring guards were known not to fire
   would be relying on a check nobody had checked.
+
+---
+
+## D-271 — What F11 §2 built before the wall: the binding, List with deduplication, discovery, and a Chain that is empty for a Serbian card — which is a missing signature level rather than a missing field
+
+**Date:** 2026-09-15
+**Phase:** F11 §2 and §3 — everything that does not need a logged-in session
+
+**Decision.** `internal/keysource/pkcs11` implements everything above
+`C_Login` and stops there. `Source.Open` returns `ErrLoginNotBuilt` and always
+will until [[D-269]]'s open question closes. Everything else in the package is
+read-only and therefore cannot spend a PIN attempt — a property of what is
+built rather than of anyone's care.
+
+### The binding
+
+`syscall.LoadLibrary` + `GetProcAddress` + `SyscallN`, standard library only,
+`CGO_ENABLED=0`, which is [[D-268]]'s §1 answer carried into the product. The
+layouts are measured rather than assumed and the file says so: `CK_ULONG` is 4
+bytes on Windows x64 (LLP64) and 8 on Linux (LP64), structs are packed to one
+byte, and `CK_FUNCTION_LIST`'s function pointers therefore start at +2,
+unaligned. **Every offset is wrong on another platform rather than merely
+unavailable**, which is what `module_other.go` says instead of pretending to
+be portable.
+
+The `CK_ATTRIBUTE` template is marshalled byte-wise at 16 bytes — type at +0,
+`pValue` at +4, `ulValueLen` at +12 — because Go cannot express
+`#pragma pack(1)` and its natural layout for the same three fields is 24. It
+is fixed by construction and never probed at runtime, for two measured
+reasons: three wrong layouts return `CKR_OK` with a zero length, which is a
+silent wrong answer rather than a failure; and Nexus's `personal64.dll` does
+not return at all for a wrong shape — it takes the process down with an access
+violation, reproduced twice.
+
+**Verified against the card rather than by the calls returning `CKR_OK`,
+because `CKR_OK` is exactly what a wrong layout returns.** Both certificates
+come off the MUP card through both NetSeT modules and parse with
+`crypto/x509`, and four facts already in this log agree: serial
+`20F048A768F56F099E` is [[D-209]]'s stamp example, SHA-1 `…B3D1ECCE` is
+[[D-209]]'s and [[D-243]]'s, the authentication twin is [[D-149]]'s
+`…DA534AC6`, and the key usages are SPEC §11.4's MUP row exactly — 3 on the
+signing certificate (`digitalSignature`+`contentCommitment`) and 5 on the twin
+(`digitalSignature`+`keyEncipherment`).
+
+Every Go buffer whose address crosses into a module is pinned with
+`runtime.Pinner` rather than merely kept alive. [[D-101]]'s finding applies
+unchanged: `KeepAlive` stops memory being collected and says nothing about it
+being *copied*, and a synchronous out-parameter that moves between its address
+being taken and the call using it is exactly the bug [[D-101]] measured.
+
+### `List`, and what it cannot know
+
+One `Source` is one module. `List` returns every X.509 certificate the module
+can see across every slot with a token in it, deduplicated on thumbprint, and
+the thumbprint is byte-identical to what `internal/keysource/windowscng`
+computes for the same bytes — which is what lets the layer above collapse one
+card seen through CNG *and* through PKCS#11 into one row (F11 §4).
+
+**Order is never relied on**, because it differs: measured, the two NetSeT
+builds return this card's two certificates in opposite order —
+Sign-then-Auth from TrustEdgeID 1.1.3.3, Auth-then-Sign from MUP RS\Celik
+1.1.0.0.
+
+**`List` cannot tell which certificates have a private key behind them, and
+that is measured rather than assumed.** A public session on the MUP card sees
+2 certificates, 2 public keys and **0 private keys**, because private objects
+are hidden from a session that has not logged in. So "can this certificate
+actually sign" is not a question this layer answers: `internal/trust/classify`
+answers the part that matters from KeyUsage (SPEC §11.4 — `contentCommitment`,
+never `digitalSignature`), and the rest is answered by the card when a
+signature is attempted.
+
+A slot whose token a module does not recognise is skipped rather than failing
+the enumeration. SafeSign answers `CKR_TOKEN_NOT_RECOGNIZED` for a MUP card,
+and F11 §4 is explicit that this means "not mine" rather than "something is
+wrong" — confirmed working through the real SafeSign module.
+
+### `Chain` is empty for a Serbian card, and that is a missing signature level
+
+**Measured on the MUP card through both NetSeT modules: the token carries two
+certificates — the signing one and its authentication twin — and no CA
+certificate at all. Both are issued by "MUP Gradjani CA 4", which is not on
+the card.** So the chain this layer can supply is empty.
+
+That is not a gap in this implementation and it is not a surprise: SPEC §11.8
+already records it from the other side — MUP embeds **1** certificate in the
+CMS of a signed document where Halcom and Pošta embed 3 — and
+`keysource.Session.Chain`'s own contract says the chain may be empty and the
+caller completes it.
+
+**What it costs has to be said plainly, because it is easy to read as a field
+that happens to be blank.** SPEC §12.6 makes **B-LT the default** signature
+level. B-LT is B-T plus a `/DSS` carrying revocation evidence, and revocation
+evidence is collected *per certificate in the chain* — [[D-046]] fetches OCSP
+and CRL for each, and [[D-159]] already established the sharp edge: a chain of
+exactly one certificate expects no evidence at all, so `/DSS` comes out empty,
+[[D-079]] then correctly writes no revision, and the document is B-T. **A
+missing chain is therefore a missing signature level, not a missing field.**
+
+So a document signed through this path reaches SPEC §12.6's default only once
+the chain is completed from the certificate's own AIA `caIssuers` or from a
+bundled trust store — which SPEC §11.8 already requires for MUP, and which is
+the caller's work rather than this layer's. This package returns what the
+token has, with nothing invented, and says so.
+
+`issuersFor` is the logic, written and tested now even though `Chain` itself
+is behind the wall: it matches only on an exact `RawSubject`/`RawIssuer` byte
+comparison — never a distinguished-name string comparison, which is
+parser-dependent and format-fragile in the way SPEC §11.6 describes for
+subject parsing — stops where the token stops, never adopts an unrelated CA,
+skips token objects that are not certificates rather than ending the walk, and
+is bounded so that a token presenting something strange cannot make it spin.
+
+### Discovery
+
+The known paths are built from the environment rather than written out as
+`C:\Program Files`, because that is not where they are on every Windows.
+Measured on this machine and confirmed today, all four load and answer:
+
+| Vendor | Path | Version |
+|---|---|---|
+| A.E.T. Europe (SafeSign) | `%SystemRoot%\System32\aetpkss1.dll` | 3.9.24.1 |
+| NetSeT (TrustEdgeID) | `%ProgramFiles%\TrustEdgeID\netsetpkcs11_x64.dll` | 1.1.3.3 |
+| NetSeT (MUP RS) | `%ProgramFiles%\MUP RS\Celik\netsetpkcs11_x64.dll` | 1.1.0.0 |
+| Nexus Personal | `%ProgramFiles(x86)%\Personal\bin64\personal64.dll` | 5.17.0 |
+
+**NetSeT is at two paths in two builds five years apart, and neither is
+treated as canonical** — whichever one a person's machine prefers, the other
+one is somebody else's machine.
+
+**A file is a module if it exports `C_GetFunctionList` and answers
+`C_GetInfo`, never because its name looks promising.** That distinction is not
+hypothetical: this machine carries
+`C:\Program Files\SecurityTray\lib\pkcs11wrapper_64.dll`, which has "pkcs11"
+in its name, sits where a reasonable search would look, and is IAIK's Java JNI
+wrapper — it *consumes* PKCS#11 modules rather than being one and exports no
+`C_GetFunctionList`. Leaving it out of the list is not what protects against
+it; the entry-point test is.
+
+**A configured path is tried first and is not required to exist.** A person
+who typed a path and got it slightly wrong has to be told so by name, which
+means it must reach the probe rather than being filtered out beforehand. And
+it comes from configuration and nowhere else: a path supplied over the
+protocol is arbitrary code execution wearing a configuration field (F11 §3).
+
+**A module that will not load is a failure in a list and never fatal** (F11
+§3), because a person with three middlewares installed and one of them broken
+should still be able to sign with the other two.
+
+**Probing is not free and not silent, which is worth knowing before anything
+probes on a schedule.** Every candidate is loaded, which runs its `DllMain`.
+Measured: loading Nexus's `personal64.dll` writes a line of its own to
+stderr — `Personal::config::file::read: Personal config file '…' does not
+exist` — a foreign library talking to a console this program did not open for
+it. Nothing here can stop that. [[D-254]] gives back a console this process is
+alone on before anything is written to it, so an agent started from Explorer
+has none by the time this runs; a developer at a prompt will see it.
+
+### §2.1 is answered for this card
+
+Both NetSeT modules offer **`CKM_RSA_PKCS`**, which is the mechanism that
+signs a pre-computed DigestInfo — what `SignDigest` is handed. Both also offer
+`CKM_SHA256_RSA_PKCS`, which hashes the data itself and would sign a hash of a
+hash, and both offer `CKM_MD5_RSA_PKCS` and `CKM_SHA1_RSA_PKCS`, which SPEC
+§18.8 forbids this program producing. The test records the last two rather
+than failing: offering them is not a defect in the module, and using one would
+be a defect here.
+
+Which mechanism is actually asked for cannot be verified until a signature can
+be made, and F11 §2.1 is explicit about how: with the independent verifier of
+SPEC §16.4, never by observing that a call returned bytes. That is behind the
+wall.
+
+### The wall, and why it is where it is
+
+`C_Sign` on a token's private key needs a logged-in session. So `SignDigest`
+is not beside the login step, it is behind it — which is further than "hold
+the login step" sounds, and is stated here rather than discovered when the
+rest is finished.
+
+`Source.Open` returns `ErrLoginNotBuilt`, a sentinel, so anything above can
+recognise the condition rather than matching a string.
+
+**Rejected.**
+
+- **Building the login step against the amendment as it stands.** [[D-269]]'s
+  first clause uses the protected authentication path wherever a module offers
+  one and only falls back to asking where it does not, and SafeSign — the
+  module F11's own exit condition turns on — has not been asked which it is.
+  The reading costs nothing and spends no attempt. Building the fallback first
+  is building for a question nobody has closed.
+- **Filtering `List` to certificates that have a private key.** It cannot be
+  done without a login (measured: 0 private keys visible from a public
+  session), and attempting it would put a PIN prompt in front of an
+  enumeration — which is what SPEC §11.10 spent a whole rule preventing on the
+  CNG side.
+- **Completing the chain here, from AIA or a bundled store.** It is real work
+  and it is the caller's: `keysource.Session.Chain`'s contract says so, the
+  CNG path already needs the same completion for the same cards, and doing it
+  twice is how two answers to one question come to disagree ([[D-108]],
+  [[D-124]], [[D-138]]).
+- **Matching an issuer by distinguished-name string.** Parser-dependent and
+  format-fragile; SPEC §11.6 makes the point for subject parsing and it holds
+  at least as strongly for deciding what signed what.
+- **Deduplicating across modules inside `Source`.** A `Source` is one module
+  and cannot see another. One card through two NetSeT builds is two sightings
+  of one certificate and collapsing them is the layer above's job — the
+  thumbprint is what makes it possible, and it is the same value CNG computes.
+- **Discovering by file name.** The IAIK wrapper, above.
+- **Probing every module at startup.** It loads four DLLs, runs four
+  `DllMain`s and produces stderr output this program does not control. Probe
+  when a listing is wanted.

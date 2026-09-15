@@ -99,6 +99,7 @@ const (
 	ckfSerialSession = 0x00000004
 
 	ckoCertificate = 0x00000001
+	ckoPublicKey   = 0x00000002
 	ckoPrivateKey  = 0x00000003
 
 	ckaClass    = 0x00000000
