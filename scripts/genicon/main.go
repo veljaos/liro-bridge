@@ -142,11 +142,27 @@ const (
 // is the design rather than a set of tweaks. A constant stroke-to-mark
 // ratio cannot work across a 16→256 family: at the source's own 1.9% the
 // mark is a hairline everywhere, and at a weight heavy enough to hold
-// together at 16 px it is a blob at 256. So the stroke grows from 6.2% of
-// the mark at 256 px to 10.2% at 16, and the mark gives a little of the
-// tile back as it shrinks. Every number here was arrived at by rendering
-// it and looking — at 1:1 and magnified, on white, dark and turquoise
-// grounds — not by evaluating a formula.
+// together at 16 px it is a blob at 256. So the stroke grows as the frame
+// shrinks, and the mark gives a little of the tile back as it grows.
+// Every number here was arrived at by rendering it and looking — at 1:1
+// and magnified, on white, dark and turquoise grounds — not by evaluating
+// a formula.
+//
+// The ramp was 10.2% of the mark at 16 px down to 6.2% at 256, and it was
+// too heavy at every size and worst at the small end: at 16 px the white
+// covered 30.7% of the tile against 16.7% at 256, so the size with the
+// least room to spare carried nearly twice the ink share. It is now
+// 7.3%→5.0%, which is flatter as well as lighter, because the small end
+// came down hardest — 28% of its weight at 16 px against 21% at 256.
+//
+// The small end is compressed because it is against a floor rather than
+// because a flatter ramp was wanted. Measured, the thinnest stroke at
+// which the 16 px mark is still one four-connected shape is 0.93 px, and
+// at 20 px it is 1.11 px — 7.27% and 7.03% of their own marks, a quarter
+// of a point apart. Those two frames are what the ramp's top end has to
+// fit between, and there is no room there for anything but a nearly flat
+// pair. Every frame below them has an order of magnitude more headroom:
+// 48 px's own floor is 3.7%, against the 5.8% it is drawn at.
 type frame struct {
 	size     int     // the frame's own size, in pixels
 	markFrac float64 // the mark's ink bounding box, as a fraction of the tile
@@ -154,14 +170,14 @@ type frame struct {
 }
 
 var frames = []frame{
-	{16, 0.800, 1.30},
-	{20, 0.790, 1.52},
-	{24, 0.785, 1.72},
-	{32, 0.780, 2.10},
-	{40, 0.775, 2.44},
-	{48, 0.770, 2.78},
-	{64, 0.760, 3.40},
-	{256, 0.750, 12.00},
+	{16, 0.800, 0.94},  // 7.34% of the mark; floor 0.93
+	{20, 0.790, 1.14},  // 7.22%;             floor 1.11
+	{24, 0.785, 1.30},  // 6.90%;             floor 1.10
+	{32, 0.780, 1.60},  // 6.41%;             floor 1.28
+	{40, 0.775, 1.87},  // 6.03%
+	{48, 0.770, 2.15},  // 5.82%
+	{64, 0.760, 2.65},  // 5.45%
+	{256, 0.750, 9.50}, // 4.95%
 }
 
 // nodeToStroke is a node's circumradius as a multiple of the edge width,

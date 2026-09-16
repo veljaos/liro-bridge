@@ -24495,3 +24495,282 @@ listing taken before anything ran.
   hard-coding it with a check. The erosion and clustering that recovered it are
   heuristics; a generator that re-derives its own input on every run is a
   generator whose output can change because a threshold moved.
+
+---
+
+## D-286 — The mark is thinned at every size and hardest at the small end; 0.94 px at 16 is a measured floor rather than a chosen weight, and the top of the ramp is nearly flat because the medium forces it
+
+**Date:** 2026-09-16
+**Phase:** Between F11 and F12 — the owner's ruling, after seeing v0.9.2 where
+it actually lives
+
+**Decision.** `scripts/genicon`'s stroke ramp goes from 10.2%→6.2% of the mark
+to **7.3%→5.0%**. Nothing else about the icon changes: the same nine nodes and
+eleven edges, the same `markFrac` at every size, the same `nodeToStroke` of
+1.21, the same tile, the same `#038387`, the same eight frames. One variable
+moved.
+
+| | 16 | 20 | 24 | 32 | 40 | 48 | 64 | 256 |
+|---|---|---|---|---|---|---|---|---|
+| was | 1.30 | 1.52 | 1.72 | 2.10 | 2.44 | 2.78 | 3.40 | 12.00 |
+| now | **0.94** | **1.14** | **1.30** | **1.60** | **1.87** | **2.15** | **2.65** | **9.50** |
+| % of the mark | 10.2→7.3 | 9.6→7.2 | 9.1→6.9 | 8.4→6.4 | 7.9→6.0 | 7.5→5.8 | 7.0→5.4 | 6.2→5.0 |
+| white share of the tile | 30.7→23.8 | 30.2→21.9 | 26.4→20.7 | 23.5→17.7 | 22.7→17.5 | 20.9→16.3 | 18.8→14.9 | 16.7→13.3 |
+| weight given back | −27.7% | −25.0% | −24.4% | −23.8% | −23.4% | −22.7% | −22.1% | −20.8% |
+
+The last row is the owner's instruction as a property: the small end comes
+down most, monotonically, all the way along.
+
+### What the complaint was, measured before anything was changed
+
+[[D-285]] shipped this icon and the owner then saw it in the tray, on the
+desktop shortcut and in the context menu, which is the only place it counts.
+His report: the white mark is too heavy, worst at 16 px rather than best, the
+white has eaten almost the whole tile and there is barely any turquoise left
+around it; at 48 px on the desktop it reads as a blob rather than as the mark.
+
+Measured, the ink share of each tile's own opaque pixels:
+
+```
+ 16px 30.7%    20px 30.2%    24px 26.4%    32px 23.5%
+ 40px 22.7%    48px 20.9%    64px 18.8%   256px 16.7%
+```
+
+**The size with the least room to spare was carrying nearly twice the ink
+share of the size with the most.** [[D-285]]'s ramp exists precisely because
+the small end needs relatively more weight to survive, and it was right about
+the direction and wrong about the amount. Recorded here as a correction to
+that entry's own reasoning rather than as a new finding: the ramp overshot,
+and it overshot worst exactly where it was trying hardest.
+
+### The floor is measured, not chosen
+
+This is what makes 0.94 a number rather than a preference, and it is the
+method rather than the value that is worth keeping.
+
+The 16 px stroke was swept **down a hundredth of a pixel at a time**, each
+weight rendered and put through the question
+`TestTheMarkIsOneConnectedShapeAtEverySize` already asks — four-connected,
+counting a pixel as mark only when it is closer to white than to turquoise —
+until the answer came back two components:
+
+```
+0.96  1 component,  59 px                    floors, same method:
+0.94  1 component,  58 px   <- drawn at       20px  1.11   (7.03%)
+0.93  1 component,  56 px   <- the floor      24px  1.10   (5.84%)
+0.92  2 components, 47 + 8                    32px  1.28   (5.13%)
+0.90  2 components, 47 + 8                    48px ~1.38   (3.73%)
+```
+
+**So the thinnest weight at which the 16 px mark is still one shape is
+0.93 px.** It is drawn at **0.94**, one hundredth above it.
+
+That hundredth is deliberate and it is not a hedge about the rendering, which
+is deterministic — 0.93 would produce the same 56 pixels every time. It is
+about *where the cliff is*: at 0.93 the verdict is decided by whether one
+bridge pixel lands above or below half coverage, and a frame sitting on that
+value is one that any future change to `markFrac`, to `nodeToStroke`, to
+`supersample` or to `boxResize` pushes over. Two ink pixels of 58 is the whole
+price, and it is invisible — the two were rendered side by side at ×26 and
+compared before choosing.
+
+**The cliff is sharper in the metric than in the eye**, which is worth
+recording because it will otherwise look like an inconsistency later. At 0.92
+the mark still reads as a connected mark when you look at it; what has
+happened is that an eight-pixel piece has fallen below the threshold the test
+measures. The test is the standard because it is the one that does not depend
+on who is looking, and the owner's stated constraint — one connected shape
+with the right silhouette rather than a scatter of dots — is what it encodes.
+
+### The top of the ramp is forced nearly flat, and that is a fact about the medium
+
+**16 px's floor is 7.27% of its own mark. 20 px's is 7.03%. A quarter of a
+point apart.**
+
+Those two frames are what the top of the ramp has to fit between, and there is
+no room up there for anything but a nearly flat pair: 16 and 20 are now 0.12
+points apart where they were 0.54. Every frame below them has an order of
+magnitude more headroom — 48 px's own floor is 3.7% against the 5.8% it is
+drawn at, and 40 px's is 4.3% against 6.0%.
+
+**This is recorded because it is a property of the medium that nobody had
+measured, and because whoever touches this next will otherwise read the flat
+top as a design choice and try to fix it.** It is not a taper somebody chose
+to soften. The floors are a rasterisation limit of roughly one pixel,
+near-constant in absolute terms across the whole family (0.93, 1.11, 1.10,
+1.28, ~1.34, ~1.38), which means that expressed as a share of the mark they
+fall steeply as the frame grows — 7.3% at 16, 3.7% at 48. A ramp that runs
+into that flattens at the top; it has no other option.
+
+Anyone who widens the 16↔20 gap again is choosing between putting 20 below its
+own floor and putting 16 back above the weight this entry exists to remove.
+
+### The 1.25 px constant is deleted rather than re-tuned
+
+`TestEveryFrameIsDrawnAtItsOwnSize` carried an absolute floor —
+`if f.stroke < 1.25` — under the comment *"Below about a pixel and a quarter a
+stroke is grey mush rather than a line. This is the floor the original icon
+fell through."* It is the only thing in this change that failed, and it failed
+against two frames that hold together perfectly well.
+
+**It was reasoned rather than measured, and it is wrong at every size and
+wrong by a different amount at each:** the real floors are 0.93 at 16, 1.11 at
+20, 1.10 at 24 and 1.28 at 32. It refused 0.94 and 1.14 while accepting 1.28,
+which is four hundredths above a genuine floor and therefore the most
+precarious of the four — so it was not merely too strict, it was strict in the
+wrong places and slack in the wrong places.
+
+**Re-tuning it to 0.92 would re-assert a guess at a newer number, and it would
+store the same fact twice.** Whether a stroke holds together is what
+`TestTheMarkIsOneConnectedShapeAtEverySize` measures — per frame, from the
+rendered pixels, by the only means that can know. A constant cannot know it,
+because the floor is a property of each frame's own geometry rather than of
+strokes in general. Two checks answering one question is the shape this
+project has had to unpick for a classification rule ([[D-108]]), for a
+question asked in two places ([[D-124]]) and for a margin ([[D-138]]), and the
+weaker of the two is the one that goes.
+
+So it is gone, and the reason is written where it was rather than only here,
+so that the next person to notice the absence finds the measurement instead of
+a gap.
+
+**The remaining check was confirmed to fire, because it is now the only one.**
+With 16 px set to 0.92 it reports `16px: the mark is 2 disconnected pieces,
+want 1 (largest holds 47 of 55 pixels)`; restored, it passes. A guard that has
+never been seen to fail is not a guard ([[D-031]], [[D-224]]), and this one
+had just inherited another's job.
+
+### The predictions, and the two that were wrong
+
+Written down before anything was measured, which is the only reason they are
+worth anything:
+
+| | Predicted | Outcome |
+|---|---|---|
+| P1 | white is ≥35% of the tile at 16 px, 22–26% at 256 | **wrong** — 30.7% and 16.7%; overestimated at both ends |
+| P2 | the floor is 0.85–0.95 px, breaking below ~0.80 | **half** — the floor is 0.93, inside the range; the break is at 0.92, not 0.80 |
+| P3 | the floor lands at 6.5–7.5% of the mark | **right** — 7.27% |
+| P4 | thinning the stroke alone is enough; `markFrac` untouched | **held** |
+| P5 | `nodeToStroke` stays 1.21; a break happens on an edge | 1.21 unchanged; **the second half was not checked** |
+| P6 | 48 px at ~5.5% reads as the mark, and is nowhere near its floor | **right** — its floor is 3.7% |
+| P7 | the ramp flattens to about 7.5→5.4 | **close** — 7.3→5.0 |
+
+P1 is the useful failure. The absolute shares were lower than guessed at both
+ends, and what the complaint is actually about is the **gradient** — 30.7
+against 16.7 — rather than the level. Had the prediction not been written
+down first, the measurement would have read as "the owner is right, it is
+heavy", and the thing that actually needed fixing — that the ramp was steepest
+in the wrong direction — would have been reported as an incidental number in a
+table.
+
+The half of P5 that was not checked is said rather than quietly dropped: which
+element detaches at 0.92 was never established, only that eight pixels of
+fifty-five do.
+
+### Verified by looking, and then by asking Windows
+
+Two contact sheets, built from the two `.ico` files rather than from the
+generator, so that what they show is what is in the files: every size at 1:1
+on white, on `#1E1E1E` and on the brand turquoise; and every size magnified
+nearest-neighbour with its old and new weight printed beside it. Shipped
+v0.9.2 on the left of every pair, new on the right. The owner looked at both
+before this was committed, which is the whole reason they exist.
+
+The frames were decoded with `image/png` and never through `System.Drawing`,
+which [[D-284]] measured mangling PNG-compressed `.ico` frames and [[D-090]]
+measured throwing outright on the 256 px one.
+
+Then the instrument that is not ours: `LoadImageW` and `DrawIconEx`, the calls
+the shell itself uses, on both files, each frame drawn into a DIB over a
+magenta ground so that anything untouched is identifiable.
+
+| | 16 | 20 | 24 | 32 | 40 | 48 | 64 | 256 |
+|---|---|---|---|---|---|---|---|---|
+| pure-white px, was | 39 | 49 | 97 | 169 | 244 | 353 | 598 | 9892 |
+| pure-white px, now | 11 | 35 | 47 | 105 | 162 | 241 | 431 | 7677 |
+| brand px, was | 109 | 211 | 317 | 622 | 1034 | 1544 | 2931 | 51325 |
+| brand px, now | 128 | 228 | 338 | 658 | 1093 | 1646 | 3078 | 53415 |
+
+Every frame loads, the 256 included. White down and turquoise up at every
+size, which is the complaint answered in the terms it was made in. "Pure
+white" here is a stricter measure than the generator's own — it counts only
+the saturated core, so at 16 px it reads 11 where the generator counts 58
+pixels as mark. The two agree in direction and are not the same quantity,
+which is said so that nobody later reads one against the other.
+
+### What was not done
+
+**`markFrac` was not touched**, at any size. Shrinking the mark at 16 px would
+have bought both a thinner-looking stroke in percentage terms and more
+turquoise margin, and it would have been the wrong answer twice over: it games
+the number this entry reports rather than removing ink, and it would make the
+mark visibly jump in size between 16 and 20 in exactly the contact sheet the
+owner judges it by. The `markFrac` taper across the family is deliberately
+gentle — 0.800→0.750 across a sixteenfold range — and a step at one end would
+read as a mistake.
+
+**Nothing was measured about the four places the icon appears.** [[D-285]]
+established those with the agent running and a `.syso` generated; nothing here
+changes any of that machinery, and re-running it would have written to the
+owner's own machine for no new fact.
+
+### The machine
+
+Snapshotted before anything ran, by **copy** and not by hash ([[D-153]],
+[[D-243]]): `reg export` of the Explorer verb key and the `Run` key, plus
+copies of `config.json`, the audit directory, `pairings.json`, `secrets.*`,
+`update-state.json` and `bridge.json`.
+
+Afterwards: every file byte-identical to its copy, the audit tree identical at
+21 entries, the Explorer verb key re-exporting byte-for-byte, and the `Run`
+key compared **value by value** rather than as a file — six values, every one
+matching by name and data. Comparing that export as a file would have been
+wrong: `reg export` does not emit values in a stable order, which [[D-285]]
+measured the hard way when this project's own autostart tests moved one
+value's position by deleting and re-creating it.
+
+**One slip, and it is [[D-285]]'s own warning firing exactly as written.**
+`go test ./internal/...` was run, which includes `internal/ui`, whose window
+tests extract the embedded icon into the **real** configuration directory
+rather than a scratch one. It left `icon-18579.ico` — the new asset — beside
+the owner's own `icon-13717.ico` and `icon-18315.ico`. It was removed; the
+owner's two are untouched and were verified against the listing taken first.
+The hazard was known, was recorded, was read, and was walked into anyway,
+which is worth saying plainly: **a warning in a log is not a guard.** The only
+thing that would have prevented it is the seam [[D-266]] already names as
+nobody's — a package that reaches a real store because nothing stops it.
+
+`go test ./cmd/liro-bridge/` was **not** run ([[D-266]]: it writes
+`HKCU\…\Run\LiroBridge` at a temporary binary, reproducibly). Its test binary
+was compiled instead, in both views, which is the whole of what a change to an
+embedded asset can break there.
+
+`gofmt`, `go vet -unsafeptr=false` and `golangci-lint` (0 issues) clean;
+`checkdeps` OK (45 packages); `checkcss` OK; builds for `windows/amd64`,
+`linux/amd64` and `darwin/arm64`; `./scripts/...` green. No `//nolint`.
+
+**Rejected.**
+
+- **Sitting on the floor at 0.93 rather than one hundredth above it.** It is
+  what "the thinnest that still holds" reads as literally, and the two are two
+  ink pixels apart and indistinguishable. Rejected for what the cliff is made
+  of rather than out of caution: at 0.93 the verdict turns on a single bridge
+  pixel's coverage, and four other constants in this generator feed that
+  pixel.
+- **Re-tuning the 1.25 px constant to 0.92 instead of deleting it.** Above: a
+  newer guess, and the same fact in two places.
+- **Keeping some absolute floor, lower, "just in case".** There is nothing for
+  it to catch. A stroke thin enough to matter breaks the connectivity test
+  immediately — 0.92 is already two components — so a second constant could
+  only ever fire after the real check had.
+- **Shrinking `markFrac` at 16 px to buy more turquoise margin.** Above.
+- **Thinning the large end harder, to something nearer 4%.** It was rendered
+  and looked at (8.50 px at 256, 4.4%) and it is a perfectly good drawing. Not
+  taken because it inverts the instruction: the owner asked for the small end
+  to come down most, and against a 16 px floor of 7.3% a 4.4% top makes the
+  ramp *steeper* again rather than flatter.
+- **Raising `nodeToStroke` so the junctions hold the graph together at a
+  thinner stroke.** It would have bought a lower floor at 16 px by making the
+  mark fatter at the junctions at every other size — and [[D-285]] already
+  built and rejected 1.8 for producing beads joined by threads. Thinning by
+  making one part heavier is not thinning.

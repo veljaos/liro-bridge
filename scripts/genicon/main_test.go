@@ -111,11 +111,24 @@ func TestEveryFrameIsDrawnAtItsOwnSize(t *testing.T) {
 		}
 		prevRatio = ratio
 
-		// Below about a pixel and a quarter a stroke is grey mush rather
-		// than a line. This is the floor the original icon fell through.
-		if f.stroke < 1.25 {
-			t.Errorf("size %d has a stroke of %.2f px, which will not hold together", f.size, f.stroke)
-		}
+		// There is deliberately no absolute floor on f.stroke here.
+		//
+		// There was one — "below about a pixel and a quarter a stroke is
+		// grey mush rather than a line" — and it was a number somebody
+		// reasoned to rather than measured. Measured, by sweeping the
+		// stroke down a hundredth at a time and asking
+		// TestTheMarkIsOneConnectedShapeAtEverySize's own question, the
+		// thinnest weight that still holds is 0.93 px at 16, 1.11 at 20,
+		// 1.10 at 24 and 1.28 at 32 — so 1.25 was wrong at every size and
+		// wrong by different amounts, and it refused weights that hold
+		// perfectly well.
+		//
+		// Re-tuning it to 0.92 would only re-assert a guess at a newer
+		// number, and it would be the same fact stored twice: whether a
+		// stroke holds together is what the connectivity test measures,
+		// per frame, from the rendered pixels. A constant cannot know
+		// that, because the floor is a property of each frame's own
+		// geometry and not of strokes in general.
 	}
 }
 
