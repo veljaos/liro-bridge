@@ -24162,3 +24162,336 @@ owner's tray agent was left running and untouched.
 - **Trusting `System.Drawing` for the pixel counts after it threw on one frame
   of this project's own icon.** [[D-090]] had already measured that and this
   entry nearly repeated it.
+
+---
+
+## D-285 — The icon becomes a solid turquoise tile with the mark in white, redrawn at every size rather than resampled; and the tile's edge is left to disappear on a turquoise wallpaper, because nothing that would fix it is worth what it costs
+
+**Date:** 2026-09-16
+**Phase:** Between F11 and F12 — the owner's ruling, after his own three-variant
+comparison
+
+**Decision.** `scripts/genicon` no longer downsamples one master bitmap eight
+ways. It draws each frame analytically at that frame's own size: a rounded
+square filled with the brand turquoise, and the mark in white inside it. The
+mark is unchanged — the same node graph, the same nine nodes and eleven edges —
+and so is its colour. All eight frames stay.
+
+### What was wrong, measured before anything was changed
+
+The icon was the bare mark on a transparent ground. Three things, and the owner
+reported two of them:
+
+| | |
+|---|---|
+| the mark is 6% of its own canvas | 3 970 opaque pixels of 65 536; the ink's bounding box is 214×212 in a 256 square |
+| its strokes are **1.9%** of the mark's own width | 4 px on a 214 px mark, measured perpendicular at each edge's midpoint |
+| so at 16 px a stroke is **0.25 px** | 4 × 16/256 |
+
+Rendered at 16 px and magnified, that is not a thin mark, it is a scatter of
+pale disconnected blobs with no structure in it — the owner's "a few
+disconnected dots", reproduced. And on a ground of the brand turquoise the
+whole thing is a ghost at every size, because a turquoise mark on turquoise has
+a contrast ratio of 1.00:1 by construction.
+
+### The mock-up was right about the shape and could not be right about the pixels
+
+`varijanta-C.png`, measured rather than eyeballed: the tile fills the frame, its
+corner radius is 49 px (19.1% of the side), the white mark's bounding box is
+164×162 (64.1%), and its strokes are ~10 px — the source's 4 px dilated 3.3×.
+
+Put through the same box filter the frames themselves are made with, it holds
+together at 64, 48 and 32 px and **turns to mush at 16**. That is the owner's
+own note — "cruder than drawing it properly" — arriving as a measurement, and
+it is what decided the approach rather than a preference for doing things
+analytically.
+
+### So the mark is redrawn, and the ramp is the design
+
+The geometry was recovered from the source bitmap by eroding with a disc wide
+enough to eat the thin edges and leave the fat junctions: **nine nodes**, each a
+regular hexagon of circumradius 7.2 with vertices left and right (their radial
+extent peaks every 60° from 0°, at a peak-to-trough ratio of 1.16 against a
+regular hexagon's own 1.155), and **eleven edges**.
+
+Sixteen pairs of nodes are joined by an unbroken line of ink. Five of them —
+0-6, 0-7, 1-5, 2-8, 3-7 — are compositions passing through an intermediate
+node, which is a property of the mark worth knowing: four of its nodes share one
+vertical, two share the left, two the right.
+
+Each frame then gets its own stroke weight, and that is the whole reason 16 px
+works now:
+
+```
+  16px  mark  12.80px  stroke  1.30px  = 10.2% of the mark
+  32px  mark  24.96px  stroke  2.10px  =  8.4%
+  64px  mark  48.64px  stroke  3.40px  =  7.0%
+ 256px  mark 192.00px  stroke 12.00px  =  6.2%
+```
+
+A constant ratio cannot work across a 16→256 family: at the source's own 1.9%
+the mark is a hairline everywhere, and at a weight heavy enough for 16 px it is
+a blob at 256. Both ends were built and looked at before the ramp was settled.
+
+Nodes are `1.21 ×` the stroke where the source's own ratio is 1.8. The strokes
+are thickened harder than the nodes deliberately — the strokes are what vanish
+and the nodes are what survive — and at 1.8 the first attempt produced a mark of
+beads joined by threads, which is visible in the sweep that rejected it.
+
+**What 16 px actually achieves, stated rather than implied.** The mark is **one
+connected shape** with the right silhouette and weight. It does not resolve into
+eleven distinguishable edges, and it cannot: there are eleven of them in twelve
+pixels. What was broken was that the mark fell apart; what is fixed is that it
+holds together. `TestTheMarkIsOneConnectedShapeAtEverySize` is that property as
+a check, and at 16 px it measures one component of 75 pixels.
+
+### The turquoise wallpaper: neither a border nor a darker fill
+
+The owner asked for this to be decided deliberately rather than left. Both of
+his candidates were built and looked at, at every size, on all three grounds.
+**Neither is taken**, and the reason is a measurement rather than a preference.
+
+*A darker fill cannot buy an edge anybody can see.* Against a wallpaper of
+exactly `#038387`:
+
+| fill | contrast |
+|---|---|
+| darker 12% (`#027376`) | **1.24:1** |
+| darker 22% (`#026669`) | 1.48:1 |
+| darker 35% (`#015557`) | 1.89:1 |
+| the white mark, for comparison | **4.56:1** |
+
+3:1 is where a boundary starts reading as deliberate rather than as a rendering
+artefact. Nothing that is still recognisably the brand turquoise gets near it.
+So a darkened fill would trade the brand colour for an edge nobody can make out
+— and it would make the icon's turquoise disagree with the PDF stamp's, which
+is the one fact this project keeps having to stop being stored twice
+([[D-108]], [[D-124]], [[D-138]]).
+
+*A light border reaches 4.56:1 and cannot be sized.* At 1.5% of the side it is
+0.24 px at 16 and does nothing. Floored to one device pixel it is a frame as
+bright as the mark, eating an eighth of the tile, and the icon reads as a box
+rather than as the Liro mark — photographed, at 16 px, next to the others.
+
+*And the white mark already has the only contrast that is available.* On a
+turquoise wallpaper the icon becomes the mark, at 4.56:1, and the mark is what
+carries the identity. It is also the only one of the four places the icon
+appears that sits on a wallpaper at all — a desktop shortcut, drawn at 48 px or
+larger, where the mark is unambiguous. The other three are on Explorer's list
+background, the taskbar and a title bar, none of which is ever the wallpaper.
+
+So the tile is filled with exactly `#038387` and has no border, and
+`TestTheTileIsTheBrandTurquoiseWithNothingBlendedIntoIt` is what keeps it that
+way.
+
+### One source of truth, kept honest by a check rather than by a comment
+
+Hard-coding the geometry would put the mark in two places: the bitmap in
+`assets/signature-logo.js` and the numbers in the generator.
+`verifyAgainstSource` closes that — it redraws the mark from those numbers at
+the source's own scale and requires the two to agree **both ways round**, since
+checking only that the drawn mark lands on ink would pass a geometry that had
+lost an edge, and checking only that the source's ink is covered would pass one
+that had gained a spurious one.
+
+It fired on its own first run, and the finding was in the check rather than in
+the geometry: seven pixels out from node 0, where the hexagon meets the stroke,
+the source's rasterisation has a one-pixel notch that the centreline passes
+through — the nearest ink is 2.75 px away while all 65 of that edge's other
+samples are directly on it. Requiring every sample is a claim about the bitmap,
+not about the geometry, so the rule is 95% of an edge's length. An edge that was
+not there would score near zero.
+
+`TestTheDriftCheckWouldActuallyFire` runs it against an erased edge, against
+ink the geometry does not account for, and against an empty source.
+
+**And one of these checks could not have failed, which is worse than not having
+written it.** The test that pins the fill compared the rendered tile against
+`brandTurquoise` — the same constant that does the filling — so it would have
+passed a darkened fill exactly as happily as the right one.
+
+**A test that cannot fail is worse than no test, because it occupies the place
+where a real one would go.** Nobody writes the same check twice, so the empty
+place goes on looking covered — and this one was sitting in front of the single
+decision this entry is most likely to be revisited on.
+
+It now reads the mark's own modal colour out of `assets/signature-logo.js` and
+requires the constant to equal it, so the icon's turquoise and the mark's own
+cannot drift apart without saying so. **Confirmed to fail against exactly the
+change this entry had considered and rejected**: with `brandTurquoise` set to
+the 12% darkening, it reports that the mark in the source is drawn in `#038387`
+while the tile is filled with `#027376`, and it passes again the moment that is
+reverted. Running it both ways is what makes it evidence rather than a claim.
+
+The general shape, which this project has now recorded three times: a check that
+supplies both the input and the expectation from one value measures its own
+consistency and nothing else ([[D-134]], [[D-161]], [[D-266]]).
+
+### A dark fringe around every corner, found by the owner asking before the commit rather than after
+
+He looked at the magnified 16 px frames, saw the rounded corners falling off to
+grey rather than to transparency, and asked which it was — premultiplied wrong,
+or correct as drawn — rather than waiting to meet it in a screenshot. It was
+wrong, and **the direction was the opposite of the one he suspected**: not a
+light halo, a dark fringe.
+
+`image.NRGBA` is straight (non-premultiplied) alpha, so a pixel the tile covers
+a third of has to carry the tile's colour at a third of the alpha. `boxResize`
+averaged the colour channels straight, against the transparent **black** left
+outside the tile, so every partly covered pixel was dragged toward black in
+proportion to how transparent it was. Measured on the 16 px frame:
+
+```
+34% covered   carried  1, 45, 46    straight alpha requires  3,131,135
+83% covered   carried  3,109,113                             3,131,135
+```
+
+Composited on `#1E1E1E` that is **29/255 too dark** in the green channel, and
+the error is there on every background rather than only on dark ones — it is a
+property of the frame, not of what it is drawn over. 16 of the 24 partly covered
+pixels in that frame carried a darkened colour.
+
+**It was not new.** The old generator box-resized a source that also had
+transparent black outside the mark, so the same fringe was on every frame of the
+icon that is on the machine today. What changed is that a tile has a hard
+boundary all the way round, which is why it became visible enough to ask about.
+
+`boxResize` now weights each sample's colour by its own alpha as well as by its
+overlap, and divides back out by the averaged alpha — so a partly covered pixel
+carries the colour of whatever actually covered it. Re-measured: every partly
+covered pixel in every frame is `3,131,135` at a reduced alpha, and the worst
+error over `#1E1E1E` is **0/255**. The file got 1 162 bytes smaller as a side
+effect, because the corner pixels now all share one colour and compress.
+
+`TestAPartlyCoveredPixelCarriesTheColourThatCoveredIt` is that as a check, at
+every size, and it was confirmed to fail against the straight average with the
+values above.
+
+**The finding generalises past this icon, so the rest of the tree was swept for
+it** — anywhere that averages `NRGBA` pixels across a boundary where alpha
+changes has the same defect available. What the sweep found:
+
+- **`NRGBAAt` appears nowhere outside `scripts/genicon`.** No other package
+  averages straight-alpha pixels at all.
+- **`internal/pades/render` does not downsample.** It *point-samples* an image
+  XObject at a unit-square coordinate (`alphaFor(ux, uy)`) and composites the
+  one sample onto an opaque canvas (`canvas.blend`). Compositing onto opaque is
+  the correct operation and there is no colour average across an alpha edge to
+  get wrong.
+- **`scripts/genlogo` never resamples.** It re-embeds its source still
+  compressed, which is what [[D-070]] chose it to do.
+- The other `Resize` hits are `ui.Window.Resize`, which sizes a window.
+
+So nothing else needs changing today. A future resize would, and this is the
+entry that says why.
+
+### The four places, measured rather than assumed
+
+The instrument is `SHGetFileInfo` and `DrawIconEx` — the calls the shell itself
+uses — never `System.Drawing`'s `Icon` constructors, which [[D-090]] measured
+throwing on this file's 256 px frame and [[D-284]] measured mangling the small
+ones. Pixels of the exact brand turquoise, against a control:
+
+| | |
+|---|---|
+| **1. Explorer's listing of `liro-bridge.exe`** (32 px) | 622 brand, 169 white |
+| **2. a shortcut made by hand**, no `IconLocation` (32 px) | 487 brand, 254 white — the rest is Windows' own shortcut arrow |
+| **3. the tray**, `LoadImageW` at `SM_CXSMICON` = 16 | 109 brand, 39 white |
+| **4. the window's own icon**, read back with `WM_GETICON` (`ICON_BIG`, 32 px) | 622 brand, 169 white |
+| *control:* a binary with no icon resource at all | **0 brand**, 356 white — Windows' generic application icon |
+
+The first two needed the PE resource, so `scripts/gensyso` was run exactly as
+`build/msi/build.ps1` runs it and the `.syso` removed again ([[D-284]]). The
+last two needed the agent, so it was run against a scratch config home, its
+window found by class and PID, and closed with `WM_CLOSE` — a window message,
+never synthetic input ([[D-094]]). Every frame also loads through `LoadImageW`,
+the 256 included.
+
+[[D-098]]'s `WM_SETICON` and [[D-090]]'s tray loader both picked the new asset
+up with no change, which is what the owner asked be measured rather than
+assumed. There is also a **fifth** place, not in the list and worth naming: the
+Explorer verb's own `Icon` value ([[D-119]]) points at the extracted file by
+name, and since that name carries the file's byte length it becomes
+`icon-19477.ico` and re-points itself on the next agent start. The old
+`icon-13717.ico` stays until an uninstall, which [[D-248]]'s prefix list
+already takes.
+
+### What was not run, and why
+
+`go test ./cmd/liro-bridge/` was not run. [[D-266]] measured it writing
+`HKCU\…\Run\LiroBridge` at a temporary binary, reproducibly, and left an
+unexplained append to the audit log beside it. Nothing in this change touches
+that package. The test binary was compiled instead, in both views.
+
+### The machine
+
+Snapshotted before anything ran, by **copy** and not by hash ([[D-153]],
+[[D-243]]): `reg export` of the Explorer verb key and the `Run` key, plus copies
+of `config.json`, the audit directory, `pairings.json`, `secrets.*`,
+`bridge.json`, `update-state.json` and the extracted icon.
+
+Running the agent re-pointed both registry keys at the scratch binary, exactly
+as [[D-249]] and [[D-253]] record, and both were restored from the exports. All
+seven files and the four-file audit tree are identical to their copies; the
+chain is still 20 entries; the owner's own tray agent was left running and
+untouched ([[D-268]]).
+
+**Three things are not bit-identical, and saying so is the point of taking a
+snapshot at all.**
+
+*The Explorer verb key re-exports byte-for-byte. The `Run` key does not, and it
+is an ordering difference rather than a content one.* All six values match in
+name and data; the export files differ only in the order `reg export` emits
+them, which moves when a value is deleted and re-created rather than
+overwritten. The cause is this project's own `internal/platform` autostart
+tests, which restore the value verbatim ([[D-153]]) but restore it by
+re-creating it — so `go test ./internal/...` moves `LiroBridge`'s position in
+the key. It was not reordered back: doing that means deleting and re-writing
+somebody's OneDrive, Docker and Edge startup entries to fix the enumeration
+order of one of them, which is a worse risk than the difference.
+
+*`internal/ui`'s window tests extract the icon into the real config directory,
+not a scratch one.* [[D-266]] records `go test ./cmd/liro-bridge/` writing to
+`HKCU`; this is the same shape one package over, and it is how
+`icon-18315.ico` and `icon-19477.ico` came to be sitting in
+`%LOCALAPPDATA%\Liro` beside the owner's own `icon-13717.ico`. Both were
+this session's and both were removed; the owner's own file is untouched and was
+verified against its copy.
+
+*`ui-assets` was rewritten by those same tests.* It is derived state by
+[[D-244]]'s own definition and is remade on demand, which is what [[D-249]] and
+[[D-253]] each stated rather than glossed. `tsl-cache.xml` was not on the
+snapshot list and is unchanged, checked by size and timestamp against the
+listing taken before anything ran.
+
+**Rejected.**
+
+- **A thin light border.** White on the brand turquoise measures **4.56:1**, so
+  a border would genuinely be visible — and there is no width that is right
+  across a 16→256 family. At 1.5% of the side it is **0.24 px** at 16 px and
+  renders as nothing at all. Floored to one device pixel it is the outermost
+  ring of a sixteen-pixel tile, **23% of its area**, as bright as the mark it
+  surrounds; photographed at 16 px beside the alternatives, the icon reads as a
+  box rather than as the Liro mark.
+- **A slightly darker fill.** The darkest shade still recognisably the brand
+  turquoise is 12% down, `#027376`, and against a wallpaper of `#038387` it
+  measures **1.24:1** — against the **3:1** at which a boundary reads as
+  deliberate rather than as a rendering artefact. Even 35% down (`#015557`,
+  visibly a different colour) reaches only **1.89:1**. It would spend the brand
+  colour, and the agreement between the icon's turquoise and the stamp's, on an
+  edge that still could not be seen.
+- **Scaling one master bitmap, as the mock-up does.** Measured to fail at 16 px,
+  which is the size the owner named as where the decision lives.
+- **Simplifying the mark at 16 px** — fewer nodes, a reduced glyph — so that the
+  graph resolves. It would read as a *different* shape at the size it is seen
+  most, which is worse than reading as a dense one. The mark is unchanged at
+  every size; only its weight varies.
+- **Regularising the node positions while redrawing.** Two of them sit a pixel
+  or so off the alignment the other seven share. That is the mark as it is, and
+  the instruction was that the mark is unchanged.
+- **Keeping the source's own 1.8 node-to-stroke ratio.** Built, looked at,
+  rejected: beads joined by threads.
+- **Generating the mark's geometry from the bitmap at every run** instead of
+  hard-coding it with a check. The erosion and clustering that recovered it are
+  heuristics; a generator that re-derives its own input on every run is a
+  generator whose output can change because a threshold moved.
