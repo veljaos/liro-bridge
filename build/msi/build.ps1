@@ -211,6 +211,27 @@ try {
             # package; the alternative, an advertised shortcut, would
             # make every Start menu click trigger a repair.
             $iceSuppress += "-sice:ICE43"
+
+            # ICE57 on the DesktopShortcut component, and only in this
+            # package. It reads a shortcut in DesktopFolder as per-user
+            # data whatever else the package says, so an HKLM keypath
+            # beside one looks to it like per-user data with a
+            # per-machine keypath.
+            #
+            # It cannot evaluate the thing that decides: ALLUSERS.
+            # Measured, by reading the Property table out of the built
+            # package rather than by trusting this file -- the
+            # per-machine package sets ALLUSERS=1 and the per-user one
+            # does not set it at all -- and with ALLUSERS=1 Windows Installer
+            # resolves DesktopFolder to the All Users Desktop, which is
+            # per-machine data. So the keypath and the data agree and
+            # ICE57 is a false positive for this one component.
+            #
+            # The per-user package is NOT suppressed: there the same
+            # component's keypath is HKCU beside a shortcut on this
+            # person's own Desktop, and both ICE43 and ICE57 pass on it
+            # with nothing turned off.
+            $iceSuppress += "-sice:ICE57"
         }
         # -pdbout into the staging directory: the .wixpdb is build
         # output, not something a release page hands anybody.

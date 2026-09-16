@@ -196,9 +196,25 @@
     <!-- What Programs and Features shows. -->
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/veljaos/liro-bridge" />
     <Property Id="ARPHELPLINK" Value="https://github.com/veljaos/liro-bridge/blob/master/docs/guide/README.md" />
-    <Property Id="ARPPRODUCTICON" Value="LiroIcon" />
+    <Property Id="ARPPRODUCTICON" Value="LiroIcon.ico" />
     <Property Id="ARPCOMMENTS" Value="Dnevnik revizije ostaje na računaru i posle uklanjanja programa. / The audit log stays on this computer after the program is removed." />
-    <Icon Id="LiroIcon" SourceFile="$(var.IconFile)" />
+
+    <!--
+      One icon, referenced by Programs and Features and by both
+      shortcuts. The Id carries the .ico extension because it is the
+      file name Windows Installer extracts this into its own cache
+      under, and the installer decides how to read an icon from that
+      extension — an icon stored under a name with no extension is one
+      the shell can refuse to draw.
+
+      It is needed at all because liro-bridge.exe carries no icon
+      resource: SPEC §5 names cmd/liro-bridge/rsrc.syso as generated and
+      nothing generates one, so a shortcut with no Icon of its own falls
+      back to the target's resources, finds none, and shows the generic
+      Windows application icon. Measured, not assumed — see the entry
+      for this change in docs/decisions.md.
+    -->
+    <Icon Id="LiroIcon.ico" SourceFile="$(var.IconFile)" />
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <?if $(var.Scope) = perUser ?>
@@ -216,6 +232,19 @@
       <Directory Id="ProgramMenuFolder">
         <Directory Id="ApplicationProgramsFolder" Name="Liro Bridge" />
       </Directory>
+
+      <!--
+        The Desktop. Windows Installer resolves both this and
+        ProgramMenuFolder against the package's own scope, so the
+        per-user package writes to this person's Desktop and the
+        per-machine one to the All Users Desktop, with nothing here to
+        say which.
+
+        There is deliberately no RemoveFolder for it: the shortcut is
+        removed because it is a component's own resource, and the
+        Desktop belongs to the person rather than to this installer.
+      -->
+      <Directory Id="DesktopFolder" Name="Desktop" />
     </Directory>
 
     <!--
@@ -296,7 +325,16 @@
                   Description="Potpišite PDF dokumente kvalifikovanim elektronskim sertifikatom"
                   Target="[#LiroBridgeExeFile]"
                   Arguments="open"
+                  Icon="LiroIcon.ico"
+                  IconIndex="0"
                   WorkingDirectory="INSTALLFOLDER" />
+        <!--
+          The guide shortcut deliberately carries no Icon of its own. It
+          opens an HTML document, so it should look like a document and
+          take whatever icon the person's browser has; giving it the
+          program's mark would put two identical icons side by side in
+          the Start menu folder, one of which is not the program.
+        -->
         <Shortcut Id="GuideShortcut"
                   Name="Liro Bridge — uputstvo"
                   Description="Uputstvo za korisnike"
@@ -320,6 +358,45 @@
           -->
           <CreateFolder />
         <?endif?>
+      </Component>
+    </DirectoryRef>
+
+    <!--
+      The desktop shortcut, created by every install, with no property
+      and no checkbox to turn it off. The owner's decision, and the
+      reason is the stranger who installed v0.9.0 and then could not
+      find the program again: a tray icon is not somewhere a person
+      looks for an application they have just installed, and the Start
+      menu folder is one they have to go looking in.
+
+      It is the same target and the same argument as the Start menu
+      entry — `open`, the window with nothing in it (D-231) — because
+      they are two doors onto one thing rather than two things.
+    -->
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="C53D7F5C-B7F9-44C5-AA55-C372E0F93074">
+        <Shortcut Id="DesktopAppShortcut"
+                  Name="Liro Bridge"
+                  Description="Potpišite PDF dokumente kvalifikovanim elektronskim sertifikatom"
+                  Target="[#LiroBridgeExeFile]"
+                  Arguments="open"
+                  Icon="LiroIcon.ico"
+                  IconIndex="0"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <!--
+          The keypath follows the package's own hive, which is what
+          keeps one component from holding per-user and per-machine
+          data at once (ICE57): HKCU beside a shortcut on this person's
+          Desktop, HKLM beside one on the All Users Desktop. The
+          per-machine half is the shape ICE43 objects to and build.ps1
+          already suppresses it there, for exactly this contradiction.
+
+          A registry value rather than the shortcut itself: only an
+          advertised shortcut can be a component's keypath, and an
+          advertised shortcut would make every click on it trigger a
+          repair.
+        -->
+        <RegistryValue Root="$(var.RegRoot)" Key="Software\Liro\Bridge" Name="InstalledDesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>
 
@@ -357,6 +434,7 @@
       <ComponentRef Id="GuideImages" />
       <ComponentRef Id="InstallFolderCleanup" />
       <ComponentRef Id="StartMenuShortcuts" />
+      <ComponentRef Id="DesktopShortcut" />
       <?if $(var.Scope) = perUser ?>
       <ComponentRef Id="RemovePerUserRegistrations" />
       <?endif?>
