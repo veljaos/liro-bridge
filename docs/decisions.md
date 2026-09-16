@@ -23930,3 +23930,235 @@ uninstall and restored from the copy.
 - **Trusting F10's record that the Start menu shortcut works.** It exists and it
   was drawing the wrong picture. The instruction was to verify it by installing,
   and installing is the only thing that would have found that.
+
+---
+
+## D-284 — The binary carries its own icon and version resource, generated at build time by a hand-written `scripts/gensyso`; the filename's platform suffix is load-bearing, and one quarter of what was asked for was already working
+
+**Date:** 2026-09-16
+**Phase:** Between F11 and F12 — the owner's ruling, closing [[D-283]]'s reported gap
+
+**Decision.** `scripts/gensyso` writes `cmd/liro-bridge/rsrc_windows_amd64.syso`
+during `build/msi/build.ps1`, and `build.ps1` removes it again. It carries
+RT_ICON, RT_GROUP_ICON and RT_VERSION, and deliberately no RT_MANIFEST. It is
+not committed, and `*.syso` stays in `.gitignore` where it has been since F0.
+
+### Generated rather than committed — and the reason is not the one the choice was framed around
+
+The two options were put as: committed means no build-time dependency but a
+binary in the repository that nobody can review; generated means one more tool
+CI must have, and `build.ps1` must not break when it is absent.
+
+**Neither of those is what decides it.** What decides it is that the version
+resource has to carry the version from the tag, exactly as `-ldflags` already
+stamps `main.version`, and **a committed file cannot**. It would carry whatever
+version was baked in when it was committed — stale on every release, or
+permanently `0.0.0`, which is half of what was asked for thrown away. The icon
+and the version are one resource in one file, so the half that must change per
+release decides for both.
+
+The two objections that were raised both turn out to cost nothing:
+
+- **"One more tool CI must have."** Not one, because the tool is Go in
+  `scripts/`. A machine that can build this project can already `go run` it,
+  which is exactly the arrangement `checkdeps`, `checkcss`, `gencerts`,
+  `genicon`, `genlogo`, `genseed`, `genblankpdf`, `gensubsetfont`,
+  `signrelease` and `verifyrelease` are already in. It has **no dependency
+  outside the standard library** — the PE/COFF and VERSIONINFO layouts are
+  written out, which is what this project already does for TrueType
+  ([[D-051]]), CCITT ([[D-144]]), exclusive C14N ([[D-016]]) and the whole COM
+  surface ([[D-080]]).
+- **"`build.ps1` must not break when it is absent."** It cannot be absent: it
+  is in the repository. And a developer running a plain `go build ./cmd/liro-bridge`
+  with no `.syso` present still gets a binary — the one they got yesterday,
+  without an icon. Nothing new fails.
+
+**`checkdeps` does not object, measured rather than assumed.** It reads
+`go list -json`'s `Deps`, which is the import closure, and a `.syso` is not an
+import. With the file present it reports `OK (45 packages checked)`.
+
+One fact settles the question more cleanly than any of the above:
+**`*.syso` has been in `.gitignore` since `98ec062`, F0's first commit.**
+Committing one was never the plan; this is the first time anything has
+generated the file the layout has always reserved a name for.
+
+### The filename's suffix is load-bearing, and the prediction about why was wrong
+
+Predictions were written down first. **E1 said an unsuffixed `rsrc.syso` breaks
+`GOOS=linux go build`.** It does not:
+
+```
+rsrc.syso                 linux/amd64 -> exit 0
+rsrc.syso                 darwin/arm64 -> exit 0
+rsrc_windows_amd64.syso   linux/amd64 -> exit 0
+rsrc_windows_amd64.syso   darwin/arm64 -> exit 0
+```
+
+Both names build clean on all three platforms, and both produce a Windows
+binary whose resources Windows reads identically. On that evidence the
+conclusion would have been that SPEC §5's `rsrc.syso` is fine and needs no
+edit.
+
+**The measurement that actually decides it is a different one**, and it was
+taken because "it happened not to break" is not a reason:
+
+```
+go list -f '{{.SysoFiles}}' ./cmd/liro-bridge
+
+  rsrc.syso                 windows/amd64 -> [rsrc.syso]
+  rsrc.syso                 linux/amd64   -> [rsrc.syso]        <-- handed to the linker
+  rsrc.syso                 darwin/arm64  -> [rsrc.syso]        <-- handed to the linker
+  rsrc_windows_amd64.syso   windows/amd64 -> [rsrc_windows_amd64.syso]
+  rsrc_windows_amd64.syso   linux/amd64   -> []
+  rsrc_windows_amd64.syso   darwin/arm64  -> []
+```
+
+An unsuffixed `.syso` is passed to **every** platform's link. Those links
+survive today only because the linker tolerates a PE object it cannot use. The
+suffixed name is excluded **by rule**, which is what keeps F0 §10's
+cross-compilation requirement a property rather than a coincidence.
+
+So the prediction was wrong in its mechanism and right in its conclusion, and
+the conclusion now rests on something that cannot quietly change: `go1.26.5`
+tolerating a foreign object is not a promise, and `SysoFiles = []` is.
+
+**SPEC §5 is corrected accordingly**, from `rsrc.syso  # Windows icon/manifest
+(generated)` to `rsrc_windows_amd64.syso  # icon + version resource (generated,
+never committed)`. Both halves of that line were wrong: the name, and
+"manifest" — there is none, and there must not be, because [[D-081]] declares
+per-monitor DPI awareness programmatically and an RT_MANIFEST here would take
+that decision over in silence. This is a layout listing describing the
+repository, which is the same correction [[D-225]] made when it removed
+`sdk/dotnet/`.
+
+### What Windows says, which is the only verification that counts
+
+Checking a writer with a reader from the same hand proves nothing ([[D-044]]),
+so every figure below comes from the operating system: `LoadLibraryEx`,
+`EnumResourceTypes`, `FindResource`, `GetFileVersionInfo`, `SHGetFileInfo`, and
+Explorer's own property system.
+
+| | before | after |
+|---|---|---|
+| PE resource directory | **none at all** — `EnumResourceTypes` returns false and finds nothing | `3 (RT_ICON)`, `14 (RT_GROUP_ICON)`, `16 (RT_VERSION)`, and no RT_MANIFEST |
+| RT_ICON entries | — | 8, one per frame of `icon.ico`: 492, 629, 767, 1028, 1427, 1836, 2358, 5046 bytes |
+| `GetFileVersionInfoSize` | **0** — absent | 836 bytes, translation `040904B0` |
+| Explorer's Details tab | **empty** | Company `Liro`, File description the installer's own sentence, File version `0.9.1.0`, Product name `Liro Bridge`, Product version `0.9.1`, Copyright `Liro — Apache License 2.0` |
+| `--version` | `liro-bridge 0.9.1 (commit d2aacf7, …)` | unchanged, and now matches `FileVersion` |
+
+The Details tab was read through `Shell.Application`'s property system rather
+than through `GetFileVersionInfo` — a genuinely different path, and the one a
+person actually looks at.
+
+And the icon, in each of the four places named:
+
+| | brand `#038387` pixels |
+|---|---|
+| Explorer's listing of `liro-bridge.exe` | 0 → **3** |
+| a shortcut a person makes by hand (no `IconLocation`) | 0 → **3** |
+| the desktop and Start menu shortcuts ([[D-283]]) | 3 → 3, unchanged |
+| control: `internal/ui/assets/icon.ico` | 3 |
+
+### One quarter of the request was already working, and saying so is the point
+
+**Alt-Tab and the taskbar were already right, and this change does not alter
+them.** They draw a window's `ICON_BIG`, and [[D-098]] has set that with
+`WM_SETICON` from the extracted `icon.ico` since F5. Measured on a real running
+window either side of the change:
+
+```
+before   WM_GETICON ICON_BIG   32x32  opaque 9  brand #038387 5
+after    WM_GETICON ICON_BIG   32x32  opaque 9  brand #038387 5
+```
+
+Identical. The `.syso` reaches those two by a second, independent route — a
+window whose class carries no icon and whose `WM_SETICON` was never called now
+falls back to the executable's resource instead of to Windows' generic one —
+but nothing observable changed, and reporting this as a fix would have been
+untrue. It was measured **before** the change specifically so that the question
+could be answered at all; measuring only afterwards would have produced "Alt-Tab
+shows the mark" with no way to say whether it ever did not.
+
+### The instrument was partly unreliable, and that is recorded rather than glossed
+
+The pixel counts above come from `Icon.FromHandle(...).ToBitmap()`, and that
+path **mangles PNG-compressed `.ico` frames**: asked for the 48×48 frame of
+this project's own icon it threw `Requested range extends past the end of the
+array`, and the colours it reported for the 16×16 and 32×32 frames read as
+noise. That is the same legacy GDI+ limitation [[D-090]] measured when it
+verified the tray icon, and the same answer applies — the Win32 call is the
+instrument, not `System.Drawing`'s constructors.
+
+So the **absolute** opaque-pixel counts in this entry are not trustworthy. The
+brand-pixel discriminator is: it comes from the `HICON` `SHGetFileInfo` itself
+returns, it is consistent across before and after, and it moves exactly where
+it should. What settles it is not a count at all — it is the picture, rendered
+with `DrawIconEx` from that same `HICON` and looked at: five cells, the first
+Windows' generic application icon and the other four the Liro mark, identical
+to the control.
+
+### The tests, and the four ways they were made to fail
+
+`scripts/gensyso/main_test.go` pins the invariants whose violation is silent —
+every one of these produces a file that loads cleanly and is missing something:
+
+| Broken deliberately | What fired |
+|---|---|
+| group-icon entries written 16 bytes like a file's, not 14 like a resource's | `group icon came out 54 bytes, want 48` |
+| the ascending sort removed from the directory | `root: entry 1 has id 3 after 16 — not ascending` |
+| the relocations not recorded | `got 0 relocations for 4 resources; every data entry needs one` |
+| one `pad4` removed after a VERSIONINFO block's key | `the whole resource is 826 bytes, which is not a multiple of 4`, and four keys reporting values that no longer fit their own blocks |
+
+The last is the failure mode that would otherwise be hardest to read: a padding
+error does not corrupt the file, it makes `VerQueryValue` return false for one
+key while its siblings read fine, which looks like a string somebody forgot to
+set. After each experiment `main.go` was confirmed byte-identical to before it.
+
+A fifth test, `TestTheStringsAgreeWithTheInstallersOwn`, reads
+`build/msi/liro-bridge.wxs` and fails if the product name, the company or the
+description stop matching. Those three strings now live in two files, which is
+the shape this project has had to unpick four times ([[D-108]], [[D-124]],
+[[D-138]], [[D-183]]) — so a check reads the other copy rather than a comment
+asking somebody to remember.
+
+### Cost
+
+The binary grows by 15 360 bytes and each MSI by 16 384 — the icon was already
+in both packages for the shortcuts and Programs and Features, and this is the
+second copy, inside the executable, which is the only place Explorer's listing
+and a hand-made shortcut can reach.
+
+### The machine
+
+Snapshotted by copy, not hash ([[D-153]], [[D-243]]). One install and one
+uninstall; the uninstall took the Explorer verb key and `HKCU\…\Run\LiroBridge`
+— both the owner's, pointing at their repository-root build, exactly as
+[[D-249]] and [[D-253]] record — and both were restored from the exports and
+re-exported **byte-for-byte identical**. All eight files and the four-file audit
+tree identical to the copies; chain still 20 entries, last sequence 19. The
+owner's tray agent was left running and untouched.
+
+**Rejected.**
+
+- **Committing the `.syso`.** Above: it cannot carry a per-release version, and
+  the repository has gitignored `*.syso` since its first commit.
+- **`goversioninfo`, `akavel/rsrc`, or any other module that writes one.** It
+  is the obvious answer and it is a new dependency in a project whose rule is
+  to record what one does and why the standard library will not (SPEC §8.6) —
+  for a file format that is two well-documented structures. Writing it costs
+  ~500 lines this project can read, and it is what [[D-051]] and [[D-016]] each
+  decided in the same position.
+- **`windres` from the mingw64 Git already bundles.** It would work on this
+  machine and makes the build depend on a toolchain that is not Go, present by
+  accident rather than by declaration.
+- **The unsuffixed `rsrc.syso`, keeping SPEC §5 literally true.** Measured
+  above: it is handed to every platform's linker and survives on tolerance.
+- **Adding an RT_MANIFEST while the resource is being written anyway.** It is
+  the same file and it would be one edit, which is exactly why it is worth
+  refusing: [[D-081]] chose `SetProcessDpiAwarenessContext` deliberately and a
+  manifest would silently outrank it. If a manifest is ever wanted it is its
+  own decision, with its own measurement of what DPI behaviour changes.
+- **Reporting Alt-Tab and the taskbar as fixed.** They were not broken.
+- **Trusting `System.Drawing` for the pixel counts after it threw on one frame
+  of this project's own icon.** [[D-090]] had already measured that and this
+  entry nearly repeated it.

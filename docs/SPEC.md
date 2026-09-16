@@ -164,7 +164,7 @@ liro-bridge/
 ├── cmd/
 │   └── liro-bridge/
 │       ├── main.go
-│       └── rsrc.syso              # Windows icon/manifest (generated)
+│       └── rsrc_windows_amd64.syso # icon + version resource (generated, never committed)
 ├── internal/
 │   ├── api/                       # HTTP server, pairing, HMAC, jobs
 │   ├── audit/                     # append-only log with hash chain

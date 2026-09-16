@@ -115,8 +115,38 @@ try {
     $env:CGO_ENABLED = "0"
     $env:GOOS = "windows"
     $env:GOARCH = "amd64"
-    & go build -trimpath -ldflags $ldflags -o $exe ./cmd/liro-bridge
-    if ($LASTEXITCODE -ne 0) { throw "go build failed" }
+
+    # The icon and the version resource. Go embeds no resources of its own,
+    # but the toolchain links any .syso sitting beside the package's source,
+    # so this writes one and takes it away again.
+    #
+    # Generated here rather than committed because the version resource has to
+    # carry the version from the tag -- the same $goVersion that -ldflags
+    # stamps above -- and a committed file cannot. It costs no new dependency:
+    # gensyso is Go in scripts/, so a machine that can build this project can
+    # already run it.
+    #
+    # The _windows_amd64 suffix is load-bearing, not decoration. Measured with
+    # `go list -f '{{.SysoFiles}}'`: an unsuffixed rsrc.syso is handed to the
+    # linker for *every* GOOS, including linux and darwin. Those links happen
+    # to survive a PE object today; the suffixed name is excluded from them by
+    # rule instead, which is what keeps F0 section 10's cross-compilation
+    # honest.
+    $icon = Join-Path $repo "internal/ui/assets/icon.ico"
+    $syso = Join-Path $repo "cmd/liro-bridge/rsrc_windows_amd64.syso"
+    try {
+        & go run ./scripts/gensyso -icon $icon -out $syso -version $goVersion
+        if ($LASTEXITCODE -ne 0) { throw "gensyso failed" }
+
+        & go build -trimpath -ldflags $ldflags -o $exe ./cmd/liro-bridge
+        if ($LASTEXITCODE -ne 0) { throw "go build failed" }
+    }
+    finally {
+        # Whatever happened, do not leave a generated binary in the tree: it is
+        # gitignored, and a stale one would be linked into the next build by a
+        # developer who never asked for it.
+        Remove-Item $syso -Force -ErrorAction SilentlyContinue
+    }
 
     # The guides travel with the program, so a person who has lost the
     # download page still has them (F10 section 6). Both languages and
@@ -155,7 +185,8 @@ try {
         throw ("docs/guide/slike holds $($extra -join ', '), which liro-bridge.wxs does not install. " +
                "Add them there or remove them.")
     }
-    $icon = Join-Path $repo "internal/ui/assets/icon.ico"
+    # $icon is the one the resource generator already used, above: the same
+    # mark on the executable, on both shortcuts and in Programs and Features.
 
     # ---- Authenticode: present, and a no-op until there is a
     #      certificate (SPEC section 15.1) --------------------------------------
