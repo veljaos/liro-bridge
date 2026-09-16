@@ -28,7 +28,7 @@ func NewSource(modulePath string) Source { return Source{modulePath: modulePath}
 //
 // It exists here so that the type a caller has to satisfy, and the method they
 // call, are the same on every platform — wiring written once compiles for
-// F12's macOS and F13's Linux without being written again. Nothing on this
+// F12's Linux and F13's macOS without being written again. Nothing on this
 // platform will call it, because Open refuses before it could.
 func (s Source) WithPINEntry(entry PINEntry) Source {
 	s.entry = entry

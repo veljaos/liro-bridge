@@ -11,7 +11,7 @@ import (
 
 // The three startup concerns that are Windows-only in substance, and
 // their answers on a platform that has no windows, no installer and no
-// registry yet (SPEC §19: macOS is phase 12, Linux phase 13).
+// registry yet (SPEC §19: Linux is phase 12, macOS phase 13).
 //
 // requireWebView2 answers true rather than false: there is nothing to
 // detect and nothing to say about it, and returning false would refuse

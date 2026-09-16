@@ -19,8 +19,8 @@ import (
 
 // ErrUnsupportedPlatform is returned by every function in this package
 // on a platform other than Windows. WebView2 is a Windows-only API
-// (SPEC §11.11 establishes the same Windows-only scope for CNG); macOS
-// and Linux get their own web view hosts in phases 12 and 13.
+// (SPEC §11.11 establishes the same Windows-only scope for CNG); Linux
+// and macOS get their own web view hosts in phases 12 and 13.
 var ErrUnsupportedPlatform = errors.New("ui: WebView2 is only supported on Windows")
 
 // ErrWindowClosed is returned by PostJSON and Eval when the window has

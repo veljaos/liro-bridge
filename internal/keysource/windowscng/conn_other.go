@@ -9,7 +9,7 @@ import (
 )
 
 // unsupportedConn is the ncryptConn used on platforms other than
-// Windows. CNG is a Windows-only API; macOS and Linux get their own key
+// Windows. CNG is a Windows-only API; Linux and macOS get their own key
 // sources in phases 12 and 13 (SPEC §11.11). Enumerate already reports
 // no certificates on these platforms (F1), so nothing here can ever
 // succeed — this exists so the package, and anything built on top of

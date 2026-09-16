@@ -34,7 +34,7 @@
 // that this phase needs no C toolchain.
 //
 // The struct layouts are measured rather than assumed, on Windows x64: CK_ULONG
-// is 4 bytes (LLP64) and will be 8 on F13's Linux, structs are packed to one
+// is 4 bytes (LLP64) and will be 8 on F12's Linux, structs are packed to one
 // byte, and CK_FUNCTION_LIST's function pointers therefore start at offset +2,
 // unaligned, immediately after the two-byte CK_VERSION.
 //

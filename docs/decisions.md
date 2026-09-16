@@ -23535,3 +23535,154 @@ it.**
   `docs/decisions.md` is the file a future phase reads in full (SPEC §17), and
   this is the measurement that will be quoted at whoever next proposes that
   B-LT is one AIA fetch away.
+
+---
+
+## D-282 — SPEC §19 Group 3 becomes F11, Linux, macOS: the owner's two reasons, and the sweep for every other place that pairs a phase number with a platform
+
+**Date:** 2026-09-16
+**Phase:** Between F11 and F12 — the owner's ruling
+
+**Decision.** SPEC §19's Group 3 table now reads
+
+```
+F11  PKCS#11 layer (cgo, cross-compilation)
+F12  Linux: Secret Service, WebKitGTK, PDF preview limitation notice
+F13  macOS: Keychain, WKWebView, SafeSign
+```
+
+The two phases' contents are unchanged; only which number they carry.
+
+### The two reasons, which are the owner's
+
+**1. Linux is available today and macOS is not.** A VPS or a virtual machine
+costs nothing, so the phase can be built with the machine in hand — which is
+how every phase in this project has been built, and the reason its decisions
+are measurements rather than arguments. macOS needs hardware that does not
+exist here. Writing it blind and verifying later on a rented machine is
+precisely the shape F11 spent a day proving does not work: [[D-268]] predicted
+four outcomes for one `C_Login` and the one ranked least likely is what
+happened, at the cost of a PIN attempt; [[D-272]] refuted three of four
+predictions about a module crash; [[D-256]] refuted four in one session about a
+drag. A phase written against a machine nobody has is a phase written out of
+exactly the reasoning those entries keep falsifying.
+
+**2. The first encounter with a second platform is cheapest on a machine that
+can be rebuilt for free.** F11 measured `CK_ULONG` at 4 bytes on Windows
+(LLP64) and established it will be 8 on Linux (LP64) — [[D-271]] records that
+every offset in `module_windows.go` is *wrong* on the other platform rather
+than merely unavailable, and that the struct-layout assumptions are the part
+this project got right only by measuring. The first platform that is not
+Windows will surface every one of those assumptions that is wrong, plus the
+ones nobody has thought to name. Better on a machine that can be thrown away
+and rebuilt a hundred times than on one that has to be rented by the hour.
+
+### The sweep, which is most of the work
+
+The instruction was that a swap leaving one reference behind is worse than no
+swap. So every mention of F12, F13, "phase 12" or "phase 13" outside
+`decisions.md` was listed and read in context — 37 of them — and sorted into
+three classes rather than replaced by pattern. **A blind search-and-replace
+would have been wrong on more than half of them.**
+
+**Order-bearing — a phase number paired with a platform. Fifteen, all
+corrected:**
+
+| | |
+|---|---|
+| `docs/SPEC.md` §19 | the table itself |
+| `docs/phases/F1.md` §2.4 | "macOS and Linux arrive in phases 12 and 13" |
+| `cmd/liro-bridge/startup_other.go` | "SPEC §19: macOS is phase 12, Linux phase 13" |
+| `internal/platform/signingflag_other.go` | the same sentence |
+| `internal/platform/secretstore.go` | "macOS (Keychain) is phase 12 and Linux (Secret Service) is phase 13" |
+| `internal/platform/secretstore_other.go` | the same pairing, spelled out |
+| `internal/platform/autostart_other.go` | "macOS/Linux arrive in phases 12/13" |
+| `internal/platform/smartcard_other.go` | "used on macOS and Linux, which arrive in phases 12 and 13" |
+| `internal/keysource/windowscng/conn_other.go` | "macOS and Linux get their own key sources in phases 12 and 13" |
+| `internal/keysource/windowscng/enumerate_other.go` | the same |
+| `internal/ui/window.go` | "macOS and Linux get their own web view hosts in phases 12 and 13" |
+| `internal/keysource/pkcs11/module_windows.go` | "On F13's Linux it will be 8" |
+| `internal/keysource/pkcs11/source_other.go` | "F12's macOS and F13's Linux" |
+| `scripts/p11probe/p11probe_windows.go` | "will be 8 on F13's Linux" |
+| `docs/f11-handover.md` §1 | "will be **8** on F13's Linux" |
+
+**Twelve of those fifteen are Go comments**, which is worth saying because the
+instruction named SPEC and the phase documents. They are corrected anyway, and
+they are the ones that matter most: whoever writes F12 will be reading
+`module_windows.go`'s measured layouts and `secretstore_other.go`'s note about
+which mechanism to build, not SPEC §19's table. A stale phase number in SPEC is
+read once; a stale one in the doc comment of the file being edited is read at
+the moment of editing it.
+
+**Not order-bearing — a phase number with no platform attached, or two
+platforms with no number. Left alone, deliberately:** `PROTOCOL.md`'s "the
+agent is Windows-only until phase 12" (phase 12 is still the first non-Windows
+phase), `dirlock_other.go`'s "Windows-only until phase 13" (13 is still the
+last), `F0.md`'s "restore it in phase 12", `F11.md`'s "F12 and F13 cannot
+start" and "F12 will meet it on its first day" — that last one checked
+specifically, because it is about MUP shipping neither a `.so` nor a `.dylib`,
+so whichever platform is F12 meets it first either way — `module_other.go`,
+`pinentry.go`, `p11probe_other.go`, `shellmenu_other.go`, and SPEC §6.5.1's and
+§11.11's own mentions.
+
+**Not about phases at all, and the reason a pattern replacement was not used:**
+`docs/ui-text-review.md` has findings numbered **F12** and **F13** — one about
+*povezivanje* against *uparivanje*, one about a window's title. They have
+nothing to do with phases. Any `sed s/F12/F13/` over the repository corrupts
+that survey silently.
+
+**Not edited, because they are dated records rather than instructions:**
+`docs/decisions.md` (SPEC §17 forbids it outright), `f11-report.md`,
+`ftest-report.md`, `f10-handover.md`. Checked: none of those pairs a number
+with a platform, so none of them is stale in the way that matters.
+`f11-handover.md` *was* edited, because it is a live instruction to the next
+session — [[D-268]] and [[D-269]] both point at its §1 for rebuilding the probe
+— rather than a record of one.
+
+### One thing beyond what was asked, stated so it can be taken back out
+
+SPEC §19 gains a short note under the Group 3 table saying Linux precedes macOS
+deliberately and why, in two sentences. The instruction was that both reasons
+belong in **this entry**, and they are here in full.
+
+It is added anyway because §19 already carries exactly this shape of note — *"F3
+is the hardest and riskiest phase and deliberately precedes all UI work"* — for
+exactly this purpose, and because a swapped table with no reason on it is a
+table somebody tidies back into alphabetical or chronological order. The whole
+of this entry's own warning is that a swap leaving one reference behind is worse
+than no swap; a swap leaving no *reason* behind is how the swap itself gets
+undone.
+
+It is flagged rather than folded in quietly because widening a SPEC edit beyond
+what was ruled on is the move [[D-225]], [[D-232]], [[D-276]] and [[D-278]] each
+record refusing. Two sentences, and they come out on request.
+
+### Verified
+
+`gofmt` clean; `go vet -unsafeptr=false` clean in the Windows and Linux views;
+`golangci-lint` 2.13.2 reports `0 issues.` in both; `checkdeps` OK (44
+packages); `checkcss` OK; builds for `windows/amd64`, `linux/amd64` and
+`darwin/arm64`; `go test ./internal/... ./scripts/...` green with and without
+the `softtoken` tag (30 and 31 packages).
+
+`go test ./cmd/liro-bridge/` was **not** run, and that is a choice rather than
+an omission. [[D-266]] measured that it writes `HKCU\…\Run\LiroBridge` pointing
+at a temporary binary, reproducibly, and left an unexplained append to the audit
+log beside it. This pass's change to that package is one comment line. The test
+binary was compiled instead — `go test -c -o /dev/null ./cmd/liro-bridge/`, in
+both views — which is the whole of what a comment change can break.
+
+**Rejected.**
+
+- **A pattern replacement over the repository.** It corrupts
+  `ui-text-review.md`'s two findings, and it rewrites the eleven references that
+  are correct as they stand.
+- **Editing SPEC and the phase documents only, as the instruction scoped it.**
+  It is the literal reading and it leaves eleven Go comments telling the person
+  writing F12 that the Linux work is F13, in the files they are editing.
+- **Editing `decisions.md`'s own F12/F13 mentions.** SPEC §17: entries are never
+  edited. A reader who meets "F13's Linux" in an entry dated before today is
+  reading a record of what was true then, which is what the file is for.
+- **A dateline on the reports instead**, the shape [[D-265]] used for
+  `ui-text-review.md`. Not needed: none of them carries an order-bearing
+  reference, so there is nothing for a dateline to qualify.

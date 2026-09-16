@@ -7,7 +7,7 @@ import "fmt"
 type unsupportedAutostart struct{}
 
 // NewAutostart returns the stub Autostart backend for platforms without
-// an implementation yet (macOS/Linux arrive in phases 12/13).
+// an implementation yet (Linux/macOS arrive in phases 12/13).
 func NewAutostart() Autostart { return unsupportedAutostart{} }
 
 func (unsupportedAutostart) IsEnabled() (bool, error) { return false, nil }

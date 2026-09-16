@@ -3,8 +3,8 @@
 package platform
 
 // newSecretStore has no implementation off Windows yet. SPEC §6.4 names
-// the mechanism for each platform — the Keychain on macOS (phase 12),
-// the Secret Service or a key derived from machine-id and user on Linux
+// the mechanism for each platform — the Secret Service or a key derived
+// from machine-id and user on Linux (phase 12), the Keychain on macOS
 // (phase 13) — and F7 is explicitly Windows-only.
 //
 // It refuses rather than falling back to an unencrypted file: a device

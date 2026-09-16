@@ -3,7 +3,7 @@
 package platform
 
 // noSigningFlag is what every platform but Windows gets. There is no
-// installer on those platforms yet (SPEC §19: macOS is phase 12, Linux
+// installer on those platforms yet (SPEC §19: Linux is phase 12, macOS
 // phase 13), so there is nothing for a mark to be read by — and a
 // no-op that reports "not held" is the honest answer to "is an
 // installer about to be blocked", not a pretence that a mark was made.

@@ -1138,8 +1138,10 @@ Three groups, fourteen phases. Each has a verifiable exit condition.
 | Phase | Content |
 |---|---|
 | **F11** | PKCS#11 layer (cgo, cross-compilation) |
-| **F12** | macOS: Keychain, WKWebView, SafeSign |
-| **F13** | Linux: Secret Service, WebKitGTK, PDF preview limitation notice |
+| **F12** | Linux: Secret Service, WebKitGTK, PDF preview limitation notice |
+| **F13** | macOS: Keychain, WKWebView, SafeSign |
+
+**Linux precedes macOS deliberately, and the order is not to be swapped back for tidiness.** A Linux machine is available today — a VPS or a virtual machine costs nothing — so the phase is built with the machine in hand, which is how every phase in this project has been built. macOS needs hardware that does not exist here, and writing it blind to verify later on a rented machine is the shape F11 spent a day proving does not work. Linux is also the cheaper place to meet the first platform that is not Windows: F11 measured `CK_ULONG` at 4 bytes on Windows and 8 on Linux, and the first encounter with a second platform will surface every wrong assumption about struct layout — better on a machine that can be rebuilt a hundred times for free.
 
 **F3 is the hardest and riskiest phase and deliberately precedes all UI work.** If `/ByteRange` is wrong, everything built on top of it is wasted. F2's soft token exists so that F3 through F6 can be developed without a card.
 

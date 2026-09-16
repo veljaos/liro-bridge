@@ -40,8 +40,8 @@ type SecretStore interface {
 var ErrSecretNotFound = errors.New("platform: no such secret")
 
 // ErrSecretStoreUnsupported is returned by NewSecretStore on a platform
-// with no implementation yet. macOS (Keychain) is phase 12 and Linux
-// (Secret Service) is phase 13; SPEC §6.4 already names the mechanism
+// with no implementation yet. Linux (Secret Service) is phase 12 and
+// macOS (Keychain) is phase 13; SPEC §6.4 already names the mechanism
 // for each. Returning an error rather than silently falling back to an
 // unencrypted file is deliberate — a device secret sitting in plain
 // JSON on disk is exactly what §6.4 exists to prevent, and a fallback

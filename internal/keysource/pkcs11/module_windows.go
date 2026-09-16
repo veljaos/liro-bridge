@@ -13,7 +13,7 @@ import (
 // Windows-first:
 //
 //   - CK_ULONG is 4 bytes. Windows is LLP64, and the Windows PKCS#11 headers
-//     type CK_ULONG as unsigned long int. On F13's Linux it will be 8, so
+//     type CK_ULONG as unsigned long int. On F12's Linux it will be 8, so
 //     every offset here is wrong there rather than merely unavailable.
 //   - Structs are packed to one byte (#pragma pack(1) in the Windows header),
 //     so nothing is padded to its natural alignment.

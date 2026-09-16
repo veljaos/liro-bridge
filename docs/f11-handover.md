@@ -46,7 +46,7 @@ thumbprints**, which is what makes §4's deduplication work at all.
 
 ### What the cost actually is, since it is not cgo
 
-- **`CK_ULONG` is 4 bytes** on Windows x64 (LLP64) and will be **8** on F13's
+- **`CK_ULONG` is 4 bytes** on Windows x64 (LLP64) and will be **8** on F12's
   Linux (LP64). This layer carries that difference deliberately rather than
   discovering it. Confirmed indirectly but soundly: `CK_INFO`'s
   `libraryDescription` parses cleanly at offset `34 + 4`; at `34 + 8` it would

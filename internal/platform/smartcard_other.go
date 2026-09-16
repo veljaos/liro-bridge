@@ -4,7 +4,7 @@ package platform
 
 import "context"
 
-// unsupportedSmartCardService is used on macOS and Linux, which arrive in
+// unsupportedSmartCardService is used on Linux and macOS, which arrive in
 // phases 12 and 13 (F1 §2.4). It reports no readers rather than an error,
 // since "no smart card support on this platform yet" is not the same
 // failure as "reader hardware absent".
