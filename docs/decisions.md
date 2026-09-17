@@ -25064,3 +25064,133 @@ an empty one silently means "here".
   too: the second and fifth clauses — what a person actually types, and the
   static D-Bus measurement that makes "only what needs it gets it" enforceable
   rather than aspirational — are both the owner's additions.
+
+---
+
+## D-288 — Nothing in the consent design rests on the window being in front: the code never did, only SPEC §6.5's sentence does; Wayland removes an illusion rather than introducing a limitation
+
+**Date:** 2026-09-17
+**Phase:** F12 §4 — the audit, done before a VM exists
+
+**Recorded as a result rather than as an absence**, on the owner's
+instruction and for his reason: three sessions from now somebody will ask this
+question again, and *"nothing reads foreground state, measured, and here is what
+actually gates a signature"* is an answer that stops it being re-derived. An
+audit that finds nothing leaves no trace in the tree unless it is written down,
+which makes it the easiest kind of work to pay for twice.
+
+**The question.** F12 §4's last bullet: *"Nothing in the security argument may
+depend on the window being in front. If any part of the consent design rests on
+that today, find it and say so."* It was done early and deliberately, because it
+is the one item that could have invalidated §4's whole plan before a machine
+exists to plan against.
+
+**The answer is no, with one exception that is a sentence in the specification
+rather than anything in the code.**
+
+### What was looked for, and what is there
+
+- **No production code reads foreground state at all.** `GetForegroundWindow`
+  appears in exactly one file in the tree — `scripts/p11probe`, a developer tool
+  that observes and decides nothing ([[D-269]]). There is no `WM_ACTIVATE` or
+  `WM_KILLFOCUS` handler anywhere in the project, nothing cancels or re-decides
+  a consent on focus loss, and nothing treats focus as evidence that a person is
+  present.
+
+- **What gates a signature is three properties, and z-order is not one of
+  them.** The window is the agent's own and a caller supplies data, never markup
+  (SPEC §6.5, [[D-192]]); Approve is disabled until a certificate has been
+  chosen and pressing it without one sends nothing at all
+  (`consent.js`, [[D-085]]); and Cancel holds initial focus, never Approve
+  ([[D-085]], [[D-148]]). A window that opens behind something else still has
+  all three.
+
+- **The failure mode of not being seen is safe.** `ConsentTimeout` is reached
+  only through `m.remote` — it exists on the protocol path and nowhere else
+  ([[D-193]], [[D-194]]) — and expiry sets `errs.CodeConsentTimeout` and signs
+  nothing. A local batch has no consent timeout at all; a window that opens
+  behind waits. Neither path can produce a signature nobody approved.
+
+- **`AlwaysOnTop` is presentation, and the code says so in its own words.**
+  `ui.Options.AlwaysOnTop`'s doc comment: *"a consent request the user does not
+  see is a consent request that times out"* — an availability argument, not a
+  security one. It is set where it should be:
+  `AlwaysOnTop: first == stepCertificate`, so topmost when the flow opens *at*
+  the approval because the request was not the person's own, and not topmost for
+  a window they opened themselves ([[D-231]]'s distinction). **Nothing
+  downstream branches on whether raising it succeeded.**
+
+### The one exception, which is text
+
+`docs/SPEC.md` §6.5's third consequence:
+
+> The consent window must be brought to the foreground and must not be
+> suppressible by the caller.
+
+Two properties in one sentence. The second is untouched by Wayland and is the
+half doing security work. The first cannot be honoured there — and
+`mainwindow_windows.go` cites this sentence as its authority in as many words:
+*"SPEC §6.5 requires that window to come to the front and stay there."* So the
+requirement is real in the text and is unsatisfiable on the platform this phase
+targets.
+
+**The owner will amend it, and deliberately not yet.** The draft is to be
+written against what §4 actually builds rather than in advance, which is his
+ruling and the right one: an amendment drafted before the mechanism exists would
+be describing something nobody has measured. It is raised when §4 starts. It is
+separable from everything else in §6.5 and from §6.5.1 entirely.
+
+### The reframing, which is the finding
+
+F12 §4 reads as though Wayland introduces this condition. **It does not. It
+removes an illusion.**
+
+This project has already measured the same state on Windows. [[D-256]]
+reproduced it by accident — a window of the agent's, every drop target
+registered, `WindowFromPoint` at its own centre returning
+`MozillaWindowClass`, and a drop there would have gone to Firefox and produced
+exactly the log the owner had: a flawless registration and silence.
+[[D-258]] shipped a watcher on a one-second timer precisely because that state
+is invisible from inside the process and an answer that lives only in a probe
+somebody has to remember to run will be missed. [[D-260]] then recorded that
+watcher firing **unprompted, six times in one session, on three different
+programs, in two different homes**, only one of which was arranged.
+
+So Windows guarantees "in front" *usually*, which is the worst kind of
+guarantee: strong enough that code comes to rest on it, weak enough that it
+fails with no error. Wayland's refusal is the same condition made honest and
+permanent.
+
+**The good news this audit produces is therefore narrow and real: the code
+never rested on it. Only the specification sentence does.** §4's work is not
+coping with a new limitation; it is stopping a Windows accident from being
+treated as a guarantee — and the only place that treatment survives is one line
+of SPEC.
+
+### Carried into §5 rather than answered here
+
+`internal/ui/pindialog_windows.go` calls `SetForegroundWindow` on the PIN
+dialog. That will not work on Wayland either, and the PIN dialog is the window
+[[D-277]] made native precisely so the PIN never enters a page's memory. It is
+the same root cause as this entry's and it is §5's question rather than §4's;
+it is written here so that it is met once rather than twice.
+
+**Rejected.**
+
+- **Reporting the audit only in conversation, as an absence.** The owner's
+  instruction and his reason, above. An audit that found nothing is a result,
+  and it is the kind of result that gets paid for twice.
+- **Drafting the §6.5 amendment now.** Above: the owner's ruling. An amendment
+  written before the mechanism exists describes something nobody has measured,
+  which is the failure [[D-287]] had just avoided by measuring purego rather
+  than reasoning about it.
+- **Removing `AlwaysOnTop` from the certificate step because it is "only
+  presentation".** It is presentation that works on Windows, which is the
+  platform it is set for, and a consent request a person does not see is a
+  request that times out. What this entry establishes is that nothing *rests*
+  on it, not that it is useless.
+- **Treating the absence of a `GetForegroundWindow` call as sufficient on its
+  own.** It is one grep. The three gating properties, the timeout's scope and
+  its failure mode were each read out of the code separately, because "nobody
+  calls the obvious API" is exactly the shape of evidence [[D-247]] records
+  being wrong about — a thing can be depended on without being called.
