@@ -25382,3 +25382,136 @@ and it is better made than discovered.
   ruling: it forbids the thing twice and enforces it zero times.
 - **Building §2's PIN transport before this was settled.** It would have been
   built twice, and the second build would have been the one that mattered.
+
+---
+
+## D-290 — The worker's guards are written before the code they constrain, and its contract is read off the dependency closure rather than the import block; the control I wrote for it held only under a build tag, which is a control about the wrong program
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — the first commit
+
+**Decision.** `internal/keysource/pkcs11/worker` exists as a doc comment and
+two guards and nothing else. That ordering is [[D-269]]'s and so is its reason:
+a test written after a backend is a test written around whatever that backend
+already does, so the guard goes first and the backend is built to satisfy it.
+
+Three choices in it are worth recording rather than rediscovering.
+
+### 1. The contract is read off the dependency closure, not the import block
+
+F12 §2 asks for the same scrutiny [[D-222]] and [[D-228]] applied to keeping
+hidden modes out of a release binary, and notes that this one is different
+because it is *reachable* by design. So the three properties it names — it signs
+nothing, it holds no consent, it cannot be driven into signing by anything but
+the parent that spawned it — are each written as something checkable rather
+than as a sentence in a doc comment.
+
+`contract_test.go` reads the package's whole dependency closure. An import two
+packages away is the same reachability as an import here, which is the
+distinction `scripts/checkdeps` was built around and states in its own comment:
+*"which is what makes checkPackage catch indirect violations, not only direct
+ones."* A rule over an import block would be satisfied by one package of
+indirection.
+
+**It is not a `checkdeps` rule**, for [[D-275]]'s reason: `scripts/checkdeps`
+holds SPEC §4.2's rules, which are permanent architecture, and this one is a
+property of one package that is read by whoever edits that package. SPEC §4.2
+rule 2 already forbids everything under `internal/keysource` importing
+`internal/pades`; this restates it where it is read and adds the rest.
+
+### 2. An allow-list, not a deny-list
+
+[[D-259]] settled the shape for a different rule and the reasoning carries
+unchanged: *"a rule that enumerates what is forbidden is a rule that is one
+unknown scheme from being wrong. The rule here enumerates what is allowed,
+which is one thing and is known."*
+
+A deny-list naming `internal/pades`, `internal/signing` and `internal/consent`
+would be correct today and silent about `internal/audit`, or about whatever
+exists in a year. Three packages are allowed —
+`internal/keysource/pkcs11` (the binding it exists to call), `internal/keysource`
+(the vocabulary it answers in), and `internal/errs` (SPEC §7's error
+vocabulary, a dependency-free leaf by [[D-024]]'s own reasoning) — and adding a
+fourth is a decision to record rather than a line to add.
+
+### 3. The control held only under a build tag, which is the finding
+
+**Both guards caught bugs in themselves on their first run**, which is what
+their second halves are for ([[D-031]]'s two-directional discipline). One was
+trivial: `go list -deps` includes the package it was asked about, and the
+closure check counted the worker as one of its own dependencies.
+
+The other is not trivial and is the reason this entry exists.
+`TestTheContractRuleWouldActuallyFire` asks the allow-list the same question
+about a package that certainly reaches `internal/pades`, so that an allow-list
+which has never refused anything is known to be capable of refusing. I picked
+`internal/cli`. **Measured, it does not reach `internal/pades` at all:**
+
+```
+internal/cli, no tag:      0
+internal/cli, softtoken:   1
+cmd/liro-bridge, no tag:   1
+```
+
+[[D-222]] put the only path in `internal/cli` that touches the PDF engine
+behind the `softtoken` tag, and [[D-228]] did the same for `sign-digest`. So
+the control passed under `-tags softtoken` and failed under the build everyone
+ships.
+
+**A control that holds under `-tags softtoken` and not under the release build
+is a control about the wrong program.** It is not merely wrong; it is wrong in
+the direction that is hardest to notice, because the tagged build is the one CI
+runs a second suite under ([[D-088]]) and the one a developer reaches for when
+something needs a soft token. A check can be green in the configuration you
+test in and absent from the configuration you ship.
+
+This is one turn of the screw past [[D-285]]'s own finding, made one package
+over and one day earlier: there, a test compared the rendered tile against the
+same constant that did the filling, so it *could not* fail. Here the control
+could fail — only not in any build that reaches a person. **The first kind
+occupies the place a real check would go; the second occupies it and leaves a
+green tick in the one place nobody is looking.**
+
+The control is `cmd/liro-bridge` now, which is the right one on its merits
+rather than merely an available one: the agent is exactly what this rule exists
+to keep out of the worker's closure, so an allow-list that would not refuse the
+agent would not refuse anything.
+
+**The general form, because this project has now met it three times**
+([[D-161]]'s wrong fixture, [[D-285]]'s impossible assertion, and this): a
+check is only as good as the configuration it runs in, and *which build a
+control is valid under* is part of the control, not a detail of how it is
+invoked. Where a check's subject is the shipped artefact, the control has to
+be valid for the shipped artefact.
+
+### The fifth walker, recorded and not acted on
+
+`pin_test.go` is SPEC §6.5.1's amended clause 2 as a property of this package's
+syntax tree, from its first commit as that clause now requires
+([[D-289]]). It is **the fifth copy of this walker in the tree** —
+`internal/keysource/windowscng`, `internal/keysource/softtoken`,
+`internal/signing` and `internal/keysource/pkcs11` carry the other four.
+
+[[D-270]] unified the *matcher* into `internal/pinname` and recorded that a
+project-wide check was "the better end state for whoever is next given the room
+for it". It is more clearly overdue at five than at four, and the natural home
+is now `internal/pinname` rather than a new script: the matcher already lives
+there and [[D-270]] already measured that package absent from the release
+binary. Converging five packages' tests is its own change and this commit's job
+was that the guard exists before the code does.
+
+**Rejected.**
+
+- **Waiting until there is code to guard.** [[D-269]]'s ordering, and the whole
+  reason it was given: a guard added afterwards is one the code was written
+  around.
+- **A deny-list.** [[D-259]], above.
+- **Putting the rule in `scripts/checkdeps`.** [[D-275]]'s distinction: that
+  file holds SPEC §4.2's permanent architecture, and it is read by nobody
+  editing this package.
+- **Keeping `internal/cli` as the control and passing `-tags softtoken` to the
+  check so that it holds.** It would have gone green and it is the exact
+  inversion of the finding: making the control valid by running it in the
+  configuration that is not shipped.
+- **Reporting the control bug as "the control was wrong".** True and useless.
+  What makes it worth an entry is *which way* it was wrong.
