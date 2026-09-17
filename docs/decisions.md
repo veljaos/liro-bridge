@@ -26619,3 +26619,105 @@ it is not this one.
 - **A respawn backoff sized from the measured reap time.** The owner's
   instruction, and right: the number is honest as a measurement and would be a
   magic constant as a parameter.
+
+## D-298 — Two of four modules never read the CK_C_INITIALIZE_ARGS at all: the layout is confirmed by two vendors, and the worker's thread safety does not rest on OS locking
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — `C_Initialize` with `CKF_OS_LOCKING_OK`
+
+### The measurement that was nearly reported wrong
+
+F12 §2 asks for `C_Initialize` with `CKF_OS_LOCKING_OK`. Passed to all four real
+modules on this machine, every one answered `CKR_OK`, and that was about to be
+written up as four acceptances.
+
+**It could not have failed.** A module that ignores the arguments structure
+entirely returns `CKR_OK` too, and four repetitions of a check that cannot fail
+are still a check that cannot fail — [[D-296]]'s first question, sixth instance
+this week.
+
+PKCS#11 v2.40 §5.4 supplies the control, because it fixes an answer in advance:
+a non-NULL `pReserved` **must** be refused with `CKR_ARGUMENTS_BAD`. A module
+that refuses it has read a field at offset 36 of the structure this code built.
+
+| module | `pReserved != NULL` | reads the structure | what its `CKR_OK` is worth |
+| --- | --- | --- | --- |
+| NetSeT TrustEdgeID 1.1.3.3 | `CKR_ARGUMENTS_BAD` | **yes** | a real acceptance of OS locking |
+| NetSeT MUP RS\Celik 1.1.0.0 | `CKR_ARGUMENTS_BAD` | **yes** | a real acceptance |
+| A.E.T. SafeSign 3.9.24.1 | `CKR_OK` | **no** | nothing |
+| Nexus Personal 5.17 | `CKR_OK` | **no** | nothing |
+
+### What this means for the worker: `LockOSThread` is the braces, not the belt
+
+**Module-side locking is not load-bearing anywhere in this design, and a future
+reader must not be able to conclude otherwise.**
+
+Half the modules on this machine never read the flag. Whatever they do about
+threads, they did not agree to anything by returning `CKR_OK`, and there is no
+way from outside to find out what they will do. So the worker's thread safety
+comes from one place and one place only:
+
+> **One goroutine, pinned with `runtime.LockOSThread`, makes every PKCS#11 call.
+> Everything else reaches it through a channel** (F12 §2).
+
+That holds whether or not a module locks anything, because there is never a
+second thread for it to lock against. `CKF_OS_LOCKING_OK` is still passed —
+F12 §2 asks for it, and for the two modules that read it, it is the right thing
+to say — but it is belt over braces that are already fastened. **If the
+`LockOSThread` discipline is ever relaxed on the grounds that the modules
+handle locking, this entry is the reason that is wrong: two of the four cannot
+be shown to have read the request.**
+
+### The layout is confirmed, by two vendors, and that is what makes it confirmation
+
+`CK_C_INITIALIZE_ARGS` is laid out here as 44 bytes — four `CK_VOID_PTR` mutex
+callbacks at +0, +8, +16, +24, `CK_FLAGS` at +32, `CK_VOID_PTR pReserved` at
++36 — packed to one byte, with `CK_ULONG` at 4.
+
+**That was derived, not read.** There is no PKCS#11 header on this machine
+([[D-287]] recorded the same gap for the Linux packing branch), so the offsets
+come from the two facts the rest of `module_windows.go` rests on rather than
+from a declaration. `marshalTemplate`'s comment is the standing warning about
+exactly this: *"Three wrong layouts return CKR_OK with a zero length, which is a
+silent wrong answer rather than a failure; and Nexus's personal64.dll does not
+return at all when handed a template of the wrong shape."*
+
+What turns arithmetic into confirmation is that **two independently written
+modules — NetSeT TrustEdgeID 1.1.3.3 and NetSeT MUP RS\Celik 1.1.0.0, builds
+five years apart — both refused a value placed at offset 36 of a buffer this
+code built**, in the manner the specification requires. They read the field
+where it was put. Neither SafeSign nor Nexus contributes anything to that,
+either way: they did not look.
+
+So: **confirmed by two of four, and the entry says two rather than four on
+purpose.** Somebody re-running this and seeing four `CKR_OK`s should not
+conclude the layout has four witnesses.
+
+### The test reports the vendor difference; it does not fail on it
+
+The first version failed SafeSign and Nexus, and that was wrong. **A module
+ignoring `pReserved` is a fact about that vendor, not a defect in this code** —
+the same reasoning that makes `TestTheRealModuleKills...` report a crash rate
+rather than assert one ([[D-294]]), and that makes `Enumerate` skip a slot
+answering `CKR_TOKEN_NOT_RECOGNIZED` instead of failing (F11 §4).
+
+What the test does instead is downgrade what those modules' `CKR_OK` is allowed
+to mean, in the log, in the same line as the result. **This is recorded so that
+nobody later "fixes" the test back into failing them**, which would make a green
+run depend on which middleware a developer happens to have installed.
+
+**Rejected.**
+
+- **Reporting four acceptances.** It is what four `CKR_OK`s look like and it is
+  false for two of them.
+- **Failing the modules that ignore `pReserved`.** See above; it is a vendor
+  fact, and a test that fails on it fails on somebody's installed middleware.
+- **Dropping `CKF_OS_LOCKING_OK` because half the modules ignore it.** F12 §2
+  asks for it, two modules honour it, and it costs nothing. What is dropped is
+  any *reliance* on it.
+- **Relying on module-side locking and dropping `LockOSThread`.** The whole
+  point of the table above: for two of four there is no evidence the request was
+  even read.
+- **Testing the layout by arithmetic alone.** It is how the layout was derived;
+  it cannot also be how it is checked. [[D-296]]: a check written in the same
+  breath as the thing it checks tends to agree with it.

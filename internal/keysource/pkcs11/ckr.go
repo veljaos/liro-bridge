@@ -18,13 +18,18 @@ import (
 type ckr uint32
 
 const (
-	ckrOK                          ckr = 0x0000
-	ckrCancel                      ckr = 0x0001
-	ckrHostMemory                  ckr = 0x0002
-	ckrSlotIDInvalid               ckr = 0x0003
-	ckrGeneralError                ckr = 0x0005
-	ckrFunctionFailed              ckr = 0x0006
-	ckrArgumentsBad                ckr = 0x0007
+	ckrOK             ckr = 0x0000
+	ckrCancel         ckr = 0x0001
+	ckrHostMemory     ckr = 0x0002
+	ckrSlotIDInvalid  ckr = 0x0003
+	ckrGeneralError   ckr = 0x0005
+	ckrFunctionFailed ckr = 0x0006
+	ckrArgumentsBad   ckr = 0x0007
+	// CKR_CANT_LOCK is the module saying it cannot use the locking the caller
+	// asked for in C_Initialize. It is an answer, not a fault: PKCS#11 v2.40
+	// §5.4 has the application decide what to do, and a caller that makes every
+	// call from one OS thread can simply go single-threaded instead.
+	ckrCantLock                    ckr = 0x000A
 	ckrAttributeReadOnly           ckr = 0x0010
 	ckrAttributeSensitive          ckr = 0x0011
 	ckrAttributeTypeInvalid        ckr = 0x0012
@@ -81,6 +86,7 @@ var ckrNames = map[ckr]string{
 	ckrGeneralError:                "CKR_GENERAL_ERROR",
 	ckrFunctionFailed:              "CKR_FUNCTION_FAILED",
 	ckrArgumentsBad:                "CKR_ARGUMENTS_BAD",
+	ckrCantLock:                    "CKR_CANT_LOCK",
 	ckrAttributeReadOnly:           "CKR_ATTRIBUTE_READ_ONLY",
 	ckrAttributeSensitive:          "CKR_ATTRIBUTE_SENSITIVE",
 	ckrAttributeTypeInvalid:        "CKR_ATTRIBUTE_TYPE_INVALID",

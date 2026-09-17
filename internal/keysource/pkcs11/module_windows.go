@@ -33,6 +33,27 @@ const (
 	ckTokenInfoSize = 160 // CK_TOKEN_INFO
 
 	ckFunctionListBase = 2 // past the CK_VERSION
+
+	// CK_C_INITIALIZE_ARGS, packed to one byte like everything else in this
+	// header: four CK_VOID_PTR mutex callbacks at +0, +8, +16, +24, then
+	// CK_FLAGS (a CK_ULONG, so 4 bytes) at +32, then CK_VOID_PTR pReserved at
+	// +36. Forty-four bytes, and every field after the first unaligned.
+	//
+	// This layout is derived from the same two facts the rest of this file is
+	// built on rather than read out of a header, because there is no PKCS#11
+	// header on this machine. That is exactly the situation marshalTemplate
+	// warns about — a wrong shape can return CKR_OK and do nothing, and one
+	// real module answers a wrong shape by taking the process down. So it is
+	// confirmed behaviourally against every module on this machine before it
+	// is relied on; see TestWhichModulesAcceptOSLocking.
+	ckInitializeArgsSize     = 44
+	ckInitializeArgsFlags    = 32
+	ckInitializeArgsReserved = 36
+
+	// CKF_OS_LOCKING_OK: the application will be using threads, and the module
+	// may use the operating system's own locking primitives. F12 §2 asks for
+	// it. A module that cannot answers CKR_CANT_LOCK, which is an answer.
+	ckfOSLockingOK = 0x0002
 )
 
 // Index into CK_FUNCTION_LIST, counting the function pointers only. PKCS#11
@@ -211,7 +232,24 @@ func (t tokenInfo) LoginRequired() bool { return t.Flags&ckfLoginRequired != 0 }
 // calling application naming a DLL for the agent to load is arbitrary code
 // execution wearing a configuration field (F11 §3). Nothing in this package
 // takes a path from the protocol, and nothing above it may pass one through.
-func openModule(path string) (*module, error) {
+// openModule loads a module and initialises it without OS locking, which is
+// what every caller in this package wants: each of them makes its calls from
+// one goroutine and finishes before the next begins.
+//
+// The worker is the exception — it holds C_Initialize open across many requests
+// and F12 §2 requires CKF_OS_LOCKING_OK there — so it uses openModuleLocking.
+func openModule(path string) (*module, error) { return openModuleWith(path, false, 0) }
+
+// openModuleLocking is openModule with CKF_OS_LOCKING_OK. See initialize.
+func openModuleLocking(path string) (*module, error) { return openModuleWith(path, true, 0) }
+
+// openModuleProbingLayout is the negative control for the CK_C_INITIALIZE_ARGS
+// layout and exists for no other reason. See TestWhichModulesAcceptOSLocking.
+func openModuleProbingLayout(path string, reserved uint64) (*module, error) {
+	return openModuleWith(path, true, reserved)
+}
+
+func openModuleWith(path string, osLocking bool, reserved uint64) (*module, error) {
 	if path == "" {
 		return nil, fmt.Errorf("pkcs11: no module path")
 	}
@@ -244,12 +282,50 @@ func openModule(path string) (*module, error) {
 	// C_GetFunctionList is the only function callable before C_Initialize;
 	// measured, TrustEdgeID answers C_GetInfo with CKR_CRYPTOKI_NOT_INITIALIZED
 	// before it, which is the module being right.
-	if rv := ckr(m.call(iInitialize, 0)); rv != ckrOK {
+	if rv := m.initialize(osLocking, reserved); rv != ckrOK {
 		m.pinner.Unpin()
 		_ = syscall.FreeLibrary(handle)
 		return nil, &ckrError{"C_Initialize", rv}
 	}
 	return m, nil
+}
+
+// initialize calls C_Initialize, optionally asking for OS locking.
+//
+// With osLocking false it passes NULL, which is what this package did from F11
+// until F12 and what a single-threaded caller is entitled to do.
+//
+// With it true it passes a CK_C_INITIALIZE_ARGS whose only non-zero field is
+// CKF_OS_LOCKING_OK: no mutex callbacks, no pReserved. PKCS#11 v2.40 §5.4 makes
+// that the way to say "I may use threads; use your own locking", and a module
+// that cannot comply answers CKR_CANT_LOCK rather than failing.
+//
+// The buffer is pinned for the duration of the call and not after. D-101: what
+// crosses into foreign code is pinned with runtime.Pinner, never held alive by
+// KeepAlive, because the module may read it at any point during the call.
+//
+// # reserved is how the layout is tested rather than trusted
+//
+// reserved is written to CK_C_INITIALIZE_ARGS.pReserved and is zero everywhere
+// except in one test. PKCS#11 v2.40 §5.4 requires a module to answer a non-NULL
+// pReserved with CKR_ARGUMENTS_BAD, which is the only safe way to ask a module
+// "are you reading this structure at the offsets I think you are?" — a module
+// that ignored the args entirely would answer CKR_OK to everything, and four
+// CKR_OKs would then confirm nothing. See TestWhichModulesAcceptOSLocking.
+func (m *module) initialize(osLocking bool, reserved uint64) ckr {
+	if !osLocking {
+		return ckr(m.call(iInitialize, 0))
+	}
+
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+
+	args := make([]byte, ckInitializeArgsSize)
+	pinner.Pin(&args[0])
+	putU32(args[ckInitializeArgsFlags:], ckfOSLockingOK)
+	putU64(args[ckInitializeArgsReserved:], reserved)
+
+	return ckr(m.call(iInitialize, uintptr(unsafe.Pointer(&args[0]))))
 }
 
 // close finalises the module and unloads it.
