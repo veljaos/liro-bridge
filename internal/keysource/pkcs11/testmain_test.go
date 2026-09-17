@@ -37,6 +37,11 @@ func TestMain(m *testing.M) {
 	// Before testing.M parses anything: these arguments are not test flags and
 	// the flag package would reject them. Mirrors run() in cmd/liro-bridge.
 	if len(os.Args) > 2 && os.Args[1] == ProbeSubcommand {
+		// A child asked to die does so here rather than inside RunProbe, so
+		// that nothing which can end this process on request exists outside a
+		// test binary. crashIfAskedForTest returns only when the path is not a
+		// sentinel, which is every real probe. See crash_windows_test.go.
+		crashIfAskedForTest(os.Args[2])
 		os.Exit(RunProbe(os.Args[2:], os.Stdout))
 	}
 	os.Exit(m.Run())

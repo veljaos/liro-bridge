@@ -26100,6 +26100,66 @@ saying why that is not a number. **The absence of a default is the entire
 remedy.** It is the same shape as [[D-293]]'s marker: the guard is the thing
 that cannot be forgotten, not the note explaining what to remember.
 
+### 2000 consecutive probes with the card in, and none of them crashed
+
+The owner ran four batches of 500, back to back, same card, same module, same
+session:
+
+| batch | elapsed | per probe | answered | killed the child | timed out | other |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 38.102s | 76ms | 500 | 0 | 0 | 0 |
+| 2 | 37.989s | 76ms | 500 | 0 | 0 | 0 |
+| 3 | 38.064s | 76ms | 500 | 0 | 0 | 0 |
+| 4 | 38.014s | 76ms | 500 | 0 | 0 | 0 |
+
+**76ms with the card in against 28–33ms with an empty reader**, so a card
+roughly doubles the cost of `C_Initialize` — and the timing is stable to within
+0.3% across the four, which is worth as much as the zero: a machine that was
+behaving erratically would not produce that.
+
+**This is recorded as a finding, not as a failure to reproduce.** [[D-272]]'s
+rate — four in roughly 450 — would have predicted about twenty crashes in 2000.
+None appeared.
+
+### What that does and does not mean
+
+It does **not** unmeasure [[D-272]]. Four crashes happened on this machine, two
+of them observed by the owner independently, with two distinct terminations and
+a register dump tying the signatures together. They are recorded and they stand.
+A fifth declining to appear on demand is not evidence against the first four.
+
+What is now true is that one of three things is the case, and this entry picks
+none of them:
+
+1. **The rate is far lower than D-272's sample suggested.** Four in 450 is a
+   small sample of a clustered event, and the confidence interval on it was
+   never narrow.
+2. **Something on this machine has changed since 2026-09-15** — a middleware
+   update, a smart card service restart, a different card, the reader's own
+   state — such that the module no longer does it, or does it far less.
+3. **The probe path exercises something different from the path that died.**
+   D-272's instrument did `LoadLibrary`, `C_GetFunctionList`, `C_Initialize`,
+   `C_GetInfo`, `C_Finalize`, `FreeLibrary` in a process built for that; this
+   one does the equivalent through `openModule` in a freshly spawned child. They
+   are meant to be the same sequence and have not been proven to be.
+
+Distinguishing them would cost more than it is worth right now, and guessing
+between them would be worse than saying so.
+
+### What it means for the exit item
+
+F12 §2 says *demonstrated with the module that does it*, and a demonstration
+that will not happen on demand cannot be scheduled into a phase. **The item stays
+open.** The evidence that the crash is real is [[D-272]] and [[D-275]]'s own
+record, which is where it belongs; it does not need re-earning here, and it
+cannot be re-earned by a run that produces nothing.
+
+[[D-296]] closes the half that can be closed — the parent's handling of a real
+death, measured against a child that dies on purpose, which the owner ruled is
+not what [[D-094]] forbids. What remains open is the module's half, and it will
+close the day one of these probes comes back non-zero on its own.
+
+
 **Rejected.**
 
 - **Reporting 300 clean probes as the demonstration.** It is the most
@@ -26196,6 +26256,26 @@ developer's belief about what a command covered, and the correction to that is
 the three lines above, in the entry, where the next person checking before a
 push will look.
 
+### It is the same family as the other three, and it is the sharper case
+
+[[D-285]]'s note, [[D-290]]'s `-tags softtoken` control and [[D-291]]'s
+compile-time canary were all **checks whose input and whose expectation came
+from the same place**. This one is a check whose **two halves** came from the
+same place, which is a different and more deceiving shape:
+
+> A measurement that agrees with itself is not a corroboration.
+
+The first three could be caught by asking "could this check have failed?".
+This one passes that question — either arm could have failed, and on a Linux
+machine the first arm would have caught it. What it fails is a different
+question, and the one to ask of any pair: **"are these two arms actually two?"**
+
+It is also the only one of the four where the redundant arm was added *for
+safety*. Running the lint a second time with `GOOS` set felt like more coverage
+and was none, because the default was already that value. Belt and braces made
+of the same belt.
+
+
 **Rejected.**
 
 - **`//nolint:staticcheck` on the comparison.** Forbidden by the phase rules,
@@ -26211,3 +26291,145 @@ push will look.
   exactly what runs locally. Reaching for the version would have been the
   comfortable explanation and it was available: "clean locally, red on CI" reads
   like drift. It was measured before it was believed.
+
+## D-296 — A child asked to die is a real death, and the defect it was built to find is not there: 406ms, no WerFault, and one of D-272's two terminations is out of reach
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — the owner's D-094 ruling, and what it bought
+
+**This demonstrates the parent's handling of a dead child. It does not
+demonstrate the module's behaviour and it does not close F12 §2's exit item.**
+That sentence is first because it is the one a later reader needs; [[D-294]]
+records why the item stays open, and a synthetic child closes the half this
+program controls, which is worth having and is not the same thing.
+
+### The ruling, and the line it drew
+
+[[D-094]] forbids manufacturing the human input a test is supposed to be
+evidence about. The owner ruled this is not that:
+
+> The property under test is the parent's handling of a dead child. The input
+> is the child dying. A child that dies on purpose is a real death: the parent
+> reads an exit code from the operating system, not a value anybody handed it,
+> and nothing in the parent's path knows or cares why the child stopped.
+>
+> What would cross the line is simulating the parent's side — writing the exit
+> code into the parent rather than letting it read one from a process that
+> really ended.
+
+Nothing here does that. `probeOutOfProcess` is unmodified; it spawns, waits, and
+reads a status from a process that genuinely ended. The dispatch that kills the
+child lives in `TestMain`, not in `RunProbe`, so nothing capable of ending this
+process on request exists outside a test binary — the same property [[D-222]]
+and [[D-228]] established for the no-consent signing paths, by a stronger
+mechanism than theirs, since a build tag can be passed and a `_test.go` file
+cannot be linked into a release binary at all.
+
+### The prediction that was wrong, and it was wrong the useful way
+
+| | predicted | measured |
+| --- | --- | --- |
+| exit status of a fail-fasting child | `0xC0000602`, whatever the record says | **`0xC0000417`** |
+| the parent's error | `errWorkerDied` | `errWorkerDied` |
+| time to reap | 200ms–2s | **406ms**, against a 10s `ProbeTimeout` |
+| `0xE06D7363` reachable from Go | no | no |
+
+`RaiseFailFastException` propagates the `ExceptionCode` in the `EXCEPTION_RECORD`
+as the process exit status. The expectation was that the kernel would report
+`STATUS_FAIL_FAST_EXCEPTION` and flatten the distinction. It does not, so the
+parent sees **bit-for-bit the code [[D-272]] read off the real module**, which
+makes the instrument a closer match than it was designed to be.
+
+### The defect it was built to find is not there
+
+The reason for building it was a specific risk: `WerFault` launches on a
+fail-fast — measured in this project while establishing that error reporting
+cannot be disabled ([[D-292]]) — and this machine has `LocalDumps` in effect with
+a directory already at its default capacity of ten. If the reporter held the
+dying child open past `ProbeTimeout`, a crash would arrive as `errWorkerSilent`,
+"did not answer in time": the wrong reason for the right outcome, and ten
+seconds per crashing module instead of a tenth of one.
+
+Measured across six runs: **`WerFault` does launch, every time, and it changes
+nothing that matters.** It lives for tens of milliseconds, writes no dump, and
+the child is reaped in **341–376ms** (406ms on the first, slowest run) — between
+a twelfth and a twenty-eighth of `ProbeTimeout`, against an ordinary probe's
+30ms. The crash dump directory was byte-identical before and after all six.
+
+So the risk was real, worth an hour, and **is not present**: a crash arrives as
+`errWorkerDied` carrying its status, not as a ten-second `errWorkerSilent`.
+
+What the extra ~320ms is spent on is not established. It coincides with
+`WerFault`'s lifetime, and attributing it would need the per-process
+error-reporting disable that [[D-292]] recorded as impossible to demonstrate. It
+is reported as a number, not as a cause.
+
+### The first version of this measurement said the opposite, and was wrong
+
+One run, sampling every 100ms, saw `WerFault` zero times, and that was written
+up as *"WerFault never ran"*. The full suite then saw it once, which is what
+prompted looking again: five runs sampling every 25ms saw it in **all five**,
+one to three samples each.
+
+**A sampling instrument cannot report absence**, and the first write-up had it
+reporting exactly that. The zero was a miss between samples of a process that
+lives for a few tens of milliseconds, not evidence that nothing ran. The
+conclusion did not change — no dump, no delay past the bound — but the stated
+reason for it was false, and it was caught by a discrepancy rather than by
+design.
+
+That is the same week's theme in a fifth costume ([[D-285]], [[D-290]],
+[[D-291]], [[D-293]], [[D-295]]): the question to ask of an instrument is not
+only "could this have failed?" but **"could this have seen the thing it is
+reporting the absence of?"**
+
+Before the run, all ten dumps were copied — previously only four were, which
+would have made an eviction unrecoverable. Nothing was evicted; the copies are
+now complete anyway, which is [[D-243]]'s point that a hash proves something
+changed and only a copy can put it back.
+
+### One of D-272's two terminations is out of reach, and that is recorded rather than glossed
+
+[[D-272]] measured NetSeT 1.1.0.0 dying two ways from one call, and its own
+conclusion was that **a remedy sized for the first would not survive the
+second** — a C++ throw travels through the exception dispatcher; a fail-fast
+goes straight past it. So whether both are reproducible matters, and the owner's
+condition was that if only one is, the entry says the other is untested rather
+than letting one stand for both.
+
+Only one is. Raising `0xE06D7363` with `RaiseException` from a Go child does not
+reproduce a C++ throw: the exception meets **Go's own handler first**, the child
+prints a full Go runtime crash dump, and it exits **2**. The parent handles it
+correctly — `errWorkerDied`, 18ms — but what it handled was a Go panic wearing
+the right exception code, not the termination D-272 saw.
+
+Two consequences worth having written down:
+
+- **D-272's C++-throw termination is untested against this parent.** The
+  fail-fast does not stand for it.
+- **In production that termination arrives as `exit 0x2`**, which is
+  indistinguishable from the child panicking for a reason of its own. The
+  behaviour is right either way — both are `errWorkerDied` and both leave the
+  parent standing — but nobody debugging should read `exit 0x2` as evidence
+  about the module.
+
+**Rejected.**
+
+- **Letting the fail-fast stand for both terminations.** D-272's central finding
+  is that they are different paths out of a process, and treating them as
+  interchangeable is the specific error it was written to prevent.
+- **Putting the crash dispatch in `RunProbe` behind a magic path.** It would
+  give a release binary a way to be told to die. The whole subcommand is
+  already the thing D-222 and D-228's scrutiny is aimed at; adding a crash to it
+  would be indefensible for a test's convenience.
+- **Writing the exit status into the parent to test the branch.** The owner
+  ruled it out explicitly, and it is the only version of this that would have
+  proved nothing: the branch under test is the one that reads a status from a
+  real process.
+- **Asserting a reap time.** [[D-201]]: observe the property, do not time the
+  machine. The margin check is against `ProbeTimeout`, which is a bound this
+  program chose, not against a clock.
+- **Skipping the measurement because D-292 already saw WerFault launch.**
+  Seeing a reporter start is not the same as measuring whether it delays a
+  reap, and the conclusion here — that it does not run at all for this
+  termination — contradicts what would have been assumed from D-292 alone.
