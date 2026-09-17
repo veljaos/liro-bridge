@@ -25875,6 +25875,25 @@ not exist yet and whose authors will not have read this. A guard that depends on
 each future test binary remembering something is a note, not a guard — which is
 the same objection [[D-285]] earns below.
 
+
+**And that is not a fact about test binaries. It is the fourth time this
+project has reached the same answer**, which is why the reason belongs here
+rather than the fix:
+
+| | the guard that was rejected | the guard that was taken |
+| --- | --- | --- |
+| [[D-228]] | trusting that no code path asks nobody | reading the shipped binary's symbol table |
+| [[D-229]] | a named mutex, per process and per session | `LockFileEx`/`flock` on a lock file, which no spelling of the path escapes |
+| [[D-270]] | matching the PIN names somebody chose | asking what a declaration *can hold* |
+| [[D-290]] | reading the import block | reading the whole dependency closure |
+| here | a `TestMain` in each package that spawns | the parent refusing, whatever the child is |
+
+Every row is the same move: **put the check where it holds for every case
+rather than where it holds for the case in front of you.** The rejected column
+is not careless in any of them — it is correct for the instance being looked at,
+and that is exactly what makes it attractive. It fails on the instance nobody is
+looking at, which is the only kind that ever gets shipped.
+
 Both were measured, separately, because "the guard holds without the `TestMain`"
 is a claim:
 
@@ -25927,6 +25946,21 @@ compile-time canary, and this). The correction is not to be more careful with
 `grep`; it is that **a check written in the same breath as the thing it checks
 tends to agree with it**, and the habit that catches it is running the check
 against a case that must fail.
+
+
+**The backslash-in-a-heredoc note has now failed four times, and the fourth was
+inside the sentence describing it.** The note is old, it is specific, it names
+the tool and the remedy, and this session read it before starting. It then
+fired on `C:\\Program` inside a *quoted* heredoc — which the note had been read
+as ruling out — and again when the correction to the note was itself written
+through a heredoc, putting two literal carriage returns and one literal newline
+into the prose explaining how backslashes get eaten.
+
+The count is recorded rather than the caution, because the next person to reach
+for a heredoc here should meet a number. A note that has failed four times is
+not a note that needs rewording. No guard is built for it in this phase, by the
+owner's ruling; what is written down is the count, so that whoever does build
+one knows what it has to beat.
 
 **Rejected.**
 
@@ -26021,18 +26055,25 @@ still not be evidence of anything.
 
 F12 §2 asks for *"a module that kills its worker becomes a `Failure`, and the
 agent survives — demonstrated with the module that does it"*. That item stays
-**open**, and it is worth being precise about what could close it, because the
+**open**, and the reason it can stay open through a green run is that the
 property is asymmetric:
+
+> **No number of clean runs demonstrates "when it dies, the parent survives";
+> only a death does.**
+
+That sentence is the whole defence against the next person closing this item
+with a number. Three hundred probes and no crash is a *better-looking* result
+than three crashes survived, and it is not evidence of anything. The green run
+is the failure mode, not the crash.
 
 - **The translation is demonstrated.** `TestAChildThatExitsNonZeroBecomesAFailure`
   takes it deterministically: a child that exits non-zero becomes `errWorkerDied`
   carrying the exit status, and never a panic. It needs no module, because what
   the parent sees of a crash *is* a non-zero exit — it cannot distinguish a
   fail-fast from an access violation from a refusal, and does not need to.
-- **The demonstration needs a death, and a death cannot be scheduled.** No number
-  of clean runs demonstrates "when it dies, the parent survives". Only a death
-  does. So the honest closing condition is not "run N and conclude" but "run it
-  with the card in until one happens, and look at what the parent did".
+- **The demonstration needs a death, and a death cannot be scheduled.** So the
+  honest closing condition is not "run N and conclude" but "run it with the card
+  in until one happens, and look at what the parent did".
 
 The command that would settle it, recorded exactly, in the manner [[D-292]]
 recorded the `DumpType=2` one:
