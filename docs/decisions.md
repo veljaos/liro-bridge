@@ -25194,3 +25194,191 @@ it is written here so that it is met once rather than twice.
   its failure mode were each read out of the code separately, because "nobody
   calls the obvious API" is exactly the shape of evidence [[D-247]] records
   being wrong about — a thing can be depended on without being called.
+
+---
+
+## D-289 — The PIN crosses one pipe to the worker, the dialog stays this program's own, and those are one decision rather than two: SPEC §6.5.1 clause 2 amended, and the worker must disable its own error reporting because the process most likely to be killed is the one holding the PIN
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 and §5 — the owner's ruling, taken before the seam was cut
+
+**This is the fourth amendment to the specification**, and the third time
+§6.5.1 has been touched: created by [[D-269]], amended by [[D-276]], and now
+this. The full clause text was drafted and read before a line of it reached
+`docs/SPEC.md`, which is the order [[D-269]] set and [[D-276]], [[D-278]] and
+[[D-287]] each kept.
+
+**Decision.** §6.5.1's second clause is amended to permit the PIN crossing
+exactly one process boundary — a pipe the agent creates and the worker
+inherits — under enumerated bounds. The PIN screen stays a native window this
+program draws itself. `pinentry` is rejected. **Those are one decision**, and
+writing them as one is the point of this entry.
+
+### Why this arose at all, and why it arose before anything was built
+
+F12 §2 requires the PKCS#11 module to run in a worker process, and [[D-272]]
+established why in terms nothing can argue with: one real module —
+`MUP RS\Celik` 1.1.0.0, the build MUP's own middleware installs — dies inside
+its own `C_Initialize` about once in a hundred calls, in two different ways,
+and **no Go process can survive either**, measured rather than reasoned:
+`recover()` catches neither the C++ exception nor the fail-fast, and a vectored
+handler does not help.
+
+But F12 §2 wants the *whole* module out of process, not only the probe
+[[D-275]] deferred — one OS-locked goroutine owning every call,
+`CKF_OS_LOCKING_OK`, `C_Finalize` only on shutdown. That means `C_Login` runs
+in the worker, and **that breaks the shape [[D-279]] built on purpose**: there
+is deliberately no `login(session, pin []byte)` to write, because the AST guard
+([[D-269]], [[D-270]]) forbids a parameter, field or named result that could
+carry one — so the PIN is a local variable in the one function that obtains it,
+passes it to `C_Login` and wipes it. Move `C_Login` into a child and the
+function that obtains the PIN and the function that calls it are in different
+processes.
+
+Raised rather than built around, per SPEC §0, and raised *before* the seam was
+cut rather than after: deciding §2 on the assumption of a pipe and then finding
+§5 wanted `pinentry` would have meant building the PIN transport twice.
+
+### The three ways out, and the one that is not available
+
+- **The parent collects it and writes it to the worker.** Taken.
+- **The worker collects it.** Nothing crosses a boundary — and the worker then
+  needs a PIN dialog, which on Linux means GTK inside the very process F12 §2
+  exists to keep GTK out of, since a vendor module `dlopen`ed beside GTK and
+  WebKit can collide on OpenSSL and glib symbols. It would also make the answer
+  differ per platform, since the Win32 dialog needs no GTK at all.
+- **Keep `C_Login` in the agent and put only signing in the worker.** **Not
+  available.** `C_Sign` on a token's private key needs a logged-in session and
+  a session belongs to the process that opened it — [[D-271]] recorded exactly
+  this when it put F11's wall where it did: *"`SignDigest` is not beside the
+  login step, it is behind it."*
+
+### Why the pipe, in the owner's own reasoning
+
+**A kernel pipe buffer is not a V8 heap**, and the amendment explains the
+difference rather than asserting it — which is the half that stops this being
+re-argued in a year by somebody who reads only the conclusion.
+
+[[D-277]] refused a WebView2 page for the PIN screen because the PIN would live
+in a DOM node, a script engine's heap and an inter-process message **inside a
+process this program neither owns nor can reach, running its own collector on
+its own schedule**. A pipe between two processes this project wrote is a
+different object: both ends are ours and both are wiped, and the middle is
+freed by the kernel the moment it is read. **That is not zero, and the
+amendment does not pretend it is** — the clause says outright that the kernel
+buffer is not this program's memory, cannot be wiped by it, and has a lifetime
+that is the kernel's rather than ours. What it says is that the reasoning which
+refused the first does not automatically refuse the second.
+
+### Why not pinentry, which was the tidier story
+
+F12 §5 offers it, and it is genuinely attractive: already a separate process,
+so a PIN crossing a boundary is inherent to it rather than something this
+project invents, and it brings its own toolkit so the GTK-in-the-worker problem
+disappears. **§5's own objection is what decides it: a thing an attacker could
+imitate.**
+
+A PIN window that looks native, is not ours, and whose authenticity this
+program cannot vouch for is worse than a pipe this program controls — and
+**§6.5.1 clause 6 exists precisely because a dialog that looks like a system
+dialog has to say who is asking.** We cannot make `pinentry` say that. It would
+also make the answer differ per platform, since Win32 needs no such thing, and
+two routes to one thing is what [[D-108]], [[D-124]] and [[D-138]] each had to
+remove once.
+
+**So §10 needs no edit and did not get one.** It already says the PIN dialog is
+a native window this program draws itself ([[D-277]], [[D-278]]); rejecting
+`pinentry` keeps that true rather than changing it. One decision, one edit, and
+the edit is to clause 2 alone.
+
+### Counting the exceptions in the text, which is the third thing that makes it hold
+
+Nobody counts exceptions unless the document makes them count. The clause now
+does:
+
+1. **The native dialog's own edit control**, whose copy of the PIN is the
+   operating system's memory. [[D-279]] §6 named it rather than glossing it: it
+   cannot be wiped, only overwritten through the control's own interface, and
+   it is — `WM_SETTEXT` to empty before the window is destroyed, rather than
+   relying on destruction to do it.
+2. **The kernel pipe buffer**, this entry.
+3. **A third should be suspected of being a pattern rather than a case** — at
+   which point the clause has stopped describing what the program does, and the
+   honest move is to rewrite it rather than add to it again.
+
+### The bounds, and why they are the whole justification
+
+One write, read immediately and in full, never buffered by this program on
+either side, and **never an environment variable, never a command-line
+argument, never a file, never a socket anything else on the machine can connect
+to.** The reason is attached in the clause rather than left implicit: each of
+those is readable by another process running as the same user by ordinary
+means — [[D-224]] measured exactly that for a command line, which is why TSA
+credentials came off it — and an inherited pipe is not. **That sentence is what
+permits one boundary and refuses every other**, rather than a general
+permission to move a PIN about.
+
+Unchanged and restated because an amendment is where clauses quietly go
+missing: both ends pinned and wiped **through the pinned address** rather than
+through a slice header ([[D-279]]'s own instruction — a loop that was elided
+and a loop that ran look identical through the header); no struct field, no
+closure outliving the call; no retry ever; `ulMinPinLen`/`ulMaxPinLen` read
+from the token and enforced **before the write**, so an invalid length reaches
+neither the pipe nor the card ([[D-268]] cost a PIN attempt establishing that
+nobody else checks); the screen names Liro Bridge; and **the AST guard extends
+to the worker's own package, from its first commit** — [[D-269]]'s ordering,
+for [[D-269]]'s reason: a test written after a backend is a test written around
+whatever that backend already does.
+
+### Clause 3 has a new place to leak, and the remedy is a requirement rather than a second sentence
+
+Found while drafting clause 2 and **not asked for**; the owner's ruling is that
+it belongs in the phase rather than in SPEC, and the reasoning is worth keeping
+because it generalises: **a rule that forbids a thing twice is not safer than
+one that forbids it once and is enforced.**
+
+Clause 3 already says the PIN is *"never logged, never in an error, never in a
+crash dump, never in a report."* What is missing is not a sentence but
+something that makes it true. A worker holding a PIN for the length of one
+`C_Login` is a process that can be killed **by the very thing it exists to
+contain** — [[D-272]] measured a module dying inside its own `C_Initialize`,
+and nothing says a module cannot die inside `C_Login` instead. If Windows Error
+Reporting writes a dump of that worker at that moment, the PIN is in it, and
+clause 3 forbids the outcome while nothing in the program prevents it.
+
+**So: the worker disables error reporting for itself, for its whole life, on
+the grounds that it never has anything worth dumping.** Built in §2 and
+recorded there.
+
+**And a stop condition, which is the owner's and is recorded so it is not
+quietly skipped: if it turns out error reporting cannot be disabled reliably,
+stop and say so rather than shipping the gap.** That would be a real amendment
+and it is better made than discovered.
+
+### What was not established here
+
+- **Whether a module can die inside `C_Login`.** Nothing measured says it can
+  and nothing says it cannot; [[D-272]]'s four observations are all
+  `C_Initialize`. The requirement above does not rest on it happening — it
+  rests on there being no reason to believe it cannot.
+- **What a hung worker does.** [[D-272]] measured death, not hangs. A child
+  that stops answering rather than dying is a case nobody has evidence about,
+  and it is §2's to bound rather than to assume.
+
+**Rejected.**
+
+- **`pinentry`.** Above, on §5's own objection.
+- **The worker drawing its own PIN dialog.** Above: GTK in the process the
+  worker exists to keep GTK out of, and a per-platform answer.
+- **Leaving clause 2 as it stands and calling the pipe covered by "exists only
+  for the duration of `C_Login`".** It would be true in letter and would leave
+  the one piece of memory in the path that this program cannot wipe unnamed,
+  which is the opposite of what [[D-279]] §6 established as this project's
+  habit for exactly this kind of fact.
+- **Saying the exposure is negligible.** It is small and it is not nothing, and
+  a clause that minimises it is a clause somebody widens later on the grounds
+  that it was never much anyway.
+- **Adding a second sentence to clause 3 about crash dumps.** The owner's
+  ruling: it forbids the thing twice and enforces it zero times.
+- **Building §2's PIN transport before this was settled.** It would have been
+  built twice, and the second build would have been the one that mattered.
