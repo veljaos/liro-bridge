@@ -18,6 +18,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
@@ -46,6 +47,25 @@ func main() {
 }
 
 func run(args []string, out io.Writer) int {
+	// The module probe is dispatched before anything else in this function,
+	// and the ordering is the decision rather than a tidiness.
+	//
+	// This branch runs in a child this program spawned, once per candidate
+	// module, and it is the process that may be killed by somebody else's code
+	// (D-272, D-275). So it does the least possible: it does not read the
+	// configuration, does not set up logging, and does not call
+	// clearStaleSigningGuard — which is a registry read on every invocation and
+	// a write on some. A probe that dies inside a vendor DllMain must not have
+	// been halfway through touching this person's machine when it did, and a
+	// child spawned four times per listing must not pay for four of everything.
+	//
+	// It writes exactly one JSON object to out and returns. SPEC §6.5.1's
+	// clause 2 pipe is not involved and must not be: RunProbe takes a path and
+	// reads no standard input at all.
+	if len(args) > 1 && args[0] == pkcs11.ProbeSubcommand {
+		return pkcs11.RunProbe(args[1:], out)
+	}
+
 	cfg, cfgErr := config.Load(platform.DefaultConfigFile())
 
 	logger, closer, err := config.SetupLogging(cfg.LogLevel, platform.DefaultLogDir(), os.Getenv("LIRO_DEBUG") == "1")

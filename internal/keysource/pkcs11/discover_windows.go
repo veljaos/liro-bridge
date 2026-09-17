@@ -1,7 +1,7 @@
 package pkcs11
 
 import (
-	"errors"
+	"context"
 	"os"
 	"path/filepath"
 )
@@ -77,40 +77,44 @@ func knownModulePaths() []Candidate {
 //
 // # Probing is not free and not silent
 //
-// Every candidate is loaded, which runs its DllMain. Measured on this machine:
-// loading Nexus's personal64.dll writes a line of its own to stderr —
+// Every candidate is loaded, which runs its DllMain — in a child, but the cost
+// is still paid. Measured on this machine: loading Nexus's personal64.dll
+// writes a line of its own to stderr —
 //
 //	Personal::config::file::read: Personal config file '...Personal.cfg' does not exist
 //
 // — which is a foreign library talking to a console this program did not open
-// for it. Nothing here can stop that, and a caller probing on a schedule
-// rather than once would be paying for it repeatedly. Probe when a listing is
-// actually wanted.
+// for it. The child inherits this process's standard error so that it lands
+// where every other diagnostic does rather than being swallowed. Nothing here
+// can stop it being written, and a caller probing on a schedule rather than
+// once would be paying for it, and for a process spawn, repeatedly. Probe when
+// a listing is actually wanted.
+//
+// # Every candidate is loaded in a child process, and that is the whole point
+//
+// D-272 measured NetSeT 1.1.0.0 — the build MUP's own middleware installs —
+// dying inside its own C_Initialize about once in a hundred calls, in two
+// different ways, and established by direct measurement that no Go process
+// survives either: recover() catches neither, and a vectored handler does not
+// help. There is no in-process remedy, so the load is not in this process.
+//
+// A child that dies is a Failure with its path attached and the search carries
+// on, which is what F11 §3 asks for and what the crash made impossible while
+// the load was here (D-275).
 func Modules(configured string) ([]Candidate, []Failure) {
 	var ok []Candidate
 	var bad []Failure
 	for _, c := range Candidates(configured) {
-		m, err := openModule(c.Path)
-		if err != nil {
+		// Answering C_GetInfo with recognisable strings is the check that
+		// actually holds, and the child is what performs it. Comparing the
+		// function list's fourth entry against the exported C_GetFunctionList
+		// does not: SafeSign's export is a jmp rel32 thunk and does not match,
+		// where three other modules do.
+		if _, err := probeOutOfProcess(context.Background(), c.Path); err != nil {
 			bad = append(bad, Failure{Candidate: c, Err: err})
 			continue
 		}
-		// Answering C_GetInfo with recognisable strings is the check that
-		// actually holds. Comparing the function list's fourth entry against
-		// the exported C_GetFunctionList does not: SafeSign's export is a
-		// jmp rel32 thunk and does not match, where three other modules do.
-		info, err := m.info()
-		_ = m.close()
-		switch {
-		case err != nil:
-			bad = append(bad, Failure{Candidate: c, Err: err})
-		case info.LibraryDescription == "" && info.Manufacturer == "":
-			bad = append(bad, Failure{Candidate: c, Err: errNothingRecognisable})
-		default:
-			ok = append(ok, c)
-		}
+		ok = append(ok, c)
 	}
 	return ok, bad
 }
-
-var errNothingRecognisable = errors.New("C_GetInfo returned nothing recognisable")

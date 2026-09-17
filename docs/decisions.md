@@ -25815,3 +25815,265 @@ operating system does is not in its gift.
 - **Amending before the mechanisms were tried.** [[D-291]] declined to draft
   against the absence of a remedy, and the three rows above are what makes this
   amendment a conclusion rather than a preference.
+
+## D-293 — A program that runs itself acquires an invariant nobody wrote down, and D-275's remedy introduced an unbounded hazard in place of a bounded one: the discovery probe fork bomb
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — building D-275's remedy
+
+**The agent had never run itself before.** Every subcommand it has — `certs`,
+`sign`, `open`, `tray`, `uninstall-notice`, the two `softtoken` ones — is
+reached because a person or the shell asked for it. [[D-275]]'s remedy makes the
+agent spawn `os.Executable()` once per candidate module, and that single change
+creates an invariant that had never needed stating:
+
+> Whatever `os.Executable()` turns out to be must be a binary that answers
+> `pkcs11-probe`.
+
+Nothing guarded it, because until now nothing could violate it. Under `go test`
+`os.Executable()` is not `liro-bridge.exe`; it is `pkcs11.test`, which has never
+heard of the subcommand, ignores positional arguments, and runs the whole suite
+— including `TestAFileThatIsNotAModuleIsAFailureAndNotACrash` and
+`TestSourcesAreOnePerUsableModule`, which call `Modules`, which spawns again.
+
+**Measured, not foreseen:** `go test ./internal/keysource/pkcs11/... -count=1`
+took this machine from **254 processes to 827** in a few seconds. It was killed
+by name — 714 `pkcs11.test`, plus the driving `go` at pid 12080 — and the count
+returned to 254. Nothing persistent was damaged: the tray agent (pid 20736,
+started 09:41:35) survived, and `config.json`, `pairings.json`, `secrets.*`, the
+audit directory, the Explorer verb key, the `Run` value and all ten crash dumps
+were afterwards byte-identical to the copies taken before the session.
+
+### The shape of the mistake is worth more than the mistake
+
+[[D-272]] measured a real module killing its host process about once in a
+hundred calls. [[D-275]] moved the load into a child so that a crash becomes a
+`Failure` in a list. That is a good trade and it still is. But the two hazards
+are not the same kind:
+
+|                                 | what it costs                      | how it ends              |
+| ------------------------------- | ---------------------------------- | ------------------------ |
+| The hazard contained ([[D-272]]) | one process                        | by itself, immediately   |
+| The hazard introduced           | every process the machine will give | not by itself           |
+
+**A containment whose failure mode is unbounded is worse than the bounded thing
+it contains, and that is true even though the containment is right.** The remedy
+was not wrong; shipping it without a bound on its own recursion was.
+
+### The guard is on the parent side, and that is the decision
+
+`probeChildEnv` sets `LIRO_BRIDGE_PKCS11_PROBE_CHILD=1` on every child.
+`probeOutOfProcess` reads it from **its own** environment and refuses
+(`errProbeRecursion`) before calling `os.Executable()`. Depth is bounded at one
+generation by construction.
+
+The obvious alternative — a `TestMain` in this package that dispatches the
+subcommand — was also written (`testmain_test.go`), but it is not the guard and
+this entry should not let a later reader think it is. It fixes **one binary**.
+The property that has to hold is about **every** binary, including ones that do
+not exist yet and whose authors will not have read this. A guard that depends on
+each future test binary remembering something is a note, not a guard — which is
+the same objection [[D-285]] earns below.
+
+Both were measured, separately, because "the guard holds without the `TestMain`"
+is a claim:
+
+| configuration                    | peak concurrent `pkcs11.test` | outcome                                |
+| -------------------------------- | ----------------------------- | -------------------------------------- |
+| no guard, no `TestMain`          | **827 processes in total**    | killed by hand                         |
+| guard, no `TestMain`             | **2**                         | terminates in 6s; the control fails loudly |
+| guard and `TestMain`             | **2**                         | package suite passes in 4.4s           |
+| guard and `TestMain`, whole repo | peak 269 processes vs 243 baseline | 34 ok, 0 FAIL                     |
+
+### Why the TestMain is there anyway
+
+With the guard alone the suite terminates, but every `Modules` call inside a
+child answers "a probe child must not probe", and
+`TestAFileThatIsNotAModuleIsAFailureAndNotACrash` would pass while reading a
+refusal to spawn rather than a file that is not a module. **The test's input and
+its expectation would have quietly become the same thing** — the pattern
+[[D-290]] named and [[D-291]]'s canary walked into. The `TestMain` makes this
+package's children behave like the agent's, so the parent's tests exercise the
+real path.
+
+Removing it is not silent. `TestTheGuardIsWhatRefuses`'s control spawns a child
+and expects a verdict about a module; with `testmain_test.go` moved aside the
+child ran its suite instead and the control failed with *"the probe process did
+not survive loading this module (exit 0x1)"*. That was measured, by moving the
+file out and putting it back.
+
+### Two notes that are not doing a guard's work
+
+**[[D-285]] fired again, on the author who had just been warned about it.** The
+owner's hand-over named it explicitly — *"internal/ui's window tests extract the
+icon into the real config directory (D-285, and D-286's author walked into it
+after reading it)"* — and `go test ./...` then wrote
+`%LOCALAPPDATA%\Liro\icon-18579.ico` at 13:42:24. It was found by timestamp
+rather than by the snapshot, because the snapshot copied the files the owner
+named and icons were not among them, and it was removed. **Three authors have
+now read that note and then done the thing it describes.** The note is not the
+remedy; a temporary config home the window tests cannot escape is.
+
+**The instrument that checked for the line-ending hazard could not fail.**
+Writing a Go file through Python without `newline=""` produced an all-CRLF file;
+`grep -c` for a carriage return on it returned **0**, because Git Bash's `grep`
+strips carriage returns before matching. The real count was 187 CR bytes, found
+with `open(...,'rb').read().count(b'\r')`. `gofmt -l` caught it independently, by
+listing the whole file as unformatted.
+
+This is the fourth check this week whose input and its expectation came from the
+same place ([[D-285]]'s note, [[D-290]]'s `-tags softtoken` control, [[D-291]]'s
+compile-time canary, and this). The correction is not to be more careful with
+`grep`; it is that **a check written in the same breath as the thing it checks
+tends to agree with it**, and the habit that catches it is running the check
+against a case that must fail.
+
+**Rejected.**
+
+- **The `TestMain` alone.** It is one binary. The next package whose tests reach
+  `Modules` — `internal/cli`, `cmd/liro-bridge`, anything F12 §3 adds — would
+  bomb exactly as this one did, and its author would have no reason to suspect
+  it.
+- **A package-level flag set by `RunProbe`.** It fires only in a child that
+  actually runs `RunProbe`, and the child that bombed never did. It guards the
+  case that was never in danger.
+- **Refusing to spawn when `os.Executable()` does not look like the agent.**
+  Name-matching a binary is brittle in exactly the environments that matter — CI,
+  a developer build, a renamed install — and it would have to fail *open* to stay
+  usable, which is no guard at all.
+- **Passing a depth counter as an argument.** The child that bombed ignored its
+  arguments. Anything carried in `argv` is invisible to precisely the binary that
+  needs stopping; the environment is inherited whether the child reads it or not.
+- **Injecting the executable path so tests can spawn a harmless helper.** It
+  would make the tests safe and leave the agent's own invariant unguarded, which
+  is the wrong half. The hazard is in the program, not in the tests.
+- **Replacing the child's environment rather than appending to it.** A vendor
+  module reads the environment during `DllMain` — `SystemRoot`, `PATH`, the
+  temporary directory. A child probing with an empty environment is probing under
+  conditions the agent never runs in, so any difference in what a module did
+  would have been measured in the wrong process. `TestAChildIsMarked` asserts
+  both halves: the marker is set and the ambient environment survives.
+
+## D-294 — The out-of-process probe answers for every real module on this machine, and the run that looks most like F12 §2's demonstration is not one: the reader was empty
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — D-275's remedy, measured
+
+**A clean run is not a result when the condition that produces the fault was
+absent.** That sentence is the whole entry, and the reason it needs writing down
+is that the run in question looks exactly like a success: 300 probes of the
+module that crashes, no crash, this process still standing at the end.
+
+### What was measured, and what it shows
+
+The shipping binary — `go build ./cmd/liro-bridge`, not a test harness — invoked
+as its own probe child, once per module:
+
+| module | version | answer |
+| --- | --- | --- |
+| `System32\aetpkss1.dll` | 3.9.24.1 | `ok:true` — A.E.T. Europe B.V., "Cryptographic Token Interface" |
+| `TrustEdgeID\netsetpkcs11_x64.dll` | 1.1.3.3 | `ok:true` — NetSeT Global Solutions d.o.o., "CardEdge PKCS#11 Library" |
+| `MUP RS\Celik\netsetpkcs11_x64.dll` | 1.1.0.0 | `ok:true` — NetSeT Global Solutions d.o.o., "CardEdge PKCS#11 Library" |
+| `Personal\bin64\personal64.dll` | 5.17.0 | `ok:true` — Nexus, "Personal NG PKCS 11" |
+| `SecurityTray\lib\pkcs11wrapper_64.dll` | — | `ok:false` — "exports no C_GetFunctionList, so it is not a module" |
+
+The last row is the case F11's discovery earned itself against ([[D-271]]): a
+file with "pkcs11" in its name, in a plausible directory, which *consumes*
+PKCS#11 modules rather than being one. It is refused through the new path
+exactly as it was through the old one.
+
+Nexus's `Personal::config::file::read: ... does not exist` arrives on the
+parent's standard error, which is what `discover_windows.go` says it should do
+and the first confirmation that the inherited handle works as described.
+
+**Cost of the remedy: about 30ms per candidate**, process spawn included — 300
+probes in 9.786s (33ms each) and 100 in 2.763s (28ms each). A four-candidate
+listing is therefore roughly an eighth of a second. `ProbeTimeout`'s
+justification previously guessed at "a measurable fraction of a second each";
+it now carries the measured number, which is an order of magnitude smaller and
+makes the ten-second bound three hundred times the cost of what it bounds.
+
+### The prediction was wrong, and the interesting part is why
+
+Written before the run: *"~3 deaths in 300, at [[D-272]]'s one-in-a-hundred."*
+Measured: **0 in 300.** At a steady 1% that outcome has probability about 5%,
+which is low enough to be worth chasing rather than shrugging at.
+
+Two things came out of chasing it, and only one of them is about chance.
+
+**The reader was empty.** Confirmed afterwards, read-only, through the
+package's own `TestTheTokenReportsItsFlagsAndPINLengths`: *"no slot reports a
+token present; is the card in the reader?"* [[D-272]] measured its rate **"with
+the card in the reader throughout"**, and its §3 is titled *the card-out control
+could not have seen it* — a card-out run is the control that had already misled
+this project once, in the owner's own reading that the crash needed
+`Modules()` walking every module with a card present.
+
+So this was not a repetition of D-272's experiment with a surprising result. It
+was a different experiment, and its result is the one D-272 predicts for it.
+
+**And even the right experiment would not settle it this way.** D-272's table
+contains a clean run of 150 and another of 120, card in. The crash is bursty —
+four in roughly 450, clustered — not steady. A clean 300 with the card in would
+still not be evidence of anything.
+
+### What this means for the exit checklist
+
+F12 §2 asks for *"a module that kills its worker becomes a `Failure`, and the
+agent survives — demonstrated with the module that does it"*. That item stays
+**open**, and it is worth being precise about what could close it, because the
+property is asymmetric:
+
+- **The translation is demonstrated.** `TestAChildThatExitsNonZeroBecomesAFailure`
+  takes it deterministically: a child that exits non-zero becomes `errWorkerDied`
+  carrying the exit status, and never a panic. It needs no module, because what
+  the parent sees of a crash *is* a non-zero exit — it cannot distinguish a
+  fail-fast from an access violation from a refusal, and does not need to.
+- **The demonstration needs a death, and a death cannot be scheduled.** No number
+  of clean runs demonstrates "when it dies, the parent survives". Only a death
+  does. So the honest closing condition is not "run N and conclude" but "run it
+  with the card in until one happens, and look at what the parent did".
+
+The command that would settle it, recorded exactly, in the manner [[D-292]]
+recorded the `DumpType=2` one:
+
+```
+LIRO_PKCS11_MODULE="C:\Program Files\MUP RS\Celik\netsetpkcs11_x64.dll" \
+LIRO_PKCS11_PROBE_CARD=in LIRO_PKCS11_PROBE_ITERATIONS=500 \
+go test -run TestTheRealModule -v ./internal/keysource/pkcs11/
+```
+
+### The condition is now part of the measurement rather than beside it
+
+`LIRO_PKCS11_PROBE_CARD` must be `in` or `out`, **it has no default**, and the
+test refuses to run without it. The reader's state is printed in the same line
+as the counts, and a card-out run with no deaths says so about itself:
+
+> no death in 100 probes, but the reader was empty. This is the control D-272 §3
+> found could not see the crash; it says nothing about the rate and does not
+> demonstrate F12 §2's exit property. Re-run with the card in.
+
+A default would have been `out`, because that is how the machine usually sits,
+and then this run would have been recorded as "300 clean" with nothing attached
+saying why that is not a number. **The absence of a default is the entire
+remedy.** It is the same shape as [[D-293]]'s marker: the guard is the thing
+that cannot be forgotten, not the note explaining what to remember.
+
+**Rejected.**
+
+- **Reporting 300 clean probes as the demonstration.** It is the most
+  persuasive-looking non-result this phase has produced, and the one a later
+  reader would most easily mistake for the checklist item being met.
+- **Forcing a crash to demonstrate the handling.** [[D-094]] forbids synthetic
+  input, and it is right here for a specific reason rather than a general one:
+  the two terminations D-272 found differ in whether the exception dispatcher
+  ever runs, and a fabricated one would be whichever kind was easiest to
+  fabricate.
+- **Asserting a crash rate in the test.** It would be a test about somebody
+  else's DLL on one machine on one day, and it would fail when the module
+  behaved.
+- **Defaulting `LIRO_PKCS11_PROBE_CARD` to `out`.** See above; the default is
+  the failure.
+- **Leaving the cost sentence as written.** "A measurable fraction of a second
+  each" was a reasonable guess and it was wrong by an order of magnitude. A
+  guessed number in a comment reads exactly like a measured one.

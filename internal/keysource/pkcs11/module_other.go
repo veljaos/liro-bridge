@@ -21,3 +21,17 @@ func openModule(path string) (*module, error) {
 }
 
 func (m *module) close() error { return nil }
+
+// info exists so that the probe child compiles for every platform. It can
+// never be reached here: openModule refuses first, and a module value is the
+// only way to call it.
+func (m *module) info() (moduleInfo, error) { return moduleInfo{}, ErrPlatform }
+
+// moduleInfo mirrors the Windows shape so that code above the binding is
+// written once. The fields are what C_GetInfo answers with.
+type moduleInfo struct {
+	CryptokiVersion    string
+	Manufacturer       string
+	LibraryDescription string
+	LibraryVersion     string
+}
