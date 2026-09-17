@@ -39,7 +39,7 @@ It does two things:
 1. **It signs documents locally.** The user drags PDFs into its window (or right-clicks a file), picks a certificate, enters the card PIN once, and gets signed PDFs back.
 2. **It lets other programs ask it to sign.** A web application, an ERP, a script — anything running on the same machine — can call a local HTTP API. The agent asks the human for approval, signs, and returns the result.
 
-It is a **single binary**, written in Go, with no runtime dependencies. It runs as a tray application on the user's own machine. It is open source and free.
+It is a **single binary**, written in Go. On Windows it has no runtime dependencies at all; on Linux it links against the system's GTK and WebKitGTK, which the package declares and the distribution installs alongside it — see §1.1. It runs as a tray application on the user's own machine. It is open source and free.
 
 ### Design centre
 
@@ -48,6 +48,30 @@ Everything in this specification follows from one idea:
 > **The private key never leaves the card, the document never leaves the machine, and no signature is ever created without a human clicking a button.**
 
 If a design choice conflicts with any of those three, the design choice is wrong.
+
+### 1.1 What "no runtime dependencies" means on each platform
+
+**Measured, and this subsection exists because the property §1 states above cannot be kept on Linux.**
+
+A `CGO_ENABLED=0` Go binary for `linux/amd64` is statically linked: it names no dynamic loader, carries no `.dynamic` section, and imports no symbol. Measured on this project's own binary, which runs on a real Linux today. That is the property "no runtime dependencies" has always rested on, and it is the same property that forecloses the Linux port: **a process with no dynamic loader mapped into it cannot load a shared library by any means.** Go's `syscall` package offers `LoadLibrary` and `GetProcAddress` on Windows and nothing equivalent anywhere on Linux, because `dlopen` is not a system call.
+
+Two things the Linux agent must reach are shared libraries and can be nothing else: the system's **WebKitGTK** and its GTK stack, which is the only way to show the HTML windows §10 requires, and the **vendor PKCS#11 module** a person's own middleware installed, which §11.11 makes the only route to a card on a platform with no CNG. These are not two problems. They are one property of the platform with two consequences.
+
+Every clause below is a requirement.
+
+- **On Linux the binary is dynamically linked** against the system's WebKitGTK, its GTK stack and libc, and the package declares every one of them. It is still **one binary**: what changes is its linkage, not the count. There is no second artefact, no helper executable, and no bundled copy of anybody else's library.
+
+- **What a person does is install the package, and nothing else.** `sudo apt install ./liro-bridge_<version>_amd64.deb` on Debian and Ubuntu, `sudo dnf install ./liro-bridge-<version>.x86_64.rpm` on Fedora: both resolve the declared dependencies and fetch whatever is missing as part of that one command. On a desktop that already runs a GTK environment much of the stack is present before the agent arrives and nothing is fetched at all; on a minimal system the package manager fetches it. **In neither case does a person visit a website, run a second installer, or choose a version.** That is the distinction §1's original sentence was written to protect, and it is the distinction that survives: a declared dependency the operating system satisfies is not a runtime the user has to go and get.
+
+  Set against what this platform already asks of a Windows user, the Linux arrangement is the *smaller* imposition, not the larger one. The Windows agent depends on the WebView2 Evergreen Runtime, which it does not ship; the MSI refuses to install without it and names Microsoft's download address, and a person who lacks it must fetch and install it themselves. Windows has no package manager in this path and the person is the one who closes the gap. On Linux the package manager closes it. **"No runtime dependencies" was always a statement about the binary rather than about the afternoon, and on Linux it stops being true even of the binary — which is why it is being said here rather than left to be discovered.**
+
+- **On Windows nothing changes.** `CGO_ENABLED=0`, one statically linked binary, no C toolchain, and no declared dependency beyond the WebView2 Evergreen Runtime the installer already checks for (§15). This subsection is conditioned on the platform the way §6.5.1 is conditioned on the module: it permits something for Linux and permits nothing for Windows. A change made for Linux that alters what a Windows build links against is a defect against this clause, not a consequence of it.
+
+- **The test is what the binary links against, never which flag built it.** `CGO_ENABLED` says whether a C *toolchain* ran. It does not say what the binary needs at runtime, and the two genuinely come apart. Measured: `github.com/ebitengine/purego` builds at `CGO_ENABLED=0` and produces a `linux/amd64` binary that names `/lib64/ld-linux-x86-64.so.2` and requires `libc.so.6`, `libdl.so.2` and `libpthread.so.0` — and that binary will not start on a Linux without glibc, at the same moment this project's own `CGO_ENABLED=0` binary runs there. An implementation may reach WebKitGTK through cgo or through any other mechanism; what this subsection permits is the dynamic linkage. **What it requires is that the claim be checked against the binary's own `PT_INTERP` and `DT_NEEDED`, and that the packaging declare every library found there.** A build command is not evidence about a dependency.
+
+- **Only what needs it gets it.** Dynamic linkage is permitted for the webview and the PKCS#11 module loader, and for nothing else. Most of what a Linux port sounds like it needs, it does not: Secret Service (§6.4) is D-Bus over a unix socket, and a pure-Go D-Bus client compiled at `CGO_ENABLED=0` was measured to stay fully static — no `PT_INTERP`, no `DT_NEEDED`, no imported symbol. The XDG paths (§14), autostart, the audit chain's `flock` guard (§6.7) and the packaging itself are all pure Go already. **A dependency that can be satisfied in Go is not a reason to declare one**, and a library added to the package that the binary does not actually name is a defect against the clause above.
+
+- **macOS is not settled here.** §19's F13 is a separate phase and this subsection says nothing about it.
 
 ---
 

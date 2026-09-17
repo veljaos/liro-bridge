@@ -24774,3 +24774,293 @@ embedded asset can break there.
   mark fatter at the junctions at every other size — and [[D-285]] already
   built and rejected 1.8 for producing beads joined by threads. Thinning by
   making one part heavier is not thinning.
+
+---
+
+## D-287 — SPEC §1 gains §1.1: on Linux the binary is dynamically linked, and the rule is written about what it links against rather than about which flag built it — because a prediction said otherwise and was wrong
+
+**Date:** 2026-09-17
+**Phase:** F12 §1 — the owner's ruling
+
+**This is the third amendment to the specification.** The previous two
+([[D-269]] and [[D-276]] on §6.5.1, [[D-278]] on §10) were each read in full by
+the owner before either the text or the entry was written, and both were better
+for it. This one followed the same order, and the full §1.1 text was sent and
+read before a line of it reached `docs/SPEC.md`.
+
+**Decision.** Two edits to `docs/SPEC.md`. §1's own sentence now says the
+binary has no runtime dependencies *on Windows* and links against the system's
+GTK and WebKitGTK *on Linux*, pointing at a new **§1.1**, which is quoted in
+full there and not duplicated here. §1's design centre, §18's prohibitions and
+§6.5.1 are untouched.
+
+### What forced it, measured rather than argued
+
+F12 §1 gives two independent reasons why cgo becomes unavoidable on Linux: the
+webview, because every Go binding to WebKitGTK is cgo; and the PKCS#11 struct
+layout, because packed/4 becomes native/8 and hand-rolling a second layout is
+the wrong answer. It asks for both to be established rather than either
+accepted.
+
+**Measured, they are not two reasons. They are one property of the platform
+with two consequences.** A `CGO_ENABLED=0` build of this project's own agent
+for `linux/amd64`:
+
+```
+type=ET_EXEC  PT_INTERP: (none)  .dynamic: (none)  DT_NEEDED: (none)  imported symbols: none
+```
+
+and it runs on a real Linux — `liro-bridge dev … linux/amd64`, exit 0, under
+the `docker-desktop` WSL distro. The instrument was validated both ways before
+being relied on ([[D-184]]): busybox from that same distro reports
+`PT_INTERP /lib/ld-musl-x86_64.so.1`, `DT_NEEDED libc.musl-x86_64.so.1` and 374
+imported symbols, and a shared object reports `.dynamic` and `DT_NEEDED` with
+no interpreter, which is what a `.so` should look like.
+
+So there is no dynamic loader in that process, and `syscall` confirms there is
+no other route: `LoadLibrary`, `GetProcAddress` and `SyscallN` exist for
+Windows and `Dlopen`/`Dlsym` exist nowhere for Linux, because `dlopen` is a
+libc function rather than a system call. **F11's Windows mechanism does not
+transfer, and that is the whole of it.** WebKitGTK is a shared library; a
+vendor PKCS#11 module is a shared library. Neither can be reached, and the
+struct layout is a second-order problem you only get to have once you can
+reach one at all.
+
+### The wording was chosen because a written-down prediction was contradicted, not because it read better
+
+**This is the part of the entry that matters in two years, and the owner asked
+for it to be said in those terms.**
+
+`scratchpad/predictions-f12-s1.md` was written before anything was run, ranked,
+with the least certain named as such. Eight of nine held. The one that failed
+is P5: **`github.com/ebitengine/purego` — the one credible cgo-free route to a
+shared library, which F12 §1 does not consider — was predicted to fail to
+build at `CGO_ENABLED=0`.**
+
+It builds. And the `linux/amd64` binary it produces:
+
+```
+PT_INTERP /lib64/ld-linux-x86-64.so.2
+DT_NEEDED libdl.so.2, libpthread.so.0, libc.so.6      imported symbols: 21
+```
+
+Run on the musl Linux where the agent had run seconds earlier, it fails with
+`not found` — and the failure was narrowed rather than assumed: the file is
+there and executable (`ls -la` shows it), and `/lib64/ld-linux-x86-64.so.2` is
+not.
+
+**So purego avoids the C toolchain, not the C library.** `CGO_ENABLED` and "no
+runtime dependencies" genuinely come apart.
+
+Had P5 held, the natural wording was the owner's own and the obvious one:
+*"Linux sets `CGO_ENABLED=1`."* It would have read correctly, it would have
+been easy to check in a workflow file, and **it would have been satisfiable in
+letter by a binary exactly as dependent as the one it was meant to describe** —
+a `CGO_ENABLED=0` build, passing any CI assertion about the flag, naming
+glibc's loader and refusing to start on a system without it.
+
+The clause that replaced it says the test is what the binary links against and
+closes with *"a build command is not evidence about a dependency"*. That
+sentence exists because a measurement contradicted a prediction. It was not
+reached by preferring one phrasing to another.
+
+This is the fifth entry in this log about a measurement overturning something
+that read well ([[D-087]], [[D-122]], [[D-161]], [[D-172]], [[D-219]]) and the
+first where what it overturned was a specification clause **before** it was
+written rather than a product after it shipped. The cost of writing the
+prediction down was a few minutes; the cost of not writing it down would have
+been a rule in the one document SPEC §0 says governs every phase.
+
+### The `CK_ATTRIBUTE` trap, which is D-268's shape in a new place
+
+The layout half was measured with the control first, because without it the
+Linux numbers are arithmetic. Modelling the Windows header — packed to one
+byte, `CK_ULONG` = 4 — reproduces **all eleven** numbers F11 proved against a
+real card and four real modules (`docs/f11-handover.md` §1, [[D-271]]):
+`CK_ATTRIBUTE` 16 at 0/4/12, `CK_INFO` 72 with `libraryDescription` at 38,
+`CK_TOKEN_INFO` 160 with `flags` at 96 and `ulMinPinLen` at 120, and
+`CK_FUNCTION_LIST`'s first function pointer at +2.
+
+Only then the other branch, natural alignment with `CK_ULONG` = 8:
+
+| | Windows | Linux |
+|---|---|---|
+| `CK_ATTRIBUTE` size / offsets | 16 — 0/4/12 | **24 — 0/8/16** |
+| `CK_INFO` size / libraryDescription | 72 / 38 | **88 / 48** |
+| `CK_TOKEN_INFO` size / ulMinPinLen | 160 / 120 | **208 / 144** |
+| `CK_TOKEN_INFO` flags | 96 | 96 — *unchanged* |
+| `CK_FUNCTION_LIST` first fn ptr | +2 | **+8** |
+
+**And the trap: `CK_ATTRIBUTE` is 24 bytes on Linux whether the header packs or
+not**, because all three members are already 8 bytes wide and there is no
+padding to remove. So **F12 §1's own worked example is the single structure
+where the packing half of its argument does not bite.** Where it bites is
+`CK_INFO` (88 native against 76 packed), `CK_TOKEN_INFO` (208 against 204) and
+`CK_FUNCTION_LIST` (+8 against +2).
+
+Measured alongside: Go's own natural layout for the same three fields gives
+24 at 0/8/16 **whether `CK_ULONG` is modelled as `uint32` or `uint64`**,
+because the `uintptr` in the middle forces 8-alignment either way. So a Go
+struct declared naively on Linux gets `CK_ATTRIBUTE` right by accident and
+`CK_INFO`, `CK_TOKEN_INFO` and `CK_FUNCTION_LIST` wrong.
+
+That is [[D-268]]'s shape exactly — an assumption about who range-checks what,
+producing a plausible answer — and [[D-271]] already measured what the wrong
+shape costs on this path: three of four candidate layouts returned `CKR_OK`
+with a zero length, and Nexus's `personal64.dll` took the process down with an
+access violation, twice. **Getting the one example in the phase document right
+is the worst available way to acquire confidence in the method**, because it is
+the one case that cannot tell a correct approach from a wrong one.
+
+This is deliberately **not** in SPEC. §1.1 is about what the binary links
+against; a struct layout is about how the PKCS#11 layer is written once it can
+link at all. Its home is here and, when F12 writes it, the doc comment of
+`internal/keysource/pkcs11/module_other.go` — which is where somebody about to
+make this mistake will actually be looking, rather than in a specification
+section about packaging.
+
+### What the amendment deliberately does not say
+
+Four refusals, each of which is [[D-225]], [[D-232]], [[D-276]] and [[D-278]]'s
+own discipline applied again — a phase that widens a SPEC edit past what was
+ruled on is a phase that can soften a constraint by relocating it:
+
+- **No mechanism.** cgo is not named, and neither is any GTK binding. The
+  purego measurement is precisely that the flag and the property come apart;
+  naming a mechanism would make the rule a statement about an implementation,
+  and would be satisfiable by a binary that is just as dependent.
+- **No version floor.** GTK4, WebKitGTK 6.0, Ubuntu 24.04, Debian 13, Fedora 40
+  and their dates are F12 §3.1's decision and would date the specification.
+- **No `-race`.** It goes here instead, below.
+- **No struct layouts.** Above.
+
+### `-race`, recorded because F12 §1 asks for it here rather than in SPEC
+
+`-race` requires cgo, and **`cmd/liro-bridge` has never been race-checked on
+any platform.** CI's race step runs on `ubuntu-latest`, where that package's
+`*_windows.go` files — the whole window flow, the tray, the signing loop — do
+not compile; the `windows-latest` job runs without `-race`, and the developer
+machine has no C compiler ([[D-012]]). So the Windows UI code has never been
+instrumented and the Linux view of that package is currently almost empty.
+
+With a C toolchain present on Linux that becomes possible for the first time,
+for whatever F12 puts in that package's Linux view. **It is not F12's job**, and
+it is written here so the next person finds it rather than rediscovering that
+a suite which has been green for eleven phases was never asked this question.
+
+### What is not established, stated rather than implied
+
+- **The Linux branch of the packing rule is not confirmed.** The model's
+  Windows branch is validated against hardware, eleven numbers deep. Its Linux
+  branch — that the Unix header uses natural alignment rather than
+  `#pragma pack(1)` — is the rule's other half and was **not** read off a
+  header here: there is no PKCS#11 header anywhere on this machine, not under
+  Program Files, not under System32, and not in any of the four middleware
+  directories ([[D-271]] lists them). Confirming it needs a header or a real
+  module on Linux, and it is on the VM list with the command attached.
+- **Nothing about WebKitGTK rendering, the sandbox, DMABUF or NVIDIA.** That is
+  F12 §3 and needs the machine, per F12 §0.1.
+- **The `apt`/`dnf` behaviour in §1.1's second clause is stated from the tools'
+  documented dependency resolution, not measured.** F12 §11's two machines are
+  where it gets measured; if it turns out a person does type something else,
+  that clause is what has to change.
+
+### A consequence for this machine, which is not a CI blind spot
+
+This machine has no C compiler — re-measured here rather than taken from
+[[D-012]]: `cgo: C compiler "gcc" not found` for `GOOS=windows` and
+`GOOS=linux` alike, and no `gcc`, `clang` or `cc` on the path. So **nothing
+that links GTK can be compiled or tested here at all**, which moves F12 §3.1's
+"establish which Go binding" off the Windows side of this phase: it can be
+researched here and only settled on the VM.
+
+Measured alongside, because it looked like [[D-111]]'s finding arriving again
+and is not: a file that imports `"C"` carries an implicit `cgo` build
+constraint, and at `CGO_ENABLED=0` it vanishes from the build entirely —
+`build constraints exclude all Go files`. On *this* machine that would silently
+remove every cgo file from `go vet` and the Linux `golangci-lint` view. On CI
+it would not: neither of those steps sets `CGO_ENABLED`, and `ubuntu-latest`
+has gcc, so both default to 1 and would analyse the files. The blind spot is
+local, and saying so is the difference between a real finding and an alarm.
+
+### One correction to `docs/phases/F12.md`, made in this commit
+
+§7 said the audit chain's cross-process guard was *"written but never
+exercised. This is where that path first runs."* That is stale and the owner
+has accepted the correction as his own error.
+`internal/platform/dirlock_other.go` uses `syscall.Flock`, `dirlock_test.go`
+carries no OS suffix, and CI's Ubuntu job has run `go test ./... -race` over it
+on every push since F9b — [[D-229]] says in its own words that both suites were
+run on a real Linux kernel rather than only cross-compiled, and gives the
+reason the shared test file exists at all. The sentence now says what is
+genuinely new on Linux instead: the directory the lock guards moves to
+`$XDG_STATE_HOME`, and the exclusion has to be confirmed across two processes
+once it has.
+
+Checked against the phase document rather than against the code would have
+propagated it. This is [[D-161]]'s fixture lesson pointed at an instruction:
+**a phase document is a claim about the tree, and the tree is what settles it.**
+
+### The machine
+
+Snapshotted before anything ran, by **copy** and not by hash ([[D-153]],
+[[D-243]]): `reg export` of the Explorer verb key and the `Run` key, plus
+copies of `config.json`, the audit directory, `pairings.json`, `secrets.*`,
+`update-state.json`, `bridge.json` and `tsl-cache.xml`.
+
+Afterwards: every file byte-identical to its copy, both audit files identical
+(2 files, 7124 bytes, `.lock` included), the Explorer verb key re-exporting
+byte-for-byte, and the `Run` key compared **value by value** rather than as a
+file ([[D-285]]: `reg export` does not emit values in a stable order) — six
+values, `LiroBridge` still pointing at the installed v0.9.2.
+
+No test suite was run at all, so neither [[D-266]]'s `HKCU\…\Run` hazard nor
+[[D-285]]'s icon-extraction hazard was reachable. The owner's tray agent was
+left running and untouched ([[D-268]]). `purego` and `godbus` were fetched into
+a scratch `GOMODCACHE` under the session scratchpad, so the project's own
+module cache is unchanged, and neither is in `go.mod`.
+
+**One slip, recorded because the rule is to prove the machine against the
+snapshot rather than to report it clean.** A `cd` to an unset variable fell
+back to the repository root and created a three-file `cgoprobe/` directory
+inside the tree. It was removed in the next command, `git status` is clean, and
+nothing was committed — but the honest version is that a scratch write landed
+in the working tree, not that it never happened. The lesson is one line:
+**use the absolute scratchpad path, never a variable that can be empty**, since
+an empty one silently means "here".
+
+**Rejected.**
+
+- **Amending §1 to say Linux sets `CGO_ENABLED=1`.** The wording the
+  measurement removed, and the body of this entry is the argument.
+- **Keeping `CGO_ENABLED=0` and drawing the Linux UI natively instead of in a
+  webview.** It keeps the static binary and it abandons SPEC §10's HTML
+  windows, which means a second UI to keep in step with the Windows one —
+  the shape this project has had to unpick for a classification rule
+  ([[D-108]]), a question asked twice ([[D-124]]), a margin ([[D-138]]) and a
+  stylesheet ([[D-183]]).
+- **Keeping `CGO_ENABLED=0` and serving the pages to the person's own
+  browser.** [[D-082]] already rejected a local HTTP server for assets — a
+  second listening socket, against SPEC §6.1 — and SPEC §6.5 requires the
+  consent window to be the agent's own and not suppressible by the caller. A
+  browser tab is neither.
+- **Moving the webview into a helper process to keep the main binary static.**
+  The helper still links WebKitGTK, so the linkage is unchanged; and it makes
+  the artefact two binaries, which is a larger departure from §1 than the
+  linkage is. It would also put the consent gate in a process the agent does
+  not own.
+- **Adopting purego as the mechanism now that it is measured to build.** It is
+  a mechanism choice and not an escape: the binary it produces is dynamically
+  linked against glibc either way. §1.1 is written so that it covers purego and
+  cgo alike rather than blessing one.
+- **Putting the `CK_ATTRIBUTE` trap or the layout table in SPEC.** Above: §1.1
+  is about linkage, and the trap's reader is somebody editing
+  `module_other.go`.
+- **Reporting the Linux layout numbers without the control.** They would have
+  been arithmetic wearing a table.
+- **Writing the amendment before the owner had read it in full.** [[D-269]]'s
+  own instruction, kept by [[D-276]] and [[D-278]], and the reason is that the
+  two previous amendments were both improved by being read first. This one was
+  too: the second and fifth clauses — what a person actually types, and the
+  static D-Bus measurement that makes "only what needs it gets it" enforceable
+  rather than aspirational — are both the owner's additions.
