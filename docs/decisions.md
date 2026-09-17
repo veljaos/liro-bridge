@@ -25703,3 +25703,115 @@ a proposal, and it is not built.
   honest end state, and not this entry's to decide: an amendment to the
   specification is the owner's, and it should be made against a remedy rather
   than against the absence of one.
+
+---
+
+## D-292 — SPEC §6.5.1 clause 3 is narrowed to what the program controls, and the copy that matters was never ours: three mechanisms, three different failure modes, and the fifth amendment is the first that removes a promise
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — the owner's ruling on [[D-291]]
+
+**This is the fifth amendment to the specification and the first that takes
+something away.** [[D-269]] created §6.5.1, [[D-276]] corrected two of its
+lines, [[D-278]] recorded the one window that is not HTML, [[D-287]] added
+§1.1, [[D-289]] widened clause 2 by one bounded process boundary. **Four added
+something. This one removes a promise**, and the owner's own framing is why
+that is the better kind:
+
+> A clause that forbids an outcome the program cannot affect is not a
+> safeguard; it is a sentence that makes a reader stop looking.
+
+### What clause 3 said, and what it says now
+
+It said: *"It is never logged, never in an error, never in a crash dump, never
+in a report."* Four prohibitions in one line, of which three are about this
+program's own conduct and one is about the operating system's.
+
+It now says what this program controls — never written anywhere by this
+program, to a log, an error, a report, the audit log or a file — and then says
+plainly what it cannot promise, why, and where the limit actually lies. The
+full text is in `docs/SPEC.md` and is not duplicated here.
+
+**The word that came out is "never" in front of "crash dump."** It was resting
+on nothing, and it had been resting on nothing since [[D-269]] wrote it: no
+code implemented it, and this session established that no available mechanism
+could.
+
+### The sequence, which is the evidence that it was narrowed because it had to be
+
+Three mechanisms were tried before the clause was touched. **Three different
+failure modes, and none of them refused on taste** — which is the question
+somebody will ask in a year, and this is the answer:
+
+| Mechanism | What it did | Why it was refused |
+|---|---|---|
+| `WerRegisterExcludedMemoryBlock` | **returns success and does nothing.** A full-memory `MiniDumpWriteDump` of a child holding a runtime-random canary in a pinned, *registered* block contains it exactly as often as the control — 1 occurrence each | measured not to work on the ordinary dump path, which is the same call behind Task Manager's *Create dump file*, a debugger and every third-party crash reporter ([[D-291]]) |
+| per-process error-reporting disable (`SetErrorMode` + `WerSetFlags`) | **returns success and cannot be shown to do anything.** `WerFault` launched in both control and treatment, which is *not* a disproof — those flags govern what a report collects, not whether a reporter runs — so the property was never observed at all | observing it needs a dump, which needs a registry change the owner declined for good reason; shipping it would have accepted `S_OK` as evidence one mechanism after refusing exactly that ([[D-291]]) |
+| `CryptProtectMemory(SAME_PROCESS)` | **works, and is worth nothing.** Measured on a real full-memory dump: control 1 occurrence, treatment **0** | it covers 10.572 µs — `CryptProtectMemory` 7.401 µs plus `CryptUnprotectMemory` 3.171 µs, mean over 200 rounds — of a window that is the length of a card operation. Under 1% even at an implausibly fast 1 ms `C_Login`, 0.001% at a second |
+
+The third is the one worth dwelling on, because it is the only one that
+*worked*. It was refused against the owner's own test, set before the
+measurement rather than after it: *"If the uncovered instant is a tenth of the
+lifetime, clause 3 can say something worth saying. If it is most of it, (2) is
+not worth having and you should say so rather than ship a mechanism that covers
+the easy part."* It is over 99% of it.
+
+And clause 2 forecloses the only design in which it could have been worth more:
+the PIN is read *immediately and in full*, so there is no interval between the
+read and the call for encryption to cover even in principle.
+
+### The copy that matters was never ours, and that is in the clause
+
+This is the more important of the two reasons and it is the one a reader of the
+clause alone would never reach, which is why the owner ruled it into the clause
+rather than leaving it here.
+
+**`C_Login` takes the PIN by pointer.** The module reads it and may keep its
+own copy, in memory this program does not own, cannot reach and cannot wipe,
+for as long as it chooses. That is not a limit of the three mechanisms above.
+**It is a limit of handing a secret to somebody else's code**, and no
+protection of this program's own buffer can change it.
+
+**It is labelled structural rather than measured, deliberately.** Establishing
+whether a given module copies needs a card and a module, and nothing here may
+spend a PIN attempt ([[D-268]] cost one, [[D-269]] clause 5 forbids a retry).
+It does not need measuring to be true of the arrangement: a pointer handed
+across an API is a pointer the callee may read and copy.
+
+**Why it forecloses the next attempt, which is the point of putting it in the
+clause.** Without it, somebody in a year reads "`CryptProtectMemory` covers
+under 1%" and goes looking for something that covers more. There is nothing to
+find. The clause now says so at the place they would start.
+
+### What the amendment does not do
+
+It does not weaken clause 2, clause 5, or anything about the wipe, the pipe,
+the retry prohibition or `ulMinPinLen`/`ulMaxPinLen`. It does not touch §6.5.
+It does not change what the worker is built to do — the worker still holds the
+PIN for one `C_Login` and no longer, in a process that holds nothing else of
+value, which is the bound the clause now names as the bound.
+
+And it does not claim the exposure is nil. §6.5 already concedes that anything
+running as the same user can read the PIN live ([[D-180]] says the same of the
+device secret), and [[D-291]] established that the distinctive risk is
+persistence and transmission rather than readability. What the narrowed clause
+says is that this program does not create such a copy, and that whether the
+operating system does is not in its gift.
+
+**Rejected.**
+
+- **Shipping the error-reporting disable anyway, labelled honestly.** The
+  owner's ruling: refusing `S_OK` as evidence once and accepting it once makes
+  the first refusal decorative.
+- **Shipping `CryptProtectMemory` because it is the one that works.** It covers
+  the easy part, and a mechanism that covers the easy part is worse than none:
+  it reads, to the next person, as the problem having been addressed.
+- **Keeping "never in a crash dump" and treating it as aspirational.** That is
+  the sentence that makes a reader stop looking, which is the owner's own
+  reason for the amendment and a better one than any of the measurements.
+- **Leaving the by-pointer limit in this entry only.** It is the reason the
+  next attempt is futile, and an entry is not where somebody about to make that
+  attempt is looking.
+- **Amending before the mechanisms were tried.** [[D-291]] declined to draft
+  against the absence of a remedy, and the three rows above are what makes this
+  amendment a conclusion rather than a preference.
