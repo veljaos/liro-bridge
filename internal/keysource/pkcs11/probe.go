@@ -101,12 +101,6 @@ type probeResult struct {
 // to produce and what D-272 measured to be impossible in-process.
 var errWorkerDied = errors.New("the probe process did not survive loading this module")
 
-// errNothingRecognisable is a file that loaded and answered C_GetInfo with
-// nothing a PKCS#11 module would say. It lives here rather than beside
-// Modules because both the parent and the child reach it, and the child is
-// built for every platform.
-var errNothingRecognisable = errors.New("C_GetInfo returned nothing recognisable")
-
 // errWorkerSilent is a child that neither answered nor died.
 var errWorkerSilent = errors.New("the probe process did not answer in time")
 

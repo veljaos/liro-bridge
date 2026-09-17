@@ -47,26 +47,11 @@ func RunProbe(args []string, stdout io.Writer) int {
 		_, _ = fmt.Fprintln(stdout, `{"ok":false,"error":"the probe takes exactly one module path"}`)
 		return 2
 	}
-	path := args[0]
-
-	res := probeResult{}
-	m, err := openModule(path)
-	if err != nil {
-		res.Err = err.Error()
-	} else {
-		info, infoErr := m.info()
-		_ = m.close()
-		switch {
-		case infoErr != nil:
-			res.Err = infoErr.Error()
-		case info.LibraryDescription == "" && info.Manufacturer == "":
-			res.Err = errNothingRecognisable.Error()
-		default:
-			res.OK = true
-			res.Manufacturer = info.Manufacturer
-			res.LibraryDescription = info.LibraryDescription
-		}
-	}
+	// The load itself is per-platform (describeModule), because a platform with
+	// no binding has no live branch here and a shared version would carry a
+	// comparison that is always true. discover_other.go's Modules is split for
+	// the same reason and says so.
+	res := describeModule(args[0])
 
 	// Marshalling cannot fail for this shape, and a probe that died writing its
 	// own answer would be indistinguishable from one the module killed — so the

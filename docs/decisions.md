@@ -26118,3 +26118,96 @@ that cannot be forgotten, not the note explaining what to remember.
 - **Leaving the cost sentence as written.** "A measurable fraction of a second
   each" was a reasonable guess and it was wrong by an order of magnitude. A
   guessed number in a comment reads exactly like a measured one.
+
+## D-295 — The probe child pretended to be platform-neutral over a step that is not, the package had already learned that rule, and "both views" was one view twice
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — CI red on [[D-293]]'s commit
+
+**The rule this broke was written down, in this package, in the file next to the
+one that broke it.** `discover_other.go`'s `Modules` carries it:
+
+> It is written out rather than sharing the Windows loop because on this
+> platform the loop has no live branch: `openModule` can never succeed, so a
+> shared version would carry a comparison that is always true — which
+> staticcheck reports, correctly, as dead code.
+
+`RunProbe` was then written as one platform-neutral function containing
+`m, err := openModule(path); if err != nil`. On `GOOS=linux` that comparison is
+always true, because the non-Windows `openModule` can only return an error. CI's
+Ubuntu job failed on it in 26 seconds: **SA4023 at `probechild.go:53` and `:54`**,
+confirmed from the job's annotations rather than inferred.
+
+### The analyzer was right about something real
+
+It would have been easy to read this as a linter being pedantic about a stub.
+It is not. The `if err != nil` was load-bearing on one platform and decoration
+on the others, and the tell was already in the tree: `module_other.go` had
+grown an `info()` and a `moduleInfo` whose doc comment said they existed *"so
+that the probe child compiles for every platform"* and *"can never be reached
+here"*. **A stub whose stated purpose is to satisfy a compiler is evidence that
+some caller is pretending to be platform-neutral over something that is not.**
+Both stubs are now deleted, and the load step is `describeModule`, split per
+platform like everything else in this package.
+
+`errNothingRecognisable` moved with it, which corrects a claim made when it was
+placed: *"both the parent and the child reach it"*. The parent stopped reaching
+it the moment `Modules` began reading the child's reported string instead of
+deciding for itself. It was true when written and false by the end of the same
+commit.
+
+### Why it was not caught locally: the two arms were the same arm
+
+Before pushing, this was linted "on both views":
+
+```
+golangci-lint run ./...                  # 0 issues
+GOOS=windows golangci-lint run ./...     # 0 issues
+```
+
+**This machine is Windows, so the first line is the second line.** The Windows
+view was linted twice and the Linux view — the one the failing job runs — was
+never linted at all. Both arms reported clean and agreed with each other,
+because they were the same measurement.
+
+That is the fifth check this week whose two halves came from the same place
+([[D-285]]'s note, [[D-290]]'s `-tags softtoken` control, [[D-291]]'s
+compile-time canary, [[D-293]]'s `grep` for a carriage return, this). It is also
+the first where the redundant arm was added *for safety* — running it twice felt
+like more coverage and was none.
+
+The lint that matches CI, from this machine, is three commands and the first is
+not one of them:
+
+```
+GOOS=linux   golangci-lint run ./...   # the Ubuntu job
+GOOS=windows golangci-lint run ./...   # the second Ubuntu step
+GOOS=darwin  golangci-lint run ./...   # not in CI; F13 will want it
+```
+
+### What is not being built here
+
+No repository-side guard. CI already is the guard and it worked — it caught this
+on the first push, in 26 seconds, which is the job doing exactly what it exists
+for. A local convenience script that runs the three views would be a faster
+signal, not a stronger one, and it is [[D-293]]'s distinction: the thing that
+must not be forgettable is already not forgettable. What was wrong was a
+developer's belief about what a command covered, and the correction to that is
+the three lines above, in the entry, where the next person checking before a
+push will look.
+
+**Rejected.**
+
+- **`//nolint:staticcheck` on the comparison.** Forbidden by the phase rules,
+  and wrong on the merits here: the analyzer was describing the code accurately.
+- **Keeping the `info()`/`moduleInfo` stubs and splitting only `RunProbe`.**
+  They would have become unreachable and unreferenced, which is the `unused`
+  linter's business and the same defect one layer down.
+- **Making the non-Windows `openModule` return a nil error on some path so the
+  comparison is not provably true.** That is arranging for an analyzer to be
+  unable to see something rather than making the something untrue.
+- **Pinning a different golangci-lint version.** The version was never in
+  question — CI pins `v2.13.2` deliberately ([[D-111]]'s reasoning) and that is
+  exactly what runs locally. Reaching for the version would have been the
+  comfortable explanation and it was available: "clean locally, red on CI" reads
+  like drift. It was measured before it was believed.

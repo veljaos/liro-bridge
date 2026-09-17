@@ -22,16 +22,12 @@ func openModule(path string) (*module, error) {
 
 func (m *module) close() error { return nil }
 
-// info exists so that the probe child compiles for every platform. It can
-// never be reached here: openModule refuses first, and a module value is the
-// only way to call it.
-func (m *module) info() (moduleInfo, error) { return moduleInfo{}, ErrPlatform }
-
-// moduleInfo mirrors the Windows shape so that code above the binding is
-// written once. The fields are what C_GetInfo answers with.
-type moduleInfo struct {
-	CryptokiVersion    string
-	Manufacturer       string
-	LibraryDescription string
-	LibraryVersion     string
-}
+// There is deliberately no info() and no moduleInfo here.
+//
+// Both existed briefly, added "so that the probe child compiles for every
+// platform" and documented as unreachable — openModule refuses first, and a
+// module value is the only way to call them. A stub whose stated purpose is to
+// satisfy a compiler is a sign that the caller is pretending to be
+// platform-neutral over something that is not, and it was: RunProbe's load step
+// is now describeModule, split per platform like everything else in this
+// package. See probechild_other.go.
