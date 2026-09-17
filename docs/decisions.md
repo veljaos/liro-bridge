@@ -25515,3 +25515,191 @@ was that the guard exists before the code does.
   configuration that is not shipped.
 - **Reporting the control bug as "the control was wrong".** True and useless.
   What makes it worth an entry is *which way* it was wrong.
+
+---
+
+## D-291 — Clause 3 is not about readability, because readability is already conceded; it is about persistence and transmission. Neither mechanism offered for it can be shown to work, and that is the stop condition
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — measured, and stopped rather than shipped
+
+### The spine, because nobody reading clause 3 alone would know it
+
+SPEC §6.5.1 clause 3 says the PIN is *"never logged, never in an error, never
+in a crash dump, never in a report."* Read alone, that sounds like a promise
+that the PIN cannot be got at. **It is not, it never was, and the rest of the
+specification already says so.**
+
+Anything with debug rights over the worker can call `ReadProcessMemory` and
+read the PIN out of it directly. No crash, no dump, no report. And this project
+has already conceded exactly that boundary, twice and deliberately: SPEC §6.5
+says the human at the consent window is the only one that holds, and [[D-180]]
+says it in as many words about the device secret — *"another process running as
+the same user can read both files and can call DPAPI with the same entropy.
+Nothing on the machine stops that and nothing is meant to."*
+
+So **clause 3 is not about readability.** Readability is conceded. What clause 3
+distinguishes is **persistence and transmission**: a dump file that outlives the
+process on disk, and a report that leaves the machine. A live reader gets one
+PIN once, at a moment they had to be present for; a dump is that same PIN,
+written down, kept, and possibly uploaded.
+
+Writing that down once is the point of this entry. Without it the clause reads
+as a promise it was never making, and the next person either over-builds
+against it or quietly concludes it cannot be kept and stops trying.
+
+### Two mechanisms, and neither can be shown to work
+
+**`WerRegisterExcludedMemoryBlock` — measured not to exclude, on the ordinary
+path.** The owner accepted it over a wholesale disable because it appeared to
+pay nothing: the PIN buffer is already pinned, so its address is stable for
+exactly the window that matters, and everything else in the worker would stay
+dumpable. His condition was that it be measured to exclude rather than to
+return `S_OK`.
+
+It returns `S_OK`. It does not exclude:
+
+| full-memory `MiniDumpWriteDump` of a child holding a 48-byte canary | canary in the dump |
+|---|---|
+| control, not registered | **1 occurrence** |
+| registered as excluded | **1 occurrence** |
+
+61.5 MB either way, same buffer, no difference. `MiniDumpWriteDump` is the call
+WER itself uses to write a local dump, and it is also the call behind Task
+Manager's *Create dump file*, a debugger, and every third-party crash reporter
+— so this is not an exotic path, it is the ordinary one.
+
+**What is not established: whether it works on WER's own collection.** The
+exclusion may be consumed by `werfault` rather than by the dump writer, in
+which case a real WER dump might exclude it while everything else does not.
+That was not measured, and the owner's ruling is that it stays unproven rather
+than costing a registry change to settle a question about a mechanism this
+project is not using.
+
+**The exact experiment, so nobody has to rediscover what it is:** set
+`DumpType` to `2` (full) under
+`HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps`, or under
+a per-application subkey named for the worker binary — which needs elevation —
+then crash a process that holds a runtime-random canary in a registered block,
+and scan the resulting file in `%LOCALAPPDATA%\CrashDumps`. Note before doing
+it that `DumpCount` defaults to 10 and that a machine already holding ten dumps
+will evict the oldest, which is somebody's data; copy them first ([[D-243]]).
+
+**The wholesale disable — cannot be shown to work either, and the reason is
+the honest one.** `SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX)`
+applies and `WerSetFlags(NOHEAP|DISABLE_ARCHIVE|DISABLE_SNAPSHOT_CRASH|
+DISABLE_SNAPSHOT_HANG|CRITICAL_DEFAULT_TO_NOUI)` returns `S_OK`.
+
+`WerFault` was then observed launching **twice in the control and twice in the
+treatment** — and **that is not a disproof, and is deliberately not reported as
+one.** `WerSetFlags`' flags govern what a report *collects*, not whether
+`WerFault` runs, so its running is expected either way. The measurement
+observes a proxy that is not the property.
+
+The property is whether the PIN is in a dump, and observing it needs a dump,
+which needs the registry change above. **So under the constraints set, the
+disable cannot be shown to work.** It returns success, which is precisely what
+the owner said not to accept as evidence, and which the mechanism it replaced
+also did.
+
+**That is the stop condition, and this entry is it being taken rather than
+worked around.**
+
+### What was observed and is not a finding
+
+A fail-fast — the termination [[D-272]] measured a real module producing —
+exits `0xC0000602`, and **no local dump appeared in `CrashDumps`**. Two
+`WerFault` processes did run, so WER engaged and chose not to write one; the
+likely reasons are the default `DumpType` of 1 (a mini dump, which would not
+carry a heap buffer anyway) and WER's own rate limiting, which this machine has
+a record of in `HKCU` (`LastRateLimitedDumpGenerationTime`).
+
+It is recorded as an observation because the control for it failed: an
+exception raised to travel the ordinary route was intercepted by Go's own
+runtime and turned into a panic (exit `0x00000002`), so it never reached WER
+and cannot support anything.
+
+### The pattern, which is the third this week
+
+The first version of the exclusion measurement **could not have failed.** The
+canary was a compile-time constant, so it lived in the binary's read-only data
+and was therefore in every dump of every run regardless of what was excluded.
+Both cases read 2 occurrences and the one that mattered — one buffer, excluded
+or not — was invisible underneath the literal. The fix was a runtime-random
+canary handed to the scanner hex-encoded, so the raw sequence exists in exactly
+one place in the child; the control then reads 1 rather than 0 or 2, which is
+what makes the treatment's reading mean anything.
+
+**That is three in one week, and three is a pattern rather than three
+accidents:**
+
+| | |
+|---|---|
+| [[D-285]] | the colour test compared the rendered tile against the same constant that filled it |
+| [[D-290]] | the allow-list's control picked a package that only reaches `internal/pades` under a build tag |
+| here | the canary was a constant, so it was in the artefact being searched |
+
+**The shape, named so the next one is recognised rather than rediscovered: a
+check whose input and whose expectation come from the same place.** In the
+first it was literally one constant. In the second it was one build
+configuration. In the third it was one binary image. Each time the check ran,
+produced a number, and could not have produced a different one.
+
+[[D-134]], [[D-161]] and [[D-266]] each record a version of this and each
+called it a fixture problem. It is not only a fixture problem. It is a question
+to ask of every check before believing it: **what would have to be true for
+this to come out the other way, and is that reachable from here?**
+
+### One line about a hazard that is already written down
+
+The Bash-heredoc backslash hazard in this session's own notes fired again while
+patching the probe: a `\n` inside a Python string inside a heredoc became a
+literal newline and broke the file. The compiler caught it and nothing was
+harmed.
+
+Stated plainly rather than as a caution, because the plain version is the
+useful one: **the note had been read, at the start of this session, and it did
+not prevent the mistake.** A note is not a guard. What would be a guard is
+something that refuses the shape — and this entry is not asking for one, only
+recording that the documentation is not doing the work people assume it does.
+
+### What this leaves, and what it does not
+
+Clause 3 currently has **nothing that makes it true** that can be demonstrated.
+That was already so before this session; what has changed is that it is now
+measured rather than assumed, and that the two obvious remedies have been
+tried.
+
+One direction not yet explored, and named because it follows from the spine
+rather than from casting about: if clause 3 is about persistence and
+transmission rather than readability, then making a dumped copy **useless** is
+a better fit than trying to prevent the dump. `CryptProtectMemory` with
+`CRYPTPROTECTMEMORY_SAME_PROCESS` would keep the PIN encrypted between the pipe
+read and `C_Login`, with a key the operating system holds rather than one in
+the process image — so a dump carries ciphertext. It does not cover the instant
+of the call itself, which is also the instant a module is most likely to die,
+so it is a narrowing rather than an answer. It is recorded as a direction, not
+a proposal, and it is not built.
+
+**Rejected.**
+
+- **Keeping the exclusion registered alongside a disable, as belt and
+  braces.** The owner's ruling and his reason: an unproven mechanism sitting
+  next to a working one is the thing somebody removes the working half of in
+  two years, having read that both are there. **If it does not work, it does
+  not ship.**
+- **Reporting `WerFault` launching in both cases as evidence the disable
+  fails.** It measures what a report collects with a proxy for whether a
+  reporter ran, and they are different questions. Reporting it would have been
+  the canary mistake again, one measurement later.
+- **Settling the WER path by setting `DumpType=2`.** The owner's ruling:
+  elevation and a registry change to his machine, plus evicting dumps that
+  would then have to be restored, to answer a question about a mechanism not
+  being used. The command is recorded above instead.
+- **Shipping the disable on the strength of `S_OK`.** It is the exact thing
+  that was refused one mechanism earlier, and refusing it once and accepting it
+  once would make the first refusal decorative.
+- **Weakening clause 3 to what can currently be demonstrated.** Possibly the
+  honest end state, and not this entry's to decide: an amendment to the
+  specification is the owner's, and it should be made against a remedy rather
+  than against the absence of one.
