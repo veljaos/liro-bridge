@@ -26270,6 +26270,9 @@ This one passes that question — either arm could have failed, and on a Linux
 machine the first arm would have caught it. What it fails is a different
 question, and the one to ask of any pair: **"are these two arms actually two?"**
 
+Both halves of this discipline, and the five instances, are stated once in
+[[D-296]]; this entry is one of them and should not restate the rule.
+
 It is also the only one of the four where the redundant arm was added *for
 safety*. Running the lint a second time with `GOOS` set felt like more coverage
 and was none, because the default was already that value. Belt and braces made
@@ -26378,15 +26381,45 @@ conclusion did not change — no dump, no delay past the bound — but the state
 reason for it was false, and it was caught by a discrepancy rather than by
 design.
 
-That is the same week's theme in a fifth costume ([[D-285]], [[D-290]],
-[[D-291]], [[D-293]], [[D-295]]): the question to ask of an instrument is not
-only "could this have failed?" but **"could this have seen the thing it is
-reporting the absence of?"**
+### The two questions, which are one discipline — canonical statement
 
-Before the run, all ten dumps were copied — previously only four were, which
-would have made an eviction unrecoverable. Nothing was evicted; the copies are
-now complete anyway, which is [[D-243]]'s point that a hash proves something
-changed and only a copy can put it back.
+Five times in one week this project has shipped, or nearly shipped, a check that
+could not do its job. They look like five different mistakes and they are two,
+and the two belong together because a reader who learns one will think they are
+covered:
+
+> **1. Could this check have failed?**
+> Ask it of anything that reports a *presence* or a verdict. It catches a check
+> whose input and whose expectation come from the same place.
+>
+> **2. Could this instrument have seen the thing whose absence it reports?**
+> Ask it of anything that reports an *absence*. It catches a measurement that
+> would have reported "none" either way.
+
+The instances, so that the shape is recognisable rather than abstract:
+
+| | what it was | which question catches it |
+| --- | --- | --- |
+| [[D-285]] | a note describing a hazard, standing in for a guard against it | 1 |
+| [[D-290]] | a control that held under `-tags softtoken` and not under the release build | 1 |
+| [[D-291]] | a canary that was a compile-time constant, so it was in every dump | 1 |
+| [[D-293]] | `grep` for a carriage return, in a `grep` that strips them | 1 |
+| [[D-295]] | two lint arms that were the same arm, because the default *was* the value | 1 |
+| here | one sampling run reporting that `WerFault` "never ran" | **2** |
+
+The first five all fail question 1. **This one passes it** — the sampler could
+have seen WerFault, and on a slower run it did — and fails question 2, because a
+process that lives for tens of milliseconds is invisible to a 100ms sampler
+*whether or not it exists*. That is why the second question is not a restatement
+of the first, and why it had to be paid for separately.
+
+The practical form of question 2: **a sampler cannot report absence.** If the
+answer being reported is "it did not happen", the instrument must be one that
+would have been there when it did — a trap, a counter, an event, a log — not one
+that looked N times and saw nothing.
+
+*(Later entries in this family should link here rather than restate this, so the
+pair does not drift into two half-remembered rules.)*
 
 ### One of D-272's two terminations is out of reach, and that is recorded rather than glossed
 
@@ -26433,3 +26466,156 @@ Two consequences worth having written down:
   Seeing a reporter start is not the same as measuring whether it delays a
   reap, and the conclusion here — that it does not run at all for this
   termination — contradicts what would have been assumed from D-292 alone.
+
+## D-297 — Two process shapes, on purpose: a throwaway child where a crash is expected and a held-open worker where a session is; and the framing is length-prefixed because of the PIN
+
+**Date:** 2026-09-17
+**Phase:** F12 §2 — the worker's protocol and its guards, before the worker
+
+### There are now two ways this program runs a PKCS#11 module, and that is the design
+
+**Discovery spawns a throwaway child per candidate.** **The worker holds one
+child open per module, with `C_Initialize` live.** They look alike — same
+binary, same subcommand shape, same "a dead child is a `Failure`" rule — and
+they are answers to different requirements:
+
+| | discovery ([[D-293]], [[D-294]]) | the worker (here) |
+| --- | --- | --- |
+| what it is doing | asking four unknown files what they are | serving a session that must survive many calls |
+| is a crash expected? | **yes** — that is the whole reason it exists | no; a crash here ends a session |
+| what a crash costs | one candidate becomes a `Failure`; ~30ms wasted | the session; the parent respawns |
+| when `C_Initialize` runs | once per candidate, in a process that then dies | once, held open for the worker's life |
+| how often the dice are rolled | **every call** | **once, at start** |
+
+That last row is the reason, and it is the owner's:
+
+> One-shot looks safer and is more exposed: rolling D-272's dice per call turns
+> a startup problem into a listing problem, and a listing that fails one time in
+> a hundred is the kind of defect people learn to re-run instead of read. A
+> worker that fails at start is one the parent respawns through and nobody
+> notices.
+
+**So neither shape is the other one done badly.** For discovery, paying
+`C_Initialize` per candidate is correct: the candidates are different files, a
+held-open worker per unknown file would be four live processes to answer one
+question, and the crash it might provoke is the *expected* outcome rather than a
+failure. For a session, paying it per call is wrong for exactly the reason
+above.
+
+### Why this entry says that at all
+
+**This project has removed one-thing-in-two-places three times and was right
+every time** — [[D-108]] put classification in one `classify` used by every
+listing, [[D-124]] made three steps each ask one thing, [[D-138]] made one
+margin serve every placement. Those removals are good precedent and they will be
+read by whoever next notices that `probeOutOfProcess` and the worker's
+supervisor both spawn a child of this binary and both turn a dead one into a
+`Failure`.
+
+The reason they must not be merged is written here so that it is found in the
+same place that precedent is. A merged version would have to choose: either it
+holds `C_Initialize` open for discovery, which keeps four vendor modules live in
+four processes to answer a question that is over, or it re-initialises per call
+for sessions, which is the defect the owner names above. **A single mechanism
+serving both would be worse at each, and the tell that a consolidation is wrong
+is precisely that it has to take a parameter to decide which of two things it
+is.**
+
+### The framing is length-prefixed, and that is SPEC §6.5.1 clause 2's doing
+
+Not a preference. The clause permits the PIN to cross one process boundary and
+bounds it: *"one write, read immediately, never buffered."*
+
+Newline-delimited JSON — the obvious choice, and what the one-shot probe
+effectively uses — is read with a buffered reader, and **a buffered reader reads
+ahead by design**. Asked for a request frame, it may pull whatever follows into
+its own buffer, and what follows a login request is the PIN. It would then sit
+in the worker's heap for the life of the reader, never overwritten, and
+**invisible to every guard in `pin_test.go`**, because it is not a field, a
+parameter or a named result — it is somebody else's byte slice.
+
+So: four bytes of length, then exactly that many, read with `io.ReadFull`. Never
+one byte more. A PIN written immediately behind a request is then readable by an
+exact-length read and has been buffered by nothing.
+
+This also decides a question that would otherwise have been decided by
+platform: the obvious alternative is a second, dedicated pipe for the PIN, and
+**`os/exec`'s `ExtraFiles` is not supported on Windows**. One pipe that cannot
+read ahead is better than a second pipe that needs `SysProcAttr` handle
+inheritance to exist at all.
+
+`TestTheWorkerNeverBuffersItsInput` forbids `bufio` across the whole package,
+because the hazard is not in one function.
+
+### What the protocol will not carry
+
+**No module path.** The worker learns which module to load from its command
+line, from the parent that spawned it, once. F12 §10: *"A configured path remains
+the escape hatch, and a protocol-supplied path remains refused."* If a path
+could arrive in a request, anything reaching this pipe could choose which
+foreign DLL this process loads — and the pipe is reachable from the agent,
+which is reachable from F7's local protocol, which is reachable from a web page.
+The chain is cut at the type rather than checked for at the far end, because a
+handler that ignores a field is one edit away from using it.
+
+**No PIN as a field.** It is written once, on its own, read by an exact-length
+read. Never a struct member that something might log, marshal or keep.
+
+**A closed set of operations.** `enumerate`, `list`, `chainfor`, `shutdown`.
+`TestEveryOperationIsNamedInOneClosedSet` fails when that changes, so an
+addition is a deliberate act with somewhere to read why — which is what F12 §2's
+*"the subcommand must not become a way in"* needs in order to mean anything a
+year from now.
+
+### The guards were mutation-tested, because this week earned that
+
+Four guards, four mutations, four failures — the path field added, `bufio`
+imported, an `OpSignDigest` declared, and `ReadFrame` made to read one byte too
+many. All four fired; the tree was restored and is green. [[D-296]]'s pair of
+questions is why this is recorded rather than assumed: a guard written in the
+same breath as the thing it guards tends to agree with it.
+
+### A correction in the package's own contract
+
+`worker/doc.go` said *"this process turns its own error reporting off and never
+has anything worth dumping,"* citing [[D-289]]'s requirement and its stop
+condition. **The stop condition fired.** [[D-292]] measured three mechanisms and
+shipped none, the owner ruled that a mechanism which cannot be shown to work
+does not ship, and clause 3 was narrowed instead. The comment was describing a
+world that ended two entries ago, in the document a reader of this package
+trusts most. It now says what is true, including the part that outlives any
+mechanism: `C_Login` takes the PIN by pointer, so the copy that matters was
+never this program's.
+
+### Open, and deliberately not decided here
+
+**The supervisor's respawn behaviour has no time constant yet, and will not get
+one derived from the 341–376ms reap.** [[D-296]] recorded that number and
+recorded that what it is spent on is *not established* — pinning it needs the
+per-process error-reporting disable [[D-292]] measured as undemonstrable. The
+owner's instruction:
+
+> Do not pick a timeout around an unexplained ~320 ms — that is how a magic
+> constant gets into a supervisor and stays there for years.
+
+So the supervisor detects a dead worker by the pipe ending and the process
+exiting, which are events rather than deadlines, and bounds respawns by a
+**count** rather than an interval. A per-request deadline is a separate
+question with its own justification — the cost of the request it bounds — and
+it is not this one.
+
+**Rejected.**
+
+- **One mechanism for both shapes.** See above: it would have to take a
+  parameter to decide which of two things it is, which is the tell.
+- **Newline-delimited JSON.** Loses SPEC §6.5.1 clause 2's "never buffered" to
+  a reader that is doing exactly what it is for.
+- **A second pipe for the PIN.** `ExtraFiles` is unsupported on Windows, and
+  the length-prefixed framing removes the need.
+- **`keysource.Certificate` on the wire.** Whether a certificate is *usable*
+  depends on presence, trust and policy — the agent's questions, answered with
+  things the worker cannot see. Sending the richer type invites the worker to
+  fill in fields it has no business deciding.
+- **A respawn backoff sized from the measured reap time.** The owner's
+  instruction, and right: the number is honest as a measurement and would be a
+  magic constant as a parameter.

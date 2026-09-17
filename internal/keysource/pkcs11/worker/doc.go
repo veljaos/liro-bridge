@@ -66,17 +66,31 @@
 //     nor the card (D-268 cost a PIN attempt establishing that no module
 //     checks them).
 //
-// # Error reporting is disabled for this process, for its whole life
+// # Error reporting is NOT disabled for this process, and that is a decision
 //
-// SPEC §6.5.1 clause 3 says the PIN is never in a crash dump. Nothing made
-// that true, and this is the one process where it is most likely to be false:
-// it holds a PIN for the length of one C_Login, and it is the process most
-// likely to be killed, by the very thing it exists to contain. D-272 measured
-// a module dying inside C_Initialize and nothing says a module cannot die
-// inside C_Login instead.
+// An earlier version of this comment said the opposite. D-289 required this
+// process to turn its own error reporting off for its whole life, with a stop
+// condition: if that could not be done reliably, the phase was to stop and say
+// so rather than ship the gap. The condition fired.
 //
-// So this process turns its own error reporting off and never has anything
-// worth dumping. See D-289, and the stop condition recorded there: if that
-// turns out not to be reliable, the phase stops and says so rather than
-// shipping the gap.
+// D-292 measured three mechanisms and none of them shipped.
+// WerRegisterExcludedMemoryBlock returns S_OK and does not exclude — a
+// registered block appears in a full-memory dump exactly as often as the
+// control. A wholesale per-process disable returns success and cannot be shown
+// to do anything, because observing the property needs a dump that needs a
+// registry change declined for good reason. CryptProtectMemory works and covers
+// 10.572µs of a window the length of a card operation, under 1% of it.
+//
+// The owner's ruling was that a mechanism which cannot be shown to work does
+// not ship, and that keeping one alongside as belt and braces would make the
+// refusal of the others decorative. So SPEC §6.5.1 clause 3 was narrowed
+// instead, to what this program controls, and this package makes no claim about
+// crash dumps.
+//
+// What remains true, and is the reason the process boundary still earns its
+// keep: the PIN lives here for the length of one C_Login, in a process that
+// holds nothing else of value, and is overwritten through its pinned address
+// immediately afterwards. And the copy that matters was never this program's —
+// C_Login takes the PIN by pointer, so the module may keep its own, in memory
+// this program does not own and cannot wipe (D-292).
 package worker
