@@ -82,6 +82,25 @@ const (
 	iSetOperationState
 	iLogin
 	iLogout
+	iCreateObject
+	iCopyObject
+	iDestroyObject
+	iGetObjectSize
+	iGetAttributeValue
+	iSetAttributeValue
+	iFindObjectsInit
+	iFindObjects
+	iFindObjectsFinal
+)
+
+// Object classes and the attribute types the timed object read uses.
+const (
+	ckoCertificate = 0x00000001
+
+	ckaClass = 0x00000000
+	ckaLabel = 0x00000003
+	ckaValue = 0x00000011
+	ckaID    = 0x00000102
 )
 
 // CK_TOKEN_INFO flags.
@@ -272,6 +291,48 @@ func call(fn uintptr, args ...uintptr) uint32 {
 	return uint32(r1)
 }
 
+// fnNames is the index table above, as text, so that a timed run says which
+// call it is reporting rather than a number.
+var fnNames = map[int]string{
+	iInitialize: "C_Initialize", iFinalize: "C_Finalize", iGetInfo: "C_GetInfo",
+	iGetFunctionList: "C_GetFunctionList", iGetSlotList: "C_GetSlotList",
+	iGetSlotInfo: "C_GetSlotInfo", iGetTokenInfo: "C_GetTokenInfo",
+	iGetMechanismList: "C_GetMechanismList", iGetMechanismInfo: "C_GetMechanismInfo",
+	iInitToken: "C_InitToken", iInitPIN: "C_InitPIN", iSetPIN: "C_SetPIN",
+	iOpenSession: "C_OpenSession", iCloseSession: "C_CloseSession",
+	iCloseAllSessions: "C_CloseAllSessions", iGetSessionInfo: "C_GetSessionInfo",
+	iGetOperationState: "C_GetOperationState", iSetOperationState: "C_SetOperationState",
+	iLogin: "C_Login", iLogout: "C_Logout",
+	iGetAttributeValue: "C_GetAttributeValue", iFindObjectsInit: "C_FindObjectsInit",
+	iFindObjects: "C_FindObjects", iFindObjectsFinal: "C_FindObjectsFinal",
+}
+
+// timeCalls makes callAt print how long each call into the module took.
+//
+// It exists because of a measurement nobody expected: with the MUP card in the
+// reader, one read through NetSeT 1.1.3.3 (TrustEdgeID) costs ~890 ms and the
+// same read through NetSeT 1.1.0.0 (MUP RS\Celik) costs ~33 ms -- same vendor,
+// same card, same two certificates, twenty-seven times apart and stable across
+// twenty rounds. Which module a person has is an accident of what they
+// installed and when (D-271 found both on one machine, five years apart), so a
+// per-request deadline cannot be chosen until that difference is understood.
+//
+// The clock on the development machine reads ~500 us at best -- 199997 of
+// 200000 back-to-back time.Now() pairs measure exactly zero -- so anything
+// printed as 0s here means "below this machine's clock", not "instant".
+var timeCalls bool
+
+// callAt is call with the index kept, so a timed run can name what it timed.
+func callAt(list uintptr, i int, args ...uintptr) uint32 {
+	if !timeCalls {
+		return call(fnAt(list, i), args...)
+	}
+	start := time.Now()
+	rv := call(fnAt(list, i), args...)
+	say("    [%-20s %v]", fnNames[i], time.Since(start))
+	return rv
+}
+
 func ckr(rv uint32) string {
 	if name, ok := ckrNames[rv]; ok {
 		return fmt.Sprintf("%s (0x%X)", name, rv)
@@ -411,9 +472,14 @@ func main() {
 	login := flag.Bool("login", false,
 		"take the one C_Login(session, CKU_USER, NULL, 0) measurement (F11 §5)")
 	slotWanted := flag.Int("slot", -1, "slot index to use (default: the first with a token)")
+	readObjects := flag.Bool("objects", false,
+		"read the certificate objects off the token and time each call (read-only)")
+	timed := flag.Bool("time", false,
+		"print how long each call into the module takes (read-only; see timeCalls)")
 	watchTest := flag.Bool("watch-test", false,
 		"run only the window watcher for a few seconds; touches no card and no module")
 	flag.Parse()
+	timeCalls = *timed
 
 	// A check of the instrument before it is relied on: run only the watcher,
 	// touching no card and no module at all, and show that it reports what is
@@ -470,17 +536,17 @@ func main() {
 	// C_GetFunctionList is the only function callable before C_Initialize;
 	// measured here, TrustEdgeID answers C_GetInfo with
 	// CKR_CRYPTOKI_NOT_INITIALIZED, which is the module being right.
-	if rv := call(fnAt(list, iInitialize), 0); rv != 0 {
+	if rv := callAt(list, iInitialize, 0); rv != 0 {
 		die("C_Initialize: %s", ckr(rv))
 	}
-	defer call(fnAt(list, iFinalize), 0)
+	defer callAt(list, iFinalize, 0)
 
 	// Confirm the index map behaviourally rather than by comparing list[3]
 	// against the exported C_GetFunctionList: SafeSign's export is a jmp rel32
 	// thunk and does not match. C_GetInfo returning recognisable strings is the
 	// check that actually holds.
 	infoBuf, infoPtr := pin.buf(72)
-	if rv := call(fnAt(list, iGetInfo), infoPtr); rv != 0 {
+	if rv := callAt(list, iGetInfo, infoPtr); rv != 0 {
 		die("C_GetInfo: %s", ckr(rv))
 	}
 	say("C_GetInfo cryptoki=%s manufacturer=%q library=%q %s",
@@ -491,7 +557,7 @@ func main() {
 
 	// C_GetSlotList(tokenPresent=TRUE, NULL, &count), then with a buffer.
 	countBuf, countPtr := pin.buf(4)
-	if rv := call(fnAt(list, iGetSlotList), 1, 0, countPtr); rv != 0 {
+	if rv := callAt(list, iGetSlotList, 1, 0, countPtr); rv != 0 {
 		die("C_GetSlotList(count): %s", ckr(rv))
 	}
 	n := int(u32(countBuf, 0))
@@ -500,7 +566,7 @@ func main() {
 		die("no slot reports a token present -- is the card in the reader?")
 	}
 	slotsBuf, slotsPtr := pin.buf(n * 4)
-	if rv := call(fnAt(list, iGetSlotList), 1, slotsPtr, countPtr); rv != 0 {
+	if rv := callAt(list, iGetSlotList, 1, slotsPtr, countPtr); rv != 0 {
 		die("C_GetSlotList(list): %s", ckr(rv))
 	}
 
@@ -509,7 +575,7 @@ func main() {
 		for i := range tokBuf {
 			tokBuf[i] = 0
 		}
-		rv := call(fnAt(list, iGetTokenInfo), uintptr(slotID), tokPtr)
+		rv := callAt(list, iGetTokenInfo, uintptr(slotID), tokPtr)
 		if rv != 0 {
 			say("    C_GetTokenInfo: %s", ckr(rv))
 			return 0, false
@@ -546,15 +612,15 @@ func main() {
 
 	// A read-only public session: the minimum this measurement needs.
 	sessBuf, sessPtr := pin.buf(4)
-	if rv := call(fnAt(list, iOpenSession), uintptr(chosenSlotID), ckfSerialSession, 0, 0, sessPtr); rv != 0 {
+	if rv := callAt(list, iOpenSession, uintptr(chosenSlotID), ckfSerialSession, 0, 0, sessPtr); rv != 0 {
 		die("C_OpenSession: %s", ckr(rv))
 	}
 	session := u32(sessBuf, 0)
-	defer call(fnAt(list, iCloseSession), uintptr(session))
+	defer callAt(list, iCloseSession, uintptr(session))
 	say("session  handle=%d (read-only, public)", session)
 
 	siBuf, siPtr := pin.buf(16)
-	if rv := call(fnAt(list, iGetSessionInfo), uintptr(session), siPtr); rv == 0 {
+	if rv := callAt(list, iGetSessionInfo, uintptr(session), siPtr); rv == 0 {
 		st := u32(siBuf, 4)
 		name := sessionStateNames[st]
 		if name == "" {
@@ -564,6 +630,81 @@ func main() {
 			st, name, u32(siBuf, 8), u32(siBuf, 12))
 	} else {
 		say("         C_GetSessionInfo: %s", ckr(rv))
+	}
+
+	// ---- reading the certificate objects, timed ----
+	//
+	// This is the half of a read that the rest of this probe does not do, and
+	// it is where one measurement said the cost has to be: through NetSeT
+	// 1.1.3.3 a full read of this card costs ~890 ms and through NetSeT 1.1.0.0
+	// ~33 ms, while every call above is at or below this machine's clock in
+	// both. So the difference is in here, and "per call", "per object" and "per
+	// attribute" are three different answers with three different consequences
+	// for a per-request deadline.
+	//
+	// It is read-only: C_FindObjects over public certificate objects and
+	// C_GetAttributeValue on each. No login, no private object, no PIN.
+	if *readObjects {
+		say("")
+		say("reading certificate objects")
+
+		// CK_ATTRIBUTE packed: type at +0 (CK_ULONG, 4), pValue at +4 (8),
+		// ulValueLen at +12 (4) -- 16 bytes, Windows x64, measured (D-271).
+		tmplBuf, tmplPtr := pin.buf(16)
+		*(*uint32)(unsafe.Pointer(&tmplBuf[0])) = ckaClass
+		classBuf, classPtr := pin.buf(4)
+		*(*uint32)(unsafe.Pointer(&classBuf[0])) = ckoCertificate
+		*(*uint64)(unsafe.Pointer(&tmplBuf[4])) = uint64(classPtr)
+		*(*uint32)(unsafe.Pointer(&tmplBuf[12])) = 4
+
+		wholeStart := time.Now()
+
+		if rv := callAt(list, iFindObjectsInit, uintptr(session), tmplPtr, 1); rv != 0 {
+			die("C_FindObjectsInit: %s", ckr(rv))
+		}
+		handlesBuf, handlesPtr := pin.buf(32 * 4)
+		foundBuf, foundPtr := pin.buf(4)
+		if rv := callAt(list, iFindObjects, uintptr(session), handlesPtr, 32, foundPtr); rv != 0 {
+			die("C_FindObjects: %s", ckr(rv))
+		}
+		found := int(u32(foundBuf, 0))
+		callAt(list, iFindObjectsFinal, uintptr(session))
+		say("  certificate objects: %d", found)
+
+		for i := 0; i < found; i++ {
+			obj := u32(handlesBuf, i*4)
+			for _, a := range []struct {
+				name string
+				typ  uint32
+			}{{"CKA_VALUE", ckaValue}, {"CKA_LABEL", ckaLabel}, {"CKA_ID", ckaID}} {
+				say("  object %d %s", i, a.name)
+				// Two calls, as PKCS#11 requires and as the binding does: one
+				// with a NULL pValue for the length, one to fill a buffer.
+				ab, aptr := pin.buf(16)
+				*(*uint32)(unsafe.Pointer(&ab[0])) = a.typ
+				if rv := callAt(list, iGetAttributeValue, uintptr(session), uintptr(obj), aptr, 1); rv != 0 {
+					say("    (size) %s", ckr(rv))
+					continue
+				}
+				n := u32(ab, 12)
+				if n == 0 || n == ^uint32(0) {
+					say("    empty")
+					continue
+				}
+				vb, vptr := pin.buf(int(n))
+				_ = vb
+				ab2, aptr2 := pin.buf(16)
+				*(*uint32)(unsafe.Pointer(&ab2[0])) = a.typ
+				*(*uint64)(unsafe.Pointer(&ab2[4])) = uint64(vptr)
+				*(*uint32)(unsafe.Pointer(&ab2[12])) = n
+				if rv := callAt(list, iGetAttributeValue, uintptr(session), uintptr(obj), aptr2, 1); rv != 0 {
+					say("    (read) %s", ckr(rv))
+					continue
+				}
+				say("    %d bytes", n)
+			}
+		}
+		say("  whole read: %v", time.Since(wholeStart))
 	}
 
 	// ---- the PIN counter, immediately before ----
@@ -612,7 +753,7 @@ func main() {
 		close(drained)
 	}()
 
-	rv := call(fnAt(list, iLogin), uintptr(session), ckuUser, 0, 0)
+	rv := callAt(list, iLogin, uintptr(session), ckuUser, 0, 0)
 
 	close(stop)
 	<-watching // the watcher has stopped, so nothing more will be sent
@@ -646,7 +787,7 @@ func main() {
 	if rv == 0 {
 		say("")
 		say("C_Login returned CKR_OK -- logging out again so the session is left as found.")
-		if lrv := call(fnAt(list, iLogout), uintptr(session)); lrv != 0 {
+		if lrv := callAt(list, iLogout, uintptr(session)); lrv != 0 {
 			say("C_Logout: %s", ckr(lrv))
 		}
 	}
