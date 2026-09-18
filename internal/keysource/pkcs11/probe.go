@@ -43,8 +43,8 @@ const ProbeSubcommand = "pkcs11-probe"
 // seconds is not going to.
 const ProbeTimeout = 10 * time.Second
 
-// probeChildMarker is set on every child this package spawns, and its only
-// purpose is to stop a second generation.
+// ChildMarker is set on every child this program spawns to load a PKCS#11
+// module, and its only purpose is to stop a second generation.
 //
 // # It exists because the recursion actually happened
 //
@@ -65,23 +65,67 @@ const ProbeTimeout = 10 * time.Second
 // one accidental generation must not become an unbounded number.
 //
 // So the check is on the parent side and reads the *parent's own* environment.
-// A process that was itself spawned as a probe refuses to spawn one, whatever
-// it decided to do with the arguments it was given. Depth is bounded at one by
-// construction rather than by every future binary remembering to dispatch.
+// A process that was itself spawned as one of these refuses to spawn another,
+// whatever it decided to do with the arguments it was given. Depth is bounded
+// at one by construction rather than by every future binary remembering to
+// dispatch.
 //
-// The child never reads this variable; only a would-be grandparent does. It can
+// A child never reads this variable; only a would-be grandparent does. It can
 // subtract a capability and cannot add one, which is why it does not disturb
 // RunProbe's contract that it acts on its argument and nothing else.
-const probeChildMarker = "LIRO_BRIDGE_PKCS11_PROBE_CHILD"
-
-// errProbeRecursion is what a candidate becomes when the process asking about
-// it is itself a probe child.
 //
-// It is an ordinary Failure rather than a panic because the caller is Modules,
-// whose whole contract is that nothing about one candidate is fatal. A person
-// who somehow reached this gets a listing where every module says why it could
-// not be asked, which is recoverable and legible; a fork bomb is neither.
-var errProbeRecursion = errors.New("a probe child must not probe: this process was spawned to load one module and nothing else")
+// # One marker for both kinds of child, which is why it is exported
+//
+// There are two spawners now and they are deliberately two things (D-297): the
+// probe, which is a throwaway child per candidate because a crash there is the
+// expected outcome, and the worker, which holds one module open because a
+// session has to survive many calls. What they share is exactly this: each
+// re-executes os.Executable(), so each has the same way of going wrong.
+//
+// It was probeChildMarker, unexported, and the value named the probe. Both had
+// to change when the second spawner arrived: a guard that stops one kind of
+// child from spawning its own kind, while letting it spawn the other, is a
+// guard with a generation still in it. One rule, one place, read by both — the
+// move D-108, D-124 and D-138 each record, and the reason D-293 gives for
+// putting a check where it holds for every case rather than for the case in
+// front of you.
+const ChildMarker = "LIRO_BRIDGE_PKCS11_CHILD"
+
+// IsChild reports whether this process was spawned to load one module and do
+// nothing else. Both spawners refuse when it is true.
+func IsChild() bool { return os.Getenv(ChildMarker) != "" }
+
+// ChildEnv is the environment a child is given: this process's own, plus the
+// marker.
+//
+// It is a function rather than a line inside each spawner so that there is
+// something to test, and so that the two spawners cannot come to disagree about
+// it. Deleting the marker is the whole fork bomb back — no child would be
+// marked, so no child would refuse to spawn — and that deletion is invisible
+// from outside the process: a child that answers correctly answers exactly the
+// same way whether or not it was marked. A guard whose removal nothing notices
+// is not one.
+//
+// The marker is appended to the real environment rather than replacing it. A
+// vendor module reads the environment during DllMain — SystemRoot, PATH, the
+// user's temporary directory — so a child loading a module with an empty
+// environment would be loading it under conditions the agent never runs in, and
+// a module that then behaved differently would have been measured in the wrong
+// process.
+func ChildEnv() []string {
+	return append(os.Environ(), ChildMarker+"=1")
+}
+
+// ErrChildRecursion is what a spawn becomes when the process asking is itself
+// one of these children.
+//
+// It is an ordinary error rather than a panic because the caller is Modules,
+// whose whole contract is that nothing about one candidate is fatal, or the
+// worker's supervisor, whose contract is that a worker that will not start is a
+// Failure. A person who somehow reached this gets a listing where every module
+// says why it could not be asked, which is recoverable and legible; a fork bomb
+// is neither.
+var ErrChildRecursion = errors.New("a PKCS#11 child must not spawn another: this process was spawned to load one module and nothing else")
 
 // probeResult is what a child reports on its standard output: one JSON object
 // and nothing else.
@@ -104,24 +148,6 @@ var errWorkerDied = errors.New("the probe process did not survive loading this m
 // errWorkerSilent is a child that neither answered nor died.
 var errWorkerSilent = errors.New("the probe process did not answer in time")
 
-// probeChildEnv is the environment a probe child is given.
-//
-// It is a function rather than a line inside probeOutOfProcess so that there is
-// something to test. Deleting the marker is the whole fork bomb back — no child
-// would be marked, so no child would refuse to spawn — and that deletion is
-// invisible from outside the process: a child that answers correctly answers
-// exactly the same way whether or not it was marked. A guard whose removal
-// nothing notices is not one.
-//
-// The marker is appended to the real environment rather than replacing it. A
-// vendor module reads the environment during DllMain — SystemRoot, PATH, the
-// user's temporary directory — so a child probing with an empty environment
-// would be probing under conditions the agent never runs in, and a module that
-// then behaved differently would have been measured in the wrong process.
-func probeChildEnv() []string {
-	return append(os.Environ(), probeChildMarker+"=1")
-}
-
 // probeOutOfProcess loads one candidate in a child process and reports what it
 // found, turning any way the child failed to answer into an ordinary error.
 //
@@ -133,8 +159,8 @@ func probeChildEnv() []string {
 // the only thing that touches the module is a child, and every way a child can
 // end is an error value.
 func probeOutOfProcess(ctx context.Context, path string) (probeResult, error) {
-	if os.Getenv(probeChildMarker) != "" {
-		return probeResult{}, errProbeRecursion
+	if IsChild() {
+		return probeResult{}, ErrChildRecursion
 	}
 
 	self, err := os.Executable()
@@ -158,7 +184,7 @@ func probeOutOfProcess(ctx context.Context, path string) (probeResult, error) {
 	// where every other diagnostic does rather than being swallowed.
 	cmd.Stderr = os.Stderr
 
-	cmd.Env = probeChildEnv()
+	cmd.Env = ChildEnv()
 
 	out, runErr := cmd.Output()
 

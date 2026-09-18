@@ -31,6 +31,22 @@ import (
 //
 // This is deliberately a check on the *shape of the types* rather than on any
 // handler. A handler that ignores a field is one edit away from using it.
+//
+// # It reads exported fields, and that is the rule rather than a concession
+//
+// It read every field until the parent's own supervisor arrived in this
+// package, and then fired on Worker.modulePath — which is exactly the path F12
+// §10 says the worker *is* told, on the command line, by the parent that
+// spawned it. Renaming a correctly named field to satisfy a matcher is the
+// move D-270 already rejected, and a list of exempt type names is the
+// hand-kept list D-158 is about.
+//
+// The property is the right one and was too wide by accident: the hazard is a
+// path that **crosses the pipe**, and encoding/json marshals exported fields
+// and nothing else. So a field that cannot cross the wire cannot carry a path
+// across it, and checking exported fields is both necessary and sufficient.
+// The parent's unexported field is not in the protocol's reach; a field added
+// to Request is, whatever it is called.
 func TestTheProtocolCarriesNoModulePath(t *testing.T) {
 	// Exact names and explicit compounds rather than substring matching: a
 	// field called Profile ends in "file" and a field called Disposition
@@ -46,6 +62,9 @@ func TestTheProtocolCarriesNoModulePath(t *testing.T) {
 	forEachStructField(t, func(structName, fieldName, typeName string, pos token.Position) {
 		lower := strings.ToLower(fieldName)
 		{
+			if !ast.IsExported(fieldName) {
+				return // cannot cross the wire; see the doc comment
+			}
 			if pathish[lower] {
 				t.Errorf("%s.%s (%s) at %s:%d looks like it carries a module path.\n\n"+
 					"F12 §10: a protocol-supplied module path is refused. The worker "+

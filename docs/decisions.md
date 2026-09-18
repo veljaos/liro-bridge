@@ -26825,3 +26825,342 @@ lets this be checked on a machine with no reader.
 - **Leaving `List` and `ChainFor` calling `Enumerate` and giving the worker its
   own copies.** Two implementations of one listing, which is what [[D-108]],
   [[D-124]] and [[D-138]] each had to remove once.
+
+---
+
+## D-300 — The dispatch loop has no channel, and the PIN is why; both sides of the boundary live in one package, which a written-down prediction said they could not
+
+**Date:** 2026-09-18
+**Phase:** F12 §2 — the child-side dispatch loop
+
+**Decision.** `worker.Serve` reads one request, answers it, and repeats, on one
+goroutine. `worker.Run` locks that goroutine to its OS thread, opens the module
+on it, and serves until a shutdown request or the end of the pipe.
+`cmd/liro-bridge` dispatches it as `pkcs11-worker`, beside the probe, before
+anything reads a configuration or opens a log.
+
+### There is no channel, and F12 §2 asks for one
+
+F12 §2: *"One goroutine owns every PKCS#11 call, pinned with
+`runtime.LockOSThread`. Everything else reaches it through a channel."*
+
+The first half is honoured more simply than the second describes. **The
+goroutine that reads the pipe is the goroutine that calls the module**, so there
+is no "everything else" to reach it: one requester, one loop, nothing between
+them. That satisfies the requirement's purpose — no two goroutines call the
+module — more strongly than a channel would, because there is never a second
+goroutine to serialise.
+
+**And a channel would break SPEC §6.5.1 clause 2.** That is the decisive reason
+rather than simplicity. The clause bounds the PIN to *"one write, read
+immediately, never buffered"*, and [[D-297]] established that the PIN arrives on
+this same reader immediately behind a request — which is why the framing is
+length-prefixed rather than newline-delimited in the first place. A channel
+between the reader and the module-owner would mean the PIN travelling as a Go
+value through a channel's buffer: somebody else's byte slice, never overwritten,
+and invisible to `pin_test.go` because it is not a field, a parameter or a named
+result.
+
+That is the same hazard [[D-297]] rejected `bufio` for, arriving one mechanism
+over. The loop is written now and the login is step four, so this is recorded
+where the shape is decided rather than where the shape is used.
+
+**Measured as a property of the loop rather than as an import rule.**
+`TestTheWorkerNeverBuffersItsInput` forbids `bufio` across the package, and
+`TestReadFrameTakesExactlyItsOwnBytesAndNotOneMore` asserts it of one frame.
+`TestTheLoopReadsNoFurtherThanTheRequestItIsServing` asserts it of the loop: at
+the moment the first request is handed to the module, not one byte of what
+follows may have been consumed. A second frame stands in for the PIN.
+
+**The mutation that proved it took two attempts, and the first one was the
+lesson.** The first read one byte ahead *before* `ReadFrame`, which corrupted
+the next frame — so the test failed, on a `t.Fatalf` about a truncated frame,
+rather than on the byte count it claims to measure. It looked like a pass for
+the check and was a pass for the wrong reason.
+
+The mutation that belongs is what `bufio` actually does: read *past* the request
+and put it back, leaving the stream correct and the bytes somewhere else. Then
+the count reports `23 bytes had been read; its frame is 22`, which is the
+assertion firing on its own terms, on a single byte of read-ahead.
+
+That is [[D-296]]'s second question pointed at a mutation rather than at a
+measurement: **could this mutation have produced the effect it claims to?** The
+first could not.
+
+### Both sides in one package, which the prediction said was impossible
+
+`scratchpad/predictions-enumerate.md`, written before any of this:
+
+> **P3 — `worker` cannot import `internal/keysource/pkcs11` and also be usable
+> by the parent side**, because the parent must live in `pkcs11` (that is where
+> `Source` is) and `pkcs11` would then import `worker`: a cycle. So the
+> dependency the previous session assumed has to be inverted.
+
+It also named where it expected to be wrong: *"in the direction of 'there is a
+third arrangement I have not thought of'."* There was. **Both ends of one
+protocol live in one package**, and `Source` reaches the parent side by
+importing `worker` rather than by containing it.
+
+Inverting would have been the worse answer and it is worth saying why, because
+it reads as the tidier one: the PIN guard has to be where the PIN is read, the
+no-`bufio` rule has to cover both the end that reads a PIN off the pipe and the
+end that writes one onto it, and `contract_test.go` has to be over the closure
+that includes the module-loading code. Splitting the sides would have put each
+guard one package away from the thing it guards.
+
+`worker/doc.go` said "the child side" and now says both. That sentence was a
+statement about an intention, written before the parent existed, and it was the
+thing the prediction was reasoning from.
+
+### One marker for both kinds of child
+
+There are two spawners now, and they are deliberately two things ([[D-297]]).
+What they share is exactly the way they go wrong: each re-executes
+`os.Executable()`, and [[D-293]] measured what that costs with nothing stopping
+it — 254 processes to 827.
+
+`probeChildMarker` was unexported and its value named the probe. Both had to
+change: **a guard that stops one kind of child from spawning its own kind, while
+letting it spawn the other, is a guard with a generation still in it.** It is
+`pkcs11.ChildMarker` now, with `IsChild` and `ChildEnv` beside it, read by both
+spawners. One rule, one place — [[D-108]]'s move, for [[D-293]]'s reason: put
+the check where it holds for every case rather than where it holds for the case
+in front of you.
+
+### Two things the protocol lost, and the line between them
+
+`CertificatePayload.ID` is removed. It was there as "the other attribute that
+identifies the object on the token", which is true of it and is not the test.
+**The test is whether the far end can do anything with it**, and CKA_ID
+identifies an object *within the child's own session* — the one place the parent
+has no handle on. Every lookup that needs it happens in the child, from the
+child's own read.
+
+`Label` stays, for the opposite reason: it names the certificate to a person,
+which is a thing the parent could put on a screen or in a log. The
+deduplicated listing drops it, because one certificate can be two objects with
+two labels and picking one of them would be a decision made in the wrong
+process.
+
+### What `--help` says about it, decided rather than defaulted
+
+Nothing. F12 §2 asks for the subcommand to get the same scrutiny [[D-222]] and
+[[D-228]] gave the signing paths, and part of that is what a release binary
+advertises. It is absent from `topLevelCommands`, like the probe, because a
+person who runs it from a shell has no parent to give it a pipe: the first read
+ends and so does it. Naming it in `--help` would advertise a command nobody can
+use.
+
+**What it does when the module will not open** is nothing on standard output,
+the reason on standard error, and a non-zero exit. Standard output is the
+response pipe and the parent has not asked anything yet, so an unsolicited frame
+there is a frame the parent reads as the answer to its first request. That makes
+"the module would not load" and "the module killed this process" the same thing
+from the parent's side — which is honest rather than convenient, because they
+genuinely are: the way [[D-272]]'s module fails is by dying inside the
+`C_Initialize` that function is about to call.
+
+### The path guard was too wide, and sharpening it is the finding rather than the fix
+
+`TestTheProtocolCarriesNoModulePath` read every field of every struct in the
+package. That was right while the package held only protocol types. The parent's
+`Worker.modulePath` then tripped it — and that field is exactly the path F12 §10
+says the worker *is* told, on the command line, by the parent that spawned it.
+
+Renaming a correctly named field to satisfy a matcher is the move [[D-270]]
+already rejected. A list of exempt type names is the hand-kept list [[D-158]] is
+about. The property was the right one and too wide by accident: **the hazard is
+a path that crosses the pipe, and `encoding/json` marshals exported fields and
+nothing else.** So a field that cannot cross the wire cannot carry a path across
+it, and checking exported fields is both necessary and sufficient. The parent's
+unexported field is not in the protocol's reach; a field added to `Request` is,
+whatever it is called.
+
+**Rejected.**
+
+- **A channel between the reader and the module-owner, as F12 §2 describes.**
+  Above: it is the PIN in a buffer nothing overwrites, which is the hazard
+  [[D-297]] built the framing to remove.
+- **Inverting the dependency so `worker` holds only the protocol.** The
+  prediction's answer, and it puts every guard one package away from what it
+  guards.
+- **A third package for the protocol, imported by both sides.** It avoids the
+  cycle and costs a third package and the same separation of guard from subject,
+  for a protocol that is four operations and two structs.
+- **Keeping `CertificatePayload.ID` because it is cheap.** [[D-247]] is this
+  project's entry about a thing that exists, describes itself as working, and
+  has no caller. A field nothing can use is that, in miniature.
+- **Renaming `Worker.modulePath`.** [[D-270]].
+- **Listing the worker in `--help`.** Above.
+
+---
+
+## D-301 — A dead worker is respawned three times and no seconds; which requests may be re-sent is an allow-list, because the one that must never be is the one that is coming
+
+**Date:** 2026-09-18
+**Phase:** F12 §2 — the parent-side supervisor
+
+**Decision.** `worker.Worker` spawns a child on the first request, sends one
+request and reads one response over an inherited pipe, and — for the operations
+that may be re-sent — replaces a worker that stopped answering and tries again,
+at most `maxAttempts` times. Nothing in it chooses a duration.
+
+### The bound is a count, and the reason is that the only number anybody has is unexplained
+
+[[D-297]] recorded the instruction and it is kept literally:
+
+> Do not pick a timeout around an unexplained ~320 ms — that is how a magic
+> constant gets into a supervisor and stays there for years.
+
+[[D-296]] measured a worker dying on purpose being reaped in 341–376 ms, and in
+the same entry measured that **what those milliseconds are spent on is not
+established**: pinning it needs the per-process error-reporting disable
+[[D-292]] found could not be demonstrated. A backoff sized from that number
+would be a constant nobody could later justify or move.
+
+So a worker that stopped answering is detected by **events** — the pipe ending,
+a write to a pipe whose far end is gone, the process exiting — and respawning is
+bounded by a **count**.
+
+**Three, rather than one or ten.** [[D-272]] measured the crash at roughly one
+call in a hundred and bursty rather than steady. One attempt would turn a
+one-per-cent fault into a one-per-cent listing failure, which is the defect
+[[D-297]] says people learn to re-run instead of read. Three consecutive deaths
+is far past what that rate produces even allowing for bursts, so exhausting the
+budget means the module is not usable now rather than that this request was
+unlucky — and saying so is more useful than trying again.
+
+**The per-request deadline is still open, and this does not close it.** What a
+request does have is the caller's context, which is a bound the caller chose
+rather than one this code invented. A pipe read does not observe a context, so
+the read runs on its own goroutine and the context kills the child instead; the
+pipe then ends and the read returns with it. `Close` takes a context for the
+same reason — a module that hangs inside `C_Finalize` has to be given up on, and
+how many seconds that is remains the owner's number to bring.
+
+### Which requests may be re-sent is an allow-list, and that is the load-bearing line
+
+Every operation in the closed set today is a read, and re-sending a read to a
+freshly opened module asks the same question and gets the same answer. So the
+retry is safe for all three, and a deny-list would be correct today.
+
+It is an allow-list anyway, for [[D-259]]'s reason and one specific to this
+protocol: **the operation that is coming is the one that must never be
+retried.** SPEC §6.5.1 clause 5 — *"Nothing retries a PIN automatically, ever,
+for any reason. One wrong PIN is one attempt. Three block the card, and for a
+national identity card unblocking means a visit to a police station."*
+
+A deny-list would have made a login retryable by default, silently, on the day
+it was added. An allow-list makes it non-retryable by default, and adding it is
+a deliberate act by somebody who has to type its name into this map. That is the
+direction that cannot go wrong quietly.
+
+`OpShutdown` is absent for an unrelated reason: a worker that died is already
+shut down, so there is nothing to retry against — which is also what makes it
+the one operation available to measure the mechanism with.
+
+### What is measured, and what none of it is
+
+Every test here runs against **real processes and a real pipe**, with no card,
+no module and no reader — which is every machine CI runs on. The child is this
+package's own test binary, dispatched by its `TestMain`, answering canned data
+selected by the shape of the path it was given. That keying is
+`crash_windows_test.go`'s pattern from [[D-296]], and the reason is the same:
+nothing capable of this exists outside a `_test.go` file, which is a stronger
+statement than a build tag because such a file cannot be linked into a release
+binary at all.
+
+| | |
+|---|---|
+| one worker serves three requests | one child, no respawn, nothing on its standard error |
+| a worker that dies mid-conversation | one death, one respawn, the request answered |
+| a worker that never answers | three children, then `ErrWorkerDied` naming the attempts |
+| a module that will not load, through the real `Run` | `ErrWorkerDied`, the path named, three reasons on the standard error |
+| a non-retryable operation | one child, not three |
+| the recursion guard | unmarked it starts; marked, nothing is spawned |
+| eight callers at once | eight well-formed answers |
+
+Three mutations, three failures: `maxAttempts` at 1 breaks the respawn; the
+recursion guard removed lets a marked process spawn; making everything retryable
+sends a shutdown to three workers.
+
+**None of this is F12 §2's exit item, and it must not be read as it.** That item
+asks for *"a module that kills its worker becomes a `Failure`, and the agent
+survives — demonstrated with the module that does it"*, and [[D-294]] is the
+entry that says why it stays open: **no number of clean runs demonstrates "when
+it dies, the parent survives"; only a death does**, and the owner's own 2000
+probes with the card in produced none. What a child that ends on purpose
+demonstrates is the parent's own handling, which [[D-296]] established is a real
+measurement because the parent reads a status from a process that genuinely
+ended rather than a value somebody handed it. The module's half is still the
+module's.
+
+### A test I wrote could not fail, and the shape it took is worth naming
+
+`TestAWorkerThatKeepsDyingIsGivenUpOnRatherThanRespawnedForEver` was written
+against a canned child with `DieAfter`, and the test asked for `DieAfter: -1`.
+The handler's guard was `DieAfter > 0`, so the child never died, the request
+succeeded, and the test — which only logged — passed. It measured nothing, on
+the one property this entry is most about.
+
+The field is `DieOnRequest` now, one-based, and the reason is in its own
+comment: **the zero value has to mean "never", and "after 0" and "never" are the
+same number.** A field whose disabled state and whose first active state collide
+is a field whose tests pass by accident.
+
+It is the sixth instance this project has recorded of [[D-296]]'s first
+question — *could this check have failed?* — and the first where the answer was
+no because of an off-by-one in a test fixture's own semantics rather than
+because of where the check was pointed. [[D-285]]'s constant, [[D-290]]'s build
+tag, [[D-291]]'s canary, [[D-293]]'s `grep`, [[D-295]]'s two identical lint arms
+— and now a sentinel value that overlapped its own default.
+
+### Two smaller decisions
+
+**A module's refusal is not a death.** A response carrying `Err` is returned to
+the caller with the module's own reason and the path attached, and no respawn.
+F11 §3 asks for a readable reason rather than a number, and respawning over a
+card that is simply not in the reader would hide that behind three process
+spawns.
+
+**`ErrWorkerDied` does not say the module killed it.** [[D-272]] measured that
+it can, and the child exits non-zero for other reasons too — a module that would
+not load at all, a frame that would not encode. From the parent's side they are
+one event with nothing to tell them apart, so the name says what was observed.
+The reason, when there was one to give, is on the standard error the child
+inherited.
+
+### One thing left as it is, said so the closure listing does not surprise anybody
+
+`contract_test.go`'s allow-list carries `internal/errs`, and the worker's actual
+closure is `internal/keysource`, `internal/keysource/pkcs11` and itself —
+`errs` is not in it. The entry is not removed: it is a dependency-free leaf that
+cannot reach anything the contract is about, and the protocol carrying strings
+rather than codes ([[D-297]]) is a decision that could reasonably be revisited
+when the PIN's failures need naming. It is recorded here so that a reader
+comparing the list against `go list -deps` finds the discrepancy explained.
+
+**Rejected.**
+
+- **A backoff, or any interval, between respawns.** [[D-297]]'s instruction, and
+  [[D-296]]'s unexplained 320 ms is exactly the number it would have been sized
+  from.
+- **A default per-request timeout.** [[D-297]] leaves it open on purpose — "a
+  per-request deadline is a separate question justified by the cost of the
+  request it bounds; bring the owner the number rather than choosing" — and
+  inventing one here would be choosing it in the place hardest to find later.
+  The caller's context is what bounds a request.
+- **A deny-list of non-retryable operations.** Above: it makes the one that must
+  never be retried retryable by default on the day it arrives.
+- **Retrying a request that failed to parse.** A frame that will not decode is
+  this program disagreeing with itself, not a module killing a process.
+  Respawning over it would turn one protocol fault into three.
+- **Leaving the mutex to the orchestration layer, as [[D-027]] does for the
+  card.** Different thing at a different level: what [[D-027]] serialises is the
+  card, and what this protects is one pipe, on which two callers interleaving
+  frames would corrupt both answers in a way that reads as a protocol fault
+  rather than as a race.
+- **Spawning eagerly, at `New`.** A machine with four candidate modules would
+  then hold four vendor DLLs open in four processes because a listing might
+  happen. Lazily also means the first request and a respawn are one code path
+  rather than two.

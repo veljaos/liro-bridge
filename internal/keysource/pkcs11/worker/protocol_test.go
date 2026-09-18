@@ -16,7 +16,7 @@ func TestAFrameReadsBackAsItWasWritten(t *testing.T) {
 	var buf bytes.Buffer
 	want := Response{
 		Certificates: []CertificatePayload{
-			{DER: []byte{0x30, 0x82, 0x01}, Label: "Pošta CA", ID: []byte{0x01, 0x02}},
+			{DER: []byte{0x30, 0x82, 0x01}, Label: "Pošta CA"},
 		},
 		Chain: [][]byte{{0xAA}, {0xBB, 0xCC}},
 	}

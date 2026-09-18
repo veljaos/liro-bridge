@@ -96,7 +96,7 @@ func TestTheRealModuleKillsItsChildAndThisProcessSurvives(t *testing.T) {
 			}
 		case errors.Is(err, errWorkerSilent):
 			silent++
-		case errors.Is(err, errProbeRecursion):
+		case errors.Is(err, ErrChildRecursion):
 			t.Fatalf("iteration %d: this process is marked as a probe child, so nothing was "+
 				"spawned and the measurement is of the guard rather than the module", i)
 		default:

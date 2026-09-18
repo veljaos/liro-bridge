@@ -19,6 +19,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
+	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11/worker"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
@@ -64,6 +65,31 @@ func run(args []string, out io.Writer) int {
 	// reads no standard input at all.
 	if len(args) > 1 && args[0] == pkcs11.ProbeSubcommand {
 		return pkcs11.RunProbe(args[1:], out)
+	}
+
+	// The worker is the second of the two children that load a module, and it
+	// is dispatched here for the same reasons and one more.
+	//
+	// The two are not one thing done twice. Discovery spawns a throwaway child
+	// per candidate, because it is asking unknown files what they are and a
+	// crash is the expected outcome; the worker holds C_Initialize open,
+	// because a session has to survive many calls and paying C_Initialize per
+	// call rolls D-272's dice every time (D-297).
+	//
+	// The one more: this branch is the only place in this program that gives a
+	// child its standard input. That pipe is SPEC §6.5.1 clause 2's single
+	// permitted boundary for the PIN, so it is written out here rather than
+	// threaded through run's own parameters — the pipe *is* this process's
+	// standard input, and saying so at the one place it is handed over is worth
+	// more than the symmetry.
+	//
+	// It is deliberately absent from topLevelCommands, so --help does not offer
+	// it: a person who runs it from a shell has no parent to give it a pipe, so
+	// the first read ends and so does it. Naming it in --help would advertise a
+	// command nobody can use (F12 §2 asks for that to be decided rather than
+	// defaulted).
+	if len(args) > 1 && args[0] == worker.Subcommand {
+		return worker.Run(args[1:], os.Stdin, out, os.Stderr)
 	}
 
 	cfg, cfgErr := config.Load(platform.DefaultConfigFile())

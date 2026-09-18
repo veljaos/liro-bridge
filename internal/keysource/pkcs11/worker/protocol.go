@@ -52,18 +52,32 @@ type Request struct {
 	Thumbprint string `json:"thumbprint,omitempty"`
 }
 
-// CertificatePayload is one certificate as it crosses the boundary: the DER
-// and the two attributes that identify the object on the token.
+// CertificatePayload is one certificate as it crosses the boundary: the DER,
+// and the label if the token gave the object one.
 //
 // It is deliberately not keysource.Certificate. The worker reports what is on
 // the card; whether a certificate is *usable* depends on presence, trust and
 // policy, which are the agent's questions and are answered with things the
 // worker cannot see. Sending the richer type would invite the worker to fill in
 // fields it has no business deciding.
+//
+// # CKA_ID is not here, and the line is where it can be used
+//
+// An earlier draft carried the object's CKA_ID alongside the label, as the
+// other attribute that identifies the object on the token. It is removed
+// because the parent can never use it: CKA_ID identifies an object *within the
+// child's own session*, which is the one place the parent has no handle on.
+// Every lookup that needs it — finding the private key that goes with a
+// certificate — happens in the child, from the child's own read.
+//
+// Label stays for the opposite reason: it names the certificate to a person,
+// which is a thing the parent could put on a screen or in a log. That is the
+// line, and it is worth stating because "identifies the object" was true of
+// both and is not the test. The test is whether the far end can do anything
+// with it.
 type CertificatePayload struct {
 	DER   []byte `json:"der"`
 	Label string `json:"label,omitempty"`
-	ID    []byte `json:"id,omitempty"`
 }
 
 // Response is one answer. Exactly one request gets exactly one of these.

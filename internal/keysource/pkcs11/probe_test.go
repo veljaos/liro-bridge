@@ -26,7 +26,7 @@ import (
 // the tests that call Modules, which spawn again, and so on. That is not a risk
 // that was reasoned about: `go test ./internal/keysource/pkcs11/...` took this
 // machine from 254 processes to 827 in a few seconds and had to be killed by
-// name. See probeChildMarker.
+// name. See ChildMarker.
 func TestTheGuardIsWhatRefuses(t *testing.T) {
 	dir := t.TempDir()
 	notAModule := filepath.Join(dir, "definitely-not-a-module.dll")
@@ -41,23 +41,23 @@ func TestTheGuardIsWhatRefuses(t *testing.T) {
 	// probe answered something that is not a result".
 	if _, err := probeOutOfProcess(context.Background(), notAModule); err == nil {
 		t.Error("a text file was accepted as a PKCS#11 module")
-	} else if errors.Is(err, errProbeRecursion) {
+	} else if errors.Is(err, ErrChildRecursion) {
 		t.Fatalf("the control refused before spawning: %v\n\n"+
 			"It should have spawned a child, which means %s was already set in "+
 			"this process's environment. Then the treatment below proves nothing.",
-			err, probeChildMarker)
+			err, ChildMarker)
 	} else if errors.Is(err, errWorkerSilent) || errors.Is(err, errWorkerDied) {
 		t.Fatalf("the control's child neither answered nor loaded: %v\n\n"+
 			"Loading a text file should be an ordinary refusal from the child, "+
 			"not the child dying or hanging.", err)
 	}
 
-	// Treatment: marked, exactly as probeChildEnv marks the children this
+	// Treatment: marked, exactly as ChildEnv marks the children this
 	// package spawns. Nothing else about the call changes.
-	t.Setenv(probeChildMarker, "1")
+	t.Setenv(ChildMarker, "1")
 
 	_, err := probeOutOfProcess(context.Background(), notAModule)
-	if !errors.Is(err, errProbeRecursion) {
+	if !errors.Is(err, ErrChildRecursion) {
 		t.Fatalf("a process marked as a probe child spawned one anyway; got %v\n\n"+
 			"This is the guard that bounds recursion at a single generation. "+
 			"Without it, any binary that spawns without dispatching "+
@@ -77,18 +77,18 @@ func TestTheGuardIsWhatRefuses(t *testing.T) {
 // correctly answers identically whether or not it was marked.
 //
 // So the environment the child is given is a value this reads directly, which
-// is why probeChildEnv exists as a function at all.
+// is why ChildEnv exists as a function at all.
 func TestAChildIsMarked(t *testing.T) {
 	const ambient = "LIRO_BRIDGE_PROBE_ENV_CANARY"
 	t.Setenv(ambient, "present")
 
-	env := probeChildEnv()
+	env := ChildEnv()
 
 	marked := false
 	inherited := false
 	for _, kv := range env {
 		switch kv {
-		case probeChildMarker + "=1":
+		case ChildMarker + "=1":
 			marked = true
 		case ambient + "=present":
 			inherited = true
@@ -99,7 +99,7 @@ func TestAChildIsMarked(t *testing.T) {
 		t.Errorf("a probe child is spawned without %s set.\n\n"+
 			"That marker is the only thing that stops a child which does not "+
 			"dispatch the subcommand from spawning children of its own. Measured "+
-			"without it: 254 processes to 827.", probeChildMarker)
+			"without it: 254 processes to 827.", ChildMarker)
 	}
 	if !inherited {
 		t.Errorf("the child's environment does not carry this process's own.\n\n" +

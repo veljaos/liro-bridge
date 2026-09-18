@@ -1,6 +1,23 @@
-// Package worker is the child side of the PKCS#11 out-of-process boundary:
-// the only code in this project that is permitted to load a vendor PKCS#11
-// module and call into it.
+// Package worker is both sides of the PKCS#11 out-of-process boundary: the
+// child that holds one vendor module open and answers a pipe, and the
+// supervisor that spawns it, talks to it, and respawns it when it stops
+// answering.
+//
+// # Why both sides are here, which the first draft of this comment got wrong
+//
+// This said "the child side", on the assumption that the parent would live in
+// internal/keysource/pkcs11 beside Source. It cannot: the child needs the
+// binding, so this package imports pkcs11, and a parent in pkcs11 would need
+// the protocol, which is here. That is a cycle, and it is not avoidable by
+// moving the parent somewhere else — the parent has to be reachable from
+// Source.List, because serving Source out of process is the entire point.
+//
+// So both ends of one protocol live in one package. That is also where the
+// guards want to be: pin_test.go has to be where the PIN is read, the no-bufio
+// rule has to cover both the end that reads a PIN off the pipe and the end that
+// writes one onto it, and contract_test.go has to be over the closure that
+// includes the module-loading code. Splitting the sides would have put each
+// guard one package away from the thing it guards.
 //
 // # Why it exists at all
 //
@@ -36,9 +53,25 @@
 //     record, and nothing in it that could believe a person said yes. The
 //     gate stays where SPEC §6.5 puts it, in the agent.
 //   - **It cannot be driven into signing by anything but its parent** — its
-//     only input is a pipe it inherited. It opens no socket, reads no file for
-//     instructions, and takes no work from its command line. A person who runs
-//     the subcommand from a shell has no pipe to give it and gets a refusal.
+//     only input is a pipe it inherited, and one module path on its command
+//     line. It opens no socket and reads no file for instructions. A person who
+//     runs the subcommand from a shell has no parent to give it a pipe: its
+//     first read ends, and so does it.
+//
+// # What the supervisor adds, and what it deliberately does not
+//
+// A worker that stops answering is an error the caller can act on rather than a
+// process this program has lost: the pipe ends or the process exits, and both
+// are events rather than deadlines. A request that may be re-sent is re-sent to
+// a fresh worker, bounded by a count — D-297's instruction, because the only
+// duration this project has measured around a dying child is D-296's
+// 341–376 ms reap and D-296 says plainly that what those milliseconds are spent
+// on is not established.
+//
+// Which requests may be re-sent is an allow-list, and the reason is the one
+// thing in this package that must not be got wrong later: SPEC §6.5.1 clause 5
+// forbids retrying a PIN, ever, for any reason. An operation added to this
+// protocol is not retried until somebody says so.
 //
 // # The PIN
 //

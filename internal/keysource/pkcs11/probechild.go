@@ -27,9 +27,10 @@ import (
 //     PIN (SPEC §6.5.1 clause 2), and a probe must not be able to receive one.
 //     It opens no file of its own and no socket, and it reads no environment
 //     variable. One variable is set *on* it, which it never reads:
-//     probeChildMarker, by which a process that is already a probe child
-//     refuses to spawn another. It can only subtract a capability and never add
-//     one, which is why it does not qualify this sentence.
+//     ChildMarker, by which a process that is already a PKCS#11 child of ours
+//     — a probe or a worker — refuses to spawn either. It can only subtract a
+//     capability and never add one, which is why it does not qualify this
+//     sentence.
 //   - **It cannot be driven anywhere else.** Its whole vocabulary is one path
 //     in and one JSON object out.
 //

@@ -17,7 +17,7 @@ import (
 // ./internal/keysource/pkcs11/...` took this machine from 254 processes to 827
 // before it was killed.
 //
-// It is not what stops that happening. probeChildMarker is; it is on the
+// It is not what stops that happening. ChildMarker is; it is on the
 // parent side, it reads the parent's own environment, and it holds for every
 // binary whether or not the binary dispatches anything. A guard that depends on
 // each future test binary remembering to add a TestMain is not a guard.
