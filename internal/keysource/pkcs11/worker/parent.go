@@ -65,7 +65,9 @@ var (
 	// would not load at all, a frame that would not encode. From this side they
 	// are the same event and there is nothing to tell them apart with, so the
 	// name says what was observed rather than what caused it. The reason, when
-	// there was one to give, is on the standard error the child inherited.
+	// there was one to give, is what the child wrote to its standard error —
+	// read it with Worker.ChildStderr, never by reading back the writer handed
+	// to New, which a copier goroutine is writing to (D-303).
 	ErrWorkerDied = errors.New("pkcs11 worker: the worker process stopped answering")
 
 	// ErrWorkerCannotStart is a worker that never ran: this binary could not be
@@ -137,6 +139,10 @@ type Worker struct {
 	modulePath string
 	stderr     io.Writer
 
+	// said is what children have written to their own standard error, kept by
+	// this Worker so the parent can quote it. See ChildStderr.
+	said childStderr
+
 	mu  sync.Mutex
 	cmd *exec.Cmd
 	in  io.WriteCloser
@@ -145,16 +151,91 @@ type Worker struct {
 
 // New returns a Worker over the module at path. Nothing is spawned yet.
 //
-// stderr is where the child's own standard error goes. It is a parameter rather
-// than always os.Stderr because a vendor module writes to it during DllMain —
-// measured: Nexus's personal64.dll does — and that output is the caller's to
-// place. Nil means os.Stderr, which is where the probe puts it.
+// stderr is where the child's own standard error is forwarded, live. It is a
+// parameter rather than always os.Stderr because a vendor module writes to it
+// during DllMain — measured: Nexus's personal64.dll does — and that output is
+// the caller's to place. Nil means os.Stderr, which is where the probe puts it.
+//
+// # It is written from another goroutine, for as long as a child lives
+//
+// os/exec copies a child's standard error into a non-*os.File writer on a
+// goroutine of its own, which runs from Start until the child is reaped. So
+// whatever is passed here is written to concurrently with everything the
+// caller does next, and a caller that also *reads* it — a bytes.Buffer, a
+// strings.Builder — has a data race.
+//
+// That is not a caution invented for this comment. It was measured: every test
+// in this package passed a bytes.Buffer and read it to find out what a child
+// had said, and CI's race detector reported it against three of them. The
+// reasoning that let it through was that a copier blocked in Read has not
+// written anything yet, and that is false — bytes.Buffer.ReadFrom grows the
+// buffer *before* each read, so a copier that has never received a byte has
+// already written the slice header (D-303).
+//
+// Callers who want to know what a child said use ChildStderr, which is this
+// Worker's own record and is safe to read at any time. This parameter is for
+// placing the noise, not for reading it back.
 func New(modulePath string, stderr io.Writer) *Worker {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
 	return &Worker{modulePath: modulePath, stderr: stderr}
 }
+
+// maxChildStderr bounds what one Worker keeps of what its children said.
+//
+// A worker is long-lived and a vendor module is not required to be quiet, so an
+// unbounded record is a leak with a module's name on it. The *tail* is kept
+// rather than the head: what a child says on its way out is why it went, which
+// is the question ErrWorkerDied exists to answer, and a fixed prefix of a
+// chatty module's start-up noise answers nothing.
+const maxChildStderr = 8 << 10
+
+// childStderr is one Worker's record of what its children have written to
+// their own standard error.
+//
+// It is a writer rather than a buffer the Worker reads, because the writing is
+// done by a goroutine inside os/exec and the reading by whoever holds the
+// Worker. One mutex, held across both, is the whole of it.
+//
+// It is deliberately *not* w.mu. That mutex serialises requests on the pipe and
+// is held for the length of a round trip — so quoting what a child said while
+// one was in flight would block until the module answered, which is exactly
+// when a caller most wants to know what the child has been saying.
+type childStderr struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+func (c *childStderr) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.buf = append(c.buf, p...)
+	if len(c.buf) > maxChildStderr {
+		c.buf = c.buf[len(c.buf)-maxChildStderr:]
+	}
+	return len(p), nil
+}
+
+func (c *childStderr) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return string(c.buf)
+}
+
+// ChildStderr is what this Worker's children have written to their standard
+// error, most recent last, up to maxChildStderr bytes.
+//
+// It is safe to call at any time, including while a child is running and while
+// another goroutine has a request in flight, and that is the entire reason it
+// exists: ErrWorkerDied's own comment says the reason a worker went is "on the
+// standard error the child inherited", and until D-303 the only way to act on
+// that advice was to read memory an os/exec copier goroutine was writing.
+//
+// It spans respawns on purpose. A worker that died and was replaced has two
+// children's output in here, in order, which is what makes "how many died"
+// answerable at all.
+func (w *Worker) ChildStderr() string { return w.said.String() }
 
 // ModulePath is which module this worker was started for. It is what a Failure
 // or a log line names, and it is the only thing that tells two workers apart.
@@ -293,7 +374,18 @@ func (w *Worker) start() error {
 	// which is the same thing said at the level that knows about it.
 	cmd := exec.Command(self, Subcommand, w.modulePath)
 	cmd.Env = pkcs11.ChildEnv()
-	cmd.Stderr = w.stderr
+	// The Worker's own record first, then the caller's writer. The order
+	// matters on the failure path: io.MultiWriter stops at the first error, and
+	// what this Worker keeps is what it can still quote when the caller's writer
+	// is the thing that broke.
+	//
+	// A consequence worth knowing: cmd.Stderr is now never an *os.File, so
+	// os/exec always pipes and copies rather than letting the child inherit
+	// fd 2 directly. Nothing is lost when a module kills the child — the bytes
+	// are already in the pipe and the copier drains it before seeing EOF — but
+	// it is a goroutine and a pipe per child where a caller passing os.Stderr
+	// used to have neither.
+	cmd.Stderr = io.MultiWriter(&w.said, w.stderr)
 
 	in, err := cmd.StdinPipe()
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -83,8 +84,7 @@ func askingCard(a cannedAnswers) cannedAnswers {
 // login happened, which is a much weaker thing and is what a test that only
 // looked at the error would establish.
 func TestThePINReachesTheWorkerIntactAndTheSessionSigns(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(askingCard(cannedAnswers{Label: "card"})), &stderr)
+	w := New(cannedPath(askingCard(cannedAnswers{Label: "card"})), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	ctx := context.Background()
@@ -92,7 +92,7 @@ func TestThePINReachesTheWorkerIntactAndTheSessionSigns(t *testing.T) {
 
 	sess, err := w.Open(ctx, "ABCDEF", typing(askingCardPIN, &screens))
 	if err != nil {
-		t.Fatalf("Open: %v\nchild stderr:\n%s", err, stderr.String())
+		t.Fatalf("Open: %v\nchild stderr:\n%s", err, w.ChildStderr())
 	}
 	if screens != 1 {
 		t.Errorf("the PIN screen was shown %d times, want 1", screens)
@@ -111,7 +111,7 @@ func TestThePINReachesTheWorkerIntactAndTheSessionSigns(t *testing.T) {
 	digest := bytes.Repeat([]byte{7}, 32)
 	sig, err := sess.SignDigest(ctx, keysource.DigestSHA256, digest)
 	if err != nil {
-		t.Fatalf("SignDigest: %v\nchild stderr:\n%s", err, stderr.String())
+		t.Fatalf("SignDigest: %v\nchild stderr:\n%s", err, w.ChildStderr())
 	}
 	// The canned child answers with the algorithm byte followed by the digest,
 	// so this says the digest crossed intact and the algorithm with it.
@@ -130,8 +130,8 @@ func TestThePINReachesTheWorkerIntactAndTheSessionSigns(t *testing.T) {
 	if _, err := w.List(ctx); err != nil {
 		t.Errorf("the worker stopped answering after its session closed: %v", err)
 	}
-	if stderr.Len() != 0 {
-		t.Errorf("the child wrote to its standard error:\n%s", stderr.String())
+	if w.ChildStderr() != "" {
+		t.Errorf("the child wrote to its standard error:\n%s", w.ChildStderr())
 	}
 }
 
@@ -144,15 +144,14 @@ func TestThePINReachesTheWorkerIntactAndTheSessionSigns(t *testing.T) {
 // to be asked — and this program's PIN screen deliberately looks like a system
 // dialog (D-277), so a spurious one is worse than an inconvenience.
 func TestATokenWithNoPINRequirementIsOpenedWithoutAScreen(t *testing.T) {
-	var stderr bytes.Buffer
 	// No Needs, so the canned child never calls ask.
-	w := New(cannedPath(cannedAnswers{Label: "pinpad"}), &stderr)
+	w := New(cannedPath(cannedAnswers{Label: "pinpad"}), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	screens := 0
 	sess, err := w.Open(context.Background(), "ABCDEF", typing("unused", &screens))
 	if err != nil {
-		t.Fatalf("Open: %v\nchild stderr:\n%s", err, stderr.String())
+		t.Fatalf("Open: %v\nchild stderr:\n%s", err, w.ChildStderr())
 	}
 	t.Cleanup(func() { _ = sess.Close() })
 
@@ -171,8 +170,7 @@ func TestATokenWithNoPINRequirementIsOpenedWithoutAScreen(t *testing.T) {
 // an ending — and what must follow is one screen and one failure. A supervisor
 // that treated a refused login like a failed listing would show three.
 func TestAWrongPINIsOneAttemptAndIsNotRetried(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(askingCard(cannedAnswers{Label: "card"})), &stderr)
+	w := New(cannedPath(askingCard(cannedAnswers{Label: "card"})), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	screens := 0
@@ -200,9 +198,8 @@ func TestAWrongPINIsOneAttemptAndIsNotRetried(t *testing.T) {
 // process that knows is gone. Retrying might cost nothing or might cost the
 // second of three attempts, and there is no way to find out which.
 func TestALoginIsNeverRetriedAgainstAFreshWorker(t *testing.T) {
-	var stderr bytes.Buffer
 	// The child ends instead of answering its first request, which is the login.
-	w := New(cannedPath(askingCard(cannedAnswers{Label: "card", DieOnRequest: 1})), &stderr)
+	w := New(cannedPath(askingCard(cannedAnswers{Label: "card", DieOnRequest: 1})), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	screens := 0
@@ -217,7 +214,7 @@ func TestALoginIsNeverRetriedAgainstAFreshWorker(t *testing.T) {
 		t.Errorf("the PIN screen was shown %d times against a child that died "+
 			"before it could ask", screens)
 	}
-	if got := strings.Count(stderr.String(), cannedDeathLine); got != 1 {
+	if got := strings.Count(w.ChildStderr(), cannedDeathLine); got != 1 {
 		t.Errorf("%d children died, want 1: a login is not retried against a "+
 			"respawned worker", got)
 	}
@@ -232,8 +229,7 @@ func TestALoginIsNeverRetriedAgainstAFreshWorker(t *testing.T) {
 // reporting it as a failure is how a program tells somebody off for changing
 // their mind.
 func TestACancelledPINScreenIsNotAFailure(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(askingCard(cannedAnswers{Label: "card"})), &stderr)
+	w := New(cannedPath(askingCard(cannedAnswers{Label: "card"})), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	cancelled := pkcs11.PINEntry(func([]byte, pkcs11.PINRequest) (int, error) {
@@ -401,8 +397,7 @@ func TestThePINIsWrittenOnceBehindTheFrameThatNamesIt(t *testing.T) {
 // operation behind it and no entry to collect one with, and the parent must
 // refuse rather than find a way to answer.
 func TestAPINRequestWithNothingPendingIsRefusedLoudly(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(askingCard(cannedAnswers{AskUnbidden: true})), &stderr)
+	w := New(cannedPath(askingCard(cannedAnswers{AskUnbidden: true})), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	_, err := w.List(context.Background())
@@ -431,8 +426,7 @@ func TestAPINRequestWithNothingPendingIsRefusedLoudly(t *testing.T) {
 // appear" a thing the far end can do at will — with a dialog that deliberately
 // looks like a system one (D-277, SPEC §10).
 func TestAPINRequestAboutAnotherExchangeIsRefused(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(askingCard(cannedAnswers{AskWithExchange: "NOT-THE-ONE"})), &stderr)
+	w := New(cannedPath(askingCard(cannedAnswers{AskWithExchange: "NOT-THE-ONE"})), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	screens := 0
@@ -450,8 +444,7 @@ func TestAPINRequestAboutAnotherExchangeIsRefused(t *testing.T) {
 // that could ask twice could ask three times, and three is the number that ends
 // with a visit to a police station.
 func TestASecondPINQuestionIsRefused(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(askingCard(cannedAnswers{Label: "card", AskTwice: true})), &stderr)
+	w := New(cannedPath(askingCard(cannedAnswers{Label: "card", AskTwice: true})), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	screens := 0
@@ -470,8 +463,7 @@ func TestASecondPINQuestionIsRefused(t *testing.T) {
 // has to tell it from a card refusing a PIN, which is an entirely different
 // thing to tell a person.
 func TestALoginWithNoPINEntryIsRefusedRatherThanAttempted(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(askingCard(cannedAnswers{Label: "card"})), &stderr)
+	w := New(cannedPath(askingCard(cannedAnswers{Label: "card"})), io.Discard)
 	t.Cleanup(closing(t, w))
 
 	_, err := w.Open(context.Background(), "ABCDEF", nil)

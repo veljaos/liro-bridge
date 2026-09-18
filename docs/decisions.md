@@ -27423,3 +27423,154 @@ That `LockOSThread` holds across the login. The child's guarantee is structural 
 nothing here measures it, because a Go test cannot see which OS thread a foreign
 DLL was entered on. [[D-298]] is why that structure is the braces rather than the
 belt.
+
+---
+
+## D-303 — A copier goroutine writes the destination before its first read returns; the Worker keeps its own record of what children said, because the writer it was handed was never safe to read back
+
+**Date:** 2026-09-18
+**Phase:** F12 §2 — the supervisor
+
+**Decision.** `Worker` no longer hands the caller's writer straight to
+`cmd.Stderr`. It writes to `io.MultiWriter(&w.said, w.stderr)`, where `said` is
+the Worker's own mutex-guarded record, bounded to the last `maxChildStderr`
+bytes and readable at any time through `Worker.ChildStderr`. The caller's writer
+is still forwarded to, live, and is now documented as a place to *put* the
+child's noise rather than a place to read it back from.
+
+### What happened
+
+[[D-302]]'s commit went to CI and the Linux `-race` job failed:
+
+```
+--- FAIL: TestADeadWorkerIsRespawnedAndTheRequestIsAnswered (1.02s)
+    testing.go:1712: race detected during execution of test
+```
+
+The two stacks, once read rather than guessed at:
+
+```
+Read at 0x00c00018fdb8 by goroutine 71:
+  bytes.(*Buffer).Len()                         bytes/buffer.go:97
+  worker.TestOneWorkerServesManyRequests()      parent_test.go:55
+
+Previous write at 0x00c00018fdb8 by goroutine 72:
+  bytes.(*Buffer).grow()                        bytes/buffer.go:172
+  bytes.(*Buffer).ReadFrom()                    bytes/buffer.go:227
+  io.copyBuffer() / io.Copy()
+  os/exec.(*Cmd).writerDescriptor.func1()       os/exec/exec.go:602
+  os/exec.(*Cmd).Start.func2()                  os/exec/exec.go:757
+```
+
+`Worker.start` sets `cmd.Stderr` to a caller-supplied `io.Writer`. When that is
+not an `*os.File`, `os/exec` pipes the child's standard error and copies it into
+the writer on a goroutine of its own, which lives from `Start` until the child is
+reaped. Every test in this package passed a `bytes.Buffer` and then read it —
+`stderr.Len()`, `stderr.String()` — to find out what a child had said. Three of
+them were caught; all of them were wrong.
+
+### What inspection missed, and why
+
+This is the useful part, and it is the same shape as the six instrument failures
+this week, one level up: **reading is an instrument too, and it cannot see what
+it does not think to look at.**
+
+Before the push I removed a real data race in `Worker.Open` by inspection — a
+flag written inside the `mid` callback, which runs on the goroutine `exchange`
+abandons when a context ends, and read afterwards on the caller's goroutine. That
+reading was correct and the race was real. I then said the detector was the check
+for the rest, which was also correct, and it was.
+
+Asked to find this one by reading, I got two steps of three right:
+
+1. I identified the shared `bytes.Buffer` as the leading candidate. Right.
+2. I traced the happens-before and found `reap` always receives from `waited`, so
+   `cmd.Wait()` completes before `reap` returns, and `Cmd.Wait` joins the copier
+   goroutines. Right, and it is why the *dead* child's output is safely ordered.
+3. I concluded that the live child's copier was harmless **because it was blocked
+   in `Read` and had therefore written nothing**. Wrong.
+
+`bytes.Buffer.ReadFrom` is a loop whose first statement is `i := b.grow(MinRead)`
+followed by `b.buf = b.buf[:i]`, *then* `r.Read`. A copier that has never
+received a single byte has already written the buffer's slice header. I reasoned
+about the bytes the child had sent and not about the receiver the copier was
+preparing, and that is precisely a question I did not think to ask.
+
+The tell, in hindsight: I wrote down "I could not complete the argument for A"
+and named "the race is somewhere I did not think to look" as the live
+possibility. It was not somewhere else. It was inside A, at the step I had
+waved through.
+
+### Why this is the program's defect and not the tests'
+
+It would have been one line to make the tests read the buffer after `Close`, and
+that is the fix the owner's first condition rules out: *a test that stops
+reporting a race because it was made less concurrent is a test that has stopped
+looking.*
+
+The program is what is wrong. `Worker` causes a goroutine to write to caller
+memory for as long as a child lives and says nothing about it — and
+`ErrWorkerDied`'s own doc comment actively told the reader where to go and look:
+*"The reason, when there was one to give, is on the standard error the child
+inherited."* Acting on that advice was the race. An API whose documentation
+instructs the caller into a data race is not an API with a careless caller.
+
+So the answer is to make the advice true: the Worker keeps the record itself,
+under its own mutex, and `ChildStderr` is safe at any time. The tests now ask the
+Worker instead of reading their own memory. They spawn the same processes, assert
+the same facts — including counting deaths across a respawn — and nothing about
+them is less concurrent; the new regression test deliberately reads while a
+child is alive, while eight goroutines read, and across a death and a respawn.
+
+**Two mutexes, not one.** `ChildStderr` must not take `w.mu`. That mutex is held
+for the length of a round trip, so quoting what a child has been saying would
+block until the module answered — which is exactly when a caller most wants to
+know.
+
+**The tail, not the head.** A worker is long-lived and a vendor module is not
+required to be quiet, so the record is bounded. What a child says on its way out
+is why it went; a fixed prefix of a chatty module's start-up noise answers
+nothing.
+
+**`Write` returns `len(p)`, not the number of bytes kept.** A short write makes
+`io.Copy` stop with `io.ErrShortWrite`, which would end the copier and take the
+child's standard error with it at the moment it started mattering.
+`TestAWriteIsReportedWholeEvenWhenItIsTrimmed` is that, and N3 is its mutation.
+
+### One thing given up, said plainly
+
+`cmd.Stderr` is now never an `*os.File`, so `os/exec` always pipes and copies —
+a goroutine and a pipe per child, where a caller passing `os.Stderr` previously
+had the child inherit fd 2 directly. Nothing is lost when a module kills a child:
+the bytes are already in the pipe and the copier drains it before seeing EOF.
+What is spent is one pipe per child, which against [[D-297]]'s reason for a
+worker existing at all is not a cost worth arranging around.
+
+### The instrument, since this machine cannot run the detector
+
+There is no C toolchain here and `CGO_ENABLED=0`, so `-race` cannot run on the
+development machine at all — CI is the only instrument. Job logs are 403 without
+repo-admin auth, but a job's `::warning::` annotations are readable anonymously,
+which is the channel [[D-293]]'s successor note already established for getting
+measurements off a runner. A temporary `race probe` workflow on a branch runs the
+package with `-race -count=20` and posts the report back through it.
+
+**The probe failed first, on its own output.** `awk … | head -200` under
+GitHub's `shell: bash`, which is `bash -eo pipefail`: `head` closes the pipe,
+`awk` takes SIGPIPE, the step exits 141 and emits nothing. Bounding the slice
+inside `awk` fixed it. Worth recording because it is the week's pattern again —
+the thing that broke was the instrument, and the only reason it was obvious is
+that exit 141 is reached *after* `grep -q "DATA RACE"` succeeds, so the failure
+itself carried the finding.
+
+`-count=20` rather than 1, for [[D-294]]'s reason pointed the other way: one run
+that reproduces proves it happened, and twenty that do not are what "it is fixed"
+has to mean.
+
+### What this does not establish
+
+That there are no other races. The detector sees the interleavings that actually
+occur, twenty runs of one package is not a proof, and the only code it has ever
+been run against in this project is what CI happens to exercise. What it
+establishes is that this one is gone and that the tests that would notice it
+coming back are still looking.

@@ -1,9 +1,9 @@
 package worker
 
 import (
-	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -23,15 +23,14 @@ import (
 // has served, is visible as the third answer still coming from a module that
 // was opened once.
 func TestOneWorkerServesManyRequests(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(cannedAnswers{Label: "one module"}), &stderr)
+	w := New(cannedPath(cannedAnswers{Label: "one module"}), io.Discard)
 	t.Cleanup(func() { _ = w.Close(context.Background()) })
 
 	ctx := context.Background()
 
 	certs, err := w.Enumerate(ctx)
 	if err != nil {
-		t.Fatalf("Enumerate: %v\nchild stderr:\n%s", err, stderr.String())
+		t.Fatalf("Enumerate: %v\nchild stderr:\n%s", err, w.ChildStderr())
 	}
 	if len(certs) != 1 || certs[0].Label != "one module" {
 		t.Fatalf("Enumerate came back as %+v", certs)
@@ -52,9 +51,9 @@ func TestOneWorkerServesManyRequests(t *testing.T) {
 	// One child served all three. A worker that respawned between requests
 	// would have written a start-up line for each, and a worker that died would
 	// have written a reason.
-	if stderr.Len() != 0 {
+	if w.ChildStderr() != "" {
 		t.Errorf("the child wrote to its standard error while serving three "+
-			"requests, which means it was not one child:\n%s", stderr.String())
+			"requests, which means it was not one child:\n%s", w.ChildStderr())
 	}
 }
 
@@ -71,8 +70,7 @@ func TestOneWorkerServesManyRequests(t *testing.T) {
 // another, and answer the second request — and this process must still be
 // running at the end, which is the thing F12 §2 is actually about.
 func TestADeadWorkerIsRespawnedAndTheRequestIsAnswered(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(cannedAnswers{Label: "answered", DieOnRequest: 2}), &stderr)
+	w := New(cannedPath(cannedAnswers{Label: "answered", DieOnRequest: 2}), io.Discard)
 	t.Cleanup(func() { _ = w.Close(context.Background()) })
 
 	ctx := context.Background()
@@ -87,7 +85,7 @@ func TestADeadWorkerIsRespawnedAndTheRequestIsAnswered(t *testing.T) {
 	certs, err := w.Enumerate(ctx)
 	if err != nil {
 		t.Fatalf("the request after the worker died: %v\nchild stderr:\n%s",
-			err, stderr.String())
+			err, w.ChildStderr())
 	}
 	if len(certs) != 1 || certs[0].Label != "answered" {
 		t.Fatalf("the respawned worker answered with %+v", certs)
@@ -95,8 +93,8 @@ func TestADeadWorkerIsRespawnedAndTheRequestIsAnswered(t *testing.T) {
 
 	// Exactly one child died, so exactly one respawn happened. More would mean
 	// the parent is respawning over something that is not a death.
-	if n := strings.Count(stderr.String(), cannedDeathLine); n != 1 {
-		t.Errorf("%d children died for one death:\n%s", n, stderr.String())
+	if n := strings.Count(w.ChildStderr(), cannedDeathLine); n != 1 {
+		t.Errorf("%d children died for one death:\n%s", n, w.ChildStderr())
 	}
 }
 
@@ -112,18 +110,17 @@ func TestADeadWorkerIsRespawnedAndTheRequestIsAnswered(t *testing.T) {
 // parent must stop after maxAttempts and say so, rather than spawning processes
 // until something changes.
 func TestAWorkerThatKeepsDyingIsGivenUpOnRatherThanRespawnedForEver(t *testing.T) {
-	var stderr bytes.Buffer
 	// Every child ends on its own first request, so no attempt can succeed.
-	w := New(cannedPath(cannedAnswers{DieOnRequest: 1}), &stderr)
+	w := New(cannedPath(cannedAnswers{DieOnRequest: 1}), io.Discard)
 	t.Cleanup(func() { _ = w.Close(context.Background()) })
 
 	_, err := w.Enumerate(context.Background())
 	if !errors.Is(err, ErrWorkerDied) {
 		t.Fatalf("a worker that never answers produced %v, want ErrWorkerDied", err)
 	}
-	if n := strings.Count(stderr.String(), cannedDeathLine); n != maxAttempts {
+	if n := strings.Count(w.ChildStderr(), cannedDeathLine); n != maxAttempts {
 		t.Errorf("the parent tried %d workers, want %d:\n%s",
-			n, maxAttempts, stderr.String())
+			n, maxAttempts, w.ChildStderr())
 	}
 	if !strings.Contains(err.Error(), "attempts") {
 		t.Errorf("the error does not say it gave up after trying: %v", err)
@@ -150,8 +147,7 @@ func TestTheRecursionGuardStopsAWorkerSpawningAWorker(t *testing.T) {
 			pkcs11.ChildMarker)
 	}
 
-	var stderr bytes.Buffer
-	live := New(cannedPath(cannedAnswers{Label: "started"}), &stderr)
+	live := New(cannedPath(cannedAnswers{Label: "started"}), io.Discard)
 	if _, err := live.Enumerate(context.Background()); err != nil {
 		t.Fatalf("unmarked, a worker should start and answer: %v", err)
 	}
@@ -161,7 +157,7 @@ func TestTheRecursionGuardStopsAWorkerSpawningAWorker(t *testing.T) {
 	// package spawns. Nothing else about the call changes.
 	t.Setenv(pkcs11.ChildMarker, "1")
 
-	refused := New(cannedPath(cannedAnswers{}), &stderr)
+	refused := New(cannedPath(cannedAnswers{}), io.Discard)
 	_, err := refused.Enumerate(context.Background())
 	if !errors.Is(err, pkcs11.ErrChildRecursion) {
 		t.Fatalf("a marked process spawned a worker: %v\n\n"+
@@ -186,8 +182,7 @@ func TestTheRecursionGuardStopsAWorkerSpawningAWorker(t *testing.T) {
 func TestAModuleThatWillNotLoadIsAnErrorAndNotACrash(t *testing.T) {
 	const notAModule = `C:\this\path\does\not\exist\nothing.dll`
 
-	var stderr bytes.Buffer
-	w := New(notAModule, &stderr)
+	w := New(notAModule, io.Discard)
 	t.Cleanup(func() { _ = w.Close(context.Background()) })
 
 	_, err := w.Enumerate(context.Background())
@@ -203,9 +198,9 @@ func TestAModuleThatWillNotLoadIsAnErrorAndNotACrash(t *testing.T) {
 	}
 	// F11 §3 asks for a readable reason, and the child's own is on the standard
 	// error it inherited. Three attempts, three reasons.
-	if n := strings.Count(stderr.String(), "pkcs11 worker:"); n != maxAttempts {
+	if n := strings.Count(w.ChildStderr(), "pkcs11 worker:"); n != maxAttempts {
 		t.Errorf("the child wrote %d reasons for %d attempts:\n%s",
-			n, maxAttempts, stderr.String())
+			n, maxAttempts, w.ChildStderr())
 	}
 
 	// And this process is still running, which is the whole of F12 §2.
@@ -231,16 +226,15 @@ func TestANonRetryableOperationIsTriedOnce(t *testing.T) {
 		t.Fatal("shutdown is in the retryable set, so this test measures nothing")
 	}
 
-	var stderr bytes.Buffer
-	w := New(`C:\this\path\does\not\exist\nothing.dll`, &stderr)
+	w := New(`C:\this\path\does\not\exist\nothing.dll`, io.Discard)
 	t.Cleanup(func() { _ = w.Close(context.Background()) })
 
 	if _, err := w.do(context.Background(), Request{Op: OpShutdown}); err == nil {
 		t.Fatal("a shutdown to a worker that will not start produced no error")
 	}
-	if n := strings.Count(stderr.String(), "pkcs11 worker:"); n != 1 {
+	if n := strings.Count(w.ChildStderr(), "pkcs11 worker:"); n != 1 {
 		t.Errorf("a non-retryable operation reached %d workers, want 1:\n%s",
-			n, stderr.String())
+			n, w.ChildStderr())
 	}
 }
 
@@ -255,8 +249,7 @@ func TestCloseIsSafeTwiceAndWithNothingRunning(t *testing.T) {
 		t.Errorf("Close with nothing spawned: %v, want nil", err)
 	}
 
-	var stderr bytes.Buffer
-	w := New(cannedPath(cannedAnswers{Label: "x"}), &stderr)
+	w := New(cannedPath(cannedAnswers{Label: "x"}), io.Discard)
 	if _, err := w.Enumerate(ctx); err != nil {
 		t.Fatalf("Enumerate: %v", err)
 	}
@@ -276,8 +269,7 @@ func TestCloseIsSafeTwiceAndWithNothingRunning(t *testing.T) {
 // like a race — which is the kind of thing that gets diagnosed as "the worker is
 // flaky" for a week.
 func TestAWorkerAnsweringOneCallerAtATime(t *testing.T) {
-	var stderr bytes.Buffer
-	w := New(cannedPath(cannedAnswers{Label: "shared"}), &stderr)
+	w := New(cannedPath(cannedAnswers{Label: "shared"}), io.Discard)
 	t.Cleanup(func() { _ = w.Close(context.Background()) })
 
 	var wg sync.WaitGroup
