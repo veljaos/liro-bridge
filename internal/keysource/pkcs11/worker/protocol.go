@@ -23,6 +23,22 @@ const (
 	// OpShutdown calls C_Finalize and exits. F12 §2: "C_Finalize only on
 	// shutdown or a deliberate reset."
 	OpShutdown Op = "shutdown"
+
+	// OpLogin opens a session on the token holding one certificate and logs
+	// in. It is the first half of the PIN exchange and, on a token that
+	// advertises a protected authentication path, the whole of it.
+	OpLogin Op = "login"
+	// OpLoginPIN carries the length of a PIN that follows this frame as raw
+	// bytes. It is only ever sent in answer to a Response carrying LoginNeeds.
+	OpLoginPIN Op = "login-pin"
+	// OpSignDigest signs one DigestInfo with the key found at login. SPEC
+	// §5.1's own boundary: key sources sign hashes and do not know what a PDF
+	// is.
+	OpSignDigest Op = "signdigest"
+	// OpCloseSession logs out and closes the session, leaving the module
+	// loaded. SPEC §6.5: a session left logged in is a card another process can
+	// sign with.
+	OpCloseSession Op = "closesession"
 )
 
 // Request is one thing the parent asks for.
@@ -45,11 +61,92 @@ const (
 type Request struct {
 	Op Op `json:"op"`
 
-	// Thumbprint selects one certificate, for OpChainFor. Hex, lower case.
+	// Thumbprint selects one certificate, for OpChainFor and OpLogin.
 	// It is an identifier the parent already holds, not a path and not a
 	// handle: the worker resolves it against what is on the token, so a
 	// value that names nothing is an error rather than a reach into memory.
 	Thumbprint string `json:"thumbprint,omitempty"`
+
+	// Exchange binds a login to the operation a person approved.
+	//
+	// The parent mints one per Open — which is the call the consent screen
+	// leads to — sends it with OpLogin, and refuses to act on a PIN request
+	// that does not carry it back. A worker that can ask for a PIN at will is a
+	// worker that can make PIN dialogs appear, and that dialog is the one window
+	// in this program that deliberately looks like a system dialog (D-277,
+	// SPEC §10). The binding is to the approved operation and not to the worker
+	// being alive.
+	//
+	// The parent's own call structure already scopes it — the mutex is held and
+	// a Response's LoginNeeds is only read inside the exchange — and that is not
+	// enough on its own: a binding that lives only in the shape of one function
+	// is a binding the next refactor loses without noticing.
+	Exchange string `json:"exchange,omitempty"`
+
+	// PINLength is how many raw bytes follow this frame, for OpLoginPIN.
+	//
+	// It is a length and not a PIN, which is why it can be here at all: the
+	// guard in pin_test.go asks what a declaration can *hold* rather than what
+	// it is called (D-270), and an int cannot hold a PIN however it is named.
+	// The PIN itself is never a field, never marshalled, and never in a frame —
+	// it is written once, on its own, immediately behind this one, and read by
+	// an exact-length read (SPEC §6.5.1 clause 2).
+	PINLength int `json:"pinLength,omitempty"`
+
+	// DigestAlgorithm is keysource.DigestAlgorithm as an integer, for
+	// OpSignDigest. It crosses as a number rather than as the named type
+	// because the far end is a process: a named type in a JSON field is a type
+	// the far end has to have.
+	DigestAlgorithm int `json:"digestAlgorithm,omitempty"`
+
+	// Digest is the hash to be signed. Not the document, and not a PIN: SPEC
+	// §5.1 puts the document boundary above this layer, and this is what a key
+	// source is for.
+	Digest []byte `json:"digest,omitempty"`
+}
+
+// LoginNeeds is what a token wants before it will log in, as the child found
+// it: present on a Response when — and only when — the child has an open
+// session and is waiting to read a PIN.
+//
+// # Its presence is the question, which is why there is no NeedsPIN flag
+//
+// The parent cannot know in advance whether a PIN is needed at all. SPEC
+// §6.5.1 clause 1 uses the protected authentication path wherever a module
+// advertises one, and only the child can see CKF_PROTECTED_AUTHENTICATION_PATH
+// — it is a property of a token through a module, read per token every time
+// (D-273, D-276), so a reader with a pinpad answers differently through the
+// same DLL. A token with a protected path never produces one of these, and the
+// login simply completes.
+//
+// That is the reason the exchange has two phases. That it also gives clause 2's
+// "one write and no more" its most exact form — the PIN is written into a
+// reader that is already waiting to consume it — is a consequence rather than
+// something anyone had to arrange.
+type LoginNeeds struct {
+	// Exchange is the value the parent sent with OpLogin, echoed back. A
+	// LoginNeeds that does not carry it is not an answer to anything this
+	// parent asked for.
+	Exchange string `json:"exchange"`
+
+	// MinPINLength and MaxPINLength are this token's own, read from
+	// CK_TOKEN_INFO at the moment they are needed. SPEC §6.5.1 clause 7: "the
+	// limits are the token's, read when they are needed: measured, a MUP token
+	// declares 4 and 8 where a Pošta token declares 5 and 15, and both live in
+	// one person's drawer."
+	//
+	// The parent enforces them before it writes, so a length that cannot be
+	// right reaches neither the pipe nor the card — which is what D-268 cost
+	// one of three attempts to establish is nobody else's job.
+	MinPINLength int `json:"minPinLength"`
+	MaxPINLength int `json:"maxPinLength"`
+
+	// TokenLabel, TokenSerial and CertificateLabel are what the screen needs in
+	// order to obey clause 6: a person must be able to tell they are giving
+	// their PIN to Liro Bridge, and for which card.
+	TokenLabel       string `json:"tokenLabel,omitempty"`
+	TokenSerial      string `json:"tokenSerial,omitempty"`
+	CertificateLabel string `json:"certificateLabel,omitempty"`
 }
 
 // CertificatePayload is one certificate as it crosses the boundary: the DER,
@@ -89,6 +186,19 @@ type Response struct {
 
 	Certificates []CertificatePayload `json:"certificates,omitempty"`
 	Chain        [][]byte             `json:"chain,omitempty"`
+
+	// Login is present only on the mid-exchange answer to OpLogin, and its
+	// presence is the child saying it has a session open and is waiting to read
+	// a PIN. See LoginNeeds.
+	Login *LoginNeeds `json:"login,omitempty"`
+
+	// Certificate is the signer the login resolved, answered once the login has
+	// completed. It is here rather than in Certificates because it is one
+	// certificate chosen by thumbprint rather than a listing.
+	Certificate *CertificatePayload `json:"certificate,omitempty"`
+
+	// Signature is what C_Sign produced, for OpSignDigest.
+	Signature []byte `json:"signature,omitempty"`
 }
 
 // maxFrame bounds what a single frame may claim to be.

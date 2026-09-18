@@ -71,6 +71,35 @@ var (
 	// ErrWorkerCannotStart is a worker that never ran: this binary could not be
 	// found, or this process is itself a child and must not spawn one.
 	ErrWorkerCannotStart = errors.New("pkcs11 worker: the worker process could not be started")
+
+	// ErrUnexpectedPINRequest is a worker asking for a PIN when nothing is
+	// pending, or asking about an exchange this parent did not open.
+	//
+	// It is a defect and is reported as one, loudly, rather than being answered
+	// or ignored. The owner's words: a PIN request arriving when nothing is
+	// pending means either the worker is confused or something else is talking
+	// to the parent, and both are worth knowing about.
+	//
+	// What is at stake is not an extra round trip. The PIN screen is the one
+	// window in this program that deliberately looks like a system dialog
+	// (D-277, SPEC §10), and honouring a request merely because a worker is
+	// alive would make "can make a PIN dialog appear" a thing the child side
+	// can do. The binding is to the operation a person approved — the Exchange
+	// identifier minted by Open, which is the call the consent screen leads to —
+	// and not to the worker being alive.
+	//
+	// It kills the worker, because a child that asked a question this parent
+	// will not answer is a child waiting for bytes that will never come.
+	//
+	// The explicit `error` is load-bearing rather than a style choice, and this
+	// is the second place in the tree to need it — login_windows.go carries the
+	// first two and the full argument. In short: this is named after a PIN and
+	// cannot hold one, pin_test.go asks what a declaration can carry rather than
+	// what it is called (D-270), and a package-level var with no type expression
+	// and a function call for an initialiser is one the checker cannot see
+	// through and is right to refuse. Naming the type answers its question
+	// truthfully. Renaming the var to dodge the matcher is what D-270 rejected.
+	ErrUnexpectedPINRequest error = errors.New("pkcs11 worker: the worker asked for a PIN outside an approved operation")
 )
 
 // Worker is the parent's end of one worker process: one module, held open in a
@@ -166,6 +195,13 @@ func (w *Worker) ChainFor(ctx context.Context, thumbprint string) ([][]byte, err
 // a duration: the shutdown answer, the child's own exit, and — only if the
 // context ends first — a kill.
 //
+// Which means context.Background() here is a choice and not a default: it says
+// "wait for ever", and against a child that never answers a shutdown it does
+// exactly that. Measured, not supposed — a deliberately misbehaving child in
+// this package's own tests wedged teardown until `go test`'s ten-minute timeout,
+// which is the correct behaviour arriving somewhere nobody wanted it. A caller
+// who cannot wait for ever passes a context that says so.
+//
 // Closing stdin is what makes this terminate even when the shutdown request
 // never got through: the child's next read ends, Serve returns nil, the process
 // exits. It is safe to call Close twice.
@@ -222,7 +258,7 @@ func (w *Worker) do(ctx context.Context, req Request) (Response, error) {
 			// A frame that would not parse is this program disagreeing with
 			// itself, not a module killing a process. Respawning would turn a
 			// protocol fault into three of them.
-			_ = w.reap(ctx)
+			w.endLocked(ctx)
 			return Response{}, err
 		}
 		_ = w.reap(ctx)
@@ -295,6 +331,27 @@ func (w *Worker) start() error {
 // with it. The child is unusable after that either way, which is why it is
 // killed rather than left.
 func (w *Worker) roundTrip(ctx context.Context, req Request) (Response, error) {
+	return w.exchange(ctx, req, nil)
+}
+
+// exchange writes one request and reads until the worker has answered it,
+// answering one mid-exchange question along the way if mid says how. The caller
+// holds the mutex.
+//
+// # Why every request comes through here, including the ones with no question
+//
+// mid is nil for all but one operation, and that is the point. A Response
+// carrying a PIN question is refused wherever there is no mid to answer it,
+// which makes "a PIN request arriving when nothing is pending" a checked
+// condition on every single request rather than a thing the login path happens
+// to get right. The owner's condition was that the request be bound to the
+// approved operation and not to the worker being alive; nil is what "no
+// operation was approved" looks like from here.
+//
+// A second question after the first is refused for the same reason and would be
+// worse: a worker that could ask twice could ask three times, and clause 5 says
+// nothing retries a PIN, ever, for any reason.
+func (w *Worker) exchange(ctx context.Context, req Request, mid func(in io.Writer, needs LoginNeeds) error) (Response, error) {
 	// Captured rather than read inside the goroutine: a respawn replaces these,
 	// and a goroutine abandoned by a cancelled context would otherwise read the
 	// fields of a worker that is no longer the one it was talking to.
@@ -313,15 +370,33 @@ func (w *Worker) roundTrip(ctx context.Context, req Request) (Response, error) {
 			done <- outcome{err: fmt.Errorf("%w: writing a request: %w", ErrWorkerDied, err)}
 			return
 		}
-		var resp Response
-		if err := ReadFrame(out, &resp); err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, ErrShortFrame) {
-				done <- outcome{err: fmt.Errorf("%w: %w", ErrWorkerDied, err)}
-				return
-			}
-			done <- outcome{err: fmt.Errorf("pkcs11 worker: reading a response: %w", err)}
+
+		resp, err := readAnswer(out)
+		if err != nil {
+			done <- outcome{err: err}
 			return
 		}
+
+		if resp.Login != nil {
+			if mid == nil {
+				done <- outcome{err: fmt.Errorf("%w: in answer to %q", ErrUnexpectedPINRequest, req.Op)}
+				return
+			}
+			if err := mid(in, *resp.Login); err != nil {
+				done <- outcome{err: err}
+				return
+			}
+			resp, err = readAnswer(out)
+			if err != nil {
+				done <- outcome{err: err}
+				return
+			}
+			if resp.Login != nil {
+				done <- outcome{err: fmt.Errorf("%w: it asked twice, and clause 5 says nothing retries a PIN", ErrUnexpectedPINRequest)}
+				return
+			}
+		}
+
 		done <- outcome{resp: resp}
 	}()
 
@@ -332,6 +407,20 @@ func (w *Worker) roundTrip(ctx context.Context, req Request) (Response, error) {
 		w.killLocked()
 		return Response{}, ctx.Err()
 	}
+}
+
+// readAnswer reads one response frame, naming a pipe that ended mid-frame as a
+// death rather than as a protocol fault — which is what it is, and what the
+// supervisor above needs to tell them apart.
+func readAnswer(out io.Reader) (Response, error) {
+	var resp Response
+	if err := ReadFrame(out, &resp); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, ErrShortFrame) {
+			return Response{}, fmt.Errorf("%w: %w", ErrWorkerDied, err)
+		}
+		return Response{}, fmt.Errorf("pkcs11 worker: reading a response: %w", err)
+	}
+	return resp, nil
 }
 
 // reap makes sure the child is gone and forgets it, returning why it stopped.
@@ -359,6 +448,20 @@ func (w *Worker) reap(ctx context.Context) error {
 	_ = w.out.Close()
 	w.cmd, w.in, w.out = nil, nil, nil
 	return err
+}
+
+// endLocked kills the child and forgets it. The caller holds the mutex.
+//
+// It is kill-then-reap rather than reap alone, and the order is the whole
+// reason it exists. reap waits for the process to exit and only then closes the
+// pipes, which is right when the child is on its way out — but a child that
+// asked a question this parent refused, or that is waiting for a PIN that will
+// never arrive, is blocked on a read and will wait as long as the caller's
+// context allows. It is already unusable: something in this conversation went
+// wrong in a way that means neither end knows where the next frame starts.
+func (w *Worker) endLocked(ctx context.Context) {
+	w.killLocked()
+	_ = w.reap(ctx)
 }
 
 // killLocked ends the child now. The caller holds the mutex.

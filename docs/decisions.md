@@ -27164,3 +27164,262 @@ comparing the list against `go list -deps` finds the discrepancy explained.
   then hold four vendor DLLs open in four processes because a listing might
   happen. Lazily also means the first request and a respawn are one code path
   rather than two.
+
+---
+
+## D-302 — The PIN crosses the process boundary in two phases, because only the child can see whether one is needed at all; the parent answers a question it asked and refuses one it did not
+
+**Date:** 2026-09-18
+**Phase:** F12 §2 — the PIN seam
+
+**Decision.** A login is two frames and one raw write. The parent sends
+`OpLogin` carrying a thumbprint and an **exchange identifier** it minted for one
+approved operation. The child either answers with the finished login, or answers
+with a question — a `Response` carrying `LoginNeeds` — and then blocks reading
+the PIN. The parent draws the screen, enforces the token's own limits, writes
+one `OpLoginPIN` frame naming a length and then exactly that many raw bytes, and
+overwrites its buffer. The child reads them with one `io.ReadFull` straight into
+the buffer `C_Login` is given.
+
+A PIN question carrying an exchange this parent did not open, a second question
+after a complete answer, or any question at all outside a login is
+`ErrUnexpectedPINRequest`: the worker is killed and the caller is told. A PIN
+answer that is not the answer this child asked for is `ErrProtocolDesync`: the
+worker ends without writing another frame.
+
+### Two phases are clause 1's doing, not clause 2's
+
+This is the line the owner asked for and it is the one that is easiest to get
+backwards afterwards.
+
+SPEC §6.5.1 clause 1 uses the protected authentication path wherever a module
+advertises one, and **only the child can see
+`CKF_PROTECTED_AUTHENTICATION_PATH`**. It is a property of a token through a
+module, read per token every time ([[D-273]], [[D-276]]), so the same DLL
+answers differently for a reader with a pinpad. The parent therefore cannot know
+in advance whether a PIN is needed at all, and a parent that collected one first
+would have drawn a screen for a card that was never going to be asked — with the
+one window in this program that deliberately looks like a system dialog
+([[D-277]], SPEC §10).
+
+That the same shape also gives clause 2's "one write and no more" its most exact
+form — the PIN is written into a reader that is already blocked in `io.ReadFull`
+waiting for exactly that many bytes — is a **consequence rather than care**.
+
+### The binding is to the approved operation, not to the worker being alive
+
+The owner's condition, in their words:
+
+> The parent must only honour a PIN request that corresponds to an operation a
+> person has already approved. A worker that can ask at will is a worker that
+> can make PIN dialogs appear, and that dialog is the one window in this program
+> that deliberately looks like a system dialog. Bind the request to the approved
+> operation, not to the worker being alive.
+
+So `Open` — the call the consent screen leads to — mints a 16-byte
+`crypto/rand` identifier per call, sends it, and refuses a question that does not
+carry it back. Random rather than a counter: a counter binds the question to the
+*conversation*, and a child that has seen one value can write the next.
+
+The parent's own call structure already scopes it — the mutex is held, and the
+only place a `LoginNeeds` is read is inside the exchange. That is not enough on
+its own, and the reason is [[D-158]]'s: **a binding that lives only in the shape
+of one function is a binding the next refactor loses without noticing.**
+
+### A question with nothing pending is a defect, said loudly
+
+The owner's second condition:
+
+> A PIN request arriving when nothing is pending is a defect rather than a
+> no-op. Say so loudly — it means either the worker is confused or something
+> else is talking to the parent, and both are worth knowing about.
+
+`Worker.exchange` is the single place every request goes through, and it takes a
+`mid` callback that is **nil for every operation except a login**. So "a PIN
+request arriving when nothing is pending" is a checked condition on every single
+request rather than a thing the login path happens to get right, and nil is what
+"no operation was approved" looks like from there. It kills the worker, because
+a child that asked a question this parent will not answer is a child waiting for
+bytes that will never come.
+
+### The mirror of it, at the child's end, is where the reasoning nearly went wrong
+
+An `OpLoginPIN` frame arriving with no login in progress was first written as a
+refusal in a `Response`. That looks right: nothing has been read past the frame,
+so the loop looks recoverable and refusing is the polite answer.
+
+It is wrong, and the thing that shows it is asking what the *next* read does.
+Behind that frame are `PINLength` raw bytes that only the exchange ever reads.
+Carrying on means the next `ReadFrame` takes the first four bytes of a PIN as a
+length prefix and the rest into a payload buffer — where it sits in this
+process's heap, never overwritten, as somebody else's byte slice, invisible to
+`pin_test.go` because it is not a field, a parameter or a named result.
+
+That is precisely the hazard [[D-297]] rejected `bufio` for, arrived at from the
+other direction. It ends the worker.
+
+### Every way the exchange can fail kills the worker, and there is no "never mind"
+
+Once the child has asked, it is blocked reading a PIN. The person cancelling,
+a length this layer refuses, a broken pipe — all leave it blocked on bytes that
+are not coming. There is no cancel operation and there must not be one: **an
+operation that cancels a login is an operation that can be sent instead of a
+login**, and the closed set is the whole argument for why this subcommand is
+safe to ship. Killing costs a respawn, which is what a respawn is for.
+
+A first draft carried a flag set inside `mid` to tell a stranded child from a
+merely disappointed one. It was both a distinction with no different outcome and
+a **data race** — `mid` runs on the goroutine `exchange` abandons when the
+context ends, so reading the flag afterwards races the write. Removing it
+removed the race, which is the second time in this phase that the simpler
+arrangement turned out to be the correct one rather than merely the shorter one.
+
+### Clause 7 is enforced before the write, because past the pipe is the card
+
+[[D-268]] cost one of three attempts to establish that this is nobody else's
+job: one authorised `C_Login` with a NULL PIN on a MUP token, the module passed
+it to the card as an empty PIN, the card counted it as a wrong one. The token had
+declared `minPin=4` the whole time and the module range-checked nothing.
+
+So `sendPIN` checks the token's own limits **before** the screen, and the
+collected length **before** anything is written. `TestAPINThatCannotBeRightNeverReachesThePipe`
+asserts the byte count on the pipe is zero, not that the login failed — those
+are different claims and only the first is clause 7.
+
+Both ends read one `pkcs11.MaxPINLength`, and `pkcs11.Wipe` is exported for the
+same reason: there are two buffers now and one rule, and a wipe written twice is
+the one function where a second copy would be worst.
+
+### "It signs nothing" is still true, and the sentence that changed is a different one
+
+F12 §2's three-part scrutiny survives intact, but only because `doc.go` had
+already read it correctly before this seam existed: *it signs nothing* means it
+has no path to a signed **document**. It signs a digest it is handed, which is
+SPEC §5.1's own boundary. What this commit adds is the third clause's mechanism
+— *cannot be driven into signing by anything but the parent that spawned it* —
+and it is now a chain rather than an assertion: a signature needs a session, a
+session needs a login, a login needs an exchange identifier the parent minted.
+
+### What was measured, and one prediction that was wrong
+
+Five predictions were written down before the seam was built, ranked, with the
+one expected to fail named. Q1, Q3 and Q4 held. Q5 — the least confident —
+resolved, and in the direction its own note said to record. **Q2 was wrong, and
+it was the one named**, which is the first time in this project that has
+happened; it was wrong for a reason the note did not anticipate, which is the
+part worth keeping.
+
+**Q2, as written:** "the sequence stays one response per request. login →
+needs, login-pin → done; and on a protected-path token, login → done with no
+needs at all. So `roundTrip` serves both steps and the loop's existing contract
+is unchanged. *Falsified if the protected-path branch has to announce itself
+somehow.*"
+
+The protected-path branch behaved exactly as predicted: it announces nothing and
+simply answers. What broke the contract was the **other** branch. A login that
+asks produces two frames from the child — the question, then the answer — so
+`TestEveryRequestGetsExactlyOneAnswerInOrder` is no longer the whole of the
+loop's contract, and `roundTrip` could not serve both steps unchanged. It became
+`Worker.exchange`, which takes a `mid` callback, and `roundTrip` is now that with
+`nil` for it.
+
+So the prediction named the right thing to doubt and the wrong reason to doubt
+it, and the correction is worth more than the hit would have been: the
+nil-`mid` arrangement is what makes "a PIN question with nothing pending" a
+checked condition on every request rather than a property of the login path, and
+it exists only because Q2's shape did not survive.
+
+**Q5, resolved.** The note asked whether an on-the-wire exchange identifier
+earns its place "or is machinery for a case the structure already covers", and
+said the answer belonged in the entry. It earns it, for two reasons that only
+became visible once it existed. The nil-`mid` check above is one. The other is
+that `TestAPINRequestWithNothingPendingIsRefusedLoudly` and
+`TestAPINRequestAboutAnotherExchangeIsRefused` can only be **written** because
+the identifier is on the wire — they are driven by a child that does not use
+`Serve` at all, which is the honest form of "something else is talking to the
+parent", and a binding that lived only in the parent's call structure would have
+nothing for such a child to get wrong.
+
+**One prediction made after the build began was also wrong**, and the guard that
+caught it is one this project already paid for. P6 said the worker's PIN guard
+would fire on nothing new. It fired on `ErrUnexpectedPINRequest` — a
+package-level var named after a PIN, with a function call for an initialiser,
+which the matcher cannot see through and is right to refuse. The remedy was
+already written down in `login_windows.go`: name the type, `var X error = …`, so
+the declaration answers the guard's question truthfully. Renaming the var to
+dodge the matcher is what [[D-270]] rejected, and the fact that the fix was
+sitting in a comment two files away is the guard working exactly as intended.
+
+**Every test in this commit passed on its first run**, which is the situation
+[[D-296]]'s first question exists for: *could this check have failed?* So each
+one was mutated. Seventeen mutations, each an exact single-anchor replacement
+the harness refuses to run unless it matches exactly once:
+
+| | mutation | killed by |
+|---|---|---|
+| M1 | the child accepts a PIN answer carrying another exchange | `TestAPINAnswerAboutAnotherExchangeEndsTheWorker` |
+| M2 | a PIN offered with no login in progress is not refused | `TestAPINOfferedWithNoLoginInProgressEndsTheWorker` |
+| M3 | the child reads the whole buffer rather than the PIN's own length | two |
+| M4 | the loop reads the PIN ahead of the login asking for it | `TestThePINIsNotReadUntilTheLoginAsksForIt` |
+| M5 | the parent does not enforce the token's length before writing | `TestAPINThatCannotBeRightNeverReachesThePipe` |
+| M6 | the parent's PIN buffer is not overwritten | `TestTheParentsPINBufferIsOverwrittenBeforeSendPINReturns` |
+| M7 | the parent ignores a PIN question it did not ask for | `TestAPINRequestWithNothingPendingIsRefusedLoudly` |
+| M8 | the parent does not check the exchange it is asked about | `TestAPINRequestAboutAnotherExchangeIsRefused` |
+| M9 | the parent lets the worker ask a second time | `TestASecondPINQuestionIsRefused` |
+| M10 | a login is added to the retryable allow-list | two |
+| M11 | the exchange identifier is a constant | `TestEveryExchangeIdentifierIsDifferent` |
+| M12 | the PIN is written twice | `TestThePINIsWrittenOnceBehindTheFrameThatNamesIt` |
+| M13 | a third raw write appears on the pipe | `TestThePINIsTheOnlyThingWrittenOutsideAFrame` |
+| M14 | the child accepts a frame that is not a PIN answer | `TestAFrameThatIsNotAPINAnswerEndsTheWorker` |
+| M15 | the child does not refuse a login with no exchange | `TestALoginWithNoExchangeIsRefused` |
+| M16 | the identifier is minted from `math/rand` | `TestTheExchangeIdentifierIsNotDerivedFromAnything` |
+| M17 | `Open` retries the login itself | `TestALoginIsNeverRetriedAgainstAFreshWorker` |
+
+All seventeen killed. **Three of them were not, on the first attempt**, and each
+failure was of the instrument rather than of the code.
+
+**M4 and M11 killed nothing, and reported that they had.** M4 added a read-ahead
+using `bytes.NewReader`, which `serve.go` does not import; M11 removed the only
+`rand.Read` call, orphaning `crypto/rand`. Both turned the package into a
+compile error, and a compile error fails every test without any of them
+observing anything. The harness reported "killed" because `go test` exited
+non-zero, which is [[D-296]]'s second question — *could this instrument have
+seen the thing whose absence it is reporting?* — asked of the harness. It now
+distinguishes a `--- FAIL` line from any other non-zero exit and calls the
+second **NOT A TEST**, which is how M17's own compile error was caught rather
+than counted.
+
+**M10 turned out to measure less than it looked like.** `retryable` is consulted
+by `do`, and `Open` does not go through `do` at all — so the allow-list is the
+belt and the *structure* is the braces, and M10 was killed only by the two
+assertions that read the table. M17 exists because of that: it wraps `Open`'s
+exchange in a retry loop, and the child then dies three times instead of once,
+which is what the clause actually forbids.
+
+There was also one thing no prediction and no test found, which the harness
+found by accident. Under M7 the parent accepts a PIN question it did not ask
+for, so it never kills the rogue child — and that child never answers a
+shutdown, so `t.Cleanup`'s `Close(context.Background())` waited for ever, once
+per mutation, until `go test`'s own ten-minute timeout. That is `Close` behaving
+exactly as designed — the caller's context is the bound ([[D-297]]), and
+`Background` means "wait for ever" — arriving somewhere nobody wanted it. The
+tests now bound their own teardown, which a test may do and the product may not,
+and `Close`'s doc comment says the thing that was previously only implied.
+
+### What none of this establishes
+
+That a PIN reaches a card. There is no card in any of it, and the card's own half
+is [[D-268]]'s territory and costs one of three attempts to measure. What is
+established is everything between the screen and the pipe.
+
+That the PIN is unreachable. A copy the compiler made on the stack, or a page the
+operating system has written to swap, is not visible from here and never will be.
+`TestTheParentsPINBufferIsOverwrittenBeforeSendPINReturns` establishes that the
+one buffer this layer owns is zero by the time the function returns, on the
+success path and on every failure path, and that is all it establishes.
+
+That `LockOSThread` holds across the login. The child's guarantee is structural —
+`Serve` calls the handler on its own goroutine, which is the locked one — and
+nothing here measures it, because a Go test cannot see which OS thread a foreign
+DLL was entered on. [[D-298]] is why that structure is the braces rather than the
+belt.

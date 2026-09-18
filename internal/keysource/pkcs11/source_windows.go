@@ -158,6 +158,30 @@ func (l *LiveModule) ChainFor(ctx context.Context, want keysource.Thumbprint) ([
 	return l.source.chainFor(ctx, l.module, want)
 }
 
+// Open is Source.Open against the module this holder has open, with the PIN
+// collected by entry.
+//
+// The returned session does not own the module: closing it logs out and closes
+// the PKCS#11 session, and leaves the module loaded for the next one. That is
+// the difference between this and Source.Open, and it is the reason the holder
+// exists — the worker's module is held across many requests and is closed by
+// whoever opened it (D-299).
+//
+// entry is a parameter rather than a field for the same reason. In the worker
+// the PIN does not come from a screen this process drew; it arrives on the pipe
+// the parent wrote it into, which is SPEC §6.5.1 clause 2's single permitted
+// boundary. What that looks like from here is an ordinary PINEntry: fill dst,
+// return the length, and write it nowhere else.
+func (l *LiveModule) Open(ctx context.Context, want keysource.Thumbprint, entry PINEntry) (keysource.Session, error) {
+	if l.module == nil {
+		return nil, ErrModuleClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return l.source.openOn(ctx, l.module, want, entry)
+}
+
 // Enumerate returns every X.509 certificate this module can see, across every
 // slot with a token in it.
 //

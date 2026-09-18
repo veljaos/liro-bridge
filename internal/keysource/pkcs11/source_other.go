@@ -73,6 +73,11 @@ func (l *LiveModule) ChainFor(ctx context.Context, want keysource.Thumbprint) ([
 	return nil, ErrPlatform
 }
 
+// Open refuses here.
+func (l *LiveModule) Open(ctx context.Context, want keysource.Thumbprint, entry PINEntry) (keysource.Session, error) {
+	return nil, ErrPlatform
+}
+
 // Enumerate implements the Windows behaviour's shape and refuses here.
 func (s Source) Enumerate(ctx context.Context) ([]CertificateInfo, error) {
 	return nil, ErrPlatform

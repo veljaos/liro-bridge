@@ -28,6 +28,24 @@ type fakeHandler struct {
 	// onCall runs at the start of every answering method, so a test can observe
 	// what the loop had done at the moment it handed work over.
 	onCall func()
+
+	// The login half. needs is what the fake token asks for; a zero MaxPINLength
+	// means this token has a protected authentication path and ask is never
+	// called at all, which is the branch SPEC §6.5.1 clause 1 is about and the
+	// reason the exchange has two phases.
+	needs     LoginNeeds
+	loginCert CertificatePayload
+	loginFail error
+
+	logins      int
+	askedFor    string
+	collected   int   // how many bytes ask reported, or -1 if ask was not called
+	askErr      error // what ask answered with, kept so a test can see it was not swallowed
+	signature   []byte
+	signAlg     int
+	signDigest  []byte
+	signs       int
+	sessionShut int
 }
 
 func (f *fakeHandler) note() {
@@ -53,6 +71,39 @@ func (f *fakeHandler) ChainFor(_ context.Context, tp string) ([][]byte, error) {
 	f.chainFors++
 	f.wantedTP = tp
 	return f.chain, f.fail
+}
+
+func (f *fakeHandler) Login(_ context.Context, thumbprint string, ask PINExchange) (CertificatePayload, [][]byte, error) {
+	f.note()
+	f.logins++
+	f.askedFor = thumbprint
+	f.collected = -1
+
+	if f.needs.MaxPINLength > 0 {
+		// The buffer is the token's own maximum, as the real login allocates it.
+		dst := make([]byte, f.needs.MaxPINLength)
+		n, err := ask(dst, f.needs)
+		f.collected, f.askErr = n, err
+		if err != nil {
+			return CertificatePayload{}, nil, err
+		}
+	}
+	if f.loginFail != nil {
+		return CertificatePayload{}, nil, f.loginFail
+	}
+	return f.loginCert, f.chain, nil
+}
+
+func (f *fakeHandler) SignDigest(_ context.Context, alg int, digest []byte) ([]byte, error) {
+	f.note()
+	f.signs++
+	f.signAlg, f.signDigest = alg, digest
+	return f.signature, f.fail
+}
+
+func (f *fakeHandler) CloseSession() error {
+	f.sessionShut++
+	return nil
 }
 
 func (f *fakeHandler) Close() error {

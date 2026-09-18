@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -34,10 +35,19 @@ const Subcommand = "pkcs11-worker"
 // so it needs the same scrutiny: it signs nothing, it holds no consent, and it
 // cannot be driven into signing by anything but the parent that spawned it."
 //
-//   - **It signs nothing.** The operation set is closed —
-//     TestEveryOperationIsNamedInOneClosedSet fails when it changes — and every
-//     operation in it is a read. Nothing here opens a signing session, and
-//     nothing here has a digest to sign.
+//   - **It signs nothing** — meaning it has no path to a signed *document*. It
+//     signs a digest it is handed, which is SPEC §5.1's own boundary: key
+//     sources sign hashes and do not know what a PDF is. That reading is not a
+//     concession made when the PIN seam arrived; doc.go wrote it down before
+//     this file could sign anything, which is the only reason the sentence did
+//     not have to change under pressure. The operation set is closed and
+//     TestEveryOperationIsNamedInOneClosedSet fails when it widens.
+//   - **It cannot be driven into signing by anything but the parent that
+//     spawned it.** This is the clause the PIN seam gives a mechanism to, and
+//     it is now a chain rather than an assertion: a signature needs a session,
+//     a session needs a login, and a login needs an exchange identifier the
+//     parent minted for one operation a person approved. A login carrying none
+//     is refused before a card is touched.
 //   - **It holds no consent.** contract_test.go asserts over this package's
 //     whole dependency closure, rather than over its import block, that it
 //     cannot reach internal/consent, internal/ui, internal/pades or anything
@@ -93,12 +103,21 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	// shutdown request that also closes.
 	defer func() { _ = live.Close() }()
 
-	if err := Serve(context.Background(), stdin, stdout, heldModule{live: live}); err != nil {
+	if err := Serve(context.Background(), stdin, stdout, &heldModule{live: live}); err != nil {
 		_, _ = fmt.Fprintln(stderr, "pkcs11 worker:", err)
 		return 1
 	}
 	return 0
 }
+
+// errNoSession is a sign or a close with no login behind it.
+//
+// It is a refusal in a Response rather than an ending, because it is a parent
+// that asked in the wrong order — which is this program disagreeing with itself
+// and is worth reading — and because nothing has been read past it. That is the
+// difference between it and ErrProtocolDesync, which is about bytes rather than
+// about order.
+var errNoSession = errors.New("pkcs11 worker: this worker has no open session; a login has to succeed first")
 
 // heldModule serves requests from one open module.
 //
@@ -106,9 +125,26 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 // deliberately thin: everything it does is read what the module said and shape
 // it for the wire. A decision made here would be a decision made in the process
 // that may be killed by somebody else's code.
-type heldModule struct{ live *pkcs11.LiveModule }
+//
+// # One session at a time, and it is a pointer for that reason
+//
+// The value receiver this had before the PIN seam could not hold a session.
+// Exactly one is held: a card is a single serial device (D-027), the module is
+// single-threaded by construction (D-298), and a second login on the same
+// worker would be a second PIN screen for a consent nobody gave. A login
+// arriving while one is open is refused rather than replacing it.
+type heldModule struct {
+	live *pkcs11.LiveModule
 
-func (h heldModule) Enumerate(ctx context.Context) ([]CertificatePayload, error) {
+	// sess is the logged-in session, from Login until CloseSession or Close.
+	// Every method that touches it runs on the goroutine that called Serve, so
+	// there is no lock here and must not be one: a lock would say that two
+	// goroutines might, and if two ever did, the problem would be C_Sign on a
+	// thread the module was not initialised on rather than a data race.
+	sess keysource.Session
+}
+
+func (h *heldModule) Enumerate(ctx context.Context) ([]CertificatePayload, error) {
 	found, err := h.live.Enumerate(ctx)
 	if err != nil {
 		return nil, err
@@ -120,7 +156,7 @@ func (h heldModule) Enumerate(ctx context.Context) ([]CertificatePayload, error)
 	return out, nil
 }
 
-func (h heldModule) List(ctx context.Context) ([]CertificatePayload, error) {
+func (h *heldModule) List(ctx context.Context) ([]CertificatePayload, error) {
 	certs, err := h.live.List(ctx)
 	if err != nil {
 		return nil, err
@@ -135,7 +171,7 @@ func (h heldModule) List(ctx context.Context) ([]CertificatePayload, error) {
 	return out, nil
 }
 
-func (h heldModule) ChainFor(ctx context.Context, thumbprint string) ([][]byte, error) {
+func (h *heldModule) ChainFor(ctx context.Context, thumbprint string) ([][]byte, error) {
 	// The wire carries a plain string and the backend takes the named type. The
 	// conversion is here rather than in the protocol so that the protocol stays
 	// a description of bytes on a pipe: a named type in a JSON field is a type
@@ -143,4 +179,95 @@ func (h heldModule) ChainFor(ctx context.Context, thumbprint string) ([][]byte, 
 	return h.live.ChainFor(ctx, keysource.Thumbprint(thumbprint))
 }
 
-func (h heldModule) Close() error { return h.live.Close() }
+// Login opens a session on the token holding one certificate and logs in.
+//
+// # The PINEntry it builds is the whole of the child's PIN handling
+//
+// pkcs11.PINEntry fills a buffer the login allocated, pinned and will overwrite,
+// and returns how many bytes it wrote (SPEC §6.5.1 clause 2). ask has the same
+// shape for the same reason, so this adapter is a translation of the *question*
+// and touches nothing else: dst goes through untouched, and the bytes that come
+// back are written by io.ReadFull inside ask, into dst, once. There is no line
+// here that a PIN passes through.
+//
+// # What the question does and does not carry
+//
+// The token's own minimum and maximum, read from CK_TOKEN_INFO at the moment
+// they are needed (clause 7), and the three labels a screen needs in order to
+// say whose card this is (clause 6). Not req.ModulePath, which the login also
+// has: the parent chose that path and passed it on this process's command line,
+// so sending it back would put a module path in the protocol — the one thing
+// TestTheProtocolCarriesNoModulePath exists to keep out, and it would have
+// arrived as a field nobody thought of as a path because it was only ever an
+// echo.
+func (h *heldModule) Login(ctx context.Context, thumbprint string, ask PINExchange) (CertificatePayload, [][]byte, error) {
+	if h.sess != nil {
+		return CertificatePayload{}, nil, errors.New("pkcs11 worker: this worker already has a session open")
+	}
+
+	entry := pkcs11.PINEntry(func(dst []byte, req pkcs11.PINRequest) (int, error) {
+		return ask(dst, LoginNeeds{
+			MinPINLength: req.MinLength,
+			// len(dst) rather than a second copy of the token's maximum: the
+			// buffer *is* the maximum, and a number that could disagree with the
+			// buffer it describes is a number worth not having. pkcs11's own
+			// PINRequest makes the same choice, and says so.
+			MaxPINLength:     len(dst),
+			TokenLabel:       req.TokenLabel,
+			TokenSerial:      req.TokenSerial,
+			CertificateLabel: req.CertificateLabel,
+		})
+	})
+
+	sess, err := h.live.Open(ctx, keysource.Thumbprint(thumbprint), entry)
+	if err != nil {
+		return CertificatePayload{}, nil, err
+	}
+	h.sess = sess
+	return CertificatePayload{DER: sess.Certificate().DER}, sess.Chain(), nil
+}
+
+// SignDigest signs one digest with the key the login found.
+//
+// The algorithm arrives as an integer and is converted here rather than in the
+// protocol, so that the protocol stays a description of bytes on a pipe. An
+// integer naming nothing is refused by digestInfo one layer down, which is where
+// the mapping from algorithm to DigestInfo bytes actually lives — checking it
+// again here would be a second copy of a rule that can only be right in one
+// place.
+func (h *heldModule) SignDigest(ctx context.Context, alg int, digest []byte) ([]byte, error) {
+	if h.sess == nil {
+		return nil, errNoSession
+	}
+	return h.sess.SignDigest(ctx, keysource.DigestAlgorithm(alg), digest)
+}
+
+// CloseSession logs out and closes the session, leaving the module loaded.
+//
+// That is the whole point of the worker being a separate thing from the probe:
+// the expensive part is C_Initialize and the module stays, while the card's
+// authenticated state goes as soon as the batch that needed it is done. SPEC
+// §6.5: a session left logged in is a card another process can sign with.
+//
+// Closing one that is not open is not an error. Close calls this, and a parent
+// that sends OpCloseSession after a login that failed is a parent being careful
+// rather than a parent being wrong.
+func (h *heldModule) CloseSession() error {
+	if h.sess == nil {
+		return nil
+	}
+	sess := h.sess
+	h.sess = nil
+	return sess.Close()
+}
+
+// Close logs out and unloads. The session goes first: an unloaded module cannot
+// log out of anything, and a card left authenticated because C_Finalize ran
+// first is the failure SPEC §6.5 is about.
+func (h *heldModule) Close() error {
+	err := h.CloseSession()
+	if cerr := h.live.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}

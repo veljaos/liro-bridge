@@ -13,14 +13,6 @@ import (
 // program does not do.
 const ckuUser = 1
 
-// maxSanePINLen bounds the buffer a token's own ulMaxPinLen is allowed to ask
-// for. A card PIN is a handful of characters — the two this project has
-// measured declare 8 (MUP) and 15 (Pošta) — and a token reporting something
-// far larger is a token this layer should refuse rather than allocate for.
-// 64 is well clear of anything a person types and small enough that a wrong
-// value cannot become an allocation worth noticing.
-const maxSanePINLen = 64
-
 // The two sentinels below are declared `var x error = …` rather than letting
 // the type be inferred, and the explicit type is load-bearing rather than a
 // style choice.
@@ -70,7 +62,7 @@ func (s *session) login(ti tokenInfo, entry PINEntry, req PINRequest) error {
 	}
 
 	minLen, maxLen := int(ti.MinPINLen), int(ti.MaxPINLen)
-	if maxLen <= 0 || maxLen > maxSanePINLen {
+	if maxLen <= 0 || maxLen > MaxPINLength {
 		return fmt.Errorf("pkcs11: this token declares a maximum PIN length of %d, which this layer will not allocate for", maxLen)
 	}
 	if minLen < 0 || minLen > maxLen {

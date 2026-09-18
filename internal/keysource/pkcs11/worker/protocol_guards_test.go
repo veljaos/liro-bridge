@@ -145,6 +145,28 @@ func TestEveryOperationIsNamedInOneClosedSet(t *testing.T) {
 		"OpList":      true, // the same, shaped for the agent's listing
 		"OpChainFor":  true, // the issuer chain for one thumbprint
 		"OpShutdown":  true, // C_Finalize and exit
+
+		// The four the PIN seam added. Together they are the whole of what makes
+		// this subcommand able to sign, so each is named with what it costs.
+		//
+		// "OpLogin":       C_Login on the token holding one thumbprint. Costs a
+		//                  PIN attempt, of which a card has three. Carries an
+		//                  exchange identifier the parent minted for one
+		//                  approved operation, and is refused without one.
+		// "OpLoginPIN":    the length of a PIN that follows as raw bytes. It is
+		//                  only ever sent in answer to a question, and offered
+		//                  outside one it ends the worker rather than being
+		//                  refused — see the OpLoginPIN branch in Serve.
+		// "OpSignDigest":  C_Sign with the key the login found. This is the one
+		//                  that produces a signature, and it needs a session,
+		//                  which needs a login, which needs an exchange.
+		// "OpCloseSession": C_Logout and close, leaving the module loaded. It
+		//                  costs nothing and its absence costs a card left
+		//                  authenticated (SPEC §6.5).
+		"OpLogin":        true,
+		"OpLoginPIN":     true,
+		"OpSignDigest":   true,
+		"OpCloseSession": true,
 	}
 
 	found := map[string]bool{}

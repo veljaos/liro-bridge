@@ -99,6 +99,22 @@
 //     nor the card (D-268 cost a PIN attempt establishing that no module
 //     checks them).
 //
+// The exchange is two phases, and clause 1 rather than clause 2 is why. Only
+// this side can see CKF_PROTECTED_AUTHENTICATION_PATH — it is a property of a
+// token through a module, read per token every time (D-273, D-276) — so the
+// agent cannot know in advance whether a PIN is needed at all, and a login
+// either asks or simply completes. That the shape also puts the write into a
+// reader already blocked waiting for exactly that many bytes is a consequence
+// rather than something anyone had to arrange (D-302).
+//
+// Each login carries an exchange identifier the agent minted for one operation
+// a person approved, and a PIN question that does not carry it back — or that
+// arrives with no login pending at all — is a defect this package reports
+// loudly and kills the worker over. The binding is to the approved operation
+// and not to the worker being alive: a worker that could ask at will is a
+// worker that could make PIN dialogs appear, and that dialog is the one window
+// in this program that deliberately looks like a system dialog (D-277).
+//
 // # Error reporting is NOT disabled for this process, and that is a decision
 //
 // An earlier version of this comment said the opposite. D-289 required this

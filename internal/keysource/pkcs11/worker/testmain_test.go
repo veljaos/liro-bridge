@@ -45,6 +45,31 @@ type cannedAnswers struct {
 	// the test meant to prove the respawn bound passed against a child that
 	// never died, which is a test that could not fail.
 	DieOnRequest int `json:"dieOnRequest"`
+
+	// Needs, when its maximum is positive, makes this child ask for a PIN on a
+	// login. Zero means a token with a protected authentication path, which is
+	// SPEC §6.5.1 clause 1's branch and completes without asking.
+	Needs LoginNeeds `json:"needs"`
+
+	// WantPIN is what the child requires the collected bytes to be. A login
+	// whose PIN does not match is refused the way a card refuses one, so a test
+	// can tell a PIN that arrived intact from one that did not arrive at all.
+	WantPIN string `json:"wantPin"`
+
+	// AskUnbidden makes the child send a PIN question in answer to an operation
+	// that is not a login. It is the only way to produce the owner's second
+	// condition — a PIN request arriving when nothing is pending — from a real
+	// process, because no correct child does it.
+	AskUnbidden bool `json:"askUnbidden"`
+
+	// AskWithExchange, when set, is the exchange identifier the child echoes
+	// instead of the one it was given. It produces the first condition: a
+	// question about an operation this parent did not approve.
+	AskWithExchange string `json:"askWithExchange"`
+
+	// AskTwice makes the child ask a second time after a complete answer, which
+	// is what a retry would look like from the parent's side.
+	AskTwice bool `json:"askTwice"`
 }
 
 // cannedPath encodes answers as the argument a spawned child will be given.
@@ -93,16 +118,60 @@ func runCannedServer(encoded string) int {
 	if err := json.Unmarshal([]byte(encoded), &answers); err != nil {
 		return 2
 	}
+	if answers.AskUnbidden || answers.AskWithExchange != "" {
+		return runRogueServer(answers)
+	}
 	if err := Serve(context.Background(), os.Stdin, os.Stdout, &cannedHandler{answers: answers}); err != nil {
 		return 1
 	}
 	return 0
 }
 
+// runRogueServer is a child that does not use Serve.
+//
+// Two of the parent's conditions cannot be produced through the Handler
+// interface, and that is not an accident — it is the interface being the right
+// shape. A Handler cannot ask a PIN question outside a login because it has no
+// writer, and it cannot echo the wrong exchange identifier because serveLogin
+// stamps the one the request arrived with. Both are exactly what the parent's
+// refusals are for: the owner's words were that a PIN request arriving when
+// nothing is pending means either the worker is confused or something else is
+// talking to the parent. This is that something else.
+//
+// It is here rather than in the shipped code for the reason D-100 gives: a seam
+// in the product whose only user is a test is a seam. The child is selected by
+// its module path, inside TestMain, and nothing in the release binary knows it
+// exists.
+func runRogueServer(a cannedAnswers) int {
+	for {
+		var req Request
+		if err := ReadFrame(os.Stdin, &req); err != nil {
+			return 0 // the parent let go, which is how this child ends
+		}
+
+		needs := a.Needs
+		needs.Exchange = req.Exchange
+		if a.AskWithExchange != "" {
+			needs.Exchange = a.AskWithExchange
+		}
+		if err := WriteFrame(os.Stdout, Response{Login: &needs}); err != nil {
+			return 1
+		}
+
+		// Wait for whatever comes next, which for a parent that is doing its job
+		// is nothing at all: it kills this process instead of answering.
+		var ignored Request
+		if err := ReadFrame(os.Stdin, &ignored); err != nil {
+			return 0
+		}
+	}
+}
+
 // cannedHandler answers without a module, and ends the process on request.
 type cannedHandler struct {
-	answers cannedAnswers
-	served  int
+	answers  cannedAnswers
+	served   int
+	loggedIn bool
 }
 
 // count records one request and, if this child was told to, ends the process
@@ -138,6 +207,49 @@ func (c *cannedHandler) List(context.Context) ([]CertificatePayload, error) {
 func (c *cannedHandler) ChainFor(_ context.Context, tp string) ([][]byte, error) {
 	c.count()
 	return [][]byte{[]byte(tp)}, nil
+}
+
+// Login collects a PIN when this canned token was told to want one, and checks
+// it against what the test put on the card.
+//
+// Checking it is what makes "the PIN arrived intact" different from "a login
+// happened", which is the whole thing a test of this seam has to be able to
+// tell apart. A wrong one is refused the way a card refuses one: an answer, not
+// an ending.
+func (c *cannedHandler) Login(_ context.Context, thumbprint string, ask PINExchange) (CertificatePayload, [][]byte, error) {
+	c.count()
+	if c.answers.Needs.MaxPINLength > 0 {
+		dst := make([]byte, c.answers.Needs.MaxPINLength)
+		n, err := ask(dst, c.answers.Needs)
+		if err != nil {
+			return CertificatePayload{}, nil, err
+		}
+		if c.answers.AskTwice {
+			// A second question after a complete answer, which is what a retry
+			// would look like from the parent's side and which clause 5 says
+			// must never happen. The parent's job is to refuse it.
+			_, _ = ask(dst, c.answers.Needs)
+		}
+		if string(dst[:n]) != c.answers.WantPIN {
+			return CertificatePayload{}, nil, fmt.Errorf("CKR_PIN_INCORRECT")
+		}
+	}
+	c.loggedIn = true
+	return CertificatePayload{DER: []byte{0x30, 0x03}, Label: c.answers.Label},
+		[][]byte{[]byte(thumbprint)}, nil
+}
+
+func (c *cannedHandler) SignDigest(_ context.Context, alg int, digest []byte) ([]byte, error) {
+	c.count()
+	if !c.loggedIn {
+		return nil, errNoSession
+	}
+	return append([]byte{byte(alg)}, digest...), nil
+}
+
+func (c *cannedHandler) CloseSession() error {
+	c.loggedIn = false
+	return nil
 }
 
 func (c *cannedHandler) Close() error { return nil }

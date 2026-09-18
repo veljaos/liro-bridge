@@ -184,7 +184,7 @@ func TestLoginTellsTheScreenWhatItNeedsToSayWhoIsAsking(t *testing.T) {
 // TestLoginRefusesAnAbsurdMaximum keeps a token that reports nonsense from
 // deciding how much this layer allocates.
 func TestLoginRefusesAnAbsurdMaximum(t *testing.T) {
-	for _, max := range []uint32{0, maxSanePINLen + 1, 1 << 20} {
+	for _, max := range []uint32{0, MaxPINLength + 1, 1 << 20} {
 		ti := fakeToken()
 		ti.MaxPINLen = max
 		ti.MinPINLen = 0

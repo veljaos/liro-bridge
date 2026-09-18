@@ -108,6 +108,37 @@ type PINRequest struct {
 // one of three attempts, and the third means a visit to a police station.
 type PINEntry func(dst []byte, req PINRequest) (n int, err error)
 
+// Wipe overwrites b and keeps it alive across the write.
+//
+// It is exported because there are two buffers now and one rule. SPEC §6.5.1
+// clause 2 permits the PIN to cross exactly one process boundary, so it exists
+// in two places this program owns: the child's, which login allocates, pins and
+// passes to C_Login, and the parent's, which the PIN screen fills and the pipe
+// is written from. Both are overwritten, and a wipe written twice is the one
+// function where a second copy would be worst — it is the only thing standing
+// between the clause and a buffer nobody overwrote.
+//
+// Everything about how it works is in wipe's own comment below, and the
+// KeepAlive there is not decoration.
+func Wipe(b []byte) { wipe(b) }
+
+// MaxPINLength bounds the buffer a token's own ulMaxPinLen is allowed to ask
+// for.
+//
+// A card PIN is a handful of characters — the two this project has measured
+// declare 8 (MUP) and 15 (Pošta) — and a token reporting something far larger
+// is a token this layer should refuse rather than allocate for. 64 is well
+// clear of anything a person types and small enough that a wrong value cannot
+// become an allocation worth noticing.
+//
+// It is exported for the same reason Wipe is: the parent allocates its buffer
+// from a number the child sent it, and both ends refusing the same number is
+// one rule rather than two that could disagree.
+//
+// It lives here, unconstrained, so that the parent — which is not
+// platform-specific — reads the same constant the login does.
+const MaxPINLength = 64
+
 // wipe overwrites b and keeps it alive across the write.
 //
 // runtime.KeepAlive is not decoration: with no use after the loop the stores

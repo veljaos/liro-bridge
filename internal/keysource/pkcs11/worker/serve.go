@@ -29,9 +29,55 @@ type Handler interface {
 	// ChainFor returns the issuer chain the token itself carries for one
 	// certificate, which is empty for both Serbian cards (D-274).
 	ChainFor(ctx context.Context, thumbprint string) ([][]byte, error)
-	// Close calls C_Finalize and unloads. It must be safe to call twice.
+
+	// Login opens a session on the token holding one certificate and logs in,
+	// keeping the session for SignDigest.
+	//
+	// ask is called if and only if the token needs a PIN, at most once, and it
+	// is Serve's own: the handler does not touch the pipe. On a token that
+	// advertises a protected authentication path (SPEC §6.5.1 clause 1) it is
+	// never called at all, and only the handler can know that.
+	Login(ctx context.Context, thumbprint string, ask PINExchange) (CertificatePayload, [][]byte, error)
+
+	// SignDigest signs one digest with the key the login found. alg is
+	// keysource.DigestAlgorithm as an integer; converting it is the handler's,
+	// so that this file stays a description of bytes on a pipe.
+	SignDigest(ctx context.Context, alg int, digest []byte) ([]byte, error)
+
+	// CloseSession logs out and closes the session, leaving the module loaded.
+	CloseSession() error
+
+	// Close calls C_Finalize and unloads. It must be safe to call twice, and it
+	// closes any open session first.
 	Close() error
 }
+
+// PINExchange tells the parent what this token needs and reads the PIN it sends
+// back, straight into dst.
+//
+// It is the whole of SPEC §6.5.1 clause 2's child half. dst is the buffer
+// C_Login will be called with — already the token's own ulMaxPinLen, already
+// pinned by the function that will overwrite it — and the bytes go into it by
+// one io.ReadFull and are copied nowhere on the way. There is no intermediate
+// buffer, no decode step, and nothing that outlives the call: the PIN is never
+// a field, a parameter or a named result, which is what pin_test.go enforces
+// over this package's syntax tree.
+//
+// It is called at most once. Clause 5 — nothing retries a PIN, ever, for any
+// reason — and there is no loop above it that could.
+type PINExchange func(dst []byte, needs LoginNeeds) (int, error)
+
+// ErrProtocolDesync is a PIN exchange that did not go as it must: a frame that
+// is not OpLoginPIN, one that does not carry the exchange it was asked about,
+// or a length this token cannot accept.
+//
+// It ends the worker rather than becoming a Response, and that is deliberate.
+// The parent has already written, or is about to write, some number of raw
+// bytes that are not a frame; a reader that has lost track of where the next
+// frame starts cannot recover by guessing, and the bytes it would be guessing
+// about are a PIN. Ending is the only answer that cannot silently read one as
+// something else. The supervisor respawns, and a login is not retried.
+var ErrProtocolDesync = errors.New("pkcs11 worker: the PIN exchange did not go as it must; this pipe cannot be trusted to be in step")
 
 // maxOpInMessage bounds how much of an unrecognised operation name is quoted
 // back.
@@ -73,8 +119,11 @@ var ErrUnknownOperation = errors.New("pkcs11 worker: unknown operation")
 // invisible to pin_test.go because it is not a field, a parameter or a named
 // result. That is the same hazard D-297 rejected bufio for, one mechanism over.
 //
-// Serve makes no PIN call yet; the seam is described here because the shape of
-// this loop is what has to be true when it does.
+// The login case below is where that becomes load-bearing rather than
+// hypothetical: serveLogin hands the Handler a closure that writes a question
+// down w and reads the answer back off r, and the Handler is called from this
+// same goroutine, so the PIN travels from ReadFull straight into the buffer
+// C_Login is given without passing through anything that could keep it.
 //
 // # What ends it, and what each ending means
 //
@@ -88,6 +137,10 @@ var ErrUnknownOperation = errors.New("pkcs11 worker: unknown operation")
 // because F11 §3 asks for a readable reason rather than a number and because a
 // module that refuses one request has not died; the supervisor is what notices
 // one that has.
+//
+// ErrProtocolDesync is the exception, and it is one for the reason written on
+// the sentinel: after a PIN exchange that went wrong there is no way to know
+// where the next frame starts, and the bytes in question are a PIN.
 func Serve(ctx context.Context, r io.Reader, w io.Writer, h Handler) error {
 	for {
 		if err := ctx.Err(); err != nil {
@@ -116,10 +169,134 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, h Handler) error {
 			return nil
 		}
 
+		if req.Op == OpLoginPIN {
+			// A PIN offered with no login in progress, which ends the worker
+			// rather than being refused in a Response.
+			//
+			// It is tempting to answer it: nothing has been read past this frame
+			// and the loop looks recoverable. It is not. Behind this frame are
+			// PINLength raw bytes that only serveLogin's ask ever reads, and ask
+			// did not run — so carrying on means the next ReadFrame takes the
+			// first four bytes of a PIN as a length prefix and the rest into a
+			// payload buffer, where they sit in this process's heap, never
+			// overwritten, as somebody else's byte slice. That is precisely the
+			// thing SPEC §6.5.1 clause 2 and D-297 rejected bufio for, arrived
+			// at from the other direction.
+			//
+			// The parent refuses the mirror of this — a PIN question outside an
+			// exchange — for the reason the owner gave: a request arriving when
+			// nothing is pending means either this worker is confused or
+			// something else is talking to the pipe, and both are worth knowing
+			// about loudly.
+			return fmt.Errorf("%w: a PIN was offered with no login in progress", ErrProtocolDesync)
+		}
+
+		if req.Op == OpLogin {
+			// Not in serveOne, because this one operation needs the pipe itself:
+			// it asks a question down w and reads the answer back off r, in the
+			// middle of the Handler call. serveOne has neither and must not
+			// acquire them — an operation that can write to w is an operation
+			// that can put a frame where the parent is not expecting one.
+			resp, err := serveLogin(ctx, r, w, h, req)
+			if err != nil {
+				return err
+			}
+			if err := WriteFrame(w, resp); err != nil {
+				return fmt.Errorf("writing a login response: %w", err)
+			}
+			continue
+		}
+
 		if err := WriteFrame(w, serveOne(ctx, h, req)); err != nil {
 			return fmt.Errorf("writing a response: %w", err)
 		}
 	}
+}
+
+// serveLogin runs one login, including the PIN exchange if the token needs one.
+//
+// Its error return is reserved for ErrProtocolDesync and for a pipe that broke:
+// everything a card or a module can refuse comes back in the Response, like
+// every other operation. The split matters because the two have opposite
+// answers — a refusal is told to the parent and the worker keeps serving, and a
+// desync ends the worker without another frame being written.
+//
+// # The exchange identifier is bound here rather than by the Handler
+//
+// The Handler is given a closure and knows nothing about exchanges. It cannot
+// mint one, cannot echo the wrong one, and cannot ask a question outside one,
+// because the only thing it can do is call ask — and ask stamps the identifier
+// this request arrived with onto the question and requires it back on the
+// answer. A worker that could ask for a PIN at will is a worker that could make
+// PIN dialogs appear, and that dialog is the one window in this program that
+// deliberately looks like a system dialog (D-277).
+func serveLogin(ctx context.Context, r io.Reader, w io.Writer, h Handler, req Request) (Response, error) {
+	if req.Thumbprint == "" {
+		return Response{Err: "pkcs11 worker: login needs a thumbprint"}, nil
+	}
+	if req.Exchange == "" {
+		// Refused rather than defaulted. An exchange identifier is what binds
+		// this login to an operation a person approved, and a login with no
+		// binding is the thing the binding exists to prevent.
+		return Response{Err: "pkcs11 worker: login needs an exchange identifier"}, nil
+	}
+
+	// Set by ask when the pipe stopped making sense, and checked after the
+	// Handler returns rather than only on the Handler's own error: a handler
+	// that swallowed ask's error would otherwise leave this loop reading a pipe
+	// it has lost its place in.
+	var desync error
+
+	ask := func(dst []byte, needs LoginNeeds) (int, error) {
+		needs.Exchange = req.Exchange
+		if err := WriteFrame(w, Response{Login: &needs}); err != nil {
+			desync = fmt.Errorf("writing the PIN question: %w", err)
+			return 0, desync
+		}
+
+		var answer Request
+		if err := ReadFrame(r, &answer); err != nil {
+			desync = fmt.Errorf("reading the PIN answer: %w", err)
+			return 0, desync
+		}
+		if answer.Op != OpLoginPIN {
+			desync = fmt.Errorf("%w: expected %q and got %q", ErrProtocolDesync, OpLoginPIN, truncate(string(answer.Op)))
+			return 0, desync
+		}
+		if answer.Exchange != req.Exchange {
+			desync = fmt.Errorf("%w: the PIN answer carries a different exchange", ErrProtocolDesync)
+			return 0, desync
+		}
+		// The parent enforces the token's own limits before it writes, so a
+		// length outside them cannot arrive from a parent that is in step. This
+		// is not that check repeated: it is what stops a length that does not
+		// fit dst from being read into dst, and it cannot recover, because the
+		// bytes the parent is about to write are already on their way.
+		if answer.PINLength < needs.MinPINLength || answer.PINLength > len(dst) {
+			desync = fmt.Errorf("%w: a PIN of %d bytes against a token that accepts %d to %d",
+				ErrProtocolDesync, answer.PINLength, needs.MinPINLength, len(dst))
+			return 0, desync
+		}
+
+		// The one read. Straight into the buffer C_Login will be given, exactly
+		// the number of bytes the frame named, never one more (SPEC §6.5.1
+		// clause 2). There is no intermediate slice here on purpose: a copy
+		// made on this line would be a copy nothing overwrites.
+		if _, err := io.ReadFull(r, dst[:answer.PINLength]); err != nil {
+			desync = fmt.Errorf("%w: reading the PIN: %w", ErrProtocolDesync, err)
+			return 0, desync
+		}
+		return answer.PINLength, nil
+	}
+
+	cert, chain, err := h.Login(ctx, req.Thumbprint, ask)
+	if desync != nil {
+		return Response{}, desync
+	}
+	if err != nil {
+		return Response{Err: err.Error()}, nil
+	}
+	return Response{Certificate: &cert, Chain: chain}, nil
 }
 
 // serveOne answers one request. It never returns an error: every way a request
@@ -151,6 +328,19 @@ func serveOne(ctx context.Context, h Handler, req Request) Response {
 			return Response{Err: err.Error()}
 		}
 		return Response{Chain: chain}
+
+	case OpSignDigest:
+		sig, err := h.SignDigest(ctx, req.DigestAlgorithm, req.Digest)
+		if err != nil {
+			return Response{Err: err.Error()}
+		}
+		return Response{Signature: sig}
+
+	case OpCloseSession:
+		if err := h.CloseSession(); err != nil {
+			return Response{Err: err.Error()}
+		}
+		return Response{}
 
 	default:
 		return Response{Err: fmt.Sprintf("%v: %q", ErrUnknownOperation, truncate(string(req.Op)))}

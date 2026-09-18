@@ -220,13 +220,33 @@ func (s Source) Open(ctx context.Context, want keysource.Thumbprint) (keysource.
 	if err != nil {
 		return nil, err
 	}
-	ok := false
-	defer func() {
-		if !ok {
-			_ = m.close()
-		}
-	}()
+	sess, err := s.openOn(ctx, m, want, s.entry)
+	if err != nil {
+		_ = m.close()
+		return nil, err
+	}
+	// Ownership of the module transfers to the session, whose Close unloads it.
+	// The worker's holder does not do this, which is the whole difference
+	// between the two callers: there the module outlives the session and is
+	// closed by whoever opened it.
+	sess.m = m
+	return sess, nil
+}
 
+// openOn is Open's body, against a module somebody else opened and will close,
+// and with the PIN collected by an entry the caller supplies rather than by the
+// one on this Source.
+//
+// The entry is a parameter here and a field on Source for the same reason the
+// module is: the worker's child has neither. Its module is held open across
+// many requests (D-299) and its PIN arrives on a pipe rather than from a screen
+// this process drew, so both of the things Open reads off the receiver are
+// things that caller has to hand in.
+//
+// It never sets signSession.m. A session that closed a module it did not open
+// would unload it from under the holder, and the holder is the thing the worker
+// exists to keep alive.
+func (s Source) openOn(ctx context.Context, m *module, want keysource.Thumbprint, entry PINEntry) (*signSession, error) {
 	slots, err := m.slots(true)
 	if err != nil {
 		return nil, err
@@ -268,7 +288,7 @@ func (s Source) Open(ctx context.Context, want keysource.Thumbprint) (keysource.
 				CertificateLabel: label,
 				ModulePath:       s.modulePath,
 			}
-			if err := sess.login(ti, s.entry, req); err != nil {
+			if err := sess.login(ti, entry, req); err != nil {
 				_ = sess.close()
 				return nil, err
 			}
@@ -288,9 +308,7 @@ func (s Source) Open(ctx context.Context, want keysource.Thumbprint) (keysource.
 			return nil, err
 		}
 
-		ok = true
 		return &signSession{
-			m:     m,
 			sess:  sess,
 			key:   key,
 			cert:  keysource.Certificate{Thumbprint: want, DER: der},
