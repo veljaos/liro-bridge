@@ -5,6 +5,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -111,13 +112,55 @@ func realModuleConditions(t *testing.T) (path, card string, rounds int) {
 	return path, card, rounds
 }
 
-// closing bounds this file's teardown for the same reason login_test.go's does:
-// Worker.Close takes the caller's context as its bound, and a test may pick a
-// number where the product may not.
+// realModuleBound is how long this test will wait for any one call before
+// calling it stuck.
+//
+// It is a **test** picking a number, which a test may do and the product may
+// not — D-297 leaves the per-request deadline open deliberately and it is the
+// owner's to choose. Nothing here asserts on a duration; this bound exists so
+// that a call which never returns is *reported* rather than wedging the run.
+//
+// That is not hypothetical and it is why this was added after the file was
+// written. Measured on this machine, with no card in the reader: a process that
+// has loaded netsetpkcs11_x64.dll (TrustEdgeID 1.1.3.3) and WinSCard.dll can
+// reach os.Exit and still not go away — `HasExited` reports true while the
+// process object persists with one thread in Wait/UserRequest, indefinitely,
+// surviving TerminateProcess. Anything waiting on such a child waits for ever,
+// and Worker.reap's wait after a kill is deliberately unbounded.
+//
+// Thirty seconds rather than five: a real Enumerate on a card has never been
+// timed through a worker, which is the point of this test, so the bound has to
+// be far past anything plausible rather than near it.
+const realModuleBound = 30 * time.Second
+
+// bounded returns a context this test is willing to wait on, and a reason to
+// print when it runs out.
+func bounded(t *testing.T) (context.Context, context.CancelFunc) {
+	t.Helper()
+	return context.WithTimeout(context.Background(), realModuleBound)
+}
+
+// stuck turns a context deadline into the finding it is, rather than a bare
+// "context deadline exceeded" the reader has to interpret.
+func stuck(t *testing.T, w *Worker, what string, err error) {
+	t.Helper()
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("%s did not return within %v.\n\n"+
+			"That is the per-request deadline question (D-297) arriving as a fact: "+
+			"this call had no bound but the one this test invented. Measured on this "+
+			"machine with no card, a process holding netsetpkcs11_x64.dll can exit "+
+			"and still not be reaped, so whatever waits on it waits for ever.\n\n"+
+			"child stderr:\n%s", what, realModuleBound, w.ChildStderr())
+	}
+}
+
+// closingReal bounds this file's teardown for the same reason login_test.go's
+// does: Worker.Close takes the caller's context as its bound, and a test may
+// pick a number where the product may not.
 func closingReal(t *testing.T, w *Worker) func() {
 	t.Helper()
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := bounded(t)
 		defer cancel()
 		if err := w.Close(ctx); err != nil {
 			t.Logf("Close: %v\nchild stderr:\n%s", err, w.ChildStderr())
@@ -138,7 +181,6 @@ func closingReal(t *testing.T, w *Worker) func() {
 // produced it.
 func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 	path, card, rounds := realModuleConditions(t)
-	ctx := context.Background()
 
 	t.Logf("module %s", path)
 	t.Logf("card   %s", card)
@@ -148,9 +190,11 @@ func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 
 	source := pkcs11.NewSource(path)
 
+	directCtx, directCancel := bounded(t)
 	start := time.Now()
-	direct, err := source.Enumerate(ctx)
+	direct, err := source.Enumerate(directCtx)
 	oneShot := time.Since(start)
+	directCancel()
 	if err != nil {
 		t.Fatalf("Enumerate in this process: %v", err)
 	}
@@ -166,10 +210,13 @@ func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 	for i := 0; i < rounds; i++ {
 		var r round
 
+		ctx, cancel := bounded(t)
 		begin := time.Now()
 		certs, err := w.Enumerate(ctx)
 		r.enumerate = time.Since(begin)
+		cancel()
 		if err != nil {
+			stuck(t, w, "Enumerate through the worker", err)
 			t.Fatalf("round %d: Enumerate through the worker: %v\nchild stderr:\n%s",
 				i, err, w.ChildStderr())
 		}
@@ -181,8 +228,12 @@ func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 				"that is what holding it open is for (D-297).", i)
 		}
 
+		listCtx, listCancel := bounded(t)
 		begin = time.Now()
-		if _, err := w.List(ctx); err != nil {
+		_, err = w.List(listCtx)
+		listCancel()
+		if err != nil {
+			stuck(t, w, "List through the worker", err)
 			t.Fatalf("round %d: List through the worker: %v\nchild stderr:\n%s",
 				i, err, w.ChildStderr())
 		}
@@ -194,8 +245,12 @@ func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 		// empty reader there is nothing to ask about and this stays zero, which
 		// is printed rather than silently skipped.
 		if len(direct) > 0 {
+			chainCtx, chainCancel := bounded(t)
 			begin = time.Now()
-			if _, err := w.ChainFor(ctx, direct[0].Thumbprint); err != nil {
+			_, err = w.ChainFor(chainCtx, direct[0].Thumbprint)
+			chainCancel()
+			if err != nil {
+				stuck(t, w, "ChainFor through the worker", err)
 				t.Fatalf("round %d: ChainFor through the worker: %v\nchild stderr:\n%s",
 					i, err, w.ChildStderr())
 			}
@@ -272,23 +327,24 @@ func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 // and that every failure arrived as an ordinary error.
 func TestARealModuleSurvivesAWorkerBeingClosedAndAnotherOpened(t *testing.T) {
 	path, card, _ := realModuleConditions(t)
-	ctx := context.Background()
 	t.Logf("module %s, card %s", path, card)
 
 	const workers = 3
 	for i := 0; i < workers; i++ {
 		w := New(path, io.Discard)
 
+		ctx, cancel := bounded(t)
 		certs, err := w.Enumerate(ctx)
+		cancel()
 		if err != nil {
 			t.Errorf("worker %d: Enumerate: %v\nchild stderr:\n%s", i, err, w.ChildStderr())
 		} else {
 			t.Logf("worker %d saw %d certificates", i, len(certs))
 		}
 
-		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		closeCtx, closeCancel := bounded(t)
 		err = w.Close(closeCtx)
-		cancel()
+		closeCancel()
 		if err != nil {
 			t.Errorf("worker %d: Close: %v\nchild stderr:\n%s", i, err, w.ChildStderr())
 		}
