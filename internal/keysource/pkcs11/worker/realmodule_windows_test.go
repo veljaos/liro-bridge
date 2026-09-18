@@ -1,0 +1,340 @@
+//go:build windows
+
+package worker
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
+)
+
+// This file is the one place F12 §2 meets real hardware.
+//
+// # Why it had to be written before the phase could be called done
+//
+// Everything else in this package is measured against a canned child that never
+// calls into internal/keysource/pkcs11 at all. That is the right way to test a
+// protocol, and it means the three entries §2 rests on each assert something
+// about a configuration nothing had run:
+//
+//   - D-297 says the worker exists so C_Initialize is paid once rather than per
+//     call, against a module D-272 measured dying inside it about once in a
+//     hundred calls. A module *held open across many requests* had never been
+//     opened.
+//   - D-298 says runtime.LockOSThread is the braces and CKF_OS_LOCKING_OK is
+//     the belt, because two of four measured modules never read the arguments
+//     structure at all. Run locks the thread before the open; that pairing had
+//     never run.
+//   - D-299 moved the read operations onto an already-open module so that one
+//     rule has two callers. The one-shot caller has been run against a card.
+//     The held caller had not.
+//
+// A phase that ends there ends on an argument. This ends it on a measurement.
+//
+// # What it asserts, and what it only reports
+//
+// It asserts **agreement**: for the same module and the same card, what the
+// worker answers through a held module and what the in-process Source answers
+// through a one-shot open are the same bytes, in the same order. That is
+// D-299's refactor checked where it can actually be wrong, and it needs no
+// product code to observe it.
+//
+// It *reports* timings and asserts nothing about them. D-201 is the rule —
+// observe the property rather than time the machine — and it is not being bent
+// here, because no assertion depends on a duration. The numbers exist because
+// the owner asked for what a real Enumerate costs before anybody picks a
+// per-request deadline (D-297 left that open on purpose), and a number with its
+// conditions printed beside it is the only kind worth having.
+//
+// # It is read-only and spends nothing
+//
+// C_Initialize, C_GetSlotList, C_GetTokenInfo, a read-only public session,
+// C_FindObjects, C_GetAttributeValue, C_Finalize. No C_Login, no private
+// object, no PIN. It can be run at will and costs no attempt. The login is a
+// separate thing, deliberately, and is authorised separately.
+//
+//	set LIRO_PKCS11_MODULE=C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll
+//	set LIRO_PKCS11_WORKER_CARD=in
+//	go test -run TestARealModule -v ./internal/keysource/pkcs11/worker/
+//
+// # The card's state is a required input, not a detail
+//
+// D-272 §3 is titled *the card-out control could not have seen it*: a run with
+// an empty reader already misled this project once. So LIRO_PKCS11_WORKER_CARD
+// must be "in" or "out", it is printed with every number, and it has no
+// default. A default is how the condition goes missing.
+
+// realModuleRounds is how many times the read operations are repeated.
+//
+// More than one, because one round cannot distinguish "C_Initialize was paid
+// once" from "C_Initialize was paid every time" — that difference is the whole
+// of D-297, and it is visible only as a first call that costs more than the
+// rest. Twenty rather than a hundred: this is not the crash-rate measurement,
+// which probe_real_test.go already takes, and takes differently.
+const realModuleRounds = 20
+
+// round is one pass of the three read operations.
+type round struct {
+	enumerate, list, chainFor time.Duration
+}
+
+func realModuleConditions(t *testing.T) (path, card string, rounds int) {
+	t.Helper()
+
+	path = os.Getenv("LIRO_PKCS11_MODULE")
+	if path == "" {
+		t.Skip("LIRO_PKCS11_MODULE is not set; skipping the real-module tests")
+	}
+
+	card = os.Getenv("LIRO_PKCS11_WORKER_CARD")
+	if card != "in" && card != "out" {
+		t.Fatalf(`LIRO_PKCS11_WORKER_CARD=%q; set it to "in" or "out".`+"\n\n"+
+			"Every number this test prints is meaningless without it, and D-272 §3 "+
+			"records what it cost to learn that: a run with an empty reader is not a "+
+			"measurement of a card. It has no default on purpose.", card)
+	}
+
+	rounds = realModuleRounds
+	if n := os.Getenv("LIRO_PKCS11_WORKER_ROUNDS"); n != "" {
+		parsed, err := strconv.Atoi(n)
+		if err != nil || parsed < 1 {
+			t.Fatalf("LIRO_PKCS11_WORKER_ROUNDS=%q is not a positive number", n)
+		}
+		rounds = parsed
+	}
+	return path, card, rounds
+}
+
+// closing bounds this file's teardown for the same reason login_test.go's does:
+// Worker.Close takes the caller's context as its bound, and a test may pick a
+// number where the product may not.
+func closingReal(t *testing.T, w *Worker) func() {
+	t.Helper()
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := w.Close(ctx); err != nil {
+			t.Logf("Close: %v\nchild stderr:\n%s", err, w.ChildStderr())
+		}
+	}
+}
+
+// TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen is the whole of it.
+//
+// The module is first read the way everything before F12 §2 read it — open,
+// enumerate, close, in this process. Then one worker process holds the same
+// module open and is asked the same things, repeatedly. The answers must be
+// identical.
+//
+// If they are not, D-299's refactor is wrong on real hardware in a way no
+// amount of canned-child testing could have shown, and the failure it guards
+// against is the quiet one: a listing that differs depending on which path
+// produced it.
+func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
+	path, card, rounds := realModuleConditions(t)
+	ctx := context.Background()
+
+	t.Logf("module %s", path)
+	t.Logf("card   %s", card)
+	t.Logf("rounds %d", rounds)
+
+	// --- the established path, first, so the comparison has a baseline -------
+
+	source := pkcs11.NewSource(path)
+
+	start := time.Now()
+	direct, err := source.Enumerate(ctx)
+	oneShot := time.Since(start)
+	if err != nil {
+		t.Fatalf("Enumerate in this process: %v", err)
+	}
+
+	// --- the held module, many times over ------------------------------------
+
+	w := New(path, io.Discard)
+	t.Cleanup(closingReal(t, w))
+
+	rs := make([]round, 0, rounds)
+	var held []CertificatePayload
+
+	for i := 0; i < rounds; i++ {
+		var r round
+
+		begin := time.Now()
+		certs, err := w.Enumerate(ctx)
+		r.enumerate = time.Since(begin)
+		if err != nil {
+			t.Fatalf("round %d: Enumerate through the worker: %v\nchild stderr:\n%s",
+				i, err, w.ChildStderr())
+		}
+		if i == 0 {
+			held = certs
+		} else if !samePayloads(certs, held) {
+			t.Fatalf("round %d: the held module answered differently from round 0.\n\n"+
+				"A module held open across many reads must not drift between them; "+
+				"that is what holding it open is for (D-297).", i)
+		}
+
+		begin = time.Now()
+		if _, err := w.List(ctx); err != nil {
+			t.Fatalf("round %d: List through the worker: %v\nchild stderr:\n%s",
+				i, err, w.ChildStderr())
+		}
+		r.list = time.Since(begin)
+
+		// ChainFor needs a thumbprint, and the thumbprint comes from the
+		// in-process read because the protocol deliberately does not carry one
+		// (CertificatePayload is DER and a label; see its own comment). With an
+		// empty reader there is nothing to ask about and this stays zero, which
+		// is printed rather than silently skipped.
+		if len(direct) > 0 {
+			begin = time.Now()
+			if _, err := w.ChainFor(ctx, direct[0].Thumbprint); err != nil {
+				t.Fatalf("round %d: ChainFor through the worker: %v\nchild stderr:\n%s",
+					i, err, w.ChildStderr())
+			}
+			r.chainFor = time.Since(begin)
+		}
+
+		rs = append(rs, r)
+	}
+
+	// --- the assertion -------------------------------------------------------
+
+	if len(direct) != len(held) {
+		t.Fatalf("a one-shot open saw %d certificates and the held module saw %d, on "+
+			"the same module and the same card.\n\n"+
+			"D-299 moved the read body onto an already-open module so that one rule "+
+			"has two callers. The two callers disagree.", len(direct), len(held))
+	}
+	for i := range direct {
+		if !bytes.Equal(direct[i].DER, held[i].DER) {
+			t.Errorf("certificate %d differs between a one-shot open and the held module", i)
+		}
+		if direct[i].Label != held[i].Label {
+			t.Errorf("certificate %d has label %q through a one-shot open and %q through "+
+				"the held module", i, direct[i].Label, held[i].Label)
+		}
+	}
+
+	// --- what it reports -----------------------------------------------------
+
+	t.Logf("")
+	t.Logf("certificates: %d", len(direct))
+	for i, c := range direct {
+		// ProtectedPIN is clause 1's branch and nothing has ever seen it set:
+		// D-268 and D-273 both found no module offering a protected
+		// authentication path. If it is true for some token, a login on it
+		// collects no PIN at all and the PIN seam's asking half is never
+		// reached — which is why it is printed here, before any login is
+		// planned against this card.
+		t.Logf("  [%d] %d bytes  label=%q  token=%q serial=%q slot=%d protectedPIN=%v",
+			i, len(c.DER), c.Label, c.TokenLabel, c.TokenSerial, c.SlotID, c.ProtectedPIN)
+	}
+
+	t.Logf("")
+	t.Logf("timings — card %s — %s", card, path)
+	t.Logf("  one-shot open+enumerate+close, in this process:  %v", oneShot)
+	t.Logf("  worker round 0 (child spawn + C_Initialize + read):")
+	t.Logf("    enumerate %v   list %v   chainFor %v", rs[0].enumerate, rs[0].list, rs[0].chainFor)
+	if len(rs) > 1 {
+		t.Logf("  worker rounds 1..%d, module already open:", len(rs)-1)
+		t.Logf("    enumerate  %s", spread(rs[1:], func(r round) time.Duration { return r.enumerate }))
+		t.Logf("    list       %s", spread(rs[1:], func(r round) time.Duration { return r.list }))
+		t.Logf("    chainFor   %s", spread(rs[1:], func(r round) time.Duration { return r.chainFor }))
+	}
+	t.Logf("")
+	t.Logf("D-297's claim is the gap between round 0 and the rounds after it, and")
+	t.Logf("between those and the one-shot. Nothing above asserts on any of these")
+	t.Logf("numbers (D-201); they are the input to the per-request deadline that")
+	t.Logf("D-297 left open on purpose.")
+}
+
+// TestARealModuleSurvivesAWorkerBeingClosedAndAnotherOpened is the other half
+// of holding one open: C_Finalize happens, and the next worker can still load
+// the same module in a fresh process.
+//
+// It is worth its own test because D-272's crash is inside C_Initialize, so a
+// second and third open is where a module that does not clean up after itself
+// would show it — and the supervisor's whole design is that a replacement
+// worker is ordinary rather than exceptional.
+//
+// It reports deaths rather than asserting their absence, for the reason
+// probe_real_test.go gives: D-272's own table has clean runs of 150 and of 120,
+// so a test that failed when the module behaved itself would be a test about
+// the module. What it asserts is that this process is still running at the end
+// and that every failure arrived as an ordinary error.
+func TestARealModuleSurvivesAWorkerBeingClosedAndAnotherOpened(t *testing.T) {
+	path, card, _ := realModuleConditions(t)
+	ctx := context.Background()
+	t.Logf("module %s, card %s", path, card)
+
+	const workers = 3
+	for i := 0; i < workers; i++ {
+		w := New(path, io.Discard)
+
+		certs, err := w.Enumerate(ctx)
+		if err != nil {
+			t.Errorf("worker %d: Enumerate: %v\nchild stderr:\n%s", i, err, w.ChildStderr())
+		} else {
+			t.Logf("worker %d saw %d certificates", i, len(certs))
+		}
+
+		closeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err = w.Close(closeCtx)
+		cancel()
+		if err != nil {
+			t.Errorf("worker %d: Close: %v\nchild stderr:\n%s", i, err, w.ChildStderr())
+		}
+	}
+}
+
+// samePayloads compares two answers by their bytes and their order.
+//
+// By order as well as by content, deliberately. One module returning one card's
+// certificates in a different order on two consecutive reads would be a fact
+// worth knowing — dedupe's own comment records that the two NetSeT builds
+// disagree with each other about order, which is a different thing and is
+// already handled.
+func samePayloads(a, b []CertificatePayload) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !bytes.Equal(a[i].DER, b[i].DER) || a[i].Label != b[i].Label {
+			return false
+		}
+	}
+	return true
+}
+
+// spread prints the shape of a set of durations rather than one number, because
+// D-272 measured this module's behaviour as bursty rather than steady and a
+// mean on its own would hide exactly that.
+func spread(rs []round, pick func(round) time.Duration) string {
+	if len(rs) == 0 {
+		return "(none)"
+	}
+	ds := make([]time.Duration, 0, len(rs))
+	total := time.Duration(0)
+	for _, r := range rs {
+		d := pick(r)
+		ds = append(ds, d)
+		total += d
+	}
+	for i := 1; i < len(ds); i++ {
+		for j := i; j > 0 && ds[j] < ds[j-1]; j-- {
+			ds[j], ds[j-1] = ds[j-1], ds[j]
+		}
+	}
+	return "min " + ds[0].String() +
+		"  median " + ds[len(ds)/2].String() +
+		"  max " + ds[len(ds)-1].String() +
+		"  mean " + (total / time.Duration(len(ds))).String()
+}
