@@ -44,7 +44,7 @@ Pošta card in the reader:
 ```
 set LIRO_PKCS11_MODULE=C:\Windows\System32\aetpkss1.dll
 set LIRO_PKCS11_WORKER_CARD=in
-go test -run TestARealModule -v .\internal\keysource\pkcs11\worker\
+go test -count=1 -run TestARealModule -v .\internal\keysource\pkcs11\worker\
 ```
 
 Read-only throughout — `C_Initialize`, `C_GetSlotList`, `C_GetTokenInfo`, a

@@ -20,7 +20,7 @@ import (
 //
 //	LIRO_PKCS11_MODULE="C:\Program Files\MUP RS\Celik\netsetpkcs11_x64.dll" \
 //	LIRO_PKCS11_PROBE_CARD=in LIRO_PKCS11_PROBE_ITERATIONS=300 \
-//	go test -run TestTheRealModule -v ./internal/keysource/pkcs11/
+//	go test -count=1 -run TestTheRealModule -v ./internal/keysource/pkcs11/
 //
 // # The card state is a required input, not a detail
 //

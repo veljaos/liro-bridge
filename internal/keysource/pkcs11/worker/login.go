@@ -112,7 +112,7 @@ func (w *Worker) Open(ctx context.Context, want keysource.Thumbprint, entry pkcs
 		// outcome and a data race: mid runs on the goroutine exchange abandons
 		// when the context ends, so reading the flag afterwards is a read racing
 		// a write. Removing it removed the race.
-		w.endLocked(ctx)
+		w.endLocked(ctx, OpLogin)
 		return nil, err
 	}
 	if resp.Err != "" {
@@ -124,7 +124,7 @@ func (w *Worker) Open(ctx context.Context, want keysource.Thumbprint, entry pkcs
 		// session whose Certificate() is empty produces a signature that
 		// verifies against nothing while every layer reports success, which is
 		// the silent failure F11 §2.1 is about one level down.
-		w.endLocked(ctx)
+		w.endLocked(ctx, OpLogin)
 		return nil, fmt.Errorf("pkcs11 worker: %s: the login succeeded and named no certificate", w.modulePath)
 	}
 

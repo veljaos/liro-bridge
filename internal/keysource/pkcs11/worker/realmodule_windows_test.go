@@ -62,7 +62,7 @@ import (
 //
 //	set LIRO_PKCS11_MODULE=C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll
 //	set LIRO_PKCS11_WORKER_CARD=in
-//	go test -run TestARealModule -v ./internal/keysource/pkcs11/worker/
+//	go test -count=1 -run TestARealModule -v ./internal/keysource/pkcs11/worker/
 //
 // # The card's state is a required input, not a detail
 //
@@ -133,6 +133,19 @@ func showDuration(d time.Duration, ran bool, floor time.Duration) string {
 
 func realModuleConditions(t *testing.T) (path, card string, rounds int) {
 	t.Helper()
+
+	// The wall-clock time this run started, printed so that a replay is
+	// obvious. `go test` caches a successful result and replays its output
+	// verbatim when nothing it tracks has changed, and a cached run cannot
+	// detect that it is cached -- it does not execute at all. The owner hit
+	// this: three invocations of a card test printed identical numbers to the
+	// last decimal, which was one run shown three times.
+	//
+	// `(cached)` on the package line is the real tell and -count=1 is the real
+	// fix -- it is in this file's own example command and in the home list.
+	// This is the belt: two runs reporting the same start time are the same
+	// run, whoever misses the package line (D-304).
+	t.Logf("run started %s", time.Now().Format(time.RFC3339Nano))
 
 	path = os.Getenv("LIRO_PKCS11_MODULE")
 	if path == "" {

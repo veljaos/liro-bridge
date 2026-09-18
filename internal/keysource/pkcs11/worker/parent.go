@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
 )
@@ -31,6 +32,51 @@ import (
 // budget means the module is not usable now rather than that this request was
 // unlucky, and saying so is more useful than trying again.
 const maxAttempts = 3
+
+// reapBackstop bounds how long reap will wait for a child to go, in total.
+//
+// # It is a liveness backstop on one line, and it is NOT the per-request deadline
+//
+// D-297 left the per-request deadline open on purpose — "a per-request deadline
+// is a separate question justified by the cost of the request it bounds; bring
+// the owner the number rather than choosing" — and this does not answer it.
+// **That question stays open.** Every request is still bounded by its caller's
+// context and by nothing this package invented.
+//
+// What this bounds is the one place that had no bound of any kind: reap's wait
+// for a child it has already killed. That wait held w.mu, so a child that would
+// not go stopped every caller of this Worker and not merely the one that asked
+// (D-306).
+//
+// # Why ten seconds, chosen against the failure rather than the performance
+//
+// Three numbers were measured, and the bound is deliberately not derived from
+// the one that looks most relevant:
+//
+//   - The worst legitimate single call is **890 ms** — one read of a two-
+//     certificate card through NetSeT 1.1.3.3, stable across twenty rounds, of
+//     which 856 ms is one C_FindObjectsInit (D-305).
+//   - A killed child holding a real module is reaped in **2–5 ms**, measured six
+//     times over two modules, card in and card out.
+//   - The pathological case — a child that cannot be reaped — was **never
+//     reproduced** through this path, in six attempts.
+//
+// A bound near 890 ms would kill NetSeT 1.1.3.3 on essentially every call, and
+// the person on that build has done nothing wrong: they have the DLL their
+// issuer's installer left behind, and D-271 found two builds five years apart
+// on one machine. 890 ms is also not a ceiling — it is one card with two
+// certificates on one machine.
+//
+// And nothing is gained by being tight. The purpose is not to make slow modules
+// fail fast; it is that the agent cannot hang. For that, any finite number
+// works, and being generous costs at most one person waiting ten seconds before
+// being told something is wrong — against the alternative, which is a person on
+// a legitimate build who can never sign at all.
+//
+// Ten seconds is about eleven times the worst measured legitimate call: wide
+// enough that reaching it means something is wrong rather than slow, short
+// enough that whoever is at the screen is still there to read the reason.
+const reapBackstop = 10 * time.Second
 
 // retryable is the allow-list of operations a request may be re-sent for after
 // the worker serving it died.
@@ -102,6 +148,18 @@ var (
 	// through and is right to refuse. Naming the type answers its question
 	// truthfully. Renaming the var to dodge the matcher is what D-270 rejected.
 	ErrUnexpectedPINRequest error = errors.New("pkcs11 worker: the worker asked for a PIN outside an approved operation")
+
+	// ErrWorkerAbandoned is a child that was killed and did not go, given up on
+	// after reapBackstop.
+	//
+	// It is its own sentinel because it is not like the others: ErrWorkerDied
+	// is a process that ended, and this is a process that would not. Nothing in
+	// this package has ever produced it — six attempts to reproduce an
+	// unreapable child through this path produced none (D-306) — which is
+	// exactly why it is named, logged and distinguishable rather than folded
+	// into ErrWorkerDied. The first time it happens will be somewhere nobody
+	// can attach a debugger to.
+	ErrWorkerAbandoned = errors.New("pkcs11 worker: the worker process was killed and did not exit; it has been abandoned")
 )
 
 // Worker is the parent's end of one worker process: one module, held open in a
@@ -299,7 +357,7 @@ func (w *Worker) Close(ctx context.Context) error {
 	_, _ = w.roundTrip(ctx, Request{Op: OpShutdown})
 
 	_ = w.in.Close()
-	return w.reap(ctx)
+	return w.reap(ctx, OpShutdown)
 }
 
 // do sends one request, respawning a dead worker for the operations that may be
@@ -339,10 +397,10 @@ func (w *Worker) do(ctx context.Context, req Request) (Response, error) {
 			// A frame that would not parse is this program disagreeing with
 			// itself, not a module killing a process. Respawning would turn a
 			// protocol fault into three of them.
-			w.endLocked(ctx)
+			w.endLocked(ctx, req.Op)
 			return Response{}, err
 		}
-		_ = w.reap(ctx)
+		_ = w.reap(ctx, req.Op)
 	}
 
 	return Response{}, fmt.Errorf("%w after %d attempts: %s: %w",
@@ -517,7 +575,7 @@ func readAnswer(out io.Reader) (Response, error) {
 
 // reap makes sure the child is gone and forgets it, returning why it stopped.
 // The caller holds the mutex.
-func (w *Worker) reap(ctx context.Context) error {
+func (w *Worker) reap(ctx context.Context, op Op) error {
 	if w.cmd == nil {
 		return nil
 	}
@@ -526,19 +584,57 @@ func (w *Worker) reap(ctx context.Context) error {
 	cmd := w.cmd
 	go func() { waited <- cmd.Wait() }()
 
+	// The backstop runs from here, so it bounds the whole of this function's
+	// waiting rather than one branch of it. Both waits need it: the second is
+	// the one with no bound at all, and the first is reached by endLocked,
+	// which has already killed the child before calling in.
+	backstop := time.NewTimer(reapBackstop)
+	defer backstop.Stop()
+
+	began := time.Now()
 	var err error
+
 	select {
 	case err = <-waited:
 	case <-ctx.Done():
 		// A child that will not exit is killed rather than waited for. Nothing
-		// here chooses how long to wait; the caller's context did.
+		// here chooses how long to wait for an *answer*; the caller's context
+		// did. What follows is not waiting for an answer.
 		w.killLocked()
-		err = <-waited
+		select {
+		case err = <-waited:
+		case <-backstop.C:
+			err = w.abandon(op, began)
+		}
+	case <-backstop.C:
+		w.killLocked()
+		err = w.abandon(op, began)
 	}
 
 	_ = w.in.Close()
 	_ = w.out.Close()
 	w.cmd, w.in, w.out = nil, nil, nil
+	return err
+}
+
+// abandon gives up on a child that will not go, loudly. The caller holds the
+// mutex.
+//
+// It leaks the goroutine sitting in cmd.Wait and the process object behind it,
+// and that is the trade: one goroutine and one entry in the process table
+// against an agent that never answers again. The alternative is the line this
+// backstop replaced, which held w.mu while waiting for ever — so every caller
+// of this Worker, not just the one that asked.
+//
+// Loud is half the decision and not a flourish. Six attempts to reproduce an
+// unreapable child through this path produced none (D-306), so the first time
+// this fires it will be on somebody else's machine, and this line will be the
+// only evidence that exists. It names the module, the operation, how long, and
+// that the child was killed.
+func (w *Worker) abandon(op Op, began time.Time) error {
+	err := fmt.Errorf("%w: %s: after %v waiting for the %q worker to exit; it was killed and did not go",
+		ErrWorkerAbandoned, w.modulePath, time.Since(began).Round(time.Millisecond), op)
+	_, _ = fmt.Fprintln(w.stderr, "liro-bridge:", err)
 	return err
 }
 
@@ -551,9 +647,9 @@ func (w *Worker) reap(ctx context.Context) error {
 // never arrive, is blocked on a read and will wait as long as the caller's
 // context allows. It is already unusable: something in this conversation went
 // wrong in a way that means neither end knows where the next frame starts.
-func (w *Worker) endLocked(ctx context.Context) {
+func (w *Worker) endLocked(ctx context.Context, op Op) {
 	w.killLocked()
-	_ = w.reap(ctx)
+	_ = w.reap(ctx, op)
 }
 
 // killLocked ends the child now. The caller holds the mutex.

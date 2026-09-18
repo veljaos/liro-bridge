@@ -27719,10 +27719,10 @@ significant figures by anybody who has not confirmed how they were taken.
 506.5 µs and 718.1 µs. So the test measures it per run and prints it beside the
 numbers it qualifies, rather than hard-coding D-201's 512.
 
-### The third question
+### The questions to ask of a check before believing it
 
-[[D-296]] established two questions to ask of any check before believing it.
-This session found the third, so all three belong in one place:
+[[D-296]] established two. This session found two more, so all four belong in
+one place:
 
 1. **Could this check have failed?** A check that cannot fail reports success
    for the emptiest reason. ([[D-296]]; [[D-301]] is the sixth instance, a test
@@ -27738,11 +27738,32 @@ This session found the third, so all three belong in one place:
    A number below an instrument's floor is not a small number, it is no number
    — and it arrives typeset identically to a real one. This entry.
 
+4. **Did this run actually run?** A result you are reading may be a replay of
+   one you are not. The owner found this one, an hour after the third: three
+   invocations of a card test printed numbers identical to the last decimal,
+   because `go test` had cached the first and replayed it twice. *"That is the
+   ninth instrument problem of this project, and this one is mine rather than
+   yours: I read repetition into a result that was a replay."*
+
+   A cached run cannot detect that it is cached — it does not execute at all —
+   so the defences are outside it. `(cached)` on the package line is the tell.
+   **`-count=1` in every command handed to a person is the fix**, and it is now
+   in this project's example commands and in the home list, because *the command
+   you hand somebody is part of the instrument*. The real-module tests also
+   print the wall-clock time they started, so two "runs" reporting the same
+   instant are visibly one run however the package line is read.
+
 The third differs from the second in a way that matters: a broken instrument
 usually reports *nothing*, and an under-resolved one reports something
 plausible. `0s` is a worse failure than a crash, for the same reason a doc
 comment that recommends a race is worse than no comment ([[D-303]]): it produces
-confident wrong readings rather than hesitant right ones.
+confident wrong readings rather than hesitant right ones. The fourth is the same
+shape again — a replay is the most plausible-looking output there is, because it
+was a real result once.
+
+Three of the four were found by building an instrument and looking at what it
+said. The fourth was found by somebody noticing that three numbers agreed too
+well, which no amount of care inside the instrument would have caught.
 
 ### What this does not establish
 
@@ -27871,3 +27892,121 @@ module's behaviour — it could be a per-search card handshake, a cache the newe
 build fills eagerly, or a sleep. It is the vendor's code and this project
 measures it from outside. Knowing *that* it is one call per search is enough to
 act on; knowing *why* would need the vendor.
+
+---
+
+## D-306 — Ten seconds on one line: a liveness backstop on reap's wait for a child it has killed, which is not the per-request deadline and does not answer it
+
+**Date:** 2026-09-18
+**Phase:** F12 §2 — the supervisor
+**Ruled by the owner**, against the three numbers below.
+
+**Decision.** `Worker.reap` bounds its total waiting at `reapBackstop`, ten
+seconds. On reaching it the child is killed again, given up on, and the fact is
+logged with the module, the operation, how long, and that the child was killed;
+the caller gets `ErrWorkerAbandoned`. The goroutine in `cmd.Wait` and the
+process object behind it are leaked, deliberately.
+
+### What it is not
+
+**It is not the per-request deadline.** [[D-297]] left that open on purpose —
+*"a per-request deadline is a separate question justified by the cost of the
+request it bounds; bring the owner the number rather than choosing"* — and
+**that question stays open**. Every request is still bounded by its caller's
+context and by nothing this package invented. The owner's ruling was explicit on
+this: bound only the unbounded line.
+
+The alternative considered and rejected was a deadline inside `do` and `Open`
+for callers whose context has none. It was rejected because it invents a
+duration in exactly the place D-297 said not to, and because it would bound the
+wrong thing: requests were never the hazard.
+
+### The line
+
+```go
+select {
+case err = <-waited:
+case <-ctx.Done():
+    w.killLocked()
+    err = <-waited      // <- no bound of any kind
+}
+```
+
+That second receive is outside the select. Having killed the child, `reap`
+waited for it to go, for as long as that took — **while holding `w.mu`**, so a
+child that would not go stopped every caller of the Worker rather than the one
+that asked.
+
+The bound covers **both** of `reap`'s waits, not only the named one. The first
+is reached by `endLocked`, which kills *before* calling `reap`, so that wait is
+already a wait for a killed child. A backstop on one of them would have left the
+other, which is how this kind of fix is usually incomplete.
+
+### Why ten seconds, chosen against the failure and not the performance
+
+Three numbers were measured. The bound is deliberately not derived from the one
+that looks most relevant:
+
+| | what | measured |
+|---|---|---|
+| normal | worst legitimate single call, any module, card in | **890 ms** — NetSeT 1.1.3.3, stable 878–913 over 20 rounds, of which 856 ms is one `C_FindObjectsInit` ([[D-305]]) |
+| kill-and-reap | a killed child holding a real module | **2–5 ms**, six times, two modules, card in and out |
+| pathological | a child that cannot be reaped | **never reproduced**, six attempts |
+
+A bound near 890 ms would kill NetSeT 1.1.3.3 on essentially every call, and
+the person on that build has done nothing wrong: they have the DLL their
+issuer's installer left behind, and [[D-271]] found two builds five years apart
+on one machine. 890 ms is one card with two certificates on one machine; it is
+not a ceiling.
+
+And nothing is gained by being tight. The purpose is not to make slow modules
+fail fast — it is that the agent cannot hang. For that, any finite number works,
+and being generous costs at most one person waiting ten seconds before being
+told something is wrong, against the alternative of a person on a legitimate
+build who can never sign at all. Ten seconds is about eleven times the worst
+measured legitimate call: wide enough that reaching it means something is wrong
+rather than slow, short enough that whoever is at the screen is still there.
+
+### Loud is half of it, and not a flourish
+
+The owner: *"Six attempts produced no hang, so the first time this fires in the
+field the log line is the only evidence anyone will ever get."*
+
+So `abandon` names the module, the operation, the elapsed time and that the
+child was killed, on the writer the caller supplied, and returns a distinct
+sentinel rather than folding into `ErrWorkerDied`. `ErrWorkerDied` is a process
+that ended; this is a process that would not, and they need different names
+because one of them has never been seen.
+
+### The honest limit: the firing path has no test and cannot have one
+
+`TestAnOrdinaryCloseDoesNotReachTheBackstop` and
+`TestKillingAWorkerDoesNotReachTheBackstopEither` assert the *other* direction —
+that ordinary work never reaches the bound — and both are killed by a mutation
+setting `reapBackstop` to 1 ns, so they are checks rather than decoration.
+
+**The arm that fires is not covered.** Mutation B2 removes it outright and
+**survives**: every test still passes, including the real-module ones with a
+card in, because nothing in this project can produce a child that will not be
+reaped. That was run and recorded rather than assumed.
+
+So this is a guard whose trigger has never been observed, protecting against a
+hazard that is structural rather than measured — an unbounded receive is a
+hazard because of what it is, not because of what it did. Recorded plainly so
+that nobody later reads the passing suite as evidence the backstop works. It is
+evidence that it does not fire wrongly, which is a different claim.
+
+### What produced the finding, and the explanation that was wrong
+
+Three `p11probe` processes accumulated over one afternoon, each having loaded a
+NetSeT module, each reporting `HasExited=true` while remaining in the process
+table with one thread parked in `Wait`/`UserRequest`, surviving
+`TerminateProcess`. They cleared only on a reboot.
+
+The tidy explanation offered at the time — that `p11probe`'s no-token path exits
+without `C_Finalize` and the worker's shutdown always finalises — **is wrong**,
+and is recorded as wrong rather than quietly dropped. A killed worker child does
+not finalise either, and it reaps in 2–5 ms every time. The mechanism is not
+known. *"I do not know the mechanism"* is the state of this entry, and it is a
+better entry than a plausible story: a plausible story would have been quoted
+later as the reason the backstop is unnecessary.
