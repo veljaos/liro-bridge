@@ -27761,9 +27761,10 @@ confident wrong readings rather than hesitant right ones. The fourth is the same
 shape again — a replay is the most plausible-looking output there is, because it
 was a real result once.
 
-Three of the four were found by building an instrument and looking at what it
-said. The fourth was found by somebody noticing that three numbers agreed too
-well, which no amount of care inside the instrument would have caught.
+The owner's own words, kept because they are the shape of the whole week:
+**three of four found by building an instrument and reading it; the fourth found
+by somebody noticing three numbers agreed too well.** No amount of care inside
+an instrument catches the fourth.
 
 ### What this does not establish
 
