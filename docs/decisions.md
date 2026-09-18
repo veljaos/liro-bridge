@@ -26721,3 +26721,107 @@ run depend on which middleware a developer happens to have installed.
 - **Testing the layout by arithmetic alone.** It is how the layout was derived;
   it cannot also be how it is checked. [[D-296]]: a check written in the same
   breath as the thing it checks tends to agree with it.
+
+---
+
+## D-299 — One rule, two callers: the read operations take an already-open module, and Enumerate, List and ChainFor are that with an open and a close around them
+
+**Date:** 2026-09-18
+**Phase:** F12 §2 — the refactor everything after it is built on
+
+**Decision.** `Source.Enumerate`'s body moves into `Source.enumerate(ctx,
+*module)`, and `List` and `ChainFor` get the same treatment. The three exported
+methods keep exactly the behaviour they had — open a module, do one thing,
+close it. A new `LiveModule`, returned by `Source.Hold`, opens once and answers
+many.
+
+### Why this had to come first
+
+`List` and `ChainFor` each called `Enumerate`, and `Enumerate` opened and closed
+a module. A worker serving `list` and then `chainfor` from those would have
+called `C_Initialize` twice — which is the thing the worker exists to avoid.
+
+[[D-297]] states the cost and it is not theoretical: [[D-272]] measured one
+real module dying inside its own `C_Initialize` about once in a hundred calls,
+and paying it per request turns a startup problem into a listing problem. The
+owner's own words in that entry: *"a listing that fails one time in a hundred is
+the kind of defect people learn to re-run instead of read."*
+
+### It is the *right* kind of consolidation, and that is worth saying because this project refuses the other kind two entries earlier
+
+[[D-108]], [[D-124]] and [[D-138]] each removed one rule that lived in two
+places. [[D-297]] refuses to merge the probe and the worker, and gives the tell:
+**a merged version that has to take a parameter to decide which of two things it
+is.**
+
+This is the first kind. `enumerate(ctx, m)` is one rule; the two callers differ
+in who opened the module, which is not a behaviour the function chooses between
+— it is a thing the caller has already done. Nothing here takes a parameter to
+decide what it is.
+
+`Hold` uses `openModuleLocking` and `Enumerate` keeps `openModule`. That is not
+an inconsistency: F12 §2 asks for `CKF_OS_LOCKING_OK` in the worker, [[D-298]]
+established that passing it is right for the two modules that read the arguments
+structure and means nothing for the two that do not, and a one-shot caller that
+finishes before the next begins is entitled to pass NULL as this package has
+since F11.
+
+### The check, and both ways it was made to fail
+
+Counting `C_Initialize` at run time would mean a counter in shipped code whose
+only reader is a test — the scaffolding [[D-100]] keeps out of the product. The
+property is about what is *declared*, which is what this project already reads
+the syntax tree for ([[D-025]], [[D-158]], [[D-185]], [[D-224]]).
+
+`TestNothingHoldingAModuleOpensAnother` fails when a function that already has a
+module in hand — one that takes a `*module`, or a method on `LiveModule` —
+calls `openModule` or one of the exported one-shot entry points. The regression
+it guards against is the obvious edit, because `s.Enumerate(ctx)` compiles just
+as happily as `s.enumerate(ctx, m)` and reads almost the same.
+
+Confirmed to fire, twice, against the two shapes the mistake takes:
+
+```
+Source.chainFor at source_windows.go:334 already has a module open and calls Enumerate.
+Source.list     at source_windows.go:300 already has a module open and calls openModule.
+```
+
+It carries both halves of its own positive control ([[D-031]], [[D-296]]'s first
+question): if nothing in the package takes a `*module` the refactor has been
+undone, and if nothing calls `openModule` the check is reading the wrong files.
+It reads the files from disk rather than through the build, so it asks the same
+question in the Windows and the Linux views and cannot answer differently in the
+one nobody runs it in ([[D-295]]).
+
+### Two smaller things decided here rather than discovered later
+
+**`LiveModule.Close` is idempotent, and that is a decision rather than
+caution.** Twice is the ordinary case: the worker closes on an `OpShutdown`
+request and again from the defer that covers every other way its loop can end.
+The alternative was to rest on what a second `runtime.Pinner.Unpin` does, which
+this code has not measured — nilling the module makes the question moot rather
+than answered, which is the better of the two.
+
+**A closed holder answers rather than panicking.** A worker that panicked on a
+late request would look to its parent exactly like a module that killed it: a
+non-zero exit with nothing to say which. Telling those apart is the entire point
+of the out-of-process arrangement ([[D-272]], [[D-275]]), so a use-after-close
+is `ErrModuleClosed`. The zero `LiveModule` *is* a closed one, which is what
+lets this be checked on a machine with no reader.
+
+**Rejected.**
+
+- **Exporting the module-taking methods instead of a holder type.** It would put
+  `*module` — the unexported binding, whose every offset is measured for Windows
+  x64 — in an exported signature, and the worker would then be holding the
+  binding rather than a thing that answers questions.
+- **Making `Enumerate` use `Hold` so there is one opener.** It would change what
+  `Enumerate` passes to `C_Initialize` for every existing caller, on the strength
+  of tidiness, in a place where [[D-298]] measured that half the modules on this
+  machine never read the argument at all.
+- **A run-time counter of `C_Initialize` calls.** [[D-100]]: verification
+  scaffolding does not belong in the product, and the property is about what is
+  declared.
+- **Leaving `List` and `ChainFor` calling `Enumerate` and giving the worker its
+  own copies.** Two implementations of one listing, which is what [[D-108]],
+  [[D-124]] and [[D-138]] each had to remove once.

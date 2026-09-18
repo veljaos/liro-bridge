@@ -41,6 +41,38 @@ func (s Source) ModulePath() string { return s.modulePath }
 // Name implements keysource.Source.
 func (Source) Name() string { return "pkcs11" }
 
+// LiveModule is one module held open across many requests.
+//
+// It is declared here, with no module behind it, so that the worker's shape —
+// hold once, answer many, close — is written once and compiles for every
+// platform. Nothing on this platform can construct one, because Hold refuses
+// before it could.
+type LiveModule struct{ source Source }
+
+// Hold refuses here. See ErrPlatform.
+func (s Source) Hold() (*LiveModule, error) { return nil, ErrPlatform }
+
+// ModulePath is which module this holder has open.
+func (l *LiveModule) ModulePath() string { return l.source.modulePath }
+
+// Close refuses here. Nothing can hold one of these open.
+func (l *LiveModule) Close() error { return ErrPlatform }
+
+// Enumerate refuses here.
+func (l *LiveModule) Enumerate(ctx context.Context) ([]CertificateInfo, error) {
+	return nil, ErrPlatform
+}
+
+// List refuses here.
+func (l *LiveModule) List(ctx context.Context) ([]keysource.Certificate, error) {
+	return nil, ErrPlatform
+}
+
+// ChainFor refuses here.
+func (l *LiveModule) ChainFor(ctx context.Context, want keysource.Thumbprint) ([][]byte, error) {
+	return nil, ErrPlatform
+}
+
 // Enumerate implements the Windows behaviour's shape and refuses here.
 func (s Source) Enumerate(ctx context.Context) ([]CertificateInfo, error) {
 	return nil, ErrPlatform

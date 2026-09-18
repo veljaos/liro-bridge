@@ -25,6 +25,19 @@ import (
 // wired up to collect one returns ErrNoPINEntry instead.
 var ErrLoginNotBuilt = errors.New("pkcs11: signing needs a logged-in session and the login step is not built yet (F11 §5)")
 
+// ErrModuleClosed is a LiveModule used after Close.
+//
+// It is a distinct error rather than a panic because the worker's loop reaches
+// it only through a request that arrived after an OpShutdown, which is
+// something to answer rather than a fault in this process — a worker that
+// panicked on a late request would look to its parent exactly like a module
+// that killed it, which is the one thing the out-of-process arrangement exists
+// to be able to tell apart.
+//
+// It lives here for the same reason ErrLoginNotBuilt does: a caller branches on
+// one sentinel whatever platform it was compiled for.
+var ErrModuleClosed = errors.New("pkcs11: this module has been closed")
+
 // CertificateInfo is one certificate found on one token, with enough about
 // where it came from to explain a duplicate.
 //
