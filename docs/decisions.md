@@ -27501,6 +27501,19 @@ and named "the race is somewhere I did not think to look" as the live
 possibility. It was not somewhere else. It was inside A, at the step I had
 waved through.
 
+**That is how inspection fails, and it is worth more than the four predictions
+that held.** Not by being wrong about everything — by being right about enough
+that the gap stops looking like one. Four correct links either side of an
+unverified one make the unverified one feel carried by its neighbours, and the
+prediction had already named it as unverified in writing. The reasoning was not
+the failure; continuing past a link I had myself labelled "could not complete"
+was.
+
+The practical form of that: when reading finds nothing, it has produced a result
+with a confidence, not a clearance. Say which step is weakest rather than
+reporting "looks fine" — and when a step has been named weak, it does not get to
+be load-bearing.
+
 ### Why this is the program's defect and not the tests'
 
 It would have been one line to make the tests read the buffer after `Close`, and
@@ -27514,6 +27527,20 @@ memory for as long as a child lives and says nothing about it — and
 *"The reason, when there was one to give, is on the standard error the child
 inherited."* Acting on that advice was the race. An API whose documentation
 instructs the caller into a data race is not an API with a careless caller.
+
+**And that is the part of this entry that matters most.** A comment that
+recommends a race is worse than an undocumented function, because it produces
+**confident wrong code rather than hesitant right code**. An undocumented
+`Worker` would have left the next person to work out for themselves what
+`cmd.Stderr` does with a writer, and the cautious answer — do not read it while
+a child is alive — is the correct one. The comment removed that caution and put
+a specific wrong instruction in its place, and it was believed: every test in
+this package followed it, written by the person who had written the comment.
+
+So a doc comment that tells a caller to go and read something shared carries the
+same duty as the code: say *how* it is safe to read, or do not point at it.
+Here the fix is both — `ChildStderr` is the how, and the comment now names it
+and names what must not be done instead.
 
 So the answer is to make the advice true: the Worker keeps the record itself,
 under its own mutex, and `ChildStderr` is safe at any time. The tests now ask the
@@ -27558,10 +27585,30 @@ package with `-race -count=20` and posts the report back through it.
 **The probe failed first, on its own output.** `awk … | head -200` under
 GitHub's `shell: bash`, which is `bash -eo pipefail`: `head` closes the pipe,
 `awk` takes SIGPIPE, the step exits 141 and emits nothing. Bounding the slice
-inside `awk` fixed it. Worth recording because it is the week's pattern again —
-the thing that broke was the instrument, and the only reason it was obvious is
-that exit 141 is reached *after* `grep -q "DATA RACE"` succeeds, so the failure
-itself carried the finding.
+inside `awk` fixed it. Worth recording because it is the week's pattern again:
+the thing that broke was the instrument.
+
+**And the only reason it was legible was luck, which is worth naming as luck
+rather than filed as a good design.** Exit 141 happened to arrive at a line that
+is reached *after* `grep -q "DATA RACE"` succeeds, so a step that emitted
+nothing still said "there is a race here" by the position at which it died. That
+was not arranged. Had the pipeline been one line earlier — in the *no* branch —
+the identical failure would have carried the opposite implication, and a broken
+instrument that appears to report absence is the exact thing [[D-296]]'s second
+question exists to catch.
+
+The lesson is not "SIGPIPE is informative". It is that an instrument's failure
+mode is part of the instrument, and this one's was undesigned.
+
+What the probe did do by design is report in **both** directions: its *no DATA
+RACE in 20 runs* branch prints the run's own tail, so the green result came back
+as `ok …/worker 210.597s` rather than as silence. That is what makes the pass
+worth anything — a probe that says nothing when it finds nothing is
+indistinguishable from a probe that did not run. The probe itself was a
+temporary workflow on a branch and is deleted; this paragraph and
+[[reference_github_ci_evidence]] are what is left of it, so a future one is
+rebuilt with the reporting in both directions rather than only the interesting
+one.
 
 `-count=20` rather than 1, for [[D-294]]'s reason pointed the other way: one run
 that reproduces proves it happened, and twenty that do not are what "it is fixed"
