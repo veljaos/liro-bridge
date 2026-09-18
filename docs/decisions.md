@@ -27621,3 +27621,253 @@ occur, twenty runs of one package is not a proof, and the only code it has ever
 been run against in this project is what CI happens to exercise. What it
 establishes is that this one is gone and that the tests that would notice it
 coming back are still looking.
+
+---
+
+## D-304 — This machine cannot time anything under about half a millisecond, D-201 already said so, and I cited D-201 all week without reading the number in it
+
+**Date:** 2026-09-18
+**Phase:** F12 §2 — the instrument, not the code
+
+**Decision.** Every duration the real-module test prints is now printed against
+the clock's floor, measured at run time: a value below it reads
+`<718.1µs (below this machine's clock)` rather than `0s`, a spread whose largest
+value is below it says so, and an operation that was never called reads
+`not called` rather than `0s`. The floor is measured rather than quoted,
+because the machine running the test is not necessarily the one D-201 measured.
+
+### What happened
+
+The owner read this line, from twenty consecutive rounds against SafeSign:
+
+```
+chainFor   min 0s  median 0s  max 0s  mean 0s
+```
+
+and said: *"confirm that zero means 'nothing to do' rather than 'never called'.
+A timing of exactly 0s in twenty consecutive rounds is the shape of a
+measurement that did not happen."*
+
+It was "never called". With no certificate on a token SafeSign recognises,
+`len(direct) > 0` is false, `ChainFor` is skipped, and `r.chainFor` keeps its
+zero value — which `time.Duration.String()` renders as `0s`, identical to a
+measurement of nothing.
+
+Checking that turned up the larger half. On this machine:
+
+```
+back-to-back: 199997/200000 read as exactly 0s; smallest non-zero 506.5µs
+sleep 1µs      measured 655.8µs
+sleep 100µs    measured 552.5µs
+sleep 1ms      measured 1.6026ms
+```
+
+So **`0s` never meant zero.** It meant "shorter than this clock can see", which
+is about half a millisecond. Every sub-millisecond number in this session's
+card-out runs — `enumerate min 0s median 0s max 0s`, reported as though it were
+a measurement — was the clock, not the module.
+
+### D-201 already recorded this, and I have been citing D-201 all week
+
+This is the part worth keeping.
+
+[[D-201]] is the entry this project quotes for *observe the property rather than
+time the machine*. I quoted it in the doc comment of the very test that printed
+these numbers, to explain why it asserts on agreement and only reports timings.
+And D-201 says, in its own body:
+
+> `time.Since` across an instant call is exactly **0** on Windows — the clock's
+> granularity here measured 512 µs — and a first signature of zero is F2 §5.6's
+> "no measurement yet"
+
+512 µs. Measured, on this machine, and written down. I read the whole of
+`decisions.md` at the start of this phase, cited that entry repeatedly, built an
+instrument that the number invalidates, and reported its output twice.
+
+**So this is not a discovery. It is a carry-forward failure**, and that is a
+different and worse thing: the project already knew, and the knowledge did not
+reach the place it was needed. A citation is not a reading. Quoting an entry's
+*conclusion* while never re-reading its *measurements* is how a project forgets
+something it has already paid for — and it is the same shape as the two
+corrections this week, one level up again: [[D-303]]'s prediction failed at the
+link it had itself labelled unverified, and here the instrument failed on a
+number sitting inside the entry being cited to justify it.
+
+### What is affected, and what is not
+
+**Affected, and now corrected:** the real-module test's own output. Nothing
+else. The sub-millisecond numbers from this session went into messages and into
+test logs; none of them reached an entry.
+
+**Not affected:** every number in [[D-297]] (341–376 ms, 76 ms), [[D-272]],
+[[D-296]] and this session's card-*in* measurements (27 ms and up, and the
+855.8 ms of [[D-305]]). All are multiple ticks above the floor.
+
+**Worth re-checking by whoever owns it, and deliberately not corrected here
+because I cannot verify the method:** [[D-292]]'s table quotes
+`CryptProtectMemory` at 7.401 µs and `CryptUnprotectMemory` at 3.171 µs, "mean
+over 200 rounds". A per-round `time.Since` on this machine could not have
+produced either — every round would read 0. A batch of 200 timed as one span
+and divided *can*: 200 × 7.401 µs is 1.48 ms, comfortably above the floor, and
+200 × 3.171 µs is 634 µs, which is barely one tick and carries an error bar of
+roughly its own size. The conclusion that entry draws does not depend on the
+precision — it is "over 99% of the window" either way — so nothing there needs
+revisiting for correctness. The *numbers* should not be quoted to four
+significant figures by anybody who has not confirmed how they were taken.
+
+**The floor is not a constant.** Measured twice in one hour on one machine:
+506.5 µs and 718.1 µs. So the test measures it per run and prints it beside the
+numbers it qualifies, rather than hard-coding D-201's 512.
+
+### The third question
+
+[[D-296]] established two questions to ask of any check before believing it.
+This session found the third, so all three belong in one place:
+
+1. **Could this check have failed?** A check that cannot fail reports success
+   for the emptiest reason. ([[D-296]]; [[D-301]] is the sixth instance, a test
+   whose guard made its own trigger unreachable.)
+
+2. **Could this instrument have seen the thing whose absence it is
+   reporting?** A green result from a broken instrument looks exactly like a
+   green result. ([[D-296]]; [[D-302]] found two mutations that compiled to
+   nothing and reported kills; [[D-303]] found a probe whose failure happened
+   to land where it was legible, by luck.)
+
+3. **Is this instrument's resolution finer than the thing it is measuring?**
+   A number below an instrument's floor is not a small number, it is no number
+   — and it arrives typeset identically to a real one. This entry.
+
+The third differs from the second in a way that matters: a broken instrument
+usually reports *nothing*, and an under-resolved one reports something
+plausible. `0s` is a worse failure than a crash, for the same reason a doc
+comment that recommends a race is worse than no comment ([[D-303]]): it produces
+confident wrong readings rather than hesitant right ones.
+
+### What this does not establish
+
+That the other instruments in this session were adequately resolved. The
+mutation harness, the race probe and the CI annotation channel were not checked
+against this question, and only the timing ones plausibly need it. Saying so
+because "we asked the new question everywhere" is precisely the claim that would
+need its own check.
+
+---
+
+## D-305 — One call costs 856 ms on one NetSeT build and at most 33 ms on the other: C_FindObjectsInit is a fixed cost per search, and the login path takes three searches
+
+**Date:** 2026-09-18
+**Phase:** F12 §2 — a finding about the product, recorded before anything is changed
+
+**This entry is a finding and a proposal, not a change.** Nothing has been
+altered in response to it. The owner asked to see the shape before it becomes a
+change, and the shape is the point.
+
+### The measurement
+
+Reading this card through the worker, twenty rounds, module held open:
+
+| module | one full read | spread over 20 rounds |
+|---|---|---|
+| NetSeT 1.1.3.3 (`TrustEdgeID`) | **~890 ms** | 878.9–913.5 ms |
+| NetSeT 1.1.0.0 (`MUP RS\Celik`) | **~33 ms** | 27.6–39.9 ms |
+
+Same vendor, same card, same two certificates, same thumbprints, twenty-seven
+times apart and stable — no outliers on either side.
+
+`scripts/p11probe --time --objects` puts it in one line. Against 1.1.3.3:
+
+```
+[C_FindObjectsInit    855.8404ms]
+[C_FindObjects        0s]
+[C_FindObjectsFinal   0s]
+  certificate objects: 2
+  object 0 CKA_VALUE   [C_GetAttributeValue 0s] [C_GetAttributeValue 0s]  1910 bytes
+  object 0 CKA_LABEL   [C_GetAttributeValue 0s] [C_GetAttributeValue 0s]  46 bytes
+  object 0 CKA_ID      [C_GetAttributeValue 0s] [C_GetAttributeValue 0s]  20 bytes
+  ... object 1, the same ...
+  whole read: 855.8404ms
+```
+
+`C_Initialize` is 54.6 ms. `C_GetSlotList`, `C_GetTokenInfo`, `C_OpenSession`
+and `C_GetSessionInfo` are all below the clock floor ([[D-304]] — those `0s`
+mean "under ~700 µs", not zero). **Twelve `C_GetAttributeValue` calls, including
+two certificate bodies of 1910 and 1655 bytes, are all below the floor too.**
+
+So it is **one call, and it is fixed per search**: not per certificate, not per
+attribute, not per byte. 1.1.0.0's whole read is 33 ms, so its
+`C_FindObjectsInit` is at most 33 ms — the same call, the same card, at least
+twenty-six times cheaper.
+
+### A wrong reason for a right conclusion, which is why nobody would have re-checked it
+
+The owner reached "fixed cost rather than work proportional to what was asked"
+from the observation that `Enumerate`, `List` and `ChainFor` all land within
+2 ms of each other despite asking for different things.
+
+The conclusion is right and the reason is not. Since [[D-299]], `list` and
+`chainFor` **are** `enumerate` plus pure in-memory work — a dedupe and a chain
+walk over slices already in hand. Their landing within 2 ms of each other is
+arithmetic, not evidence; they could not have differed. The evidence is the
+per-call breakdown above, which needed a tool that did not exist yet.
+
+Recorded because of the shape rather than the slip: **a wrong reason for a right
+conclusion is the least likely thing in this project to get caught**, precisely
+because the conclusion holds and nothing prompts anybody to go back. It is the
+same shape as this week's other two — [[D-303]]'s prediction naming the right
+hypothesis and failing inside it, and [[D-304]]'s citation of an entry whose
+own measurement contradicted the instrument being justified.
+
+### What it costs the product, which is more than the measurement
+
+One search is one `C_FindObjectsInit`. The read path takes one. **The login path
+takes three**, in `Source.openOn`:
+
+- `findCertificateObject` — one search for certificate objects;
+- `privateKeyFor` — one search for the private key with the matching `CKA_ID`;
+- `allCertificateDER` — one search for every certificate, to walk the chain.
+
+On 1.1.3.3 that is **~2.6 s of `C_FindObjectsInit` for one signature**, before
+the PIN screen, the `C_Login` and the `C_Sign`. On 1.1.0.0 it is ~100 ms.
+
+And which build a person has is an accident: [[D-271]] found both on one
+machine, five years apart, installed by two different issuers' middleware.
+There is no configuration that makes a person "a 33 ms user" or "a 2.6 s user";
+it is whichever DLL the last installer left behind.
+
+### What should be done, which is a question rather than an answer
+
+**My view: collapse the three searches into one, and do it as its own change.**
+
+The three searches in `openOn` ask three questions of the same token in the same
+session, and two of them are the same question:
+
+- `findCertificateObject` walks every certificate object looking for one
+  thumbprint. `allCertificateDER` walks every certificate object collecting all
+  of them. **These are one search.** The first is the second plus a filter, and
+  the filter is a comparison this layer already does in memory. Merging them
+  costs nothing and removes one `C_FindObjectsInit` outright.
+- `privateKeyFor` genuinely asks a different question — private key objects,
+  by `CKA_ID`, with `CKA_SIGN` — and it cannot run before the login, because a
+  public session sees zero private keys ([[D-271]], measured on this card). So
+  it stays a second search and must.
+
+That is three to two with no behaviour change, and 2.6 s to 1.7 s on the slow
+build. Whether the remaining two can become one is a different question that
+depends on whether a single `C_FindObjectsInit` with a broader template is
+cheaper than two narrow ones on this module — **which is measurable and has not
+been measured**, and I would not guess.
+
+**What I would not do: treat 2.6 s as simply what that build costs.** Not
+because it is intolerable — a person signing a document will wait two seconds —
+but because it is *invisible*. There is no screen during it, nothing says which
+module is being read, and a person on the slow build has no way to know that the
+same card on the same machine through a different DLL is twenty-seven times
+faster. If it does stay, it needs to be something the program can say out loud
+rather than something it silently is.
+
+**What this does not establish:** why 1.1.3.3 is slow. Nothing here opens the
+module's behaviour — it could be a per-search card handshake, a cache the newer
+build fills eagerly, or a sleep. It is the vendor's code and this project
+measures it from outside. Knowing *that* it is one call per search is enough to
+act on; knowing *why* would need the vendor.

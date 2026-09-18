@@ -81,8 +81,54 @@ import (
 const realModuleRounds = 20
 
 // round is one pass of the three read operations.
+//
+// chainForRan is not a nicety. Without it a ChainFor that was never called and
+// a ChainFor that returned faster than the clock can see both print as "0s",
+// and the owner caught exactly that: SafeSign reported chainFor 0s across all
+// twenty rounds, which was "never called" (no certificate, nothing to ask
+// about) wearing the costume of a measurement. D-304.
 type round struct {
 	enumerate, list, chainFor time.Duration
+	chainForRan               bool
+}
+
+// clockFloor is the smallest interval time.Since can report on this machine,
+// measured rather than assumed.
+//
+// D-201 recorded it at 512 us on this machine and it is 506.5 us today: a
+// time.Since across an instant call reads exactly 0, and 199997 of 200000
+// back-to-back pairs read exactly 0. So "0s" in this file's output means
+// "below the floor", never "instant", and a number within a few multiples of
+// the floor is one tick wide.
+//
+// It is measured at run time rather than hard-coded because the machine that
+// runs this is not necessarily the one D-201 measured, and a floor quoted from
+// somebody else's machine is the thing this whole entry is about.
+func clockFloor() time.Duration {
+	smallest := time.Hour
+	for i := 0; i < 50000; i++ {
+		a := time.Now()
+		if d := time.Since(a); d > 0 && d < smallest {
+			smallest = d
+		}
+	}
+	if smallest == time.Hour {
+		return 0
+	}
+	return smallest
+}
+
+// showDuration prints a duration against the clock's floor, so that three
+// different things stop looking alike: a real measurement, an interval too
+// short for this clock, and a call that never happened.
+func showDuration(d time.Duration, ran bool, floor time.Duration) string {
+	if !ran {
+		return "not called"
+	}
+	if floor > 0 && d < floor {
+		return "<" + floor.String() + " (below this machine's clock)"
+	}
+	return d.String()
 }
 
 func realModuleConditions(t *testing.T) (path, card string, rounds int) {
@@ -255,6 +301,7 @@ func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 					i, err, w.ChildStderr())
 			}
 			r.chainFor = time.Since(begin)
+			r.chainForRan = true
 		}
 
 		rs = append(rs, r)
@@ -293,16 +340,21 @@ func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 			i, len(c.DER), c.Label, c.TokenLabel, c.TokenSerial, c.SlotID, c.ProtectedPIN)
 	}
 
+	floor := clockFloor()
 	t.Logf("")
 	t.Logf("timings — card %s — %s", card, path)
-	t.Logf("  one-shot open+enumerate+close, in this process:  %v", oneShot)
+	t.Logf("  this machine's clock floor, measured now: %v", floor)
+	t.Logf("  (D-201 measured 512µs here; anything below it cannot be timed at all)")
+	t.Logf("  one-shot open+enumerate+close, in this process:  %s", showDuration(oneShot, true, floor))
 	t.Logf("  worker round 0 (child spawn + C_Initialize + read):")
-	t.Logf("    enumerate %v   list %v   chainFor %v", rs[0].enumerate, rs[0].list, rs[0].chainFor)
+	t.Logf("    enumerate %s", showDuration(rs[0].enumerate, true, floor))
+	t.Logf("    list      %s", showDuration(rs[0].list, true, floor))
+	t.Logf("    chainFor  %s", showDuration(rs[0].chainFor, rs[0].chainForRan, floor))
 	if len(rs) > 1 {
 		t.Logf("  worker rounds 1..%d, module already open:", len(rs)-1)
-		t.Logf("    enumerate  %s", spread(rs[1:], func(r round) time.Duration { return r.enumerate }))
-		t.Logf("    list       %s", spread(rs[1:], func(r round) time.Duration { return r.list }))
-		t.Logf("    chainFor   %s", spread(rs[1:], func(r round) time.Duration { return r.chainFor }))
+		t.Logf("    enumerate  %s", spread(rs[1:], func(r round) time.Duration { return r.enumerate }, func(round) bool { return true }, floor))
+		t.Logf("    list       %s", spread(rs[1:], func(r round) time.Duration { return r.list }, func(round) bool { return true }, floor))
+		t.Logf("    chainFor   %s", spread(rs[1:], func(r round) time.Duration { return r.chainFor }, func(r round) bool { return r.chainForRan }, floor))
 	}
 	t.Logf("")
 	t.Logf("D-297's claim is the gap between round 0 and the rounds after it, and")
@@ -373,24 +425,35 @@ func samePayloads(a, b []CertificatePayload) bool {
 // spread prints the shape of a set of durations rather than one number, because
 // D-272 measured this module's behaviour as bursty rather than steady and a
 // mean on its own would hide exactly that.
-func spread(rs []round, pick func(round) time.Duration) string {
-	if len(rs) == 0 {
-		return "(none)"
-	}
+func spread(rs []round, pick func(round) time.Duration, ran func(round) bool, floor time.Duration) string {
 	ds := make([]time.Duration, 0, len(rs))
 	total := time.Duration(0)
 	for _, r := range rs {
+		if !ran(r) {
+			continue
+		}
 		d := pick(r)
 		ds = append(ds, d)
 		total += d
+	}
+	if len(ds) == 0 {
+		return "not called in any round"
 	}
 	for i := 1; i < len(ds); i++ {
 		for j := i; j > 0 && ds[j] < ds[j-1]; j-- {
 			ds[j], ds[j-1] = ds[j-1], ds[j]
 		}
 	}
-	return "min " + ds[0].String() +
+	mean := total / time.Duration(len(ds))
+	out := "min " + ds[0].String() +
 		"  median " + ds[len(ds)/2].String() +
 		"  max " + ds[len(ds)-1].String() +
-		"  mean " + (total / time.Duration(len(ds))).String()
+		"  mean " + mean.String()
+	// A spread whose largest value is under the floor is not a spread; it is
+	// the clock. Say so rather than letting four numbers imply four
+	// measurements.
+	if floor > 0 && ds[len(ds)-1] < floor {
+		out += "  -- every value is below this machine's " + floor.String() + " clock floor"
+	}
+	return out
 }
