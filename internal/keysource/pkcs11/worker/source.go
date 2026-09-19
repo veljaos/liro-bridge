@@ -53,6 +53,16 @@ type Source struct {
 	// pkcs11.ErrNoPINEntry at the moment it asks. Refusing nil up front would
 	// break the clause-1 branch, which is the one the SPEC prefers.
 	entry pkcs11.PINEntry
+
+	// candidate is where this module came from — the path, the vendor, and
+	// whether it was the person's own configured path or one measured off a
+	// real machine. Zero unless Sources built this Source.
+	//
+	// It is carried so that a worker dying later can be turned into a row that
+	// says which module and on whose instruction (see Failure). The parent has
+	// always known this and did not learn it from the child, which matters
+	// because a dead child is precisely the case where nothing can be asked.
+	candidate pkcs11.Candidate
 }
 
 // Source is a keysource.Source. The assertion is here rather than left to the
