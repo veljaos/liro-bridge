@@ -30259,3 +30259,144 @@ It is the second thing in two days to be established by an accident rather than
 by a plan, after [[D-315]]'s crash. Both were unschedulable; both turned up in
 an ordinary run. Worth noticing as a pattern in how this project's hardest
 evidence actually arrives.
+
+---
+
+## D-318 — The agent signed a document with a key on a card through a vendor's PKCS#11 module, on the first attempt, and the counter did not move
+
+**Date:** 2026-09-19
+**Phase:** F12 §2 and §5, and F11 §4 step 4 — the measurement all of it was for
+
+**This is what F12 was built to do, and until today no part of it had been
+done by the product.** [[D-309]] logged into a card through the worker from
+`scripts/p11worker`, which is a developer tool. The agent had never asked a
+PKCS#11 module for a signature, because [[D-311]] gives CNG the certificate
+whenever CNG has it and CNG has this one — the hole [[D-316]] was written to
+close.
+
+With `preferPKCS11` set, the owner at the machine, the Pošta card in the reader:
+
+```
+sequence      318
+timestamp     2026-09-19T16:53:07Z
+outcome       approved
+documentCount 1
+achievedLevel B-B
+thumbprint    AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+application   local
+backend       pkcs11
+module        C:\WINDOWS\System32\aetpkss1.dll
+```
+
+**`backend: "pkcs11"`, with the module path.** F11 §4 step 4 recording the case
+it was written for, rather than the CNG case that arrived by accident two hours
+earlier.
+
+### What was measured, and by what
+
+**One attempt. It was accepted the first time. No retry was needed and none
+would have been made.**
+
+| | |
+|---|---|
+| counter before | `flags=0x40D` — `COUNT_LOW`, `FINAL_TRY`, `LOCKED` all false |
+| counter after the cancelled rehearsal | `0x40D`, identical |
+| **counter after the signature** | **`0x40D`, identical** |
+
+Read three times through `scripts/p11probe` as a subprocess with no `--login`,
+so the reading itself never spends anything. **A correct PIN costs nothing** —
+expected, and now measured through the agent rather than assumed from the
+standard.
+
+**The signature verifies, checked by something that was not involved in making
+it.** `scripts/verifypdf` against the output:
+
+```
+ByteRangeDigestOK      true   (SHA-256 recomputed over the signed span)
+SignatureOK            true   (RSA over the signed attributes re-tagged as SET OF)
+SigningCertificateOK   true   (signingCertificateV2 certHash against the signer used)
+SignerChainTrusted     true
+signer subject        Savka Odžić 200100123
+signer issuer         Pošta Srbije CA 1
+signer serial         54849CDCD4415E3BCA
+```
+
+That is the whole claim, end to end: **a private key operation performed on a
+smart card, by a vendor's module, in a child process, driven by a PIN that
+crossed one pipe — and the resulting RSA signature verifies against the
+certificate the card holds.** Every layer this phase built, exercised at once,
+by a person signing a document.
+
+**And the audit chain verifies at 319 entries in one chain.** The 316 written
+before `Backend` and `Module` existed, two written by CNG, and this one — the
+first whose hash covers a module path. [[D-313]] argued the trailing marker was
+safe and [[D-317]] saw it proved by accident; this proves it for the case with
+the longest new value in it.
+
+### What the person saw, which is the other half of the measurement
+
+The screens in order: certificate chooser, consent, method, **"Priprema
+kartice..."** with the document listed as *čeka*, then the PIN dialog **within
+about a second, in front, inside the agent's window.**
+
+The dialog was this program's — *Unesite PIN*, *Liro Bridge traži PIN vaše
+kartice*, *Kartica: Savka Odžić 200100123*, the hint naming 5 to 15 characters.
+SPEC §6.5.1 clause 6 satisfied on hardware, in front of the person it is for.
+
+**No Windows credential dialog appeared at any point**, in either run. That was
+the failure mode stated first in the protocol precisely because it is the one
+where a person sees a prompt, types into it, and believes the measurement
+happened. It did not occur, and it was watched for.
+
+**"Priprema kartice..." did the job it was put in the protocol to do.** [[D-309]]
+cost the owner seven seconds hunting a dialog because he was watching for a
+window and had nothing to tell him the run had reached the point where one was
+due. Naming the screen that precedes it removed that entirely — *"exactly what I
+needed"*. **The instrument that made the difference was a sentence in the
+instructions, not code.**
+
+### The dialog was in front, twice, and that is still not B8 settled
+
+[[D-309]]'s dialog landed behind Firefox for 3.8 seconds. This one appeared in
+front in both runs, owned by the agent's window.
+
+**Two appearances are two appearances.** D-309's own finding is that
+`SetForegroundWindow`'s result is discarded and **nothing in the program would
+know if it had not** — so a run where it works cannot distinguish "the call
+succeeded" from "the call failed and the window happened to be in front
+anyway". What is different from D-309 is structural rather than lucky: the
+dialog is owned by the agent's window, and an owned window is kept above its
+owner unconditionally ([[D-129]]). That is the sentence D-309 said was the one
+to keep, and this is the first time it has been true of the real flow.
+
+### The layout fix, confirmed on the screen that showed the defect
+
+The owner reports the report screen reading correctly: *"Sačuvano u"* and the
+path apart, *"Nivo potpisa"* and *"B-B"* as a pair. [[D-317]]'s two rules, each
+with its own control in a test, now also confirmed by the person who
+photographed the defect — at 150% scaling, which is the condition that made it
+visible in the first place.
+
+### The machine
+
+`config.json` restored from the copy taken before the run and verified
+byte-for-byte: sha256 `349B313E…`, and `preferPKCS11` is gone. **The default
+order is back**: CNG signs when it offers the certificate, and this path is
+reachable again only by somebody who asks for it — which is [[D-316]]'s whole
+point, and the reason the option's reason is the person rather than the
+measurement.
+
+The audit log keeps its three new entries, which is intended: they are
+signatures the owner made, and one of them is this evidence.
+
+### What is left, said plainly
+
+**Nothing in F11 §4 is outstanding.** Steps 1, 2 and 4 landed together; step 3
+is measured on the card and confirmed on a screen; the signing path is
+exercised end to end.
+
+What has *not* been done is a **batch** through PKCS#11 — this was one document
+— and SPEC §12.9 allows a card whose policy is one PIN per signature, which
+would mean one dialog per document and has never been seen. That is its own
+measurement and needs the owner's hands again, and it should be agreed the way
+this one was rather than assumed to follow.
