@@ -29944,6 +29944,73 @@ happen rather than by running anything: this, [[D-316]]'s hole in the fallback
 chain, and [[D-317]]'s survey of which screens take a path. None of the three
 would have gone red.
 
+### The rehearsal, on hardware: the guard holds
+
+Run by the owner, at the machine, with the Pošta card in the reader.
+
+What he saw, in order: the certificate chooser with `Savka Odžić` selected, the
+consent screen, the method screen, an output-file-exists screen, then
+**"Priprema kartice..."** with the document listed as *čeka* — **and the PIN
+dialog immediately, in front, inside the agent's window. He did not have to hunt
+for it.**
+
+The dialog was this program's: title *Unesite PIN*, heading *Liro Bridge traži
+PIN vaše kartice*, *Kartica: Savka Odžić 200100123*, the hint naming 5 to 15
+characters, `Otkaži` / `Potvrdi`.
+
+**He pressed `Otkaži`. Nothing else appeared — no Windows credential dialog, no
+second prompt of any kind.** The run ended on *Nešto nije u redu* and the
+cancellation's own message.
+
+**The counter is unmoved:** `flags=0x40D` before and after, all three of
+`USER_PIN_COUNT_LOW`, `USER_PIN_FINAL_TRY` and `USER_PIN_LOCKED` false. Nothing
+was spent.
+
+So the guard is **confirmed on hardware, through the agent's own flow, against a
+real vendor module** — the defect found by writing the protocol down, now
+demonstrated absent rather than merely fixed in a test. It is also the first
+time cancelling a PIN in the agent has been shown to cost nothing; [[D-309]]
+established that through `scripts/p11worker`, which is not the same program.
+
+**And the dialog appeared in front, where [[D-309]]'s landed behind Firefox.**
+Not offered as evidence that B8 is settled — one appearance is one appearance,
+and D-309's own finding is that nothing in the program would know if it had not.
+What is different here is that it is owned by the agent's window rather than by
+nothing, which is the sentence D-309 said was the one to keep.
+
+### Two things the rehearsal showed that were not defects being looked for
+
+**An output-file-exists screen appeared mid-flow and was not in the
+walkthrough.** Correct behaviour — the file was there from the accidental
+signatures — but the protocol had not mentioned it, so the owner was deciding
+something in the middle of a measured run. Avoided for the real run by giving it
+an input whose output does not yet exist, which is cheaper than explaining a
+choice.
+
+**The cancellation's message reaches the screen in English.** Every other screen
+in that flow is in Serbian; this one says *"pkcs11: the person cancelled the PIN
+screen"* — a developer's sentence rendered where a person reads it.
+
+Measured rather than assumed: **there is no `errs` code for a cancelled PIN at
+all.** `codeOfInteractive` maps anything that is not an `*errs.Error` to
+`errs.CodeInternal`, and the screen falls back to the raw error text. Two
+consequences, one of which turned out not to happen:
+
+- The screen shows English. Real, and it is a failure mode **a person causes
+  deliberately**, so they will see it often — unlike the codes around it, which
+  are things going wrong.
+- **The audit log was not affected.** Checked: the log stayed at 318 entries, so
+  the flow fails before `recordInteractiveAudit` and `CodeInternal` never
+  reached the chain. A deliberate cancellation recorded as an internal error
+  would have been the worse half of this, and it does not happen.
+
+Not changed here. Giving cancellation a code is a decision about the error
+vocabulary — whether "the person said no" belongs beside `CARD_NOT_PRESENT` and
+`CERT_EXPIRED` at all — and it is the owner's. Recorded so it is decided rather
+than patched, and noted that [[D-312]]'s finding applies in reverse: this would
+be a code with a producer and no message, where `CERT_REVOKED` is a message with
+no producer.
+
 ### The module ordering, and a crash doing useful work by accident
 
 With the preference on, `openThroughPKCS11` asks each module in turn and stops
