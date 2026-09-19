@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -62,17 +63,17 @@ func write(dir string, l *x509.RevocationList, serial string, entry *x509.Revoca
 	}
 	defer func() { _ = f.Close() }()
 	w := bufio.NewWriter(f)
-	fmt.Fprintf(w, "taken       %s\n", time.Now().Format(time.RFC3339))
-	fmt.Fprintf(w, "issuer      %s\n", l.Issuer.CommonName)
-	fmt.Fprintf(w, "thisUpdate  %s\n", l.ThisUpdate.UTC().Format(time.RFC3339))
-	fmt.Fprintf(w, "nextUpdate  %s\n", l.NextUpdate.UTC().Format(time.RFC3339))
-	fmt.Fprintf(w, "bytes       %d\n", size)
-	fmt.Fprintf(w, "entries     %d\n", len(l.RevokedCertificateEntries))
-	fmt.Fprintf(w, "serial      %s\n", serial)
+	_, _ = fmt.Fprintf(w, "taken       %s\n", time.Now().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(w, "issuer      %s\n", l.Issuer.CommonName)
+	_, _ = fmt.Fprintf(w, "thisUpdate  %s\n", l.ThisUpdate.UTC().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(w, "nextUpdate  %s\n", l.NextUpdate.UTC().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(w, "bytes       %d\n", size)
+	_, _ = fmt.Fprintf(w, "entries     %d\n", len(l.RevokedCertificateEntries))
+	_, _ = fmt.Fprintf(w, "serial      %s\n", serial)
 	if entry != nil {
-		fmt.Fprintf(w, "present     YES  revoked at %s\n", entry.RevocationTime.UTC().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(w, "present     YES  revoked at %s\n", entry.RevocationTime.UTC().Format(time.RFC3339))
 	} else {
-		fmt.Fprintf(w, "present     no\n")
+		_, _ = fmt.Fprintf(w, "present     no\n")
 	}
 	// An evenly spaced sample rather than a random one: it needs no seed to be
 	// reproducible, and it spreads across the whole list. A CRL is ordered
@@ -82,11 +83,11 @@ func write(dir string, l *x509.RevocationList, serial string, entry *x509.Revoca
 	if step < 1 {
 		step = 1
 	}
-	fmt.Fprintf(w, "sample      every %d-th entry\n", step)
-	fmt.Fprintln(w, "--- serials ---")
+	_, _ = fmt.Fprintf(w, "sample      every %d-th entry\n", step)
+	_, _ = fmt.Fprintln(w, "--- serials ---")
 	for i := 0; i < len(l.RevokedCertificateEntries); i += step {
 		e := l.RevokedCertificateEntries[i]
-		fmt.Fprintf(w, "%X %s\n", e.SerialNumber, e.RevocationTime.UTC().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(w, "%X %s\n", e.SerialNumber, e.RevocationTime.UTC().Format(time.RFC3339))
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -216,9 +217,13 @@ func read(path string) (*snapshot, error) {
 		case "serial":
 			s.Serial = rest
 		case "bytes":
-			fmt.Sscanf(rest, "%d", &s.Bytes)
+			if s.Bytes, err = strconv.Atoi(rest); err != nil {
+				return nil, fmt.Errorf("%s: bytes is not a number: %q", path, rest)
+			}
 		case "entries":
-			fmt.Sscanf(rest, "%d", &s.Entries)
+			if s.Entries, err = strconv.Atoi(rest); err != nil {
+				return nil, fmt.Errorf("%s: entries is not a number: %q", path, rest)
+			}
 		case "present":
 			s.Present = strings.HasPrefix(rest, "YES")
 		}
