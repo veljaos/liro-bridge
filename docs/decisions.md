@@ -28256,3 +28256,123 @@ and where to look, before it opens one. That is a defence, not a measurement.
 
 ---
 
+
+## D-308 — `TestTheCommittedAssetIsWhatThisGeneratorProduces` compares compressed bytes, so it fails on any Go newer than the one that generated the asset; the pixels are identical and the icon is not the problem
+
+**Date:** 2026-09-19
+**Phase:** F12 — found by running the suite on a second machine
+
+**Recorded and deliberately not fixed**, for the reason D-227, D-233 and D-249
+each give: the remedy is a decision about a shipped artefact and a committed
+check, and making it quietly inside a change about something else is how a
+design nobody chose ships.
+
+### What happened
+
+`go test ./internal/... ./scripts/...` on this machine, with a tree that is
+byte-identical to `master`:
+
+```
+--- FAIL: TestTheCommittedAssetIsWhatThisGeneratorProduces (2.45s)
+    main_test.go:340: ../../internal/ui/assets/icon.ico is 18579 bytes and this
+    generator produces 18880; run: go run ./scripts/genicon --out internal/ui/assets/icon.ico
+```
+
+**It is not this session's.** Re-run in a detached worktree at `a473bca`, with
+nothing from this session in it, it fails identically. The owner's "master is
+green" is also true: CI is green, and this is why.
+
+### Why CI and this machine disagree, measured rather than reasoned
+
+CI's `actions/setup-go` uses `go-version-file: go.mod`, which says **1.26.5**.
+This machine has **go1.27.1**, which `go.mod`'s minimum happily permits.
+
+The obvious hypothesis is that `image/png`'s deflate output changed between
+them. It would have been easy to assert that; it was measured instead, and
+without installing a second toolchain, which would have changed the machine to
+answer a question about a check.
+
+The icon was regenerated here and compared against the committed one **frame
+by frame, in pixels**:
+
+| frame | committed | regenerated | pixels differing |
+|---|---|---|---|
+| 16×16 | 633 B | 646 B | **0** |
+| 20×20 | 824 B | 838 B | **0** |
+| 24×24 | 968 B | 987 B | **0** |
+| 32×32 | 1323 B | 1345 B | **0** |
+| 40×40 | 1631 B | 1652 B | **0** |
+| 48×48 | 1956 B | 1983 B | **0** |
+| 64×64 | 2527 B | **2509 B** | **0** |
+| 256×256 | 8583 B | 8786 B | **0** |
+
+Eight frames, every one decoding to a pixel-identical image, every one a
+different number of bytes — and one of them **smaller**, which is what
+settles it: a drawing change would not make one frame shrink while seven grow.
+The drawing is the same. Only the compression differs.
+
+So D-285's and D-286's work is intact: the tile is still the brand turquoise,
+the mark is still one connected shape at 16 px, the stroke ramp is still the
+measured one. None of that is in question, and none of it was checked by the
+test that failed.
+
+### What the check actually is, which is the finding
+
+`TestTheCommittedAssetIsWhatThisGeneratorProduces` exists for D-183's reason,
+and it is a good reason: a generated artefact nobody regenerates is a
+generated artefact in name only, and running that generator would once have
+silently deleted a block five screens depended on.
+
+But it compares **bytes**, and the bytes are `compress/flate`'s. So it is a
+test of the Go toolchain's compressor as much as of the generator, and its
+verdict changes with a Go release nobody in this project chose. It is green
+where it was written and on CI, and red on any machine with a newer Go — which
+is **D-221's finding along the toolchain axis rather than the platform one**:
+a check that only ever runs where it was written is not evidence about where
+it will run. D-221 recorded that for `npm-cli.js`'s directory layout; this is
+the same sentence with "Go version" in place of "operating system".
+
+It is also the worse half of it. D-221's check failed the first time it ran
+elsewhere and said something true. This one fails elsewhere and says something
+false: that the committed icon does not match its generator, when it does.
+
+### Three answers, and which the evidence points at
+
+- **Regenerate and commit the asset.** Makes it green here and red on CI,
+  which is the same problem with the machines exchanged — and ties a shipped
+  artefact to whichever Go version last ran the generator. The same failure
+  returns with the next release.
+
+- **Compare pixels rather than bytes.** What the check is actually about:
+  D-285 and D-286 are entirely about pixels — connectivity at 16 px, the brand
+  turquoise exactly, the stroke ramp, the partly-covered-pixel colour — and
+  every one of those tests already reads the asset and decodes it. A
+  byte-comparison adds nothing they do not cover except sensitivity to a
+  compressor. **This is what the measurement above points at**, and it is the
+  one that keeps D-183's property (the asset is what the generator produces)
+  while dropping the part that is not about this project.
+
+- **Pin the toolchain** with a `toolchain` directive in `go.mod`, so every
+  machine builds with what CI builds with. Orthogonal to the above and
+  probably also right; it is a change to how everybody builds, which is its
+  own decision.
+
+Not chosen here. The owner's.
+
+### What this cost, and the one thing to take from it
+
+Nothing, this time: the test named the file and the two byte counts, so the
+first question was obvious. What it will cost is the next person who meets it
+on a fresh machine and regenerates the asset to make it green — which is the
+one answer above that is actively wrong, and the one the failure message
+recommends.
+
+**Rejected.**
+
+- **Regenerating the asset to make the suite green.** It is what the failure
+  message says to do and it is the wrong answer; the icon is not what changed.
+- **Installing go1.26.5 to confirm the hypothesis.** It would have been
+  decisive and it changes the machine to answer a question about a check. The
+  pixel comparison is decisive without it, and is better evidence besides: it
+  says *what* is the same rather than *which version* differs.
+- **Fixing it here.** Above.
