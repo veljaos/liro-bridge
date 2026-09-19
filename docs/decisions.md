@@ -29618,22 +29618,79 @@ child died inside `C_Initialize` — exception `0xe06d7363`, a C++ throw — and
 `liro-bridge certs` **exited 0 with a complete listing**. The out-of-process
 arrangement [[D-275]] chose and F12 §2 built did exactly what it was built for,
 against the module that actually does it, in the agent rather than in a test.
+**F12 §2's exit item closed itself.**
 
-It was TrustEdgeID (1.1.3.3) rather than MUP RS\Celik (1.1.0.0) — worth saying
-because D-272 measured the crash on 1.1.0.0, and because I first mis-read the
-path length in the stack frame as the MUP one. The frame says `0x31` = 49
-characters, and both paths are 49 characters long.
+**And it arrived by accident.** Nothing was trying to reproduce it. This was an
+ordinary listing, run to check whether one certificate had become one row, and
+the crash turned up in it. The contrast is the point and it is [[D-294]]'s in
+reverse: *"no number of clean runs demonstrates 'when it dies, the parent
+survives'; only a death does"* — and two thousand deliberate probes produced
+none, while the first listing the agent ever ran produced one. **A run nobody
+could schedule, which is exactly why the architecture had to be built against
+the prediction rather than the demonstration.** [[D-304]]'s fifth question,
+answered by events.
+
+**And I named the wrong module before checking.** The stack frame said
+`openModuleWith({0x..., 0x31}, ...)` — a path of 49 characters — and I reported
+it as `MUP RS\Celik
+etsetpkcs11_x64.dll`, because D-272's crash was measured
+on that build and it was the expected answer. **Both paths are 49 characters
+long.** The failure row said TrustEdgeID. It cost nothing because the row was
+read a minute later, and it is recorded because an entry that carries its own
+near-miss is worth more than one that presents only the corrected version: the
+length of a string is not the identity of a file, and a coincidence that
+confirms what you already expected is the most dangerous kind.
 
 **The second is a vendor difference this project had not met.** NetSeT's module
 answers `CKR_DEVICE_ERROR` when asked to open a session on a Pošta card, where
 SafeSign answers `CKR_TOKEN_NOT_RECOGNIZED` for a MUP card — and `enumerate`
 already skips the latter as "not mine" while the former fails the whole module's
-listing. **Anybody holding two cards and two modules will see a failure row on
-every listing**, which is how a list of real failures gets trained out of being
-read. Not changed here: "a device error means the card is not this module's" is
-a judgement, and the right place for it is beside the `CKR_TOKEN_NOT_RECOGNIZED`
-skip with a measurement attached. Recorded so it is a decision rather than a
-discovery.
+listing.
+
+**The consequence is worth more than the judgement, so it is stated first.**
+Anybody who holds two cards and has both issuers' middleware installed — which
+is this project's own machine, and is the ordinary situation for a person with
+an ID card and a Pošta certificate — **sees a failure row on every single
+listing, for ever, naming a module that is working perfectly.** It is not a
+transient. It is not a misconfiguration. It is what "you have two cards" looks
+like through this code.
+
+**That is how a list of real failures stops being read.** The failures list
+exists so that a person whose certificate is missing can find out that a module
+would not load (F11 §3). A permanent entry that means nothing trains them to
+skip the list, and the day it contains something real they will skip that too.
+
+Not changed here, deliberately. *"A device error means the card is not this
+module's"* is a judgement about somebody else's error code, and the right place
+for it is beside the existing `CKR_TOKEN_NOT_RECOGNIZED` skip with a measurement
+attached rather than inside a step-3 commit. **But the paragraph above is why it
+cannot wait long**, and it is written down so that whoever picks it up inherits
+the urgency rather than only the observation.
+
+### A match that was nearly a great deal worse
+
+Checking for processes the run had leaked, I matched on `msedgewebview2` and got
+six hits. They were about to be killed as mine.
+
+**They belonged to SearchHost — Windows' own Start-menu search.** Their
+`user-data-dir` was under
+`MicrosoftWindows.Client.CBS_cw5n1h2txyewy\LocalState`, which is what showed it.
+Killing them would have broken the owner's Start menu, on his own machine,
+while tidying up after a test.
+
+It is the same family as killing by image name, which this project's discipline
+forbids for exactly this reason: **a pattern that matches what you are looking
+for will also match things you have never thought about**, and the more
+plausible the pattern the less likely anybody is to check. `msedgewebview2` is
+not a wrong guess — this project really does spawn those, the test suite's own
+`TestMain` comment is about a WebView2 group outliving its parent — which is
+what made it dangerous. The right identifier was the one that ties a process to
+*this* work: the parent, or the data directory, or the command line naming this
+session's own redirected path.
+
+Recorded rather than fixed, because there is nothing to fix: the rule already
+exists ("exact PID only") and this is what it looks like when the shortcut to
+finding the PIDs is the thing that is wrong.
 
 ### The defect the run found, which was mine
 
@@ -29647,8 +29704,17 @@ for as long as the only caller was a developer running `p11probe`.** It stopped
 being right the moment the agent began discovering modules on every listing,
 which happened today.
 
-It is the same shape as three other things this week: a decision that was
-correct in isolation and became wrong when something called it. The remedy is
+**The owner's words for the shape, which are better than mine:** *"a decision
+that was right for its only caller and wrong the moment a second one existed,
+with a written reason that made it look considered. The reason was considered.
+It was considered about a different program."*
+
+That is the fourth instance this week and the one that best shows why a comment
+is not a guard. The comment on that line was accurate, specific and measured —
+it names Nexus's `personal64.dll` writing during `DllMain` — and every word of
+it stayed true while the conclusion stopped being. **A reason that is still
+correct is not the same as a decision that is still correct**, and nothing in
+review distinguishes them, because what changed was outside the file. The remedy is
 the one the worker already had — the caller says where a child's output goes —
 so `probeOutOfProcess` and `Modules` now take a per-module writer, and the agent
 routes it to the log. Measured after the change: **stderr is zero bytes, and the
