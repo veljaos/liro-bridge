@@ -184,6 +184,22 @@ type Response struct {
 	// attached, and F11 §3 asks for a readable reason rather than a number.
 	Err string `json:"error,omitempty"`
 
+	// NotFound says that Err is "that certificate is not on any token this
+	// module sees" and not anything else. It is the one distinction a parent
+	// with several modules must be able to make without reading English:
+	// choosing where to sign means asking each backend in turn until one says
+	// yes, and D-033 forbids masking a real failure behind a second attempt
+	// against an unrelated backend — a rule a caller cannot apply if it cannot
+	// tell the two cases apart.
+	//
+	// A bool rather than a code, deliberately. Err stays a readable sentence
+	// because F11 §3 asks for a reason rather than a number, and this is not a
+	// second channel for reasons: it answers one question the parent has to
+	// act on, and a general code field would invite the parent to branch on
+	// strings the child chose. A second such question, if one ever arrives,
+	// gets its own field and its own argument for existing.
+	NotFound bool `json:"notFound,omitempty"`
+
 	Certificates []CertificatePayload `json:"certificates,omitempty"`
 	Chain        [][]byte             `json:"chain,omitempty"`
 

@@ -315,7 +315,7 @@ func (s Source) openOn(ctx context.Context, m *module, want keysource.Thumbprint
 			chain: issuersFor(der, all),
 		}, nil
 	}
-	return nil, fmt.Errorf("pkcs11: no certificate with thumbprint %s on any token %s sees", want, s.modulePath)
+	return nil, fmt.Errorf("%w: %s, through %s", ErrCertificateNotFound, want, s.modulePath)
 }
 
 // findCertificateObject looks for one certificate by thumbprint in an open

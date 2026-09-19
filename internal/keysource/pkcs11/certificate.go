@@ -38,6 +38,28 @@ var ErrLoginNotBuilt = errors.New("pkcs11: signing needs a logged-in session and
 // one sentinel whatever platform it was compiled for.
 var ErrModuleClosed = errors.New("pkcs11: this module has been closed")
 
+// ErrCertificateNotFound is a thumbprint no token this module can see carries.
+//
+// # Why it is a sentinel and not a sentence
+//
+// It is the one answer a caller with several backends must be able to act on
+// without reading English. A machine can have Windows CNG and two or three
+// PKCS#11 modules on it, and choosing where to sign means asking each in turn
+// until one says yes — which only works if "that certificate is not here" can
+// be told from "this module is broken". Without it the two arrive at the call
+// site as the same thing: an error. D-033 already ruled that masking a real
+// failure behind a second attempt against an unrelated backend produces a
+// confusing failure about the wrong thing, and that rule cannot be applied by
+// a caller that cannot tell the cases apart.
+//
+// Until F11 §4 nothing above this package had more than one place to look, so
+// a sentence was enough and a sentence is what both sites returned.
+//
+// It lives here for the same reason ErrModuleClosed does: one sentinel,
+// whatever platform the caller was compiled for. It also crosses the worker's
+// pipe, where a string cannot carry it — see worker.Response.NotFound.
+var ErrCertificateNotFound = errors.New("pkcs11: no certificate with that thumbprint on any token this module sees")
+
 // CertificateInfo is one certificate found on one token, with enough about
 // where it came from to explain a duplicate.
 //

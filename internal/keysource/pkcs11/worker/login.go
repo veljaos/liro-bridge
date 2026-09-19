@@ -116,6 +116,14 @@ func (w *Worker) Open(ctx context.Context, want keysource.Thumbprint, entry pkcs
 		return nil, err
 	}
 	if resp.Err != "" {
+		// See do(): the one refusal a caller must act on without reading the
+		// sentence is rebuilt from the bool that crossed the pipe. Open does not
+		// go through do — it runs the two-phase exchange itself — so it needs
+		// its own copy of this, and a test requires the two to agree.
+		if resp.NotFound {
+			return nil, fmt.Errorf("pkcs11 worker: %s: %w: %s",
+				w.modulePath, pkcs11.ErrCertificateNotFound, resp.Err)
+		}
 		return nil, fmt.Errorf("pkcs11 worker: %s: %s", w.modulePath, resp.Err)
 	}
 	if resp.Certificate == nil || len(resp.Certificate.DER) == 0 {

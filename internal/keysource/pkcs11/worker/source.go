@@ -76,6 +76,23 @@ func NewSource(w *Worker, entry pkcs11.PINEntry) Source {
 	return Source{w: w, entry: entry}
 }
 
+// WithPINEntry returns a copy of this Source that collects PINs with entry.
+//
+// A copy rather than a mutation, and for a sharper reason than pkcs11.Source's:
+// the Worker behind this value is a child process that is expensive to start
+// and is meant to be shared, while the screen that collects the PIN belongs to
+// one window and one moment. The owner window of a PIN dialog is the window a
+// person is looking at, which is not a property of a module.
+//
+// So the agent discovers modules once, keeps the Workers, and makes one of
+// these per signature with the right screen attached. Copying a Source copies
+// the pointer to the Worker and nothing else — the child is shared, the screen
+// is not.
+func (s Source) WithPINEntry(entry pkcs11.PINEntry) Source {
+	s.entry = entry
+	return s
+}
+
 // Name implements keysource.Source.
 //
 // It is "pkcs11" and not "pkcs11-worker" on purpose. The backend is the

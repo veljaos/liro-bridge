@@ -387,6 +387,17 @@ func (w *Worker) do(ctx context.Context, req Request) (Response, error) {
 				// a death: F11 §3 asks for a readable reason rather than a
 				// number, and respawning over it would hide a card that is
 				// simply not there behind three process spawns.
+				//
+				// The one refusal a caller must be able to act on without
+				// reading the sentence is rebuilt here from the bool that
+				// crossed the pipe, so that a parent choosing between backends
+				// sees the same sentinel the in-process backend returns. The
+				// module path stays in the text: it is what tells two builds of
+				// one vendor's module apart, and there is nothing else that can.
+				if resp.NotFound {
+					return resp, fmt.Errorf("pkcs11 worker: %s: %w: %s",
+						w.modulePath, pkcs11.ErrCertificateNotFound, resp.Err)
+				}
 				return resp, fmt.Errorf("pkcs11 worker: %s: %s", w.modulePath, resp.Err)
 			}
 			return resp, nil

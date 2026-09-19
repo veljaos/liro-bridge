@@ -369,7 +369,7 @@ func (s Source) chainFor(ctx context.Context, m *module, want keysource.Thumbpri
 		}
 	}
 	if signer == nil {
-		return nil, fmt.Errorf("pkcs11: no certificate with thumbprint %s on any token this module sees", want)
+		return nil, fmt.Errorf("%w: %s", ErrCertificateNotFound, want)
 	}
 	return issuersFor(signer, all), nil
 }

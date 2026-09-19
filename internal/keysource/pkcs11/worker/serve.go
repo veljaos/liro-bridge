@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
 )
 
 // Handler is what a request is served against: one module, held open, answering
@@ -294,7 +296,7 @@ func serveLogin(ctx context.Context, r io.Reader, w io.Writer, h Handler, req Re
 		return Response{}, desync
 	}
 	if err != nil {
-		return Response{Err: err.Error()}, nil
+		return Response{Err: err.Error(), NotFound: errors.Is(err, pkcs11.ErrCertificateNotFound)}, nil
 	}
 	return Response{Certificate: &cert, Chain: chain}, nil
 }
@@ -325,7 +327,7 @@ func serveOne(ctx context.Context, h Handler, req Request) Response {
 		}
 		chain, err := h.ChainFor(ctx, req.Thumbprint)
 		if err != nil {
-			return Response{Err: err.Error()}
+			return Response{Err: err.Error(), NotFound: errors.Is(err, pkcs11.ErrCertificateNotFound)}
 		}
 		return Response{Chain: chain}
 

@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
 )
 
 // cannedPrefix marks a module path that is not one: it carries, instead of a
@@ -70,6 +72,15 @@ type cannedAnswers struct {
 	// AskTwice makes the child ask a second time after a complete answer, which
 	// is what a retry would look like from the parent's side.
 	AskTwice bool `json:"askTwice"`
+
+	// NoSuchCertificate makes this child answer a login or a chain request the
+	// way a module answers for a thumbprint none of its tokens carries.
+	//
+	// It is here rather than being provoked with a wrong thumbprint because the
+	// canned child has no certificate store to miss in: what is being measured
+	// is whether one particular refusal survives the pipe as a sentinel, and
+	// that is a property of the protocol rather than of any card.
+	NoSuchCertificate bool `json:"noSuchCertificate"`
 }
 
 // cannedPath encodes answers as the argument a spawned child will be given.
@@ -206,6 +217,9 @@ func (c *cannedHandler) List(context.Context) ([]CertificatePayload, error) {
 
 func (c *cannedHandler) ChainFor(_ context.Context, tp string) ([][]byte, error) {
 	c.count()
+	if c.answers.NoSuchCertificate {
+		return nil, fmt.Errorf("%w: %s", pkcs11.ErrCertificateNotFound, tp)
+	}
 	return [][]byte{[]byte(tp)}, nil
 }
 
@@ -218,6 +232,11 @@ func (c *cannedHandler) ChainFor(_ context.Context, tp string) ([][]byte, error)
 // an ending.
 func (c *cannedHandler) Login(_ context.Context, thumbprint string, ask PINExchange) (CertificatePayload, [][]byte, error) {
 	c.count()
+	if c.answers.NoSuchCertificate {
+		// Before the PIN is asked for, which is what a real module does: it
+		// cannot ask for a PIN for a certificate it does not have.
+		return CertificatePayload{}, nil, fmt.Errorf("%w: %s", pkcs11.ErrCertificateNotFound, thumbprint)
+	}
 	if c.answers.Needs.MaxPINLength > 0 {
 		dst := make([]byte, c.answers.Needs.MaxPINLength)
 		n, err := ask(dst, c.answers.Needs)
