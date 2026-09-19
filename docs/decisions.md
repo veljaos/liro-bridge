@@ -27626,6 +27626,28 @@ coming back are still looking.
 
 ## D-304 — This machine cannot time anything under about half a millisecond, D-201 already said so, and I cited D-201 all week without reading the number in it
 
+> **The other side of the ledger, from [[D-309]].** The four questions below
+> are all about an instrument that could not do its job, and nine instances of
+> that are recorded across this week. D-309 is the converse and belongs beside
+> them: **a defence built against a prediction nobody was sure of, which was
+> needed on its first live run.**
+>
+> B8 — that the PIN dialog appears in front — was written down as the least
+> certain of eight predictions, before the tool that would test it existed. The
+> defence was one line of output telling a person to look in the taskbar. The
+> measurement then *falsified* the prediction — the dialog sat behind Firefox
+> for 3.8 seconds — and the trace shows the defence being used: the foreground
+> went to `Shell_TrayWnd` and the dialog came forward 250 ms later.
+>
+> So the fifth question is not about instruments at all. It is what to do with
+> a prediction you cannot settle: **write the uncertainty down, then build
+> against it rather than waiting to be right.** The four below catch a check
+> that cannot fail. This catches the case where the check is a person, and the
+> prediction was the thing that said so in advance.
+>
+> Nothing below is changed. It is a dated record of what four measurements
+> established, and this is an addition rather than a fifth item in its list.
+
 **Date:** 2026-09-18
 **Phase:** F12 §2 — the instrument, not the code
 
