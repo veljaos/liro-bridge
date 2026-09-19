@@ -27778,6 +27778,16 @@ need its own check.
 
 ## D-305 — One call costs 856 ms on one NetSeT build and at most 33 ms on the other: C_FindObjectsInit is a fixed cost per search, and the login path takes three searches
 
+> **Narrowed by [[D-309]]**, which measured the same path on SafeSign: the
+> session, all three of `openOn`'s searches and `C_Login` together cost
+> **671.7 ms** there, against the **855.8 ms** below for one
+> `C_FindObjectsInit` on NetSeT 1.1.3.3. So the ~2.6 s per signature this
+> entry describes is that build's rather than the shape's, and the collapse it
+> proposes would be saving from a much smaller number on the module F11's exit
+> condition is judged by. Nothing below is changed: the measurement, the
+> mechanism and the proposal all stand, and what D-309 adds is which module
+> the saving is for.
+
 **Date:** 2026-09-18
 **Phase:** F12 §2 — a finding about the product, recorded before anything is changed
 
@@ -28414,3 +28424,317 @@ recommends.
   pixel comparison is decisive without it, and is better evidence besides: it
   says *what* is the same rather than *which version* differs.
 - **Fixing it here.** Above.
+
+## D-309 — One login and one cancellation on a Pošta card through the worker: the run designed to cost nothing is the one that took the login, and nothing was spent because the guard is in the program rather than in anybody's care
+
+**Date:** 2026-09-19
+**Phase:** F12 §2 and §5 — the home machine, Pošta card in the reader, the owner
+at it
+
+**This is the measurement F12 §2's PIN seam had never had.** Everything below
+the screen was built, guarded and mutation-tested without a card; what none of
+it could establish is that a real module, asked by a real parent over a real
+pipe, accepts a PIN a person typed. It does.
+
+### The two runs, and they came out the wrong way round
+
+The agreed shape was two runs: a rehearsal to be **cancelled**, which costs
+nothing and exercises the whole chain, and only then the real one.
+
+**The rehearsal was answered rather than cancelled**, and it is recorded here
+first because an entry that records the measurement without it would make the
+next reader think the protocol worked as designed. The owner, in his own
+words: *"That was me. I stepped out for coffee, came back to the dialog still
+open, and typed the PIN instead of cancelling. The 49 minutes are mine."*
+
+So the run built to spend nothing is the one that took the login, and the
+second run — taken later, with him at the machine and not leaving it — is the
+one that cost nothing.
+
+### The real content: nothing was spent, and not because anybody was careful
+
+This is the entry's point and it is the owner's framing.
+
+A live PIN dialog sat unattended for forty-nine minutes and was then answered
+by somebody who had walked back into the middle of a procedure. Every part of
+the discipline that was supposed to make that safe — *press Cancel*, *do not
+walk away*, *one attempt* — was in a message and in a person's memory, and the
+memory is the part that did not hold.
+
+**What held is the part that was in the program:**
+
+- it refused to reach `C_Login` at all unless the token's three user-PIN flags
+  were clear first, checked by `p11probe` and read by `p11worker` before a
+  screen could be drawn;
+- there is one `Open` call and no loop around it, and `OpLogin` is deliberately
+  absent from the worker's retryable allow-list, so nothing could have asked
+  twice;
+- the length was checked against the token's own 5 and 15 before anything
+  reached the pipe;
+- the counter was read either side by the same program in the same way, so
+  whether an attempt was consumed is measured rather than inferred.
+
+D-268 argued exactly this — *"a condition that lives only in the operator's
+discipline is a condition that gets missed once"* — and made the counter check
+a property of `p11probe` rather than of anybody's care. **This is the first
+time in this project that it has been the thing that mattered rather than a
+principle.** It was written on the strength of an argument; it was paid for
+today.
+
+The worst this could have produced was a wrong PIN on a card with three
+attempts. It did not, and that was luck. What was not luck is that no second
+attempt was possible, that an empty or over-long PIN could not have reached
+the card, and that the answer would have been measured either way.
+
+### What the login established
+
+```
+opening a session and logging in, once, at 13:25:01.217
+  THE CARD IS ASKING.  card Savka Odžić 200100123  accepts 5 to 15 characters
+ IT WORKED. The card accepted the PIN and the session is open.
+   certificate  AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+   chain        0 certificate(s) the token supplied
+VERDICT: the token's flags are IDENTICAL before and after (0x40D).
+```
+
+Predictions were written down before any of it, ranked, with the least certain
+named. Seven of the eight that were reachable held:
+
+| | predicted | outcome |
+|---|---|---|
+| B1 | the child asks; no protected path | **held** — `screen shown 1 time(s)` |
+| B3 | `C_Login` returns `CKR_OK` | **held** |
+| B4 | a success leaves the counter unchanged | **held** — `0x40D` → `0x40D` |
+| B5 | SafeSign raises no dialog of its own | **held** — the only screen was this program's |
+| B6 | one child, no respawn, nothing on its stderr | **held** |
+| B7 | `Close` does not reach D-306's backstop | **held** |
+| B2 | a cancellation costs nothing | **held**, on the second run |
+| B8 | the dialog appears in front | **FAILED**, and it is the section below |
+
+`chain 0 certificate(s)` is D-274 on the live path: the card carries the
+signer and the **root**, the intermediate that binds them is on neither
+Serbian card, so B-LT stays out of reach for D-281's reason.
+
+### The forty-nine minutes are evidence, and they could not have been arranged
+
+**The worker held `C_Initialize` and a live session open for 48m55.9s and
+nothing broke.** No respawn, nothing on the child's standard error, the
+session usable at the end of it, and a clean shutdown.
+
+That is a real module kept open across three quarters of an hour, which is
+awkward to arrange deliberately and arrived by accident. It is worth having
+for one specific open question: **D-297 left the per-request deadline open on
+purpose** — *"a per-request deadline is a separate question justified by the
+cost of the request it bounds; bring the owner the number rather than
+choosing"* — and this says something about it that no test could.
+
+**A login's duration is a person's duration.** Any deadline that bounded
+`OpLogin` the way it might bound a read would have killed a worker in the
+middle of somebody deciding. Whoever takes D-297's question should treat the
+login as a different kind of request from the three reads, and this is the
+measurement that says why.
+
+It is also worth naming what it is *not*: the caller's context was
+`context.Background()`, so nothing was ever going to fire. What is
+established is that the module and the child survived it, not that any bound
+was tested.
+
+### The timings, and what they do to D-305
+
+Two runs, the same shape, and the pre-PIN half is stable:
+
+| | login run | cancel run |
+|---|---|---|
+| enumerate, through the worker | 629.6 ms | 649.4 ms |
+| `Open` → the child asks | **96.9 ms** | **98.4 ms** |
+| the person | 48m55.9s | 7.0 s |
+| after the PIN | **574.8 ms** | 6.5 ms (the kill) |
+
+**`Open` minus the person is 671.7 ms on SafeSign** — the session, all three
+of `Source.openOn`'s searches, and `C_Login` itself.
+
+D-305 measured **855.8 ms for a single `C_FindObjectsInit`** on NetSeT 1.1.3.3,
+and measured nothing at all about SafeSign. So the 2.6-seconds-per-signature
+problem D-305 describes is **that build's rather than the shape's**, and the
+collapse it proposes — three searches to two — would be saving from a much
+smaller number here. That does not make the collapse wrong; it makes the case
+for it narrower than it reads, and it says which module the saving is for.
+
+A pointer to this sits under D-305's heading. Its body is untouched: it is a
+pushed measurement and SPEC §17 is not being bent, and the shape is the one
+D-125 already carries for exactly this.
+
+### The cancellation, and what it closed
+
+```
+ CANCELLED. Nothing was sent to the card and no attempt was spent.
+VERDICT: the token's flags are IDENTICAL before and after (0x40D).
+```
+
+**B2 closed.** `sendPIN` returned `ErrPINCancelled` with nothing written,
+`C_Login` was never reached, and the counter did not move.
+
+**And the kill-and-reap ran against a real module for the seventh time.**
+Every way out of a login that is not an answer kills the worker, because the
+child is blocked reading a PIN that is not coming — and it was reaped in
+**6.5 ms**, against D-306's ten-second backstop. D-306 measured 2–5 ms six
+times over two modules; this is a seventh, on SafeSign, after a login
+exchange, and it is the first one taken through the PIN seam rather than
+beside it. No leftover process.
+
+### B8 failed, and it was measured rather than noticed
+
+The prediction I was least sure of, written down before the tool was built:
+*the dialog appears in front of the console that launched it.* It did not.
+
+It was watched by an instrument rather than by a person, for D-258's reason —
+*"an answer that lives only in a probe I have to remember to run will be
+missed"* — and the instrument's own control ran first, because an absence
+reported by a broken instrument looks exactly like an absence (D-296's second
+question). It found the taskbar before it looked for anything else.
+
+```
+14:22:49.741  control ok: found Shell_TrayWnd, so FindWindowW works here
+14:22:58.850  THE DIALOG APPEARED  hwnd=0xa03e0 pid=16116  title "Unesite PIN"
+14:22:59.101  visible=true rect=(762,412)-(1158,667) centre=(960,539)
+              under="MozillaWindowClass" pid=13048 covered=true fg="MozillaWindowClass"
+14:23:02.865  ... covered=true  fg="Shell_TrayWnd"
+14:23:03.115  ... under="Static" pid=16116 covered=false fg="LiroBridgePINDialog"
+```
+
+**For 3.8 seconds a click at the dialog's own centre would have reached
+Firefox**, which had been running since 12:44 and had nothing to do with any
+of this. That is D-256's state — every registration perfect, the window
+visible, and `WindowFromPoint` at its own centre returning
+`MozillaWindowClass` — reproduced deliberately this time, with something
+watching.
+
+The foreground went to `Shell_TrayWnd` at 14:23:02.865 and the dialog was in
+front 250 ms later. **That is the owner finding it in the taskbar**, and it is
+most of the seven seconds the run records as "you".
+
+**Three things, and the difference between them is the whole of this
+section.**
+
+*What is established:* with `owner == 0`, `SetForegroundWindow` did not take
+the foreground, the window was left behind another program's, **and nothing
+in this program knew.** `runPINDialog` discards the call's result —
+`_, _, _ = procSetForegroundWindow.Call(hwnd)` — so it cannot tell whether it
+worked, on any platform, in any configuration.
+
+*What is an artefact of how it was launched, and is said so it is not read as
+more:* `p11worker` was started by a background harness, so it had never owned
+the foreground and had received no input, and Windows' foreground-lock rules
+were going to refuse it. Started by a person typing into a terminal it would
+probably have succeeded. **The failure is partly of this session's making; the
+silence is not.** The return value is discarded either way.
+
+*What is not established:* that this reaches the agent. There `CollectPIN` is
+given the signing window's `HWND`, and an owned window is kept above its owner
+by Windows unconditionally, whatever either one's topmost flag says — D-129's
+mechanism, and the reason `Options.Owner` exists at all. The agent's window
+has also just been clicked. So the thing that saves it there is **ownership,
+not foreground**, and that is worth stating plainly because the call that
+looks like it is doing the work is the one that failed here.
+
+**And it is the Windows half of a question F12 §5 already owns.** D-288
+carried it forward in as many words: *"`internal/ui/pindialog_windows.go`
+calls `SetForegroundWindow` on the PIN dialog. That will not work on Wayland
+either … it is §5's question rather than §4's; it is written here so that it
+is met once rather than twice."* It is now met once, with numbers: on the
+platform that *has* always-on-top, the call still fails silently in the
+configuration where nothing owns the window. On Wayland there is no such call
+to fail. The answer §5 needs is the same answer in both places, and it is not
+a foreground call.
+
+**Not fixed here.** What to do about a PIN dialog that may not be seen is a
+design question about the one window in this product that deliberately looks
+like a system dialog, and the general version belongs to F12 §5. Recorded, with
+the trace, so that §5 starts from a measurement.
+
+### One thing that earned itself on its first live run
+
+`p11worker` prints, before it opens the window:
+
+> *If you do not see it, look in the taskbar — it has no owner window to be
+> kept above, because this is a command line tool.*
+
+That line exists **because** B8 was written down as uncertain; it is a defence
+against a prediction rather than a response to a defect. The trace above is it
+being needed: the foreground went to the taskbar at 14:23:02.865 and the
+dialog came forward 250 ms after.
+
+Recorded because the useful half is the order. The prediction was written
+before the tool, the defence was built against the prediction, and the
+measurement then falsified the prediction and vindicated the defence in the
+same run. A prediction that fails is worth more than one that holds (this log
+says so repeatedly); one that fails *and* had a defence built against it is
+worth more than either.
+
+### What none of this establishes
+
+- **That a signature can be made.** `SignDigest` was not exercised: item 2 was
+  one login, and D-280 already took a full signature in-process with the
+  independent verifier of SPEC §16.4. Through the worker it has not been done.
+- **That a wrong PIN behaves as expected.** It will not be tested. Three block
+  the card.
+- **That `ui.ErrPINTooLong` fires on a real card.** It is covered by the
+  fake-screen tests and by the encoding's own table; nobody has typed sixteen
+  Cyrillic characters into a real dialog and nobody is going to.
+- **That the dialog is readable.** It was answered twice, so it was legible
+  enough to type into; nobody photographed it this session. D-279 §5 and D-280
+  did, in all three locales, and two defects were found that way.
+
+### The machine
+
+Snapshotted before anything ran, by **copy** and not by hash (D-153, D-243):
+`reg export` of the Explorer verb key and the `Run` key, plus copies of
+`config.json`, the `audit` directory, `pairings.json`, `secrets.*`,
+`update-state.json` and the extracted icon.
+
+Afterwards, and after each of the three runs: every file byte-identical to its
+copy, the audit chain unchanged, the `Run` key compared **value by value**
+rather than as a file (D-285: `reg export` does not emit values in a stable
+order) — five values, all matching — and the Explorer verb unchanged. No
+leftover `p11*`, `liro*` or `worker*` process at any point, including after
+the run that killed its worker rather than shutting it down.
+
+The owner's tray agent was not running when this session started and was not
+started by it, so there was nothing of his to stop or restart. The card's three
+user-PIN flags are clear.
+
+`go test ./cmd/liro-bridge/` was **not** run (D-266: it writes
+`HKCU\…\Run\LiroBridge` at a temporary binary, reproducibly), and every run of
+`internal/ui`'s own tests was made with `LOCALAPPDATA` redirected to a scratch
+directory, because D-285's icon extraction has now caught three authors after
+each had read the note. The real configuration directory is byte-identical
+either side.
+
+**Rejected.**
+
+- **Running run 2 after the rehearsal took the login.** The question was
+  answered; a second `C_Login` would have spent a real login for no new
+  information, and the standing rule is one attempt.
+- **Recording the measurement without recording that the rehearsal was
+  answered.** The owner's instruction and his reason: it would make the next
+  reader think the protocol worked as designed. It did not; the program did.
+- **Reading the instrument's first sample as evidence.** At 14:22:58.851 the
+  window existed, was not yet visible, and was still at (0,0) — before
+  `ShowWindow` and before `centreOn`. It reports `covered=true` and that means
+  nothing. The samples that count start at 14:22:59.101, when it is visible
+  and positioned, and D-260 is the reason this is said rather than left: that
+  entry had to record a reading of its own console covering the window it was
+  reporting on, which *read* as a finding and was not one.
+- **Concluding that `SetForegroundWindow` fails in the agent.** It was not
+  tested there, the owner is different, and the mechanism that matters there
+  is ownership rather than foreground.
+- **Fixing the discarded return value while here.** It is one line and it is
+  the beginning of a design question about what a PIN dialog does when it
+  cannot be seen, which is F12 §5's and is better answered once.
+- **Editing D-305's body with the SafeSign number.** It is a pushed entry and
+  a dated measurement. A pointer under its heading, in the shape D-125 already
+  carries, says the same thing without rewriting a measurement.
+- **Keeping the observer.** Verification scaffolding does not belong in the
+  product (D-100) and this one was created and deleted in the same session.
+  What it did is above, and its one durable lesson — check the control before
+  reporting an absence — is D-296's and already written down.
