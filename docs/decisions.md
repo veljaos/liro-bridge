@@ -28111,6 +28111,44 @@ It is `ui.ErrPINTooLong` now. **Nothing had ever had to tell the two apart,
 because nothing had ever called this function** — which is the same sentence
 as the section above, arriving as a consequence rather than as an observation.
 
+### The pattern, named at seven because seven is long past the point
+
+The owner's, on reading this entry, and it is the more general half of it:
+
+> A person who typed something and pressed OK, recorded as having declined,
+> in the audit log, is worse than a refusal — it is a false record of what
+> somebody did. And characters against bytes is exactly the kind of mismatch
+> nobody finds by reading; it took a first caller.
+
+**The defect had been there since F11 and could not have been found until
+something called the function.** It was not missed for want of care. That
+dialog is the most carefully built window in this product: D-277 argued it
+into existence against clause 2, D-278 put the reason in SPEC, D-279
+photographed it in all three locales and fixed two defects no test could see,
+and D-280 put a real PIN through it against a real card. None of that could
+have found this, because every one of those looked at the window and this is
+about what the function *returns*.
+
+So, at seven instances, it is worth naming as a pattern rather than recorded
+as a seventh instance:
+
+> **Code with no caller is code with no evidence** — however carefully it was
+> written, however thoroughly it was reviewed, and however many photographs
+> there are of it.
+
+D-247 is where this was first named, and its own list is the argument: a
+runtime check with no caller, an autostart value nothing applied, a setting
+that had persisted correctly for five phases and never once started the
+program. D-247 already said the finding is not a better unit test but a
+question — *what invokes this, and when?* What seven adds is that the question
+has to be asked of things that look finished. Every one of these was.
+
+The practical form, since a pattern with no handle is a sentence: **a function
+whose only callers are its own tests has not been tested, it has been
+exercised.** The two are told apart by asking what would have to be true for
+the first real caller to be surprised — and here the answer was sitting in a
+units mismatch between two limits that are both correct.
+
 The encoding that decides it moved to a neutral `internal/ui/pin.go` so that
 the one part of this dialog that can be got wrong without a window is tested
 where there is no window, and it was tightened while it moved: **nothing is
