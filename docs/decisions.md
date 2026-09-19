@@ -28011,3 +28011,248 @@ not finalise either, and it reaps in 2–5 ms every time. The mechanism is not
 known. *"I do not know the mechanism"* is the state of this entry, and it is a
 better entry than a plausible story: a plausible story would have been quoted
 later as the reason the backstop is unnecessary.
+
+## D-307 — The PIN entry: the two halves that had existed since F11 and never met, the package that is neither of them, and the defect writing the first caller found in the thing it calls
+
+**Date:** 2026-09-19
+**Phase:** F12 §2 and §5 — the home machine, Pošta card in the reader
+
+**Decision.** `internal/pinscreen` is the PIN entry: one exported function,
+`Entry(cat, owner) pkcs11.PINEntry`, that draws the native dialog
+`internal/ui` has had since F11 and fills it from the catalogue
+`internal/i18n` has had since F0. `scripts/p11worker` is its first caller.
+
+### What was missing was the join, and only the join
+
+Both halves were built, tested and photographed months ago.
+`ui.CollectPIN` is D-277's native window, D-279 §5 looked at it in all three
+locales and fixed two defects a test could not see, and D-280 put a real PIN
+through it against this card. `pkcs11.PINEntry` is the seam D-269 wrote the
+AST guard for *before* the backend existed, so that the backend would have to
+be built to satisfy it.
+
+They were never joined, and D-279 §7 said so at the time — "the two halves
+exist and are not joined … joining them is a dozen lines" — and recorded that
+the seven `pindialog.*` catalogue keys were deliberately kept unread because
+a reader was coming.
+
+Measured before anything was written: **`ui.CollectPIN` had no caller
+anywhere in the tree except its own tests, and the seven keys had no reader.**
+That is D-247's shape exactly — a feature fully implemented, fully tested, and
+never invoked — and it is the seventh time this project has met it.
+
+### Why a new package, which is the part worth arguing
+
+Three homes were available and each is wrong for a reason that is worth
+writing down rather than rediscovering:
+
+- **`internal/ui`.** It states in `pindialog_windows.go`, and beside
+  `pickFolder` and `ShowRuntimeMissingMessage`, that it has no i18n dependency
+  and takes already-localised strings from its caller. That is a design
+  property, not an accident, and adding a catalogue to save a package would
+  undo it.
+
+- **`internal/keysource/pkcs11`.** It would make the key source layer import
+  the window layer — the architecture upside down, and it would pull WebView2
+  and the whole Win32 surface into the package that signs hashes.
+  **`scripts/checkdeps` would not object**: rule 4 binds `internal/api`,
+  `internal/ui` and `internal/cli` to each other and says nothing about this
+  direction. So it is a judgement rather than a check, and this paragraph is
+  the whole of what enforces it.
+
+- **`cmd/liro-bridge`.** The natural home, and it is a `main` package, so
+  `scripts/p11worker` cannot import from it. What would then exist twice is
+  SPEC §6.5.1 clause 6's own mapping — which screen says what, about which
+  card. One rule in two places is what D-108, D-124 and D-138 each had to
+  remove once, and this is the one rule in the program where the two copies
+  disagreeing would be worst.
+
+So: one small package both readers reach, on `internal/pinname`'s precedent,
+which exists for exactly this reason. It is **not** in the agent's own graph
+today — `go list -deps ./cmd/liro-bridge` does not contain it — and it will be
+when F11 §4 wires the backend up, which is the second reader it was put here
+for.
+
+### The split inside it, and what it buys
+
+Everything about *what the screen says* is in the neutral file, with no
+syscall in it, so it is tested on every platform — including the Linux runner,
+which is the only place this project's CI runs the race detector (D-012,
+D-112). Only the call that puts a window on a screen is platform-specific.
+
+That is also the half F12 §5 reuses: the Linux PIN dialog is a different
+window drawing the same sentences, and the sentences are the part clause 6 is
+about. `pinscreen_other.go` therefore builds the same text on Linux and
+refuses only the window, with `ui.ErrUnsupportedPlatform` rather than
+`pkcs11.ErrNoPINEntry` — the difference being that the second means nobody
+wired one up, which is a caller's omission, and the first means this platform
+has no dialog yet, which is F12 §5's work.
+
+### The defect the first caller found in the thing it calls
+
+`ui.CollectPIN` answered **"what was typed does not fit the token's buffer"**
+with the same `(0, false, nil)` it answers Cancel with.
+
+It is reachable. `EM_SETLIMITTEXT` bounds the edit control in **characters**;
+PKCS#11's `ulMaxPinLen` — the number the buffer is sized from and the
+`ulPinLen` passed to `C_Login` — is in **bytes**. On the Pošta token that is
+15, so fifteen Cyrillic characters are fifteen the control accepts and thirty
+bytes the token will not take.
+
+Refusing is right, and D-279 §"accept" already said why: "half a PIN is a
+wrong PIN, and a wrong PIN is an attempt." **Calling it a cancellation was the
+defect.** A person who typed something and pressed OK would have been recorded
+as having declined — every layer above, up to and including the audit log's
+`denied`, would have said a thing that did not happen. D-145 established that
+a cancellation must not be reported as a failure; the converse holds just as
+hard and it is the direction that loses information.
+
+It is `ui.ErrPINTooLong` now. **Nothing had ever had to tell the two apart,
+because nothing had ever called this function** — which is the same sentence
+as the section above, arriving as a consequence rather than as an observation.
+
+The encoding that decides it moved to a neutral `internal/ui/pin.go` so that
+the one part of this dialog that can be got wrong without a window is tested
+where there is no window, and it was tightened while it moved: **nothing is
+written unless all of it fits.** The old loop wrote as far as the buffer
+allowed and reported failure afterwards, leaving a prefix of what was typed in
+the caller's buffer on a path the caller is told produced nothing. Every
+caller wipes on every path out, so it was harmless — and "it is wiped anyway"
+is a reason to be careless that this clause has no room for.
+
+### A guard that had gone six months without a control
+
+`internal/ui`'s `TestNoPINIsHeldInTheDialogWhereItCouldOutliveTheCall` is
+widened to cover `pin.go` as well, and **it had no positive control.** Its
+matcher is tested in `internal/pinname`; the walker in that file was not, and
+both files it now walks correctly contain nothing for it to find — so it would
+have reported success for the emptiest possible reason, and a widening that
+quietly caught nothing would have looked exactly like one that worked
+(D-296's first question).
+
+It has one now, and the widening itself was measured rather than assumed: a
+PIN-named package-level var planted in `pin.go` is reported by file and line,
+and the tree restored.
+
+### Everything passed on the first run, so everything was mutated
+
+Seventeen mutations, each an exact single-anchor replacement the harness
+refuses unless the anchor appears exactly once, and each requiring a real
+`--- FAIL` rather than any non-zero exit — D-302's own finding about its own
+harness, where two mutations compiled to nothing and were counted as kills.
+
+**Seventeen killed, none survived, none was not a test.** Three of them are
+worth naming because they are the assertions that would otherwise have been
+decoration:
+
+| | mutation | what died |
+|---|---|---|
+| E1 | the screen is shown again when it refuses | `TestTheScreenIsAskedExactlyOnce` — SPEC §6.5.1 clause 5 |
+| E2 | a cancellation is a PIN of no characters | `TestACancellationIsACancellationAndNeverAnEmptyPIN` — D-268 measured what an empty PIN costs |
+| E4 | the caller's buffer is copied on the way through | `TestTheCallersBufferIsHandedThroughAndNotCopied` — a second copy nothing wipes, invisible to the AST guard because it would live in a local with an innocent name |
+
+`TestTheHintCarriesTheTokensOwnLimits` drives **both real cards' numbers**
+through — 5/15 for Pošta and 4/8 for MUP, D-276's own pair — because a screen
+that hard-coded either passes for one card and is wrong for the other, and
+both live in one person's drawer.
+
+### `scripts/p11worker`, and the two things building it established
+
+The tool F12's home list asks for, beside `p11probe`, carrying p11probe's two
+guards: it refuses to call `C_Login` unless the token's three user-PIN flags
+are all clear beforehand, and reads them again immediately afterwards so that
+a spent attempt is measured rather than inferred (D-268). One `Open`, no loop.
+
+**The counter is read by running `p11probe`, not by a second implementation.**
+p11probe has owned that reading since D-269, its output is the format D-268's
+and D-273's measurements are quoted in, and two readings either side of a
+login taken by two different pieces of code are two readings that are not
+comparable. The parse fails closed: anything it cannot read is a refusal to
+proceed. It never passes `--login`, and the arguments are literals rather than
+anything a flag can reach.
+
+**It has to answer `pkcs11-worker` itself**, which is not obvious and is the
+first thing in `main`. `Worker.start` re-executes `os.Executable()`, and under
+`go run ./scripts/p11worker` that is this binary — a binary that ignored the
+subcommand would run `main` again, which is D-293's fork bomb wearing a
+different hat. `pkcs11.ChildMarker` is what actually stops that, on the parent
+side, for every binary; the dispatch is what makes the child useful rather
+than merely harmless.
+
+**The free path was run against the real card before any procedure was handed
+over**, which is the whole reason it was built with one:
+
+```
+PIN COUNTER BEFORE  flags=0x40D   COUNT_LOW false  FINAL_TRY false  LOCKED false
+ENUMERATE   2 certificate(s) in 919.0447ms
+  [0]* 2219 bytes  AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+        subject Savka Odžić 200100123   issuer Pošta Srbije CA 1   keyUsage 3
+  [1]  1520 bytes  F2E88F597862C490F36C38474C51CC338DCDFB0D
+        subject Pošta Srbije CA Root     issuer Pošta Srbije CA Root  keyUsage 96
+```
+
+Two things fall out of it that are worth more than "it ran".
+
+**Both thumbprints are ones this log already carries.** `AF5063BB…AA54` and
+`F2E88F59…FB0D` are exactly what D-274 measured off this card through this
+module, which means the thumbprint this tool computes agrees with the backend
+and with a measurement taken independently four days earlier.
+
+**D-274's finding is visible in the listing.** The card holds the signer and
+the **root**; the signer's issuer is "Pošta Srbije CA 1", the intermediate,
+which is on neither Serbian card. So `Chain()` will be empty, and B-LT is out
+of reach on this path for the reason D-281 measured — Pošta publishes that
+intermediate over LDAP and `cms.HTTPAIAFetcher` is an HTTP client.
+
+**919 ms is the first number anybody has for SafeSign**, and it is a whole
+enumerate: the worker spawned, `C_Initialize`, a search, and two certificates
+read. D-305 measured one NetSeT build's `C_FindObjectsInit` at 856 ms and the
+other's at no more than 33, and measured nothing at all about SafeSign. This
+does not decompose it — `p11probe --time --objects` is what would — and it
+does say the whole thing is under a second.
+
+### What none of this establishes
+
+**That a PIN reaches this card through the worker.** No `C_Login` has been
+taken. The login is item 2 of the home list, it costs one of three attempts if
+it goes wrong, and the owner's own instruction is that its shape is agreed
+before anything is typed — which is D-268's arrangement and the reason that
+measurement cost what it was meant to cost and nothing more.
+
+**That the dialog appears in front.** Written down before it was built, as the
+prediction I was least sure of: `CollectPIN` calls `SetForegroundWindow` on a
+window whose owner is 0, because a command-line tool has no window to own it,
+and D-256 and D-258 both measured a window of this program's coming up behind
+something else with nobody told. A process that owns the foreground is
+normally allowed to give it away, so it should work — and the failure mode is
+a person staring at a terminal waiting for a window that is behind it, which
+is two days of this project's history. So the tool says a window is opening
+and where to look, before it opens one. That is a defence, not a measurement.
+
+**Rejected.**
+
+- **Putting the adapter in `internal/ui`.** Above: it undoes a property that
+  package states about itself.
+- **Putting it in `internal/keysource/pkcs11`.** Above, and nothing
+  mechanical would have stopped it.
+- **Putting it in `cmd/liro-bridge` and copying it into the tool.** Two copies
+  of clause 6's mapping.
+- **Returning `ui.ErrPINTooLong` as a cancellation, so the seam's shape did
+  not have to change.** It is one line and it records a thing that did not
+  happen, in the log SPEC §6.7 makes the record of what a person signed.
+- **Leaving the widened guard without a control** because the matcher is
+  tested elsewhere. The matcher was; the walker was not, and a check whose
+  scope has just been widened is exactly when the question is worth asking.
+- **Showing the certificate label beside the token label on the screen.** On
+  this card they are the same string, so it would show a person their own name
+  twice — the defect D-149 removed from the certificate list.
+- **Putting the module path on the PIN screen.** It is the only thing that
+  tells two sightings of one card apart (D-271, D-272), which is a reason to
+  keep it in a log and not a reason to put a DLL path in front of somebody
+  about to type a secret.
+- **Writing a second `C_GetTokenInfo` read in `p11worker`.** Above.
+- **Taking the login while the tool was fresh.** The owner's instruction, and
+  the right one: a measurement that can cost an attempt is agreed first.
+
+---
+

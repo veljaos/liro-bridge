@@ -36,7 +36,6 @@ import (
 	"sync"
 	"syscall"
 	"unicode/utf16"
-	"unicode/utf8"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -142,6 +141,11 @@ type pinDialog struct {
 	n      int
 	ok     bool
 	closed bool
+
+	// tooLong separates "what was typed does not fit the token's buffer" from
+	// "the person pressed Cancel", which were one answer until the dialog
+	// acquired its first caller. See ErrPINTooLong.
+	tooLong bool
 }
 
 // CollectPIN shows the dialog and writes what was typed into dst, UTF-8
@@ -155,6 +159,12 @@ type pinDialog struct {
 //
 // ok is false when the person cancelled. That is not an error and must not be
 // reported as one.
+//
+// The one other way ok is false is with err set to ErrPINTooLong: what was
+// typed fitted the edit control, which counts characters, and did not fit the
+// token's own buffer, which counts bytes. It is a distinct answer rather than
+// a cancellation because a person who typed something and pressed OK has not
+// cancelled anything, and because the two call for different sentences.
 //
 // It runs on its own OS thread, locked, with its own message loop. Not on the
 // shared UI thread (D-207) on purpose: this dialog blocks until it is
@@ -261,6 +271,9 @@ func runPINDialog(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (int,
 			_, _, _ = procDeleteObject.Call(*f)
 			*f = 0
 		}
+	}
+	if d.tooLong {
+		return 0, false, ErrPINTooLong
 	}
 	if !d.ok {
 		return 0, false, nil
@@ -433,15 +446,8 @@ func (d *pinDialog) accept() {
 	got, _, _ := procSendMessageW.Call(d.edit, wmGetText,
 		uintptr(len(d.wide)), uintptr(unsafe.Pointer(&d.wide[0])))
 
-	n := 0
 	runes := utf16.Decode(d.wide[:got])
-	for _, r := range runes {
-		if n+utf8.RuneLen(r) > len(d.dst) {
-			n = -1
-			break
-		}
-		n += utf8.EncodeRune(d.dst[n:], r)
-	}
+	n := encodePINInto(d.dst, runes)
 	for i := range runes {
 		runes[i] = 0
 	}
@@ -451,7 +457,12 @@ func (d *pinDialog) accept() {
 		// More bytes than the token's maximum, which EM_SETLIMITTEXT counts in
 		// characters rather than in UTF-8 bytes. Refused here rather than
 		// truncated: half a PIN is a wrong PIN, and a wrong PIN is an attempt.
-		d.n, d.ok = 0, false
+		//
+		// It is reported as ErrPINTooLong rather than as ok=false, which is
+		// what Cancel means. Those were one answer until this dialog acquired
+		// its first caller, and a person who typed something and pressed OK
+		// would have been recorded as having cancelled.
+		d.n, d.ok, d.tooLong = 0, false, true
 	} else {
 		d.n, d.ok = n, true
 	}

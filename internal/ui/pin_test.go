@@ -43,6 +43,17 @@ import (
 
 const pinDialogFile = "pindialog_windows.go"
 
+// pinFiles is every file in this package that PIN material passes through.
+//
+// pin.go joined it when the dialog acquired its first caller and had to learn
+// to tell a refusal from a cancellation: the encoding that decides whether
+// what was typed fits the token's buffer moved there so it could be tested on
+// every platform rather than only where a message loop runs. It holds the
+// characters for the length of that decision, which is exactly the scope this
+// guard is for — and a second file was the obvious place for the rule to stop
+// applying without anybody noticing.
+var pinFiles = []string{pinDialogFile, "pin.go"}
+
 func parsePINDialog(t *testing.T) (*token.FileSet, *ast.File) {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -157,7 +168,96 @@ func bad(x *d, p *uint16) {
 // internal/ui pins memory for a living, and a name-based rule over the whole
 // package would report that instead of this.
 func TestNoPINIsHeldInTheDialogWhereItCouldOutliveTheCall(t *testing.T) {
-	fset, file := parsePINDialog(t)
+	for _, name := range pinFiles {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			// A rename reaches here rather than silently shrinking the guard's
+			// scope, which is what the parse error being fatal is for.
+			t.Fatalf("parsing %s: %v", name, err)
+		}
+		checkNoPINOutlivesTheCall(t, name, fset, file)
+	}
+}
+
+// TestThePINOutliveRuleWouldActuallyFire is the control this check has never
+// had, added when the check was widened to a second file.
+//
+// It matters more now than it did: the guard walks two files and passes, and
+// both of them correctly contain nothing for it to find — so without a fixture
+// it would report success for the emptiest possible reason, and a widening
+// that quietly caught nothing would look exactly like a widening that worked.
+// D-296's first question, asked of a check that had gone six months without it.
+func TestThePINOutliveRuleWouldActuallyFire(t *testing.T) {
+	const src = `package ui
+
+import "runtime"
+
+var lastPIN []byte      // package-level: caught
+const defaultPin = "00" // package-level: caught
+
+type d struct {
+	pin     []byte         // field: caught
+	userPIN []byte         // field: caught, and a word-boundary regexp would miss it
+	pinner  runtime.Pinner // NOT a PIN: this package pins memory for a living
+	pinned  bool           // NOT a PIN
+}
+
+func read(dst []byte, cardPIN []byte) (pinCount int) { // cardPIN: caught
+	var localPIN []byte // local: allowed
+	_ = localPIN
+	return 0
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "synthetic.go", src, 0)
+	if err != nil {
+		t.Fatalf("parsing the synthetic fixture: %v", err)
+	}
+
+	got := map[string]bool{}
+	collect := &fakeT{seen: got}
+	checkNoPINOutlivesTheCall(collect, "synthetic.go", fset, file)
+
+	for _, want := range []string{"lastPIN", "defaultPin", "pin", "userPIN", "cardPIN"} {
+		if !got[want] {
+			t.Errorf("the guard did not catch %q, which it must", want)
+		}
+	}
+	for _, mustNot := range []string{"pinner", "pinned", "localPIN", "pinCount"} {
+		if got[mustNot] {
+			t.Errorf("the guard caught %q, which is not a PIN — this package pins "+
+				"memory and a rule that reports that is a rule people work around "+
+				"(D-270)", mustNot)
+		}
+	}
+}
+
+// fakeT collects what the guard would have reported instead of failing the
+// run, so that the control can assert on the names rather than on a count.
+//
+// It satisfies only the part of testing.TB the guard uses. Errorf's format is
+// this file's own, so reading the name back out of it is reading this file
+// rather than guessing at somebody else's string.
+type fakeT struct {
+	testing.TB
+	seen map[string]bool
+}
+
+func (f *fakeT) Helper() {}
+
+func (f *fakeT) Errorf(format string, args ...any) {
+	for _, a := range args {
+		if s, ok := a.(string); ok {
+			f.seen[s] = true
+		}
+	}
+}
+
+// checkNoPINOutlivesTheCall takes testing.TB rather than *testing.T so that
+// the control above can collect what it reports instead of failing the run.
+func checkNoPINOutlivesTheCall(t testing.TB, pinDialogFile string, fset *token.FileSet, file *ast.File) {
+	t.Helper()
 
 	// Package-level var and const, walked over Decls so a local inside a
 	// function body — which is where the buffers legitimately live — is not
