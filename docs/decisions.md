@@ -29529,6 +29529,39 @@ any one of its entries. In order of when they were found this week:
    over a wrong property, found only because the tests were attacked rather
    than run.
 
+### Two more, added the same week
+
+The list was five when it was written and it did not stay five for a day.
+
+6. **My own lint routine called a tree clean that did not compile**
+   ([[D-316]]). `golangci-lint run ./... 2>&1 | tail -1` merges the streams,
+   drops the exit code — which was **7** — and shows the summary line, computed
+   over the linters that ran. None had run, because the package would not
+   typecheck. `GOOS=linux go build` said so in one line, and I was not running
+   it. **The first item on this list about the checking rather than the code.**
+
+7. **The report screen had never been rendered with a long path** ([[D-317]]),
+   so two layout defects sat on it through every green run until a person
+   photographed them. The suite does test long values — on a different step, and
+   its own comment says the long *path* case belongs to `internal/jobs`, which
+   is true and is about a package rather than a screen.
+
+8. **And the test written to catch them reported them fixed three times.** The
+   pairs of numbers are in D-317's table; the shape is that each version
+   compared two quantities that could not answer the question — a viewport
+   coordinate against a length, an overflow check against an element that had
+   wrapped, a line-box count against a flex item that is blockified and always
+   returns one. **The numbers that would have answered it were already in the
+   output of the first version**, which fetched `getBoundingClientRect()` and
+   read `left` and `right` while `height` sat beside them saying 33.6 against a
+   line height of 16.8.
+
+That last one is the second this week where an assertion compared the wrong pair
+of numbers, and it suggests the question worth asking of any check that reports
+something fine when a person says it is not: **not "is their machine unusual"
+but "what did it compare".** Going the other way first cost a session's worth of
+looking for an explanation in display scaling that was never there.
+
 ### The family next door, which is not the same thing
 
 Three discarded values were found this week — `SetForegroundWindow`'s `BOOL`
@@ -29872,7 +29905,7 @@ the next thing.
 
 ---
 
-## D-317 — Step 3 closed on the card; the report screen put a label and its value at opposite ends of the window, which no layout test saw because the screen had never been given a long path; and half of what I diagnosed was wrong
+## D-317 — Step 3 closed on the card; two layout defects on the report screen that no test saw because it had never been given a long path; and three assertions of mine that measured the wrong numbers before a photograph settled it
 
 **Date:** 2026-09-19
 **Phase:** F11 §4 step 3, closed — and a photograph
@@ -29902,7 +29935,7 @@ chased here.** It cost a signature that was not intended. Recorded as an open
 question rather than a defect, because "where should Escape go from each step"
 is a decision about the flow and not a bug to patch quietly.
 
-### The defect, and the half of it that is real
+### The two defects
 
 Two things on one screen, reported from a photograph:
 
@@ -29919,34 +29952,46 @@ space between the label and its value, in a row 528 points wide.** The fix is
 one line, `.report-pair { justify-content: flex-start; }`, and a test fails
 without it.
 
-**The second I could not reproduce, and the mechanism I blamed was already
-handled.** My first diagnosis was a missing `overflow-wrap`: the value's box
-shrinking under `min-width: 0` while unbreakable text spilled out of it. I wrote
-that into a three-rule fix and into a comment asserting *"these two rows never
-got it"*.
+**The second is also real, and I was wrong about it twice before a photograph
+settled it.**
 
-`main.css:220` has carried this since before any of it:
+My first diagnosis was a missing `overflow-wrap`: the value's box shrinking under
+`min-width: 0` while unbreakable text spilled out of it. That was wrong.
+`main.css:220` has carried `overflow-wrap: anywhere` on both report values since
+before any of this, and with the new rules deleted and the row forced to 528,
+260, 180 and 120 points the path wrapped correctly every time and never left its
+box. I cut the fix back to one line and recorded the overlap as unexplained.
 
-```css
-#report-output,
-#report-level {
-  overflow-wrap: anywhere;
-}
+**The screenshot shows what it actually was:**
+
+```
+Sačuvano  C:\Users\Veljko\AppData\Local\Temp\claude\C--Users-Veljko-Desktop-liro-
+u         bridge\9aef24e7-05d3-4cec-ac6e-a03ec7ace959\scratchpad\look
 ```
 
-Measured with the new rules deleted outright and the row forced narrower and
-narrower — 528, 260, 180 and 120 points — the path wrapped correctly at every
-width, never overflowed its box, and never overlapped the label. **The comment
-was false and the two extra rules were redundant**, so the fix was cut back to
-the one line that is supported by a measurement.
+**The label wrapped, not the value.** `.liro-row > *` sets `min-width: 0` on
+*every* child so that one long unbreakable value cannot push the row wider than
+the window ([[D-096]]) — and that applies to the label as well, so the flex
+algorithm shrank both. "Sačuvano u" was squeezed to 34 points and broke across
+two lines, leaving **"u" alone on the second line while the path's own second
+line ran to the right of it.** That is what *"the path starts under the label"*
+is, exactly, and it needs `flex: 0 0 auto` on the label — the rule I had written
+and then removed for want of evidence.
 
-**What the owner saw is therefore unexplained.** Something about that screen on
-that run differs from this one and I do not know what — display scaling and the
-report step's real window width are the two candidates I would look at next. The
-screenshot did not reach me; with it, or with the scaling setting, this becomes
-answerable.
+**It was reproducible on this machine the whole time, and that is the part worth
+keeping.** The owner's display runs at 150% scaling, which makes the row about
+two thirds of the CSS width it has at 100%, and I had reached for that as the
+explanation. It is not the explanation. Measured at 100% and the natural width
+of 528 points, before any fix: **the label's box was 34.3 wide and 33.6 tall,
+against a line height of 16.8.** Two lines. The defect was in front of me in my
+own test window, in numbers I had already fetched, and I read the left and right
+edges and not the height.
 
-### Why no layout test saw the part that is real
+Both rules now exist, and each has its own control: removing
+`justify-content: flex-start` reproduces the 441-point chasm, and removing
+`flex: 0 0 auto` reproduces the two-line label.
+
+### Why no layout test saw any of it
 
 **The report screen had never been rendered with a long path in it.**
 
@@ -29989,19 +30034,63 @@ a value, and Serbian labels are long.
 **Nothing else needs a pass**, and that is a measurement rather than a
 reassurance.
 
-### The test, and the control that corrected it twice
+### The test, and the three assertions that measured the wrong numbers
 
 `TestTheReportsLabelsAndValuesDoNotOverlapWithALongPath` renders the report with
-a path of the shape that found this, and checks three things per row: the value
-does not start before the label ends, the gap between them is not more than a
-quarter of the row, and neither escapes the row's own edges.
+a path of the shape that found this and checks four things per row: the label
+stays on one line, the value does not start before the label ends, the gap
+between them is not more than a quarter of the row, and neither escapes the
+row's own edges.
 
-**Its first version passed against the broken layout**, because I compared
-viewport coordinates against the row's *width* instead of its edges — an
-assertion that could not fail. The second version caught the chasm and still
-missed the overlap, which is how the overlap turned out not to be there.
+It took three wrong versions to get there, and **the pairs of numbers are the
+point** — each one compared two quantities that could not answer the question
+asked of them:
 
-That is the control doing its job twice on one test, and it is the reason the
-entry above says "could not reproduce" rather than "fixed": without running the
-test against the old CSS, this would have shipped as a two-part fix for a
-one-part defect, with a false comment explaining the half that was not there.
+| version | compared | should have compared |
+|---|---|---|
+| first | the value's **right edge** (a viewport x, e.g. 544) against the row's **width** (a length, 528) | the value's right edge against the row's **right edge** (544) |
+| second | the value's **`scrollWidth`** against its **`clientWidth`** — content overflowing its box | the **label's height** against its **line height** — the label had wrapped, not overflowed |
+| third | the label's **`getClientRects().length`**, expecting one rectangle per line box | the same height-against-line-height, because **a flex item is blockified** and always returns one rectangle whether it wrapped or not |
+
+The first *could not fail*: a coordinate in a viewport is not a length, and on
+this layout the first happened to exceed the second whatever the CSS did. The
+second and third asked real questions about the wrong element — the value, when
+the element that had failed was the label.
+
+**And the numbers that would have answered it had already been fetched.** The
+first version read `getBoundingClientRect()` for both boxes and used `left` and
+`right`. The same call returns `height`, which was 33.6 against a line height of
+16.8 — two lines, in the output of a test that was reporting the layout correct.
+
+That is [[D-314]]'s list, and the second entry on it this week where an
+assertion compared the wrong pair of numbers. The lesson is narrower than "write
+better tests": **when a check reports that something is fine and a person says
+it is not, the check is a suspect and the first thing to ask is what it
+compared** — not whether the person's screen is unusual, which is where I went
+first.
+
+### Step 4 proved itself, and nobody arranged it
+
+The two signatures the owner made by accident wrote the first audit entries that
+carry F11 §4 step 4's new fields:
+
+```
+seq 316  2026-09-19T15:59:58Z  approved  docs=1  level=B-B  backend=windows-cng  module=(absent)
+seq 317  2026-09-19T16:01:08Z  approved  docs=1  level=B-B  backend=windows-cng  module=(absent)
+```
+
+`windows-cng`, and no module, which is correct twice over: it is what signed,
+and it is [[D-311]] confirmed from the other end — the PIN never entered this
+program.
+
+**And the chain verifies at 318 entries, in one chain**: the 316 written before
+`Backend` and `Module` existed, and the two written after. That is the strongest
+evidence the trailing marker was added correctly, far stronger than [[D-315]]'s
+verification of 316 old entries against new code, because it mixes the two in
+one hash chain — and it arrived by accident, from a signature nobody meant to
+make, on a screen somebody was only supposed to look at.
+
+It is the second thing in two days to be established by an accident rather than
+by a plan, after [[D-315]]'s crash. Both were unschedulable; both turned up in
+an ordinary run. Worth noticing as a pattern in how this project's hardest
+evidence actually arrives.

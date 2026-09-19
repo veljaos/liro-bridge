@@ -185,6 +185,23 @@ body.drag-over #file-list {
   justify-content: flex-start;
 }
 
+/* The label keeps its own width and does not shrink.
+
+   .liro-row > * sets min-width:0 on *every* child so that one long
+   unbreakable value cannot push the row wider than the window (D-096).
+   It applies to the label too, and the flex algorithm shrinks both
+   children — so a long path squeezed "Sačuvano u" down to 34 points and
+   broke it across two lines, leaving "u" alone on the second while the
+   path's own second line began to the right of it. That is what "the
+   path starts under the label" is: the label wrapped, not the value.
+
+   Photographed at 150% display scaling, where the row is about two
+   thirds of the CSS width it has at 100% — which is why measuring only
+   the boxes' left and right edges at 100% did not show it. */
+.report-pair-label {
+  flex: 0 0 auto;
+}
+
 .setting-value {
   display: flex;
   align-items: baseline;

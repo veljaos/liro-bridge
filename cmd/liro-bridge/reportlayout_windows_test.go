@@ -83,18 +83,31 @@ func TestTheReportsLabelsAndValuesDoNotOverlapWithALongPath(t *testing.T) {
 		rowLeft, rowRight := n[4], n[5]
 		rowWidth := rowRight - rowLeft
 
-		// Content wider than the box it is in, which is what text drawn on
-		// top of a neighbour looks like from here. It has never been seen to
-		// fire on this screen — #report-output and #report-level have carried
-		// overflow-wrap:anywhere since before this test — and it is kept
-		// because the rule it guards is one line away from being deleted by
-		// somebody tidying up, and because the owner photographed something
-		// this has not yet explained (see the entry).
-		if evalBool(t, m.win, valueSel+".scrollWidth > "+valueSel+".clientWidth + 1") {
-			over := evalNumbers(t, m.win, valueSel+".scrollWidth", valueSel+".clientWidth")
-			t.Errorf("%s: its content is %.0f wide in a box %.0f wide, so it is drawn "+
-				"outside its own box — which is the path appearing on top of the label",
-				row.value, over[0], over[1])
+		// **The label must stay on one line.**
+		//
+		// This is the defect the photograph showed and the one three earlier
+		// versions of this test walked straight past. .liro-row > * sets
+		// min-width:0 on every child so a long value cannot widen the window
+		// (D-096) — and that applies to the label too, so the flex algorithm
+		// shrank it and "Sačuvano u" broke across two lines, leaving "u" alone
+		// on the second while the path's own second line ran to the right of
+		// it. That is what "the path starts under the label" was.
+		//
+		// Measured by height against the computed line height, because a flex
+		// item is blockified: getClientRects() returns one rectangle for it
+		// whether it wrapped or not, which is how the second version of this
+		// test reported one line for a label that was plainly on two.
+		lines := evalNumbers(t, m.win,
+			"(function(){var e="+labelSel+";var lh=parseFloat(getComputedStyle(e).lineHeight);"+
+				"return lh>0?e.getBoundingClientRect().height/lh:-1})()")[0]
+		if lines < 0 {
+			t.Fatalf("%s: the label's line height does not resolve to a number, so this "+
+				"assertion cannot measure anything", row.value)
+		}
+		if lines > 1.5 {
+			t.Errorf("%s: its label is %.1f lines tall — it has been squeezed and has "+
+				"wrapped, which is what puts the value's continuation beside an "+
+				"orphaned word from the label", row.value, lines)
 		}
 
 		// Sub-pixel tolerance: these are fractional CSS pixels and two boxes
