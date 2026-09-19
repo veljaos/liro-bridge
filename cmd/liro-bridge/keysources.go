@@ -68,8 +68,14 @@ func (o signerOrigin) auditModule() string {
 }
 
 // openCardOrSoftToken is the one place this program decides where a
-// signing session comes from: the Windows CNG store, and — only in a
-// build made with the "softtoken" tag — the soft token behind it.
+// signing session comes from: the Windows CNG store, the issuer's own
+// PKCS#11 module, and — only in a build made with the "softtoken" tag —
+// the soft token behind them.
+//
+// CNG first and the module second (D-311), unless the person has asked
+// for the reverse in their configuration (config.PreferPKCS11), which
+// exists for somebody whose minidriver is broken or absent and is
+// documented where it is declared.
 //
 // The soft token is tried only when the CNG store genuinely has no such
 // certificate. Any other error (card removed, PIN blocked, reader
@@ -104,42 +110,34 @@ func openCardOrSoftToken(hwnd uintptr, cfg config.Config) func(context.Context, 
 	cngSource := windowscng.NewSource().WithWindowHandle(hwnd)
 	softSource := softTokenSource() // nil unless built with the "softtoken" tag
 
-	return func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, signerOrigin, error) {
+	cng := func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, signerOrigin, error) {
 		sess, err := cngSource.Open(ctx, thumbprint)
-		if err == nil {
-			return sess, signerOrigin{backend: cngSource.Name()}, nil
-		}
-		var e *errs.Error
-		if !errors.As(err, &e) || e.Code != errs.CodeCertNotFound {
-			// D-033: any other error is real. Masking a card that was removed,
-			// a blocked PIN or a missing reader behind a second attempt against
-			// an unrelated backend produces a confusing failure about the wrong
-			// thing.
+		if err != nil {
 			return nil, signerOrigin{}, err
 		}
-
-		// CNG does not have it, so this certificate is on a card Windows has no
-		// minidriver for — or on no card at all. D-311: CNG signs when it offers
-		// the certificate, and this is the branch where it does not.
-		if sess, origin, err := openThroughPKCS11(ctx, thumbprint, hwnd, cfg, log); err == nil {
-			return sess, origin, nil
-		} else if !errors.Is(err, pkcs11.ErrCertificateNotFound) {
-			return nil, signerOrigin{}, err
-		}
-
-		if softSource != nil {
-			sess, softErr := softSource.Open(ctx, thumbprint)
-			if softErr != nil {
-				return nil, signerOrigin{}, softErr
+		return sess, signerOrigin{backend: cngSource.Name()}, nil
+	}
+	p11 := func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, signerOrigin, error) {
+		return openThroughPKCS11(ctx, thumbprint, hwnd, cfg, log)
+	}
+	var soft opener // nil unless the tag added one, which openInOrder checks
+	if softSource != nil {
+		soft = func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, signerOrigin, error) {
+			sess, err := softSource.Open(ctx, thumbprint)
+			if err != nil {
+				return nil, signerOrigin{}, err
 			}
 			return sess, signerOrigin{backend: softSource.Name()}, nil
 		}
-		// The original error rather than the last one tried. CNG's
-		// CodeCertNotFound is the answer a person can act on; "no PKCS#11
-		// module has it either" is this program explaining itself.
-		return nil, signerOrigin{}, err
+	}
+
+	return func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, signerOrigin, error) {
+		return openInOrder(ctx, thumbprint, cfg.PreferPKCS11, cng, p11, soft, log)
 	}
 }
+
+// opener is one backend's attempt at a signing session.
+type opener func(context.Context, keysource.Thumbprint) (keysource.Session, signerOrigin, error)
 
 // dropOrigin adapts the chooser for callers that have nowhere to record where a
 // session came from.
@@ -150,11 +148,93 @@ func openCardOrSoftToken(hwnd uintptr, cfg config.Config) func(context.Context, 
 // place, wrapped where it is not wanted, rather than a second copy of a
 // three-backend fallback that would have to be kept in step with this one
 // (D-108, D-124, D-138).
-func dropOrigin(open func(context.Context, keysource.Thumbprint) (keysource.Session, signerOrigin, error)) func(context.Context, keysource.Thumbprint) (keysource.Session, error) {
+func dropOrigin(open opener) func(context.Context, keysource.Thumbprint) (keysource.Session, error) {
 	return func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, error) {
 		sess, _, err := open(ctx, thumbprint)
 		return sess, err
 	}
+}
+
+// openInOrder holds every rule about which backend signs, separated from the
+// wiring that builds them so that the rules can be exercised without a card, a
+// module or a machine that has either.
+//
+// It is a decomposition rather than a seam (D-100): openCardOrSoftToken below
+// is now only the three constructors, and everything that is a *decision* is
+// here. The decisions are the delicate part — each one is a rule about what a
+// person is shown or asked when something goes wrong — and until this split
+// none of them could be read except by running the agent against hardware.
+//
+// soft may be nil: the soft token exists only in a build made with the
+// "softtoken" tag.
+func openInOrder(ctx context.Context, thumbprint keysource.Thumbprint, prefer bool, cng, p11, soft opener, log *slog.Logger) (keysource.Session, signerOrigin, error) {
+	// The person's own inversion of the default order, from their config file
+	// and from nowhere else (config.PreferPKCS11). Tried first and completely:
+	// if the module has the certificate, the module signs, and CNG is never
+	// asked.
+	//
+	// A failure here does not stop the chain, and that is the whole point of
+	// the option. Somebody sets it because their minidriver is broken; somebody
+	// else sets it, finds their module is the broken one, and **must not be
+	// left worse off than if they had never touched it**. So this is the one
+	// place a non-not-found error is walked past — deliberately, and with the
+	// original kept for the message at the end.
+	var preferredErr error
+	if prefer {
+		sess, origin, err := p11(ctx, thumbprint)
+		if err == nil {
+			return sess, origin, nil
+		}
+		preferredErr = err
+		if !errors.Is(err, pkcs11.ErrCertificateNotFound) {
+			log.Warn("pkcs11: preferred by configuration and could not sign; falling back",
+				slog.String("thumbprint", string(thumbprint)),
+				slog.String("error", err.Error()))
+		}
+	}
+
+	sess, cngOrigin, err := cng(ctx, thumbprint)
+	if err == nil {
+		return sess, cngOrigin, nil
+	}
+	var e *errs.Error
+	if !errors.As(err, &e) || e.Code != errs.CodeCertNotFound {
+		// D-033: any other error is real. Masking a card that was removed, a
+		// blocked PIN or a missing reader behind a second attempt against an
+		// unrelated backend produces a confusing failure about the wrong thing.
+		return nil, signerOrigin{}, err
+	}
+
+	// CNG does not have it, so this certificate is on a card Windows has no
+	// minidriver for — or on no card at all. D-311: CNG signs when it offers
+	// the certificate, and this is the branch where it does not.
+	//
+	// Skipped when the preference already asked. **One signature must never ask
+	// one card for two PINs**, and SPEC §6.5.1 clause 5 is about one wrong PIN
+	// being one attempt: on a machine with one card behind two modules (D-271)
+	// a second walk would spend a second attempt on the same mistake.
+	if !prefer {
+		if sess, o, err := p11(ctx, thumbprint); err == nil {
+			return sess, o, nil
+		} else if !errors.Is(err, pkcs11.ErrCertificateNotFound) {
+			return nil, signerOrigin{}, err
+		}
+	}
+
+	if soft != nil {
+		return soft(ctx, thumbprint)
+	}
+	// When the person asked for PKCS#11 first and it failed for a reason other
+	// than not having the certificate, that reason is the one worth showing:
+	// they configured this path, and "CNG has no such certificate" explains
+	// nothing about why the module they chose did not work.
+	if preferredErr != nil && !errors.Is(preferredErr, pkcs11.ErrCertificateNotFound) {
+		return nil, signerOrigin{}, preferredErr
+	}
+	// Otherwise the original error rather than the last one tried. CNG's
+	// CodeCertNotFound is the answer a person can act on; "no PKCS#11 module
+	// has it either" is this program explaining itself.
+	return nil, signerOrigin{}, err
 }
 
 // openThroughPKCS11 asks each module on this machine in turn and returns the

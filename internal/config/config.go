@@ -202,6 +202,60 @@ type Config struct {
 	// path to a DLL. The escape hatch is documented where escape hatches
 	// belong rather than in the file the settings window rewrites.
 	PKCS11ModulePath string `json:"pkcs11ModulePath,omitempty"`
+
+	// PreferPKCS11 makes the agent ask the issuer's PKCS#11 module for a
+	// signing session before it asks Windows CNG, instead of after.
+	//
+	// # Why it exists
+	//
+	// For the person whose minidriver is broken, or whose issuer never
+	// shipped one. Without this they have no recourse at all: CNG can
+	// see the certificate in the Windows store and still fail to sign
+	// with it, and when it fails for any reason other than "no such
+	// certificate" the agent stops there rather than trying the module
+	// that would have worked. That is the case F12 exists for, on the
+	// platform F12 runs on, and it had no way out.
+	//
+	// It is not a switch for trying things out. The default order is
+	// decided and measured, and this reverses it.
+	//
+	// # What it costs, which is the reason it is a decision
+	//
+	// **On the CNG path the PIN never enters this program's memory.**
+	// Windows collects it, in its own window, through the smart card
+	// provider — so SPEC §6.5.1's clauses 2, 3 and 5 are true by
+	// construction, with nothing for this program to get right or get
+	// wrong.
+	//
+	// **On the PKCS#11 path the PIN is an argument to C_Login and
+	// therefore exists here.** Every one of those clauses goes back to
+	// being a property this program has to uphold: the PIN lives for one
+	// call and is overwritten through a pinned address, it crosses one
+	// inherited pipe whose kernel buffer this program cannot wipe, and
+	// nothing may ever retry it. All of that is built, guarded and
+	// measured — and it is still a larger promise than not holding the
+	// secret at all.
+	//
+	// Turning this on is choosing the second arrangement over the first,
+	// and it should read as a choice.
+	//
+	// # From this file and from nowhere else
+	//
+	// Never from the protocol, never from a command line, never from an
+	// environment variable. **A caller that can choose which backend
+	// signs is a caller that can choose where the PIN goes** — and a
+	// calling application able to move a PIN out of the operating
+	// system's own dialog and into this program's memory has changed the
+	// security of a signature without the person who owns the card
+	// deciding anything. The same rule and the same reason as
+	// PKCS11ModulePath above, which is about arbitrary code execution
+	// where this is about a secret; nothing in internal/keysource reads
+	// a request, and nothing above it may pass one through.
+	//
+	// omitempty for PKCS11ModulePath's reason: off on every machine that
+	// does not need it, and a config.json that named it would invite
+	// somebody to turn it on without reading any of this.
+	PreferPKCS11 bool `json:"preferPKCS11,omitempty"`
 }
 
 const (

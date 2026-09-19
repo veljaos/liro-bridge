@@ -29742,3 +29742,130 @@ certificate chooser the signing flow shows — because this measurement is of
 PKCS#11 module has still never happened in the agent: [[D-309]] logged into a
 card through the worker from `scripts/p11worker`, not through this path, and
 that run is one PIN, one attempt, no retry, agreed in advance like [[D-268]].
+
+---
+
+## D-316 — `preferPKCS11` exists for the person whose minidriver is broken; being able to measure the worker path is a consequence and not the reason
+
+**Date:** 2026-09-19
+**Phase:** F11 §4, after step 3 — a hole [[D-311]] made and did not notice
+
+**Recorded reason first, because the order matters and will decide whether this
+survives.** This option exists for somebody who cannot sign at all. That it also
+makes the agent's PKCS#11 signing path reachable on a machine where CNG works —
+which is every machine this project has — is a *consequence*. **Written the
+other way round, somebody removes it in a year as test scaffolding**, and takes
+the only recourse of the people F12 was built for with it.
+
+### The hole
+
+[[D-311]] decided that CNG signs whenever it offers the certificate, for reasons
+this entry does not revisit: the PIN never enters this program, so SPEC §6.5.1's
+clauses 2, 3 and 5 become true by construction rather than by care.
+
+What it did not notice is what happens when CNG offers a certificate **and
+cannot sign with it.** `openCardOrSoftToken` falls through to PKCS#11 only on
+`CodeCertNotFound`, which is right for D-033's reason — a removed card or a
+blocked PIN must not be masked by a second attempt against an unrelated backend.
+But a broken or absent minidriver is neither. CNG has the certificate in the
+store, answers something that is not "no such certificate", and **the chain
+stops at the backend that cannot do the job while the one that can is never
+asked.**
+
+That is **F12's own motivating case having no way out on the platform F12 runs
+on**: the person whose issuer never shipped a working minidriver is exactly who
+the PKCS#11 work exists for, and for them the agent was choosing the wrong
+backend and stopping.
+
+### The rule, and what it costs
+
+`config.PreferPKCS11` asks the module first and CNG second. Three properties,
+each with a test that fails without it:
+
+- **When one backend signs, the other is never asked.** Not "not used" —
+  *not asked*. Asking a PKCS#11 module for a session means `C_Login`, which
+  means a PIN screen and an attempt on somebody's card.
+- **The preferred module failing does not stop the chain.** This is the one
+  place a non-not-found error is walked past, which is the opposite of D-033
+  everywhere else, and it is deliberate: somebody turns this on because their
+  minidriver is broken, and somebody else turns it on, finds their *module* is
+  the broken one, and **must not be left worse off than if they had never
+  touched it.**
+- **One signature never asks one card for two PINs.** The fallback's own PKCS#11
+  walk is skipped when the preference already ran one. Clause 5 is that one
+  wrong PIN is one attempt; on a machine with one card behind two builds of one
+  vendor's module ([[D-271]]) a second walk spends a second attempt on the same
+  mistake, and three block the card — which for a national identity card means a
+  visit to a police station.
+
+**The cost is in the field's own doc comment rather than only here**, at the
+owner's instruction, so that turning it on reads as a decision: on the CNG path
+the PIN never enters this program's memory, and on this one it is an argument to
+`C_Login` and every clause goes back to being a property this program must
+uphold. All of that is built, guarded and measured, and it is still a larger
+promise than not holding the secret at all.
+
+**From the config file and from nowhere else.** Never the protocol, never a
+command line, never an environment variable. The owner's sentence, which is the
+whole argument: **"a caller that can choose which backend signs is a caller that
+can choose where the PIN goes."** An application able to move a PIN out of the
+operating system's own dialog and into this program's memory has changed the
+security of a signature without the person who owns the card deciding anything.
+
+### What writing the tests changed
+
+`openCardOrSoftToken` built three backends and decided between them in one
+function, and none of the decisions could be read except by running the agent
+against hardware. They are now `openInOrder`, which takes the three as
+parameters, and the constructors are all that is left outside it.
+
+That is a decomposition and not a seam ([[D-100]]): nothing was added for a test
+to reach: a function that was doing two jobs does one. The tests that became
+possible are the ones above, and **every one of them is about what a person is
+shown or asked when something goes wrong**, which is the part that had no
+coverage at all.
+
+Seven mutations, seven killed — after two of the first batch failed to compile
+and were re-run in forms that build, because a mutation that does not compile
+was never tested and counting it would inflate the score with mutations the
+suite never saw ([[D-307]]'s rule).
+
+### The instrument failure, which was mine and is the sixth this week
+
+Checking the change across platforms, I ran the three lint views [[D-295]] asks
+for and read the last line of each. All three said `0 issues.`
+
+**The tree did not compile.** `discover_other.go` used `io.Writer` with no
+import, and `GOOS=linux go build ./...` said so plainly. I had committed it.
+
+Measured, with the cache cleared and the broken import restored on purpose:
+
+| | |
+|---|---|
+| `GOOS=linux go build` | exit **1**, names the file and line |
+| `GOOS=linux golangci-lint run` | exit **7**, and prints `level=error msg="[linters_context] typechecking error…"` — **to standard error** |
+| the last line of its output | `0 issues.` |
+
+**The signal was there and my own pipeline threw it away.** `golangci-lint run
+./... 2>&1 | tail -1` merges the streams, discards the exit code, and shows the
+summary line — which is computed over the linters that ran, and none of them ran
+because the package would not typecheck.
+
+This is [[D-309]]'s pattern in a shell loop: **a return value discarded because
+the caller did not think it needed it.** It is also the sixth entry on
+[[D-314]]'s list and the first one that is about the checking rather than about
+the code — the discipline this week has been pointed at the program, and the
+instrument reading the program was never asked the same questions.
+
+**What replaces it**: build every platform explicitly, read exit codes rather
+than last lines, and grep the output for `typechecking error`. A lint run is
+not a build, and on another `GOOS` the difference is invisible unless somebody
+looks for it.
+
+### What this does not do
+
+**It does not make the measurement happen.** The agent has still never signed
+through a PKCS#11 module, and with this option off — which is every machine —
+it still cannot on hardware where CNG works. The run that changes that is one
+PIN, one attempt, no retry, agreed in advance in [[D-268]]'s shape, and it is
+the next thing.

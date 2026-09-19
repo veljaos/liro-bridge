@@ -2,6 +2,8 @@
 
 package pkcs11
 
+import "io"
+
 // knownModulePaths has nothing in it yet on macOS and Linux, and that is a
 // statement rather than a placeholder.
 //

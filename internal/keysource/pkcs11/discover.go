@@ -116,20 +116,6 @@ func Candidates(configured string) []Candidate {
 	return out
 }
 
-// sinkFor resolves a caller's per-module writer, treating a nil function and a
-// nil writer alike: nothing to write to, so the child's standard error is
-// discarded rather than inherited.
-//
-// A helper rather than two nil checks at the call site, because the mistake to
-// avoid is the one this replaced — a default that was correct until something
-// called it from a place with a console.
-func sinkFor(stderr func(modulePath string) io.Writer, path string) io.Writer {
-	if stderr == nil {
-		return nil
-	}
-	return stderr(path)
-}
-
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()

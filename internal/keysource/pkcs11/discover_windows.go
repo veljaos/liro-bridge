@@ -102,6 +102,25 @@ func knownModulePaths() []Candidate {
 // A child that dies is a Failure with its path attached and the search carries
 // on, which is what F11 §3 asks for and what the crash made impossible while
 // the load was here (D-275).
+// sinkFor resolves a caller's per-module writer, treating a nil function and a
+// nil writer alike: nothing to write to, so the child's standard error is
+// discarded rather than inherited.
+//
+// A helper rather than two nil checks at the call site, because the mistake to
+// avoid is the one this replaced — a default that was correct until something
+// called it from a place with a console.
+//
+// It lives beside the only Modules that calls it rather than in the neutral
+// file, for D-295's reason: a function in discover.go has no caller on macOS or
+// Linux, where Modules ignores the writer because there is no module to load,
+// and golangci-lint's `unused` says so out loud in those views.
+func sinkFor(stderr func(modulePath string) io.Writer, path string) io.Writer {
+	if stderr == nil {
+		return nil
+	}
+	return stderr(path)
+}
+
 func Modules(configured string, stderr func(modulePath string) io.Writer) ([]Candidate, []Failure) {
 	var ok []Candidate
 	var bad []Failure
