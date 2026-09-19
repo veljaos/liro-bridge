@@ -29895,6 +29895,31 @@ than last lines, and grep the output for `typechecking error`. A lint run is
 not a build, and on another `GOOS` the difference is invisible unless somebody
 looks for it.
 
+### A defect found by writing the run down
+
+Drafting the protocol for the PKCS#11 signature turned up something the run
+itself would have hit in its first thirty seconds.
+
+**A cancelled PIN fell through to the next backend.** `pkcs11.ErrPINCancelled`
+is neither "this module does not have the certificate" nor a worker failure, so
+the preference's walk-past rule caught it and carried on — to CNG, which on
+Windows means **the operating system's own PIN dialog appearing immediately,
+for the signature the person had just declined.**
+
+Measured with the guard removed: `err = <nil>`. Not a second prompt — in that
+test CNG *signed*. Cancelling this program's PIN screen produced a signature
+through another backend.
+
+SPEC §6.5.1 clause 5 is that one wrong PIN is one attempt. This is its
+neighbour and it had no clause: the person gave no PIN at all, and **nothing may
+turn "no" into "ask somewhere else"**. A cancellation now stops the chain
+wherever it happens, on both orders, with a test in both directions.
+
+It is worth recording how it was found. Not by the tests, which were green; not
+by review; by **writing down what a person would see, in order, and noticing
+that step two had no answer.** The rehearsal was going to find it in front of
+the owner, at the cost of a PIN prompt he had just refused.
+
 ### What this does not do
 
 **It does not make the measurement happen.** The agent has still never signed

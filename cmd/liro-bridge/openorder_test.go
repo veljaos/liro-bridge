@@ -200,3 +200,45 @@ func TestTheSoftTokenIsLastAndOnlyWhenThereIsOne(t *testing.T) {
 		}
 	})
 }
+
+// TestACancelledPINStopsTheChainAndDoesNotRaiseASecondPrompt is the defect the
+// rehearsal would have found, found instead by writing the rehearsal down.
+//
+// A person presses Otkaži on this program's PIN screen. If that fell through to
+// the next backend, CNG would be asked — and on Windows CNG asking means the
+// operating system's own PIN dialog appearing immediately, for the signature the
+// person had just declined. Two prompts for one refusal.
+//
+// SPEC §6.5.1 clause 5 is that one wrong PIN is one attempt. This is its
+// neighbour: the person gave no PIN at all, and nothing may turn "no" into "ask
+// somewhere else".
+func TestACancelledPINStopsTheChainAndDoesNotRaiseASecondPrompt(t *testing.T) {
+	for _, prefer := range []bool{true, false} {
+		name := "module first"
+		if !prefer {
+			name = "CNG first, module second"
+		}
+		t.Run(name, func(t *testing.T) {
+			p11 := failing(pkcs11.ErrPINCancelled)
+			cng := succeeding("windows-cng")
+			soft := succeeding("softtoken")
+			// With the default order CNG is asked first and would sign, so the
+			// module is only reached when CNG does not have the certificate.
+			if !prefer {
+				cng = failing(notFoundInCNG())
+			}
+
+			_, _, err := openInOrder(context.Background(), "ABCD", prefer, cng.open, p11.open, soft.open, quietLog())
+			if !errors.Is(err, pkcs11.ErrPINCancelled) {
+				t.Fatalf("err = %v, want the cancellation to be the answer", err)
+			}
+			if soft.asked != 0 {
+				t.Errorf("the soft token was asked after the person cancelled")
+			}
+			if prefer && cng.asked != 0 {
+				t.Errorf("CNG was asked after the person cancelled, which on Windows " +
+					"means a second PIN dialog for a signature they declined")
+			}
+		})
+	}
+}

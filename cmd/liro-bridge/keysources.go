@@ -185,6 +185,18 @@ func openInOrder(ctx context.Context, thumbprint keysource.Thumbprint, prefer bo
 		if err == nil {
 			return sess, origin, nil
 		}
+		// A cancelled PIN is a decision, not a failure, and the chain stops on
+		// it. Falling through would ask the next backend, which on Windows
+		// means CNG raising the operating system's own PIN dialog — so a
+		// person who pressed Otkaži would be shown a second PIN prompt
+		// immediately, for the signature they had just declined.
+		//
+		// SPEC §6.5.1 clause 5 is about one wrong PIN being one attempt; this
+		// is its neighbour, and it is the case where the person did not give a
+		// PIN at all. Nothing may turn "no" into "ask somewhere else".
+		if errors.Is(err, pkcs11.ErrPINCancelled) {
+			return nil, signerOrigin{}, err
+		}
 		preferredErr = err
 		if !errors.Is(err, pkcs11.ErrCertificateNotFound) {
 			log.Warn("pkcs11: preferred by configuration and could not sign; falling back",
@@ -217,6 +229,9 @@ func openInOrder(ctx context.Context, thumbprint keysource.Thumbprint, prefer bo
 		if sess, o, err := p11(ctx, thumbprint); err == nil {
 			return sess, o, nil
 		} else if !errors.Is(err, pkcs11.ErrCertificateNotFound) {
+			// Including a cancelled PIN, for the reason above: the person
+			// declined, and the soft token below must not be offered as a
+			// second chance at a decision already made.
 			return nil, signerOrigin{}, err
 		}
 	}
