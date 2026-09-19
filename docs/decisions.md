@@ -28760,3 +28760,275 @@ either side.
   product (D-100) and this one was created and deleted in the same session.
   What it did is above, and its one durable lesson — check the control before
   reporting an absence — is D-296's and already written down.
+
+---
+
+## D-310 — `CERT_REVOKED` has a sentence in three languages and no producer: the program downloads the list that answers the question, parses it, and assigns the answer to `_`
+
+**Date:** 2026-09-19
+**Phase:** F12 — planning for F11 §4, and a window that does not repeat
+
+The owner asked whether the days before a new ID card are worth spending on
+`CERT_REVOKED`, which *"has existed in the vocabulary since F1 and has never
+been produced against real hardware."* The answer is that it cannot be produced
+against real hardware, because **nothing in this program can produce it at
+all** — and finding that out was worth more than the measurement would have
+been.
+
+### 1. The code with no producer, which is worse than code with no caller
+
+`grep` over every `.go` and `.json` file in the tree outside `docs/`:
+
+```
+internal/errs/errs.go:30:   CodeCertRevoked          Code = "CERT_REVOKED"
+internal/errs/errs.go:231:          CodeCertRevoked,
+```
+
+Two lines: the declaration, and membership in `AllCodes`. **No assignment, no
+return, no test, no fixture.** `internal/trust/revocation`, which SPEC §5's
+layout names, does not exist — `internal/trust` contains `classify` and `tsl`.
+And `classify.computeUsable` decides `NotUsableReason` from three things, none
+of which is revocation:
+
+```go
+if purpose != PurposeSigning        { return false, errs.CodeCertNotUsable }
+if now.Before(notBefore) || now.After(notAfter) { return false, errs.CodeCertExpired }
+if onHardware && !hardwarePresent   { return false, errs.CodeCardNotPresent }
+```
+
+Meanwhile the code has a message in **all three** locales — `error.cert_revoked`
+in `en.json`, `sr-Latn.json` and `sr-Cyrl.json`, added by [[D-104]]'s sweep for
+codes with no message.
+
+This is [[D-247]]'s shape for the **eighth** time, and a harder case than the
+seventh. In [[D-307]] `ui.CollectPIN` was complete, correct and merely uncalled;
+the defect was found the moment something called it. Here there is nothing to
+call. What exists is a name, a place in a list, and three translated sentences
+for a condition the program cannot reach.
+
+### 2. Two green checks that make it look maintained
+
+`CERT_REVOKED` is not an oversight hiding in a corner. It is actively
+maintained by two checks that both pass:
+
+- **[[D-104]]'s** — every code in `AllCodes` has a message in every catalogue.
+- **[[D-158]]'s** — `AllCodes` is complete.
+
+Between them they guarantee the code is **presentable**: it will always have a
+sentence, in three languages, kept in step with every locale change. **Neither
+asks whether it is reachable.** A translator has been paid attention for a
+string no person can ever be shown.
+
+That is the general finding and it is not about revocation: *this project
+checks that every error code can be displayed and nothing checks that any error
+code can be produced.* Whether that is worth a check is a real question —
+`CodeInternal` and friends may be legitimately unreachable by design — but it
+should be a decision rather than an absence.
+
+### 3. The answer arrives, is parsed, and is assigned to `_`
+
+The sharper half. The program is not missing the data. `internal/pades/dss`
+fetches revocation evidence for the signer's chain so a future verifier can
+check it — and `fetchCRL` ends like this:
+
+```go
+if _, err := x509.ParseRevocationList(body); err != nil {
+        continue // not a parseable CRL: do not embed it
+}
+```
+
+**The parsed list — the object whose `RevokedCertificateEntries` answers "is
+this certificate revoked" — is assigned to the blank identifier.** The bytes are
+then embedded into `/DSS` for somebody else to check later. The program holds
+the answer in memory, in a variable it has already paid to construct, and
+discards it at the one moment it could be read.
+
+The comment is correct and the code is correct *for what it is doing*: this is
+an embedding path, not a validation path, and B-LT's job is to preserve evidence
+rather than to evaluate it. Nothing here is a bug. What it is, is the distance
+between `CERT_REVOKED` and a working revocation check being **much shorter than
+"the package does not exist" suggests** — the fetch, the parse, the endpoint
+memory, the timeouts and the size cap are all built and measured ([[D-076]]).
+What is missing is a caller that looks.
+
+**And it is the second discarded return value in two entries.** [[D-309]]'s
+centre is `SetForegroundWindow`'s ignored `BOOL` — a call whose failure nothing
+could know about. This is `x509.ParseRevocationList`'s ignored list. Both were
+written deliberately, both are locally defensible, and in both cases what was
+thrown away is exactly the thing a later question needed. Worth naming as a
+pattern at two, because the next one will be easier to see: **`_` is a decision
+that the value will never be wanted, and it is recorded nowhere but in the
+character itself.**
+
+### 4. What was measured instead, because it expires
+
+Producing `CERT_REVOKED` is not available. Measuring the **data** it would
+depend on is, it needs no card and no PIN — the serial is public and already in
+this log ([[D-209]], [[D-271]]) — and it stops being available in five days.
+Run at **14:47 CEST** and again at **14:55**:
+
+```
+serial 20F048A768F56F099E  (SHA-1 ...B3D1ECCE)
+
+OCSP ocsp.mup.gov.rs:80   no connection after 10.0s: dial tcp 195.222.96.163:80: i/o timeout
+OCSP ocsp.mup.gov.rs:443  no connection after 10.0s: dial tcp 195.222.96.163:443: i/o timeout
+
+CRL  http://ca.mup.gov.rs/MUPGradjaniCA4.crl -> http://crl.mup.gov.rs/MUPGradjaniCA4.crl
+     HTTP 200, 30,017,248 bytes
+     issuer      MUP Gradjani CA 4
+     thisUpdate  2026-09-19T04:02:30Z
+     nextUpdate  2026-09-20T04:09:58Z
+     entries     852,923
+
+control  ok: a serial taken out of the list is found by the same search
+RESULT   not on the list.
+```
+
+**[[D-076]] re-confirmed rather than quoted.** Seventeen days on, the same IP
+(`195.222.96.163`), the same timeout on both ports, while the CRL host on the
+same domain answers in 51 ms. D-076's conclusion — that no HTTP client could
+have reached that responder — is still true today and was asked again rather
+than assumed.
+
+**The control matters more than the result.** "Not on the list" is consistent
+with the certificate being live *and* with the search being broken, which is
+[[D-296]]'s first question asked of a measurement rather than of a test. So the
+instrument takes a serial out of the middle of the list it just parsed and
+confirms the same comparison finds it, and says so in its output. Without that
+line the result below would mean nothing after Tuesday either.
+
+**The baseline is the perishable half.** Finding the serial on a CRL next week
+proves nothing on its own; it is the run *before* that makes the run after a
+measurement. That run now exists.
+
+### 5. The window is two days, not five, and the owner's premise was inverted
+
+The owner wrote of *"a cancelled certificate on a card I still hold"* between
+now and Tuesday. **Measured: it is not cancelled.** The certificate is absent
+from today's list, so the window is not open yet — it opens on Tuesday when the
+new card is issued, exactly as *"cancelled at issue"* says. Resolved by fetching
+a public file rather than by asking him which of his two sentences he meant.
+
+And `cngprobe` (§7 below) supplied the number that changes the plan:
+
+| when | what |
+|---|---|
+| 2026-09-19 (Sat) | today; baseline taken |
+| 2026-09-22 (Tue) | new card issued, old one cancelled |
+| **2026-09-24** | **B3D1ECCE `notAfter`** |
+
+**The certificate expires two days after it is revoked.** So the state
+"revoked and not yet expired" — the only state in which a revocation check
+could report anything a validity check would not already have caught — lasts
+about **48 hours**, and MUP publishes **one list a day**. At most **three**
+published CRLs can ever carry that entry, and if publication lags by more than
+two days it will **never appear on one**, because an issuer may drop an entry
+once the certificate is expired.
+
+That last possibility is the interesting outcome rather than the disappointing
+one. *"MUP revoked it and no published CRL ever said so, because it expired
+first"* would be a measured fact about this issuer with direct consequences for
+what a revocation check is worth here — and it is not obtainable any other way.
+
+**Resolution, honestly stated ([[D-304]] question three).** The list is
+published daily, so publication latency is measurable to **one day and no
+finer**. Asking hourly would be theatre. The entry's own `revocationTime` field
+is finer, but it records when MUP decided, not when MUP told anyone — two
+different numbers, and only the coarse one is about publication. Free
+corroboration: today's `Last-Modified` is `04:32:45Z` against a `thisUpdate` of
+`04:02:30Z`, so MUP signs the list and publishes it **thirty minutes later**.
+
+### 6. A suspicion raised and refuted by measuring the right thing
+
+The first fetch took **2m52s**. `fetchCRL` calls `getWithTimeout(ctx, url,
+crlTimeout, maxCRLSize)` with `crlTimeout = 30 * time.Second`, so this looked
+like a finding: the real CRL cannot be downloaded inside the program's own
+budget, and the honest `TooLarge` degradation [[D-076]] built would never be
+reached — the silent-timeout path would be taken instead, reporting nothing.
+
+**It is not a finding.** Reproducing the program's budget exactly — same 30 s,
+same whole-request context deadline — the download **completed in 8.36 s**, and
+a five-minute control run immediately after took 8.72 s. The budget is met with
+three and a half times to spare.
+
+Recorded because the near-miss is instructive: **a total is not a budget test.**
+Inferring "30 s is too short" from a 172 s total would have produced a confident,
+wrong entry about a timeout constant, and the only thing that prevented it was
+reproducing the exact call rather than reasoning from a different one.
+
+**What remains unexplained:** one 172 s sample and three ~8.5 s samples against
+the same URL within nine minutes. There are no cache headers (`Age`, `Via`,
+`X-Cache` all absent) but an F5 sits in front — the response sets a `TS...`
+cookie — so per-source shaping is plausible and unproven. **Not chased: it is
+MUP's infrastructure, not this project's.** It leaves one usable rule, which is
+a sibling of [[D-304]]'s fourth question: against this host, *a timing taken
+twice is not measuring the same thing the second time*, so if the CRL path is
+ever benchmarked, the first number is the only honest one.
+
+### 7. The free result: F11 §4 step 3's premise is now measured
+
+A probe of the Windows store through `windowscng.Enumerate` — read-only, no
+session, no PIN — was written to answer a planning question, and answered a
+larger one. Five certificates; the two that matter:
+
+```
+[1] AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+     provider "Microsoft Smart Card Key Storage Provider"  onHardware true
+     subject  CN=Savka Odžić 200100123      issuer Pošta Srbije CA 1
+     keyUsage 3     valid 2025-10-08 .. 2030-10-08
+
+[2] 7758D4D4B8973EA619B3225185EDE740B3D1ECCE
+     provider "Microsoft Smart Card Key Storage Provider"  onHardware true
+     subject  CN=ВЕЉКО СТАНОЈЕВИЋ 011445479 Sign   issuer MUP Gradjani CA 4
+     serial   20F048A768F56F099E    keyUsage 3     valid 2021-09-23 .. 2026-09-24
+```
+
+`AF5063BB74378BD503AB46DD08AEAD205BA2AA54` is **byte-for-byte the thumbprint
+`aetpkss1.dll` reported through the worker 32 minutes earlier** ([[D-309]],
+`[0]* 2219 bytes AF5063BB...`). Two processes, two APIs, two vendors, no shared
+code path, one number.
+
+`dedupe` in `certificate.go` carries a comment asserting this identity, and
+F11 §4 step 3 — one certificate to one row across two backends — rests on it.
+**It was an argument from how SHA-1 works; it is now a measurement on this
+machine, taken before step 3 is written rather than after it fails.** It is also
+the first time this project has seen one physical card through both backends at
+once.
+
+The practical consequence is scheduling, and it is the opposite of what
+Tuesday's card change suggested: **step 3's verification needs the Pošta card,
+not the ID card, and can be done now.** The Pošta card is visible to both
+backends today and expires in 2030. Nothing in step 3 need wait for or depend on
+Tuesday.
+
+### 8. What Tuesday actually changes, so it does not read as a defect later
+
+B3D1ECCE is a cross-check in [[D-149]], [[D-209]], [[D-243]] and the worker
+measurements. None of them become wrong. But after 2026-09-22 the card in the
+reader answers with a different thumbprint and a different serial, so **a
+measurement taken after Tuesday will not agree with them, and that is the card
+changing rather than the program changing.** Anything needing B3D1ECCE
+specifically has until Tuesday.
+
+One consequence is free and worth taking: **`CodeCertExpired` becomes
+producible against real hardware on 2026-09-24**, when `computeUsable`'s
+`now.After(notAfter)` branch starts firing on a real certificate on a real card
+— the branch that does exist, on the path `CERT_REVOKED` does not have. This
+project has never seen it fire on hardware either.
+
+### What was decided
+
+- **`CERT_REVOKED` is not implementable this week and is not the thing to
+  build.** It has no producer, and giving it one means a validation path, not a
+  patch. Recorded as [[D-247]]'s eighth instance.
+- **The baseline was taken** because it expires and the run after Tuesday is
+  worthless without it. Its durable content is §4 above; the 500-serial sample
+  that would answer whether MUP purges entries at expiry is in this session's
+  scratchpad only, and will need retaking if the question is pursued.
+- **The 30 s timeout is fine** and the contrary suspicion is recorded as
+  refuted rather than deleted, because the reasoning that produced it was the
+  ordinary kind.
+- **`scripts/cngprobe` is left untracked and uncommitted.** It produced §7 and
+  F11 §4 step 3 will want it, but the owner's standing preference is that a
+  tool does not ride along with a measurement it happened to serve ([[D-308]]),
+  so keeping it is his call and not this entry's.
