@@ -110,10 +110,18 @@ func Modules(configured string) ([]Candidate, []Failure) {
 		// function list's fourth entry against the exported C_GetFunctionList
 		// does not: SafeSign's export is a jmp rel32 thunk and does not match,
 		// where three other modules do.
-		if _, err := probeOutOfProcess(context.Background(), c.Path); err != nil {
+		// The result is kept rather than discarded. The child loaded the
+		// module and read CK_INFO to answer at all, so what it says about
+		// itself is already paid for; assigning it to _ threw away the only
+		// description of a configured module this program will ever have,
+		// because the next thing to ask would have to load it again.
+		res, err := probeOutOfProcess(context.Background(), c.Path)
+		if err != nil {
 			bad = append(bad, Failure{Candidate: c, Err: err})
 			continue
 		}
+		c.Manufacturer = res.Manufacturer
+		c.LibraryDescription = res.LibraryDescription
 		ok = append(ok, c)
 	}
 	return ok, bad

@@ -34,6 +34,28 @@ type Candidate struct {
 	Path   string
 	Vendor string
 	Origin Origin
+
+	// Manufacturer and LibraryDescription are what the module says about
+	// itself, read from CK_INFO by the probe child that had to load it anyway.
+	// Empty until Modules has probed, and empty for every candidate that
+	// failed — a module that would not load said nothing.
+	//
+	// They are carried because the probe pays a process spawn to obtain them
+	// and used to discard them, and because Vendor is this project's own name
+	// for a *known* path and is therefore blank for the one case where a name
+	// matters most: a configured path, which is a person's own installation
+	// that no table here anticipated. When something goes wrong with it, "the
+	// module at your configured path calls itself A.E.T. Europe B.V." is the
+	// difference between a report somebody can act on and a filename.
+	//
+	// Not a version. CK_INFO's libraryVersion is two bytes, so both NetSeT
+	// builds this project has measured — 1.1.3.3 and 1.1.0.0, which differ by
+	// twenty-seven times on one call (D-305) — answer it identically. The
+	// four-part number that tells them apart is the Windows file version
+	// resource and is not in CK_INFO at all. Recording libraryVersion here
+	// would look like it answered that question and would not.
+	Manufacturer       string
+	LibraryDescription string
 }
 
 // Failure is a candidate that did not turn out to be a usable module, and why.
