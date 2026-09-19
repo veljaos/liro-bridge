@@ -55,6 +55,51 @@ type Deps struct {
 	// "certs --json" (F2 §6.1's OpenSSL recipe) can list and export the
 	// soft token's public certificate exactly like a real one.
 	ExtraCertificates func(ctx context.Context) ([]ExtraCertificate, error)
+
+	// ModuleCertificates supplies certificates read through PKCS#11 modules,
+	// each carrying which module it was seen through, together with one
+	// failure per module that could not be asked. Nil on a build with no
+	// PKCS#11 path, in which case Gather behaves exactly as it did before.
+	//
+	// It is separate from ExtraCertificates rather than folded into it because
+	// the two differ on the one fact that decides whether a certificate is
+	// usable: an extra certificate is never on hardware by definition (the
+	// soft token, F2 §3), and a certificate read off a token always is.
+	//
+	// The failures are returned rather than logged because F11 §3 asks for a
+	// module that could not be read to be a row in the report, not a silence.
+	ModuleCertificates func(ctx context.Context) ([]ModuleCertificate, []ModuleFailure, error)
+}
+
+// The backend names a row reports, which are keysource.Source.Name()'s values.
+// Constants here rather than literals at four call sites, because the whole
+// value of the field is that a reader can compare two rows with it.
+const (
+	backendCNG       = "windows-cng"
+	backendPKCS11    = "pkcs11"
+	backendSoftToken = "softtoken"
+)
+
+// ModuleCertificate is one certificate read through one PKCS#11 module.
+//
+// The type is declared here, in neutral terms, rather than reusing
+// internal/keysource/pkcs11's: this package classifies and reports, and it has
+// no business importing a backend in order to describe what a backend found.
+type ModuleCertificate struct {
+	Thumbprint string
+	DER        []byte
+
+	// ModulePath is which module saw it. Two builds of one vendor's module can
+	// be installed at once and see the same card identically (D-271), so this
+	// is the only thing that tells two sightings of one certificate apart.
+	ModulePath string
+}
+
+// ModuleFailure is one module that could not be asked, and why.
+type ModuleFailure struct {
+	Path   string
+	Origin string
+	Reason string
 }
 
 // ExtraCertificate is a certificate from a source other than the
@@ -74,6 +119,26 @@ type CertRow struct {
 	Info       classify.Info
 	OnHardware bool
 	DER        []byte
+
+	// Backends are the backends that offered this certificate, in the order
+	// they were asked: "windows-cng" first, then "pkcs11", then "softtoken".
+	//
+	// One card can be visible through more than one of them at once — measured
+	// on this project's own machine, where a Pošta certificate read through
+	// aetpkss1.dll and the same certificate read out of the Windows store give
+	// the identical thumbprint (D-310). **That is one certificate and it is one
+	// row**, which is F11 §4 step 3; this field is what stops the collapse
+	// losing the fact that there were two sightings.
+	//
+	// It matters beyond bookkeeping: D-311 decides that CNG signs when it
+	// offers the certificate, so a row listing both backends is a row that will
+	// be signed through the first of them, and a person asking why their
+	// PKCS#11 module is not being used has this to read.
+	Backends []string
+
+	// Modules are the PKCS#11 module paths that offered this certificate, in
+	// discovery order. Empty for a certificate no module saw.
+	Modules []string
 }
 
 // Report is everything "liro-bridge certs" prints.
@@ -81,6 +146,16 @@ type Report struct {
 	Readers      []platform.ReaderState
 	Certificates []CertRow
 	TSL          tsl.Provenance
+
+	// ModuleFailures are the PKCS#11 modules that could not be asked. Empty on
+	// every machine where all of them answered, and on every build with no
+	// PKCS#11 path.
+	//
+	// They are in the report rather than in a log because the person who needs
+	// them is the person looking at a list that does not contain their
+	// certificate, and the reason it does not is that a module would not load
+	// (F11 §3).
+	ModuleFailures []ModuleFailure
 }
 
 // Hidden reports whether row is hidden from the default (non --all)
@@ -134,6 +209,10 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 	// produces the worst outcome in this product.
 	probes := newPresenceMemo()
 
+	// Modules that could not be asked. F11 §3: a module that will not load is
+	// a row to show and carry past, never a reason for a listing to fail.
+	var failures []ModuleFailure
+
 	rows := make([]CertRow, 0, len(certs))
 	for _, c := range certs {
 		x, err := x509.ParseCertificate(c.DER)
@@ -142,7 +221,73 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 		}
 		info := classify.Classify(x, list, c.OnHardware, probes.presence(ctx, deps, c), now)
 		info.Thumbprint = c.Thumbprint // identical to classify's own computation; use the source value
-		rows = append(rows, CertRow{Info: info, OnHardware: c.OnHardware, DER: c.DER})
+		rows = append(rows, CertRow{
+			Info: info, OnHardware: c.OnHardware, DER: c.DER,
+			Backends: []string{backendCNG},
+		})
+	}
+
+	// One card seen through two backends is one certificate and one row, and
+	// the thumbprint is what makes that possible: it is the SHA-1 of the same
+	// DER bytes whichever backend read them, which D-310 measured on real
+	// hardware rather than leaving as an argument about how SHA-1 works.
+	//
+	// The collapse happens here, above both backends, rather than inside
+	// either: doing it in the PKCS#11 layer would deduplicate one dimension
+	// and not the other, which is harder to reason about than not
+	// deduplicating at all.
+	if deps.ModuleCertificates != nil {
+		moduleCerts, moduleFailures, err := deps.ModuleCertificates(ctx)
+		if err != nil {
+			return Report{}, fmt.Errorf("enumerating certificates through PKCS#11 modules: %w", err)
+		}
+		failures = moduleFailures
+		byThumbprint := make(map[string]int, len(rows))
+		for i, r := range rows {
+			byThumbprint[r.Info.Thumbprint] = i
+		}
+		for _, c := range moduleCerts {
+			if i, seen := byThumbprint[c.Thumbprint]; seen {
+				rows[i].Backends = append(rows[i].Backends, backendPKCS11)
+				rows[i].Modules = append(rows[i].Modules, c.ModulePath)
+				// A module enumerated this certificate off a token, so the card
+				// is in the reader: PKCS#11 enumeration only ever looks at
+				// slots with a token present. That is a better answer than the
+				// presence probe's, and it is evidence rather than an opinion —
+				// the bytes came off the card.
+				//
+				// Re-classified rather than patched: Usable and
+				// NotUsableReason are computed together from purpose, dates and
+				// presence, and reaching in to set one of them would leave a
+				// row whose reason contradicted its verdict. Only when the
+				// existing row is itself on hardware — a software copy of the
+				// same certificate is a different thing about which a card in a
+				// reader says nothing.
+				if rows[i].OnHardware {
+					if x, err := x509.ParseCertificate(c.DER); err == nil {
+						reclassified := classify.Classify(x, list, true, true, now)
+						reclassified.Thumbprint = rows[i].Info.Thumbprint
+						reclassified.IsTestKey = rows[i].Info.IsTestKey
+						rows[i].Info = reclassified
+					}
+				}
+				continue
+			}
+			x, err := x509.ParseCertificate(c.DER)
+			if err != nil {
+				continue // not this layer's job to explain a malformed object on a card
+			}
+			info := classify.Classify(x, list, true, true, now)
+			info.Thumbprint = c.Thumbprint
+			byThumbprint[c.Thumbprint] = len(rows)
+			rows = append(rows, CertRow{
+				Info:       info,
+				OnHardware: true,
+				DER:        c.DER,
+				Backends:   []string{backendPKCS11},
+				Modules:    []string{c.ModulePath},
+			})
+		}
 	}
 
 	if deps.ExtraCertificates != nil {
@@ -162,11 +307,14 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 			info := classify.Classify(x, list, false, false, now)
 			info.Thumbprint = c.Thumbprint
 			info.IsTestKey = c.IsTestKey
-			rows = append(rows, CertRow{Info: info, OnHardware: false, DER: c.DER})
+			rows = append(rows, CertRow{
+				Info: info, OnHardware: false, DER: c.DER,
+				Backends: []string{backendSoftToken},
+			})
 		}
 	}
 
-	return Report{Readers: readers, Certificates: rows, TSL: provenance}, nil
+	return Report{Readers: readers, Certificates: rows, TSL: provenance, ModuleFailures: failures}, nil
 }
 
 // readerListingError gives a failed reader listing the code SPEC §7

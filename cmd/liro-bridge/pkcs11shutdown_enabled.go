@@ -2,7 +2,11 @@
 
 package main
 
-import "context"
+import (
+	"context"
+
+	"github.com/veljaos/liro-bridge/internal/cli"
+)
 
 // closePKCS11Modules shuts down every worker this process started.
 //
@@ -19,3 +23,14 @@ import "context"
 // file compiled into it would hold a function nothing could reach, which
 // golangci-lint's `unused` says out loud in the GOOS=linux view.
 func closePKCS11Modules(ctx context.Context) error { return modules.close(ctx) }
+
+// configurePKCS11Modules records the configured module path. See
+// pkcs11Backends.configure; this is the same platform split as
+// closePKCS11Modules, for the same reason.
+func configurePKCS11Modules(path string) { modules.configure(path) }
+
+// pkcs11CertificateProvider is cli.Deps.ModuleCertificates for a build that has
+// a PKCS#11 path.
+func pkcs11CertificateProvider() func(context.Context) ([]cli.ModuleCertificate, []cli.ModuleFailure, error) {
+	return moduleCertificates
+}

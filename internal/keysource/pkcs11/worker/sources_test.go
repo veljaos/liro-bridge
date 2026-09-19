@@ -7,8 +7,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
 )
+
+// flatten is what a caller that does not care which module saw what writes.
+func flatten(listings []Listing) []keysource.Certificate {
+	var out []keysource.Certificate
+	for _, l := range listings {
+		out = append(out, l.Certificates...)
+	}
+	return out
+}
 
 // discardFor is the per-module stderr sink a test does not care about.
 func discardFor(string) io.Writer { return io.Discard }
@@ -45,7 +55,8 @@ func TestADeadWorkerBecomesARowAndTheListingSurvivesIt(t *testing.T) {
 	dead := canned(t, cannedAnswers{DieOnRequest: 1}, "Dying Vendor")
 	alsoGood := canned(t, cannedAnswers{}, "Another Vendor")
 
-	certs, failures := ListAll(context.Background(), []Source{good, dead, alsoGood})
+	listings, failures := ListAll(context.Background(), []Source{good, dead, alsoGood})
+	certs := flatten(listings)
 
 	if len(failures) != 1 {
 		t.Fatalf("got %d failures, want exactly 1 (the dead worker)", len(failures))
@@ -84,7 +95,8 @@ func TestListAllDoesNotDeduplicate(t *testing.T) {
 	a := canned(t, cannedAnswers{}, "NetSeT 1.1.0.0")
 	b := canned(t, cannedAnswers{}, "NetSeT 1.1.3.3")
 
-	certs, failures := ListAll(context.Background(), []Source{a, b})
+	listings, failures := ListAll(context.Background(), []Source{a, b})
+	certs := flatten(listings)
 	if len(failures) != 0 {
 		t.Fatalf("unexpected failures: %v", failures)
 	}
@@ -106,10 +118,11 @@ func TestACancelledListingIsNotBlamedOnTheModules(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	certs, failures := ListAll(ctx, []Source{
+	listings, failures := ListAll(ctx, []Source{
 		canned(t, cannedAnswers{}, "a"),
 		canned(t, cannedAnswers{}, "b"),
 	})
+	certs := flatten(listings)
 	if len(failures) != 0 {
 		t.Errorf("a cancelled listing produced %d failures: %v", len(failures), failures)
 	}

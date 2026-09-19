@@ -174,7 +174,7 @@ func dropOrigin(open func(context.Context, keysource.Thumbprint) (keysource.Sess
 // the next module answering "not mine" must not become the explanation a person
 // is shown for a card that was removed.
 func openThroughPKCS11(ctx context.Context, thumbprint keysource.Thumbprint, hwnd uintptr, cfg config.Config, log *slog.Logger) (keysource.Session, signerOrigin, error) {
-	sources, _ := modules.ensure(cfg.PKCS11ModulePath, log)
+	sources, _ := modules.ensure(log)
 	if len(sources) == 0 {
 		return nil, signerOrigin{}, pkcs11.ErrCertificateNotFound
 	}

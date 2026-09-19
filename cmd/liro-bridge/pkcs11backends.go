@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/veljaos/liro-bridge/internal/cli"
+
 	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
 	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11/worker"
 )
@@ -48,7 +50,14 @@ import (
 // probe child per candidate (~30 ms each), and paying that on `liro-bridge
 // --version` would be a cost with no reader.
 type pkcs11Backends struct {
-	mu       sync.Mutex
+	mu sync.Mutex
+
+	// configured is the person's own module path from their config file, set
+	// once by run() and read by the first discovery. It lives here rather than
+	// being passed to each call because it is a fact about this process, and a
+	// parameter would let two callers disagree about it.
+	configured string
+
 	done     bool
 	sources  []worker.Source
 	failures []pkcs11.Failure
@@ -60,24 +69,35 @@ type pkcs11Backends struct {
 // to express "there is one of these per program".
 var modules pkcs11Backends
 
+// configure records the person's own module path, from their config file and
+// from nowhere else — see config.PKCS11ModulePath and pkcs11.Candidates, which
+// both say so, because neither place is sufficient on its own.
+//
+// It is called once, by run(), as soon as the configuration has been read and
+// before anything could want a certificate. If it were somehow not called, the
+// path is empty and discovery uses the known installation paths only, which is
+// every machine this project has seen — a safe default rather than a silent
+// wrong one.
+func (b *pkcs11Backends) configure(path string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.configured = path
+}
+
 // ensure discovers the modules on this machine, once, and returns the sources
 // and the candidates that were not modules.
-//
-// configured is the person's own path from their config file and may be empty.
-// It comes from there and from nowhere else — see config.PKCS11ModulePath and
-// pkcs11.Candidates, which both say so, because neither place is sufficient on
-// its own.
 //
 // The sources come back with no PIN entry attached. The screen belongs to one
 // window and one moment and the child does not; callers add theirs with
 // WithPINEntry.
-func (b *pkcs11Backends) ensure(configured string, log *slog.Logger) ([]worker.Source, []pkcs11.Failure) {
+func (b *pkcs11Backends) ensure(log *slog.Logger) ([]worker.Source, []pkcs11.Failure) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.done {
 		return b.sources, b.failures
 	}
 	b.done = true
+	configured := b.configured
 
 	// The children's standard error goes to the log rather than to this
 	// process's, because a vendor module writing from inside DllMain would
@@ -131,4 +151,57 @@ type logWriter struct {
 func (w *logWriter) Write(p []byte) (int, error) {
 	w.log.Info("pkcs11 worker said", slog.String("module", w.path), slog.String("text", string(p)))
 	return len(p), nil
+}
+
+// moduleCertificates is cli.Deps.ModuleCertificates: every certificate this
+// machine's PKCS#11 modules can see, and one failure per module that could not
+// be asked.
+//
+// It needs no PIN and opens no session. Enumeration is a public-session
+// operation — measured on a MUP card, a session that has not logged in sees two
+// certificates and zero private keys (D-271) — so listing a certificate never
+// costs a card attempt, which is the property F6 §4 and D-104 already depend on
+// for CNG.
+//
+// The error return is always nil, deliberately. There is no way for this to
+// fail as a whole: a module that will not answer is a Failure in the list, and
+// F11 §3 is explicit that such a thing is never a reason to stop. The signature
+// keeps the error because cli.Deps' other providers have one and a provider
+// that could never fail is worth saying so about rather than being the odd one
+// out silently.
+func moduleCertificates(ctx context.Context) ([]cli.ModuleCertificate, []cli.ModuleFailure, error) {
+	sources, discovery := modules.ensure(slog.Default())
+	listings, listing := worker.ListAll(ctx, sources)
+
+	var out []cli.ModuleCertificate
+	for _, l := range listings {
+		for _, c := range l.Certificates {
+			out = append(out, cli.ModuleCertificate{
+				Thumbprint: string(c.Thumbprint),
+				DER:        c.DER,
+				ModulePath: l.Source.ModulePath(),
+			})
+		}
+	}
+
+	// Discovery's failures and the listing's, in that order: a module that
+	// would not load and a module that loaded and then stopped answering are
+	// both a row saying which module and why, and nothing above here needs to
+	// tell them apart.
+	failures := make([]cli.ModuleFailure, 0, len(discovery)+len(listing))
+	for _, f := range discovery {
+		failures = append(failures, asModuleFailure(f))
+	}
+	for _, f := range listing {
+		failures = append(failures, asModuleFailure(f))
+	}
+	return out, failures, nil
+}
+
+func asModuleFailure(f pkcs11.Failure) cli.ModuleFailure {
+	return cli.ModuleFailure{
+		Path:   f.Candidate.Path,
+		Origin: f.Candidate.Origin.String(),
+		Reason: f.Err.Error(),
+	}
 }

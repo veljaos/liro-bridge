@@ -142,6 +142,11 @@ func run(args []string, out io.Writer) int {
 	if cfgErr != nil {
 		logger.Warn("startup: config file could not be read, using defaults", "error", cfgErr)
 	}
+	// Before anything can want a certificate: the escape hatch for an
+	// installation this project did not anticipate (F11 §3), read from the
+	// person's own configuration and from nowhere else.
+	configurePKCS11Modules(cfg.PKCS11ModulePath)
+
 	logger.Info("liro-bridge starting", slog.String("version", version), slog.String("commit", commit))
 
 	// A mark left behind by a process that died mid-batch would refuse
@@ -246,11 +251,12 @@ func runCerts(args []string, out io.Writer, locale string) int {
 	}
 
 	deps := cli.Deps{
-		Readers:           svc.Readers,
-		PresenceCheck:     cngSource.Presence,
-		Enumerate:         windowscng.Enumerate,
-		Store:             store,
-		ExtraCertificates: softTokenExtraCertificates,
+		Readers:            svc.Readers,
+		PresenceCheck:      cngSource.Presence,
+		Enumerate:          windowscng.Enumerate,
+		Store:              store,
+		ExtraCertificates:  softTokenExtraCertificates,
+		ModuleCertificates: pkcs11CertificateProvider(),
 	}
 	return cli.RunCerts(context.Background(), args, out, locale, deps)
 }

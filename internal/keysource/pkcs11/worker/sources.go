@@ -110,8 +110,8 @@ func (s Source) Failure(err error) pkcs11.Failure {
 // It does not stop at the first failure and it does not stop at the first
 // success, because both would make which certificates a person is offered
 // depend on the order modules happen to be discovered in.
-func ListAll(ctx context.Context, sources []Source) ([]keysource.Certificate, []pkcs11.Failure) {
-	var certs []keysource.Certificate
+func ListAll(ctx context.Context, sources []Source) ([]Listing, []pkcs11.Failure) {
+	var listings []Listing
 	var failures []pkcs11.Failure
 	for _, s := range sources {
 		// One cancelled context ends the whole listing rather than producing a
@@ -120,16 +120,33 @@ func ListAll(ctx context.Context, sources []Source) ([]keysource.Certificate, []
 		// that were never asked would put this program's own decision into a
 		// report about somebody's hardware.
 		if err := ctx.Err(); err != nil {
-			return certs, failures
+			return listings, failures
 		}
 		found, err := s.List(ctx)
 		if err != nil {
 			failures = append(failures, s.Failure(err))
 			continue
 		}
-		certs = append(certs, found...)
+		listings = append(listings, Listing{Source: s, Certificates: found})
 	}
-	return certs, failures
+	return listings, failures
+}
+
+// Listing is what one module answered.
+//
+// The source is kept rather than the certificates being flattened together,
+// and the reason is worth recording because the first draft did flatten them:
+// the caller that turns this into a row has to be able to say *which module*
+// saw a certificate — a machine can have one card behind two builds of one
+// vendor's module that differ by twenty-seven times on one call (D-271,
+// D-305). Flattening threw that away, and the caller then re-listed every
+// module to get it back, which asks every card twice.
+//
+// A caller that does not care can flatten in one line. A caller that does care
+// cannot recover what was dropped without paying for it again.
+type Listing struct {
+	Source       Source
+	Certificates []keysource.Certificate
 }
 
 // CloseAll shuts every worker down and returns the first error, having tried

@@ -461,11 +461,12 @@ func gatherInteractiveCertificates(ctx context.Context) (cli.Report, error) {
 		return cli.Report{}, err
 	}
 	deps := cli.Deps{
-		Readers:           svc.Readers,
-		PresenceCheck:     cngSource.Presence,
-		Enumerate:         windowscng.Enumerate,
-		Store:             store,
-		ExtraCertificates: softTokenExtraCertificates,
+		Readers:            svc.Readers,
+		PresenceCheck:      cngSource.Presence,
+		Enumerate:          windowscng.Enumerate,
+		Store:              store,
+		ExtraCertificates:  softTokenExtraCertificates,
+		ModuleCertificates: pkcs11CertificateProvider(),
 	}
 	return cli.Gather(ctx, deps, time.Now())
 }
