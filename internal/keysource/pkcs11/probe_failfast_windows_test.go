@@ -42,7 +42,7 @@ func TestAChildThatFailFastsIsReapedAsAFailureAndNotATimeout(t *testing.T) {
 	dumpsBefore := crashDumpNames(t)
 
 	start := time.Now()
-	_, err := probeOutOfProcess(context.Background(), crashSentinelPath)
+	_, err := probeOutOfProcess(context.Background(), crashSentinelPath, nil)
 	elapsed := time.Since(start)
 
 	t.Logf("a fail-fasting child was reaped in %s (ProbeTimeout is %s); the parent got: %v",
@@ -99,7 +99,7 @@ func TestAChildThatFailFastsIsReapedAsAFailureAndNotATimeout(t *testing.T) {
 // termination actually was is logged, because that is the thing being found out.
 func TestWhetherTheCppThrowTerminationIsReachableFromAGoChild(t *testing.T) {
 	start := time.Now()
-	_, err := probeOutOfProcess(context.Background(), crashSentinelThrow)
+	_, err := probeOutOfProcess(context.Background(), crashSentinelThrow, nil)
 	elapsed := time.Since(start)
 
 	t.Logf("a child raising 0xE06D7363 was reaped in %s; the parent got: %v",

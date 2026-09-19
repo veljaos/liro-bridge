@@ -97,7 +97,7 @@ func TestAFileThatIsNotAModuleIsAFailureAndNotACrash(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	usable, failures := Modules(notAModule)
+	usable, failures := Modules(notAModule, nil)
 	for _, u := range usable {
 		if u.Path == notAModule {
 			t.Fatal("a text file was accepted as a PKCS#11 module")
@@ -125,8 +125,8 @@ func TestAFileThatIsNotAModuleIsAFailureAndNotACrash(t *testing.T) {
 // every usable module becomes exactly one Source, and a module that failed
 // becomes none.
 func TestSourcesAreOnePerUsableModule(t *testing.T) {
-	sources, failures := Sources("")
-	usable, sameFailures := Modules("")
+	sources, failures := Sources("", nil)
+	usable, sameFailures := Modules("", nil)
 	if len(sources) != len(usable) {
 		t.Errorf("got %d sources for %d usable modules", len(sources), len(usable))
 	}

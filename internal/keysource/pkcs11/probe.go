@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -158,7 +159,7 @@ var errWorkerSilent = errors.New("the probe process did not answer in time")
 // Nothing here is fatal to this process, by construction rather than by care —
 // the only thing that touches the module is a child, and every way a child can
 // end is an error value.
-func probeOutOfProcess(ctx context.Context, path string) (probeResult, error) {
+func probeOutOfProcess(ctx context.Context, path string, stderr io.Writer) (probeResult, error) {
 	if IsChild() {
 		return probeResult{}, ErrChildRecursion
 	}
@@ -179,10 +180,25 @@ func probeOutOfProcess(ctx context.Context, path string) (probeResult, error) {
 	// receive one.
 	cmd.Stdin = nil
 
-	// Its standard error is this program's, so a module that writes to the
-	// console during DllMain — measured: Nexus's personal64.dll does — lands
-	// where every other diagnostic does rather than being swallowed.
-	cmd.Stderr = os.Stderr
+	// Its standard error goes where the caller says, and the caller has to say.
+	//
+	// It used to be os.Stderr unconditionally, so that a module writing to the
+	// console during DllMain — measured: Nexus's personal64.dll does — landed
+	// where every other diagnostic does rather than being swallowed. That was
+	// right for as long as the only caller was a developer running p11probe.
+	//
+	// It stopped being right the moment the agent began discovering modules on
+	// every listing (F11 §4). A child that dies inside C_Initialize — which
+	// D-272 measured a real module doing, and which this project's own machine
+	// does on TrustEdgeID — prints a 130-line Go runtime crash dump, and with
+	// os.Stderr hard-wired that dump landed on the console of `liro-bridge
+	// certs`. The failure is already reported properly, as a Failure naming the
+	// module; the dump is the child's death throes arriving on top of it.
+	//
+	// nil means discard, which is io.Discard's behaviour for exec.Cmd and is
+	// what a caller with nowhere to put it should pass rather than inventing a
+	// sink.
+	cmd.Stderr = stderr
 
 	cmd.Env = ChildEnv()
 

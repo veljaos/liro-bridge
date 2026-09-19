@@ -29563,3 +29563,116 @@ suite with mutations. **Not one of them was found by the tests going red.** A
 suite that is green is evidence that the things it checks are true, and this
 week it has been consistently misread as evidence that the things it does not
 check are also true.
+
+---
+
+## D-315 — One card, two backends, one row — measured on the Pošta card; and the first listing the agent ever ran met D-272's crash, survived it, and printed the crash dump to the console
+
+**Date:** 2026-09-19
+**Phase:** F11 §4 step 3, verified on hardware
+
+Step 3 is *"one certificate to one row across two backends"*, and the handover
+said its verification *"needs a person looking at a screen with a card in the
+reader"*. It needed a card. It did not need a PIN or a click, and the Pošta card
+was already in the reader, so it was measured rather than scheduled.
+
+### The result
+
+`liro-bridge certs --json`, built from this tree, `LOCALAPPDATA` redirected so
+nothing touched the owner's own configuration:
+
+```
+AF5063BB74378BD503AB46DD08AEAD205BA2AA54   Savka Odžić / Pošta Srbije CA 1
+    backends  ["windows-cng", "pkcs11"]
+    modules   ["C:\\WINDOWS\\System32\\aetpkss1.dll"]
+    usable    true
+```
+
+**One certificate. One row. Two backends, both named.** That is F11 §4 step 3,
+on real hardware, and it is the thing `dedupe`'s comment has asserted since F11
+without anything ever having seen it happen.
+
+Three more things the same listing established, none of them asked for:
+
+- **`F2E88F597862C490F36C38474C51CC338DCDFB0D`** — Pošta's root CA — appears with
+  `backends: ["pkcs11"]` and nothing else. **A certificate Windows never saw and
+  a module did.** The merge is not only collapsing duplicates; it is adding what
+  CNG cannot reach, which is the whole point of F12 and had never been
+  demonstrated in the product.
+- **`…B3D1ECCE` reports `CARD_NOT_PRESENT`**, correctly: the MUP card is not in
+  the reader, the Pošta one is.
+- **Two module failures, and the listing survived both.**
+
+### The two failures, which are the more interesting half
+
+```
+C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll   known path
+    the probe process did not survive loading this module (exit 0x2)
+
+C:\Program Files\MUP RS\Celik\netsetpkcs11_x64.dll  known path
+    C_OpenSession: CKR_DEVICE_ERROR (0x30)
+```
+
+**The first is [[D-272]]'s crash, in the product, for the first time.** A probe
+child died inside `C_Initialize` — exception `0xe06d7363`, a C++ throw — and
+`liro-bridge certs` **exited 0 with a complete listing**. The out-of-process
+arrangement [[D-275]] chose and F12 §2 built did exactly what it was built for,
+against the module that actually does it, in the agent rather than in a test.
+
+It was TrustEdgeID (1.1.3.3) rather than MUP RS\Celik (1.1.0.0) — worth saying
+because D-272 measured the crash on 1.1.0.0, and because I first mis-read the
+path length in the stack frame as the MUP one. The frame says `0x31` = 49
+characters, and both paths are 49 characters long.
+
+**The second is a vendor difference this project had not met.** NetSeT's module
+answers `CKR_DEVICE_ERROR` when asked to open a session on a Pošta card, where
+SafeSign answers `CKR_TOKEN_NOT_RECOGNIZED` for a MUP card — and `enumerate`
+already skips the latter as "not mine" while the former fails the whole module's
+listing. **Anybody holding two cards and two modules will see a failure row on
+every listing**, which is how a list of real failures gets trained out of being
+read. Not changed here: "a device error means the card is not this module's" is
+a judgement, and the right place for it is beside the `CKR_TOKEN_NOT_RECOGNIZED`
+skip with a measurement attached. Recorded so it is a decision rather than a
+discovery.
+
+### The defect the run found, which was mine
+
+The crash dump did not stay in the log. **It went to the console**, 130 lines of
+Go runtime stack, on top of the JSON that `certs --json` had just produced.
+
+`probeOutOfProcess` set `cmd.Stderr = os.Stderr` deliberately, with a written
+reason: a module that writes during `DllMain` — Nexus's `personal64.dll` does —
+should land where diagnostics land rather than be swallowed. **That was right
+for as long as the only caller was a developer running `p11probe`.** It stopped
+being right the moment the agent began discovering modules on every listing,
+which happened today.
+
+It is the same shape as three other things this week: a decision that was
+correct in isolation and became wrong when something called it. The remedy is
+the one the worker already had — the caller says where a child's output goes —
+so `probeOutOfProcess` and `Modules` now take a per-module writer, and the agent
+routes it to the log. Measured after the change: **stderr is zero bytes, and the
+130 lines are in `bridge.log` tagged with the module that produced them.**
+
+### What ListAll's shape cost, and who found it
+
+`ListAll` returned a flat `[]keysource.Certificate`. Writing the caller that
+turns those into rows showed why that was wrong: the row has to name the module
+that saw the certificate, the flat slice had thrown that away, and **the first
+draft of the caller re-listed every module to get it back — asking every card
+twice.**
+
+It now returns a `Listing` per source. The API was an hour old. It was not
+review that found it and not a test; it was writing the first caller, which is
+the fifth time this week that has been the thing that found something
+([[D-314]]).
+
+### What still needs the owner's hands
+
+**Less than the handover expected, and it is worth saying which part.** The
+listing is measured. What a person still has to look at is the *window* — the
+certificate chooser the signing flow shows — because this measurement is of
+`certs --json` and a screen is not a JSON document. And signing through a
+PKCS#11 module has still never happened in the agent: [[D-309]] logged into a
+card through the worker from `scripts/p11worker`, not through this path, and
+that run is one PIN, one attempt, no retry, agreed in advance like [[D-268]].

@@ -29,7 +29,7 @@ func knownModulePaths() []Candidate { return nil }
 // A configured path still reaches here and is still named in the failure, so a
 // person on macOS or Linux who has configured a module is told that the
 // binding does not exist yet rather than that their path is wrong.
-func Modules(configured string) ([]Candidate, []Failure) {
+func Modules(configured string, _ func(modulePath string) io.Writer) ([]Candidate, []Failure) {
 	candidates := Candidates(configured)
 	failures := make([]Failure, 0, len(candidates))
 	for _, c := range candidates {

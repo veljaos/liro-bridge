@@ -148,8 +148,20 @@ type logWriter struct {
 	path string
 }
 
+// Write records one thing a child said.
+//
+// "a child" rather than "the worker": the same sink is handed to both kinds,
+// the probe child discovery spawns per candidate and the worker kept per usable
+// module, and a line that named the wrong one would be worse than a line that
+// names neither. What matters is which *module* was loaded when it was said,
+// and that is on every line.
+//
+// Measured on this machine: a probe child dying inside TrustEdgeID's
+// C_Initialize produces about 130 lines here, which is where a Go runtime crash
+// dump belongs — it used to go to the console of whoever asked for a listing.
 func (w *logWriter) Write(p []byte) (int, error) {
-	w.log.Info("pkcs11 worker said", slog.String("module", w.path), slog.String("text", string(p)))
+	w.log.Info("pkcs11: a child process wrote to its standard error",
+		slog.String("module", w.path), slog.String("text", string(p)))
 	return len(p), nil
 }
 

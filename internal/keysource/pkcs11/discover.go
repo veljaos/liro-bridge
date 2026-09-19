@@ -1,6 +1,7 @@
 package pkcs11
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +116,20 @@ func Candidates(configured string) []Candidate {
 	return out
 }
 
+// sinkFor resolves a caller's per-module writer, treating a nil function and a
+// nil writer alike: nothing to write to, so the child's standard error is
+// discarded rather than inherited.
+//
+// A helper rather than two nil checks at the call site, because the mistake to
+// avoid is the one this replaced — a default that was correct until something
+// called it from a place with a console.
+func sinkFor(stderr func(modulePath string) io.Writer, path string) io.Writer {
+	if stderr == nil {
+		return nil
+	}
+	return stderr(path)
+}
+
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
@@ -127,8 +142,8 @@ func fileExists(path string) bool {
 // machine has NetSeT installed at two paths in two builds five years apart,
 // and both see the same card identically. Collapsing that into one row is the
 // caller's job and the thumbprint is what makes it possible (F11 §4).
-func Sources(configured string) ([]Source, []Failure) {
-	usable, failures := Modules(configured)
+func Sources(configured string, stderr func(modulePath string) io.Writer) ([]Source, []Failure) {
+	usable, failures := Modules(configured, stderr)
 	out := make([]Source, 0, len(usable))
 	for _, c := range usable {
 		out = append(out, NewSource(c.Path))

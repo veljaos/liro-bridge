@@ -2,6 +2,7 @@ package pkcs11
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -101,7 +102,7 @@ func knownModulePaths() []Candidate {
 // A child that dies is a Failure with its path attached and the search carries
 // on, which is what F11 §3 asks for and what the crash made impossible while
 // the load was here (D-275).
-func Modules(configured string) ([]Candidate, []Failure) {
+func Modules(configured string, stderr func(modulePath string) io.Writer) ([]Candidate, []Failure) {
 	var ok []Candidate
 	var bad []Failure
 	for _, c := range Candidates(configured) {
@@ -115,7 +116,7 @@ func Modules(configured string) ([]Candidate, []Failure) {
 		// itself is already paid for; assigning it to _ threw away the only
 		// description of a configured module this program will ever have,
 		// because the next thing to ask would have to load it again.
-		res, err := probeOutOfProcess(context.Background(), c.Path)
+		res, err := probeOutOfProcess(context.Background(), c.Path, sinkFor(stderr, c.Path))
 		if err != nil {
 			bad = append(bad, Failure{Candidate: c, Err: err})
 			continue

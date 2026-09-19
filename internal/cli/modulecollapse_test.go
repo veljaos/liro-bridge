@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
@@ -235,5 +237,88 @@ func TestNothingChangesWhenThereIsNoPKCS11Path(t *testing.T) {
 	}
 	if got := report.Certificates[0].Modules; len(got) != 0 {
 		t.Errorf("Modules = %v, want none", got)
+	}
+}
+
+// TestTheJSONOutputShowsThatTheCollapseHappened. The collapse is only
+// checkable if the output says which backends offered a row.
+//
+// Without it, a person looking at one row for one card cannot tell a correct
+// collapse from one backend having found nothing — which are very different
+// machines to be standing in front of, and the second is what F12 exists to
+// fix. This is the field the owner's own verification reads.
+func TestTheJSONOutputShowsThatTheCollapseHappened(t *testing.T) {
+	der, thumb := collapseCertificate(t)
+
+	report, err := Gather(context.Background(), collapseDeps(t,
+		[]windowscng.Certificate{{Thumbprint: thumb, DER: der, OnHardware: true}},
+		[]ModuleCertificate{{Thumbprint: thumb, DER: der, ModulePath: `C:\Windows\System32\aetpkss1.dll`}},
+		[]ModuleFailure{{Path: `C:\broken.dll`, Origin: "configured", Reason: "the module did not load"}},
+	), referenceTime)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, report, referenceTime); err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+	var got struct {
+		Certificates []struct {
+			Thumbprint string   `json:"thumbprint"`
+			Backends   []string `json:"backends"`
+			Modules    []string `json:"modules"`
+		} `json:"certificates"`
+		ModuleFailures []struct {
+			Path   string `json:"path"`
+			Origin string `json:"origin"`
+			Reason string `json:"reason"`
+		} `json:"moduleFailures"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("the output is not JSON: %v\n%s", err, buf.String())
+	}
+	if len(got.Certificates) != 1 {
+		t.Fatalf("got %d certificates in the JSON, want 1", len(got.Certificates))
+	}
+	c := got.Certificates[0]
+	if len(c.Backends) != 2 {
+		t.Errorf("backends = %v, want both", c.Backends)
+	}
+	if len(c.Modules) != 1 || c.Modules[0] != `C:\Windows\System32\aetpkss1.dll` {
+		t.Errorf("modules = %v", c.Modules)
+	}
+	if len(got.ModuleFailures) != 1 || got.ModuleFailures[0].Path != `C:\broken.dll` {
+		t.Errorf("moduleFailures = %v", got.ModuleFailures)
+	}
+}
+
+// TestTheJSONIsUnchangedWhereThereIsNoPKCS11. omitempty on all three fields, so
+// a build with no PKCS#11 path or a machine with no module produces exactly the
+// bytes it always did — which matters because F2 §6.1's OpenSSL recipe reads
+// this output with jq.
+func TestTheJSONIsUnchangedWhereThereIsNoPKCS11(t *testing.T) {
+	der, thumb := collapseCertificate(t)
+	deps := collapseDeps(t, []windowscng.Certificate{{Thumbprint: thumb, DER: der, OnHardware: true}}, nil, nil)
+	deps.ModuleCertificates = nil
+
+	report, err := Gather(context.Background(), deps, referenceTime)
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, report, referenceTime); err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+	for _, key := range []string{"modules", "moduleFailures"} {
+		if bytes.Contains(buf.Bytes(), []byte(`"`+key+`"`)) {
+			t.Errorf("the JSON names %q on a machine with no PKCS#11 module:\n%s", key, buf.String())
+		}
+	}
+	// backends is the exception and is present: a CNG row says so, which is
+	// new information rather than an empty field, and F1 §6.1's contract is
+	// that --json reports the same data the text view classifies.
+	if !bytes.Contains(buf.Bytes(), []byte(`"backends"`)) {
+		t.Errorf("the JSON does not say which backend found the certificate:\n%s", buf.String())
 	}
 }

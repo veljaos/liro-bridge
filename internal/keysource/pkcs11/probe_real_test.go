@@ -82,7 +82,7 @@ func TestTheRealModuleKillsItsChildAndThisProcessSurvives(t *testing.T) {
 	start := time.Now()
 
 	for i := 0; i < iterations; i++ {
-		res, err := probeOutOfProcess(context.Background(), path)
+		res, err := probeOutOfProcess(context.Background(), path, nil)
 		switch {
 		case err == nil:
 			answered++

@@ -39,7 +39,7 @@ func TestTheGuardIsWhatRefuses(t *testing.T) {
 	// dispatches the subcommand at all (TestMain). A test binary that ran its
 	// suite instead would answer with test output, and the error would be "the
 	// probe answered something that is not a result".
-	if _, err := probeOutOfProcess(context.Background(), notAModule); err == nil {
+	if _, err := probeOutOfProcess(context.Background(), notAModule, nil); err == nil {
 		t.Error("a text file was accepted as a PKCS#11 module")
 	} else if errors.Is(err, ErrChildRecursion) {
 		t.Fatalf("the control refused before spawning: %v\n\n"+
@@ -56,7 +56,7 @@ func TestTheGuardIsWhatRefuses(t *testing.T) {
 	// package spawns. Nothing else about the call changes.
 	t.Setenv(ChildMarker, "1")
 
-	_, err := probeOutOfProcess(context.Background(), notAModule)
+	_, err := probeOutOfProcess(context.Background(), notAModule, nil)
 	if !errors.Is(err, ErrChildRecursion) {
 		t.Fatalf("a process marked as a probe child spawned one anyway; got %v\n\n"+
 			"This is the guard that bounds recursion at a single generation. "+
@@ -141,7 +141,7 @@ func TestTheProbeSubcommandIsNotAPlausibleFileName(t *testing.T) {
 // Waiting for a one-in-a-hundred crash to observe the same branch would measure
 // the module rather than this program.
 func TestAChildThatExitsNonZeroBecomesAFailure(t *testing.T) {
-	_, err := probeOutOfProcess(context.Background(), "")
+	_, err := probeOutOfProcess(context.Background(), "", nil)
 	if !errors.Is(err, errWorkerDied) {
 		t.Fatalf("a child that exited non-zero produced %v, want %v\n\n"+
 			"Every way a child can end must arrive here as an ordinary error, "+

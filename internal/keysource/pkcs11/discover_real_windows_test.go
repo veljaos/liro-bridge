@@ -33,7 +33,7 @@ func TestAConfiguredModuleIsNamedByWhatItSaysAboutItself(t *testing.T) {
 		t.Skip("set LIRO_PKCS11_MODULE to a real PKCS#11 module to run this")
 	}
 
-	usable, failures := Modules(path)
+	usable, failures := Modules(path, nil)
 
 	var found *Candidate
 	for i := range usable {

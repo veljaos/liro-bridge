@@ -17,8 +17,12 @@ import (
 // The discovery half is pkcs11.Modules' unchanged — a throwaway probe child per
 // candidate, which is right there and wrong for a session (see Worker).
 //
-// stderr is asked for a writer per module rather than given one for all of
-// them. A vendor module is not required to be quiet and one of them is measured
+// stderr is used twice: once for the probe child discovery spawns per candidate
+// and once for the worker child kept per usable module. A probe child that dies
+// inside C_Initialize prints a Go runtime crash dump, and until this parameter
+// reached it that dump went to the console of whatever asked for a listing.
+//
+// It is asked for a writer per module rather than given one for all of them. A vendor module is not required to be quiet and one of them is measured
 // not to be — Nexus's personal64.dll writes from inside DllMain (D-303) — and a
 // line from a module that does not say which module is a line nobody can act
 // on. One writer shared between children could not carry that, because what
@@ -38,7 +42,7 @@ import (
 // whatever asked it. That is the division F11 §4 asks for: a dead worker is a
 // row in a list rather than an error that ends one.
 func Sources(configured string, entry pkcs11.PINEntry, stderr func(modulePath string) io.Writer) ([]Source, []pkcs11.Failure) {
-	usable, failures := pkcs11.Modules(configured)
+	usable, failures := pkcs11.Modules(configured, stderr)
 	return sourcesFor(usable, entry, stderr), failures
 }
 

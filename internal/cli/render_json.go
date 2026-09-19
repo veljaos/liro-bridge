@@ -18,6 +18,20 @@ type jsonReport struct {
 	Readers      []jsonReader `json:"readers"`
 	Certificates []jsonCert   `json:"certificates"`
 	TrustedList  jsonTSL      `json:"trustedList"`
+
+	// ModuleFailures are the PKCS#11 modules that could not be asked (F11 §3).
+	// Empty on every machine where all of them answered and on every build
+	// with no PKCS#11 path, so the JSON is unchanged where nothing went wrong.
+	ModuleFailures []jsonModuleFailure `json:"moduleFailures,omitempty"`
+}
+
+// jsonModuleFailure is one module that could not be read, and why. It is data
+// rather than display text, like everything else here: the reason is the
+// error's own words, which are developer-facing (D-092).
+type jsonModuleFailure struct {
+	Path   string `json:"path"`
+	Origin string `json:"origin"`
+	Reason string `json:"reason"`
 }
 
 type jsonReader struct {
@@ -42,6 +56,22 @@ type jsonCert struct {
 	// IsTestKey marks a soft-token certificate (F2 §3.1, SPEC §16.6) —
 	// always false for a real, hardware-backed certificate.
 	IsTestKey bool `json:"isTestKey"`
+
+	// Backends are the backends that offered this certificate and Modules
+	// are the PKCS#11 module paths among them, both in the order they were
+	// asked (F11 §4 step 3).
+	//
+	// They are what makes the collapse checkable. One card visible through
+	// Windows CNG and through a vendor's module is one row, and without these
+	// a person looking at that row cannot tell whether it collapsed correctly
+	// or whether one of the two backends simply found nothing — which are very
+	// different machines to be standing in front of.
+	//
+	// omitempty on both: a listing from a build with no PKCS#11 path, or a
+	// machine with no module installed, produces exactly the JSON it always
+	// did.
+	Backends []string `json:"backends,omitempty"`
+	Modules  []string `json:"modules,omitempty"`
 
 	// PEM is the PEM-encoded certificate (F2 §6.1): the external
 	// OpenSSL verification recipe reads the public key from here, via
@@ -85,8 +115,20 @@ func RenderJSON(w io.Writer, report Report, now time.Time) error {
 			NotAfter:        row.Info.NotAfter.Format(time.RFC3339),
 			Hidden:          row.Hidden(),
 			IsTestKey:       row.Info.IsTestKey,
+			Backends:        row.Backends,
+			Modules:         row.Modules,
 			PEM:             certPEM(row.DER),
 		})
+	}
+	for _, f := range report.ModuleFailures {
+		// A conversion, not a field-by-field copy, because the two shapes are
+		// identical today and staticcheck is right that spelling them out adds
+		// nothing. They stay separate types deliberately — this file decides
+		// what the JSON contract is and must not inherit a field merely because
+		// the internal shape grew one — and the conversion is what enforces
+		// that: the day they diverge, this line stops compiling and the mapping
+		// has to be written out on purpose.
+		out.ModuleFailures = append(out.ModuleFailures, jsonModuleFailure(f))
 	}
 	age := now.Sub(report.TSL.IssuedAt)
 	out.TrustedList = jsonTSL{
