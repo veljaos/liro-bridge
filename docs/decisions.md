@@ -28449,6 +28449,31 @@ recommends.
 
 ## D-309 — One login and one cancellation on a Pošta card through the worker: the run designed to cost nothing is the one that took the login, and nothing was spent because the guard is in the program rather than in anybody's care
 
+> **The pattern this makes, named at two, from [[D-310]].** The centre of this
+> entry is a discarded return value: `SetForegroundWindow`'s `BOOL`, a call
+> whose failure nothing in the program could know about. The next entry found
+> the second one — `internal/pades/dss.fetchCRL` parsing a CRL and assigning
+> the list to `_`, then embedding the bytes for somebody else to check, while
+> the object that answers "is this certificate revoked" was in hand and was
+> thrown away.
+>
+> **Both were written deliberately, both are locally defensible, and in both
+> cases what was thrown away is exactly what a later question needed.** Neither
+> is a bug. `SetForegroundWindow` is allowed to fail and Windows documents when;
+> `fetchCRL` is an embedding path and has no business validating.
+>
+> The owner's sentence, which is the general form and the reason this is worth
+> naming at two rather than waiting for a third: **a return value discarded
+> because the current caller does not need it is a decision made on behalf of
+> callers who do not exist yet.**
+>
+> `_` records that decision nowhere but in the character itself — no comment is
+> required, no test can see it, and nothing in review distinguishes "this value
+> is meaningless" from "this value is meaningful and I do not happen to want
+> it". The practical consequence is small and specific: when the discarded
+> value is the *answer to a question somebody could ask*, say in a comment why
+> it is not being kept. Both sites above would have been one sentence.
+
 **Date:** 2026-09-19
 **Phase:** F12 §2 and §5 — the home machine, Pošta card in the reader, the owner
 at it
@@ -28819,11 +28844,13 @@ sentence, in three languages, kept in step with every locale change. **Neither
 asks whether it is reachable.** A translator has been paid attention for a
 string no person can ever be shown.
 
-That is the general finding and it is not about revocation: *this project
-checks that every error code can be displayed and nothing checks that any error
-code can be produced.* Whether that is worth a check is a real question —
-`CodeInternal` and friends may be legitimately unreachable by design — but it
-should be a decision rather than an absence.
+That is the general finding and it is not about revocation, so **it is written
+up on its own as [[D-312]]** rather than left here as a revocation footnote:
+*this project checks that every error code can be displayed and nothing checks
+that any error code can be produced.* D-312 also carries the detail that makes
+it sharp — the worked example D-158's own test comment picks to motivate itself
+is `"error.cert_revoked"`, the one code in the package that can never reach a
+user at all.
 
 ### 3. The answer arrives, is parsed, and is assigned to `_`
 
@@ -29032,3 +29059,197 @@ project has never seen it fire on hardware either.
   F11 §4 step 3 will want it, but the owner's standing preference is that a
   tool does not ride along with a measurement it happened to serve ([[D-308]]),
   so keeping it is his call and not this entry's.
+
+---
+
+## D-311 — CNG signs on Windows when it offers the certificate, because clauses 2, 3 and 5 of §6.5.1 stop being things this program must get right and become things it cannot get wrong
+
+**Date:** 2026-09-19
+**Phase:** F11 §4 step 3 — the decision the step names and does not make
+
+F11 §4 step 3 is *"one certificate to one row across two backends"*, and the
+handover recorded the open question as **"which source signs"** when
+`windowscng` and `pkcs11` both offer the same physical card. [[D-310]]
+established by measurement that they do: one Pošta card, two processes, two
+vendors' code, one thumbprint.
+
+**Decided: on Windows, CNG signs whenever it offers the certificate.**
+PKCS#11 signs when CNG does not.
+
+### Why, and it is not the 7 ms against 649 ms
+
+The owner's words, and they are the decision: *"clauses 2, 3 and 5 stop being
+things this program must get right and become things it cannot get wrong. The
+kernel pipe §6.5.1 names as a real exposure is not there to bound. That is
+worth more than 7 ms against 649 ms, and far more than anything about speed."*
+
+**This is [[D-025]]'s reasoning, applied to a case D-025 did not have.** That
+entry decided in F1 that on the CNG path the PIN never enters this process and
+the OS smart card provider shows its own dialog. It was not a choice between
+backends then, because there was only one. It is the same argument and it is
+still the stronger one.
+
+On the CNG path the PIN never enters this process. There is no buffer to pin
+and wipe through its pinned address, no `runtime.Pinner`, no length-prefixed
+frame, no inherited pipe, and no `C_Login` to not retry. §6.5.1 names the
+kernel pipe buffer as a real exposure in terms that do not minimise it — *"not
+this program's memory, this program cannot wipe it, and its lifetime is the
+kernel's rather than ours"* — and on this path that object does not exist.
+
+A security property that cannot be violated by construction is worth more than
+the same property upheld correctly, because the second one has to keep being
+upheld by every future change and the first one does not.
+
+**The speed is real and is not the reason.** CNG enumerated in 7 ms where
+`aetpkss1.dll` took 649 ms on the same card, and [[D-305]]'s slow NetSeT build
+turns `Source.openOn` into ~2.6 s. That is a tiebreak, recorded so nobody later
+reconstructs it as the argument.
+
+### What this is not
+
+**It is not "rely on CNG".** §6.5.1's own rationale warns that *"relying on CNG
+makes the same cards Windows-only"*, and that warning stands. This decision is
+about which backend wins on a machine where both work, which the SPEC does not
+address and step 3 exists to settle.
+
+**Nothing in F12 §2 becomes dead, and this paragraph exists so that a reader
+two years from now cannot conclude otherwise from the heading.** PKCS#11 is the
+**only** path on macOS and Linux, where there is no CNG to pick the card up at
+all — §6.5.1 says so in the sentence immediately before the one above — and it
+is the only path on Windows for a card Windows has no minidriver for. The
+worker, its framing, its lifecycle, the PIN seam, the AST guards, [[D-296]]'s
+termination measurements, [[D-306]]'s backstop, [[D-307]]'s entry and
+[[D-309]]'s login are all load-bearing on two of three platforms and on an
+unknown share of cards on the third. **The worker was not wasted. It is the
+general path, and CNG is the Windows optimisation of it.**
+
+### The caveat, recorded deliberately and deliberately not acted on
+
+**An NCrypt key storage provider loads in-process.** A faulting minidriver
+takes the agent down — its windows, its queue and a batch in flight with it —
+and there is no worker to absorb it. **That is the exact failure F12 §2 was
+built against, and CNG has no answer to it.**
+
+The decision was made knowing that. It is recorded here rather than left to be
+rediscovered as a surprise, and three things follow:
+
+- **It is measurable.** Not today, and not by reasoning: it needs a provider
+  that actually faults, which nothing in this project has yet seen.
+- **If it ever reproduces, the decision is reopened rather than patched.**
+  A crash in a provider this program loaded is not a bug to work around inside
+  the CNG path; it is evidence that the isolation argument applies to CNG too,
+  and the answer would be to route that card through the worker — which
+  already exists and already works.
+- **It is not hypothetical in kind.** [[D-272]] measured a real module dying
+  inside its own `C_Initialize` and established that no Go process can survive
+  it; [[D-275]] made probing out of process the remedy. That is why the worker
+  exists. A minidriver faulting inside a provider this program loaded is the
+  same class of failure, in a place with no worker.
+
+### What is still open
+
+**Whether SPEC §6.5 or §6.5.1 should carry a sentence about source preference.**
+Today neither does: §6.5.1's last clause says only that the CNG path is
+untouched, which is a statement about the PIN clauses rather than about which
+backend is chosen. This entry is the decision; whether it becomes a SPEC clause
+is the owner's and is not made here.
+
+**What the audit log records about it.** F11 §4 step 4 already has to record
+which backend and which module path. It now also has to record *why* this
+backend — because "CNG signed it" and "CNG signed it because PKCS#11 was not
+offering this certificate" are different facts, and a support question a year
+from now will need the second one.
+
+---
+
+## D-312 — This project checks that every error code can be **displayed** and nothing checks that any error code can be **produced**
+
+**Date:** 2026-09-19
+**Phase:** F12 — a statement about the test suite, found while answering a
+question about revocation
+
+[[D-310]] found that `errs.CodeCertRevoked` has existed since F1, has a message
+in all three catalogues, and **cannot be produced by anything in this program**
+— no assignment, no return, no test, no fixture, and no
+`internal/trust/revocation` for one to live in.
+
+That is [[D-247]]'s shape for the eighth time. **This entry is the reason it is
+the worst of the eight**, and the reason is not about revocation at all, which
+is why it is here rather than in D-310.
+
+### Two checks, both green, both correct, and between them a guarantee that stops one clause short
+
+- **`TestEveryErrorCodeHasAMessageInEveryCatalogue`** (`internal/i18n`,
+  [[D-104]]) walks `errs.AllCodes()` and requires a catalogue entry for each,
+  in `sr-Latn`, `sr-Cyrl` and `en`.
+- **`TestAllCodesListsEveryDeclaredCode`** (`internal/errs`, [[D-158]]) reads
+  the package's own syntax tree and requires every declared `Code` constant to
+  appear in `AllCodes()` — because, in its own words, *"that test ... is
+  exactly as strong as `AllCodes()` is complete, and nothing checked that."*
+
+Both are good checks. D-158 exists precisely to stop D-104's from going vacuous,
+and the pair is a careful piece of work: one closes the gap the other would
+otherwise have.
+
+**Together they guarantee that every error code is presentable.** It will always
+have a sentence, in three languages, kept in step with every locale change,
+every rename, every addition. **Neither asks whether it is reachable.** A code
+can be declared, listed, translated three times, and maintained in that state
+indefinitely by two passing tests, while nothing in the program can ever emit
+it.
+
+That is the finding, and it is about the suite rather than about
+`CERT_REVOKED`: **this project checks that every error code can be displayed
+and nothing checks that any error code can be produced.**
+
+### The detail that makes it sharp
+
+`TestAllCodesListsEveryDeclaredCode`'s own comment explains the failure it
+prevents — a code that *"compiles, passes every test in the repository, and
+reaches a user as its own key"* — and the example it picks to illustrate that,
+written out in the comment, is:
+
+```
+"error.cert_revoked"
+```
+
+**The worked example chosen to motivate the check is the one code in the
+package that can never reach a user at all.** Nobody did anything wrong: it was
+picked because it reads well, and its unreachability is invisible from inside
+`internal/errs`, which is exactly the point. The check's author could not have
+seen it, because nothing in the suite looks in that direction.
+
+### What this costs, stated without inflating it
+
+Three translated sentences that no person can be shown. That is a small waste
+and it is not the reason this is written down.
+
+The reason is what the green checks mean to a reader. A code with two tests
+keeping it in step reads as maintained, and `CERT_REVOKED` has read as
+maintained for eleven phases. **Presentability is being used as a proxy for
+existence, by tests that never claimed to establish it**, and the next person to
+ask "is revocation handled here?" will find a code, a message, three locales and
+two passing tests before they find out that the answer is no.
+
+### What was decided
+
+**No check is built in this phase.** The shape one would take is clear — read
+the syntax tree of the whole module and require every `Code` in `AllCodes()` to
+appear in an assignment or a return somewhere outside its own declaration, the
+way [[D-025]]'s PIN-field guard and D-158's own check already read source rather
+than reflect over values. But:
+
+- **It needs a decision first, not a test.** Some codes may be legitimately
+  unreachable by design — `CodeInternal` and its neighbours are plausible
+  candidates — and a check with an exception list written on the day it is
+  added is a check that begins by conceding the question. What belongs in the
+  list, and why, is the work; the guard is the easy part.
+- **It is not F12's.** F12 is the PKCS#11 worker. A suite-wide guard over
+  `internal/errs` is its own change and would ride along with a phase it has
+  nothing to do with, which is the objection the owner raised about
+  [[D-308]]'s icon test and applies here unchanged.
+
+So this is recorded rather than fixed, and it is recorded as a general finding
+rather than as a revocation footnote, because the next instance will not be
+`CERT_REVOKED` and the reader who needs this will not be looking for it under
+that name.
