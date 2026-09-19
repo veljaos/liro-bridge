@@ -30004,12 +30004,28 @@ consequences, one of which turned out not to happen:
   reached the chain. A deliberate cancellation recorded as an internal error
   would have been the worse half of this, and it does not happen.
 
-Not changed here. Giving cancellation a code is a decision about the error
-vocabulary — whether "the person said no" belongs beside `CARD_NOT_PRESENT` and
-`CERT_EXPIRED` at all — and it is the owner's. Recorded so it is decided rather
-than patched, and noted that [[D-312]]'s finding applies in reverse: this would
-be a code with a producer and no message, where `CERT_REVOKED` is a message with
-no producer.
+**Open, and the shape of the question is already known.** The owner's ruling:
+it belongs in the vocabulary, not in this phase, and the real question is not
+*whether* but *which*.
+
+`CONSENT_DENIED` already exists for a person saying no at the consent screen. A
+person saying no at the PIN screen **is the same act one step later**, so the
+choice is between reusing that code and minting a second one — and the two are
+not obviously different to anybody reading an audit log or a support report. A
+decision at the end of a signing run is not the place for it.
+
+**It is [[D-312]]'s finding in reverse, and that is what makes it findable.**
+D-312 is about `CERT_REVOKED`: a code with three translated messages and nothing
+that can produce it, kept looking maintained by two green checks that ask
+whether a code can be *displayed* and never whether it can be *reached*. This is
+the opposite end — **a condition with a producer, reached deliberately by a
+person, and no code and no message at all** — and it is invisible to exactly the
+same two checks, because a thing that is not in `AllCodes` is not something
+either of them walks.
+
+So the pair is the argument for the check D-312 declined to build: one end of
+the vocabulary has entries nothing reaches, the other has conditions with no
+entry, and neither shows up in a green suite.
 
 ### The module ordering, and a crash doing useful work by accident
 
