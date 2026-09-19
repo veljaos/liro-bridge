@@ -46,6 +46,12 @@ type jsonEntry struct {
 	// always was — the empty channel is what "local" is.
 	Channel Channel `json:"channel,omitempty"`
 
+	// Backend and Module say which key source produced the signature
+	// and, for PKCS#11 only, which module. Both omitempty, so every
+	// entry written before they existed keeps the line it always had.
+	Backend string `json:"backend,omitempty"`
+	Module  string `json:"module,omitempty"`
+
 	// Discontinuity is present only on a chain's first entry, and only
 	// when that chain exists because an earlier one could not be
 	// continued. omitempty keeps every other entry's line byte-identical
@@ -80,6 +86,8 @@ func toJSONEntry(e Entry) jsonEntry {
 		IsTestKey:     e.IsTestKey,
 		AchievedLevel: e.AchievedLevel,
 		Channel:       e.Channel,
+		Backend:       e.Backend,
+		Module:        e.Module,
 		Discontinuity: toJSONDiscontinuity(e.Discontinuity),
 		PrevHash:      hexEncode(e.PrevHash),
 		Hash:          hexEncode(e.Hash),
@@ -134,6 +142,8 @@ func fromJSONEntry(j jsonEntry) (Entry, error) {
 		IsTestKey:     j.IsTestKey,
 		AchievedLevel: j.AchievedLevel,
 		Channel:       j.Channel,
+		Backend:       j.Backend,
+		Module:        j.Module,
 		Discontinuity: fromJSONDiscontinuity(j.Discontinuity),
 		PrevHash:      prevHash,
 		Hash:          hash,

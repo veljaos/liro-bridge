@@ -17,6 +17,13 @@ import (
 // The discovery half is pkcs11.Modules' unchanged — a throwaway probe child per
 // candidate, which is right there and wrong for a session (see Worker).
 //
+// stderr is asked for a writer per module rather than given one for all of
+// them. A vendor module is not required to be quiet and one of them is measured
+// not to be — Nexus's personal64.dll writes from inside DllMain (D-303) — and a
+// line from a module that does not say which module is a line nobody can act
+// on. One writer shared between children could not carry that, because what
+// arrives is a raw copy of a pipe with nothing to attach it to.
+//
 // # No worker is started here
 //
 // A Worker starts lazily on its first request, and this function does not force
@@ -30,7 +37,7 @@ import (
 // later produces its own, at the moment it dies, through ListAll or through
 // whatever asked it. That is the division F11 §4 asks for: a dead worker is a
 // row in a list rather than an error that ends one.
-func Sources(configured string, entry pkcs11.PINEntry, stderr io.Writer) ([]Source, []pkcs11.Failure) {
+func Sources(configured string, entry pkcs11.PINEntry, stderr func(modulePath string) io.Writer) ([]Source, []pkcs11.Failure) {
 	usable, failures := pkcs11.Modules(configured)
 	return sourcesFor(usable, entry, stderr), failures
 }
@@ -43,11 +50,11 @@ func Sources(configured string, entry pkcs11.PINEntry, stderr io.Writer) ([]Sour
 // reads it — so a test against the discovery half would be vacuous on CI and
 // would pass on a developer machine for reasons that have nothing to do with
 // the code (D-296's first question).
-func sourcesFor(usable []pkcs11.Candidate, entry pkcs11.PINEntry, stderr io.Writer) []Source {
+func sourcesFor(usable []pkcs11.Candidate, entry pkcs11.PINEntry, stderr func(modulePath string) io.Writer) []Source {
 	out := make([]Source, 0, len(usable))
 	for _, c := range usable {
 		out = append(out, Source{
-			w:         New(c.Path, stderr),
+			w:         New(c.Path, stderr(c.Path)),
 			entry:     entry,
 			candidate: c,
 		})

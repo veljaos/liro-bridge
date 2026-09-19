@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
@@ -24,6 +25,28 @@ import (
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
 )
+
+// pkcs11ShutdownGrace is how long a PKCS#11 worker is given to finalise its
+// module when the agent quits.
+//
+// Bounded rather than context.Background(), which Worker.Close's own doc warns
+// means "wait for ever" and which that package measured wedging a teardown
+// until `go test`'s ten-minute timeout. An agent that will not exit because a
+// vendor module will not finalise is the correct behaviour arriving somewhere
+// nobody wanted it.
+//
+// Five seconds, and the number is chosen rather than measured, which is said
+// here rather than left to be assumed. Nothing in this project has measured how
+// long a real C_Finalize takes; what has been measured is that the slowest
+// single module call on this project's own hardware is D-305's 856 ms
+// C_FindObjectsInit, so five seconds is several times the slowest thing known
+// and is not a guess dressed as a finding. It is also not the whole wait:
+// Worker.reap's own ten-second backstop (D-306) bounds what happens after this
+// budget ends and the child is killed.
+//
+// It follows protocolShutdownGrace's shape deliberately — a named constant with
+// its reasoning beside it, rather than a literal somewhere in a defer.
+const pkcs11ShutdownGrace = 5 * time.Second
 
 // Set at build time with -ldflags; see F0 §7.1.
 var (
@@ -100,6 +123,21 @@ func run(args []string, out io.Writer) int {
 		return 1
 	}
 	defer func() { _ = closer.Close() }()
+
+	// Every PKCS#11 module this process opened is held in a child, and the
+	// children are closed here because this is where the process ends. See
+	// pkcs11Backends: the alternative was a worker per signature, which would
+	// need a shutdown budget chosen inside keysource.Session.Close, which takes
+	// no context — and D-297 left that deadline deliberately open.
+	//
+	// It is a no-op unless something actually asked for a certificate.
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), pkcs11ShutdownGrace)
+		defer cancel()
+		if err := closePKCS11Modules(ctx); err != nil {
+			logger.Warn("pkcs11: a module did not shut down cleanly", slog.String("error", err.Error()))
+		}
+	}()
 
 	if cfgErr != nil {
 		logger.Warn("startup: config file could not be read, using defaults", "error", cfgErr)

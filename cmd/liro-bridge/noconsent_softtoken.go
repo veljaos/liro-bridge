@@ -59,7 +59,7 @@ func runBuildOnlyCommand(ctx context.Context, args []string, stdout, stderr io.W
 	case "sign-no-consent":
 		return runSignWithoutConsent(ctx, args[1:], stdout, stderr, cfg), true
 	case "sign-digest":
-		return runSignDigest(ctx, args[1:], stdout, stderr, cfg.Locale), true
+		return runSignDigest(ctx, args[1:], stdout, stderr, cfg), true
 	}
 	return 0, false
 }
@@ -68,8 +68,8 @@ func runBuildOnlyCommand(ctx context.Context, args []string, stdout, stderr io.W
 // into internal/cli.RunSignDigest. CNG first: the tag adds the soft
 // token, it does not take the card away, so F2 §6.1's manual acceptance
 // against real hardware still runs from a build made this way.
-func runSignDigest(ctx context.Context, args []string, stdout, stderr io.Writer, locale string) int {
-	return cli.RunSignDigest(ctx, args, stdout, stderr, locale, cli.SignDeps{Open: openCardOrSoftToken(0)})
+func runSignDigest(ctx context.Context, args []string, stdout, stderr io.Writer, cfg config.Config) int {
+	return cli.RunSignDigest(ctx, args, stdout, stderr, cfg.Locale, cli.SignDeps{Open: dropOrigin(openCardOrSoftToken(0, cfg))})
 }
 
 // runSignWithoutConsent wires the real Windows CNG source, the soft
@@ -83,7 +83,7 @@ func runSignDigest(ctx context.Context, args []string, stdout, stderr io.Writer,
 // process's full command line, so a password given as an argument is a
 // password published to the machine (see cli.TSACredentials).
 func runSignWithoutConsent(ctx context.Context, args []string, stdout, stderr io.Writer, cfg config.Config) int {
-	open := openCardOrSoftToken(0)
+	open := dropOrigin(openCardOrSoftToken(0, cfg))
 
 	cachePath := filepath.Join(filepath.Dir(platform.DefaultConfigFile()), "tsl-cache.xml")
 	store, err := tsl.NewFileStore(cachePath, tsl.DefaultURL, tsl.HTTPFetcher)

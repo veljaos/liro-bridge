@@ -130,6 +130,10 @@ type auditRecord struct {
 	lastErr   error
 	isTestKey bool
 	level     string
+
+	// origin is which backend produced the signature and, for PKCS#11, which
+	// module. Zero on a refusal, where nothing was opened.
+	origin signerOrigin
 }
 
 func recordInteractiveAudit(store *audit.Store, auditErr error, rec auditRecord) *audit.Discontinuity {
@@ -152,6 +156,11 @@ func recordInteractiveAudit(store *audit.Store, auditErr error, rec auditRecord)
 		IsTestKey:     rec.isTestKey,
 		AchievedLevel: rec.level,
 		Channel:       rec.channel,
+		Backend:       rec.origin.backend,
+		// Not rec.origin.module: what the log may keep of a path depends on
+		// whether the person configured it, and auditModule is where SPEC
+		// §6.7 is paid. Reading the field directly here would quietly undo it.
+		Module: rec.origin.auditModule(),
 	})
 	if err != nil {
 		// No file name, no personal name, no document content: SPEC
@@ -466,8 +475,8 @@ func gatherInteractiveCertificates(ctx context.Context) (cli.Report, error) {
 // (Task 2, F2 §2.3): without it, NCRYPT_WINDOW_HANDLE_PROPERTY stays 0
 // and the OS PIN dialog can appear behind the agent's window, which
 // looks like a frozen program rather than a prompt.
-func openInteractiveSession(ctx context.Context, thumbprint keysource.Thumbprint, hwnd uintptr) (keysource.Session, error) {
-	return openCardOrSoftToken(hwnd)(ctx, thumbprint)
+func openInteractiveSession(ctx context.Context, thumbprint keysource.Thumbprint, hwnd uintptr, cfg config.Config) (keysource.Session, signerOrigin, error) {
+	return openCardOrSoftToken(hwnd, cfg)(ctx, thumbprint)
 }
 
 // buildTSAClient wires Task 6's four TSA credential fields (config.Config,

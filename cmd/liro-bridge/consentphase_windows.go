@@ -36,6 +36,15 @@ type consentDecision struct {
 	// session is open and must be closed by the caller.
 	session keysource.Session
 
+	// origin is which backend opened that session, and for PKCS#11 which
+	// module. It is carried from the one place that decides to the one place
+	// that records it (F11 §4 step 4), because between those two points the
+	// only thing in scope is a keysource.Session, which cannot say.
+	//
+	// Zero on a refusal, which is correct rather than missing: nothing was
+	// opened, so there is no backend to name.
+	origin signerOrigin
+
 	level     pades.Level
 	tsaClient *tsa.Client
 	allowBB   bool

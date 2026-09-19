@@ -1029,7 +1029,7 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 	// it.
 	m.postPreparingCard()
 
-	session, err := openInteractiveSession(ctx, keysource.Thumbprint(m.selected), m.win.Handle())
+	session, origin, err := openInteractiveSession(ctx, keysource.Thumbprint(m.selected), m.win.Handle(), m.cfg)
 	if err != nil {
 		m.failRemote(err)
 		m.fail(err)
@@ -1047,6 +1047,7 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 		approved:   true,
 		thumbprint: m.selected,
 		session:    session,
+		origin:     origin,
 		level:      level,
 		tsaClient:  tsaClient,
 		allowBB:    allowBB,
@@ -1321,6 +1322,7 @@ func (m *mainWindow) recordAudit(d consentDecision, report jobs.Report) {
 		lastErr:     lastErr,
 		isTestKey:   d.session.Certificate().IsTestKey,
 		level:       report.AchievedLevel,
+		origin:      d.origin,
 	})
 	// Told once, on the report screen, as a notice rather than an
 	// error: nothing about this batch went wrong, and the entry that

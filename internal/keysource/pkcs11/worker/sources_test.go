@@ -10,6 +10,9 @@ import (
 	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
 )
 
+// discardFor is the per-module stderr sink a test does not care about.
+func discardFor(string) io.Writer { return io.Discard }
+
 // canned builds a Source over a child that answers whatever a test asks for,
 // with a candidate attached the way Sources would attach one. The path is the
 // canned one, which is what a Failure will name, so a test can tell which of
@@ -169,7 +172,7 @@ func TestIsWorkerFailureTellsABrokenWorkerFromAnAnswerFromTheCard(t *testing.T) 
 // the same question pkcs11.Sources does.
 func TestSourcesReportsAConfiguredPathThatIsNotThereAsAFailure(t *testing.T) {
 	const missing = `C:\this\module\does\not\exist\nowhere.dll`
-	sources, failures := Sources(missing, nil, io.Discard)
+	sources, failures := Sources(missing, nil, discardFor)
 	t.Cleanup(func() { _ = CloseAll(context.Background(), sources) })
 
 	var named bool
@@ -249,7 +252,7 @@ func TestEverySourceKeepsTheCandidateItWasBuiltFrom(t *testing.T) {
 		{Path: `C:\Windows\System32\aetpkss1.dll`, Vendor: "A.E.T. Europe B.V.", Origin: pkcs11.OriginKnown},
 		{Path: `C:\somewhere\else\personal64.dll`, Vendor: "Nexus", Origin: pkcs11.OriginConfigured},
 	}
-	got := sourcesFor(want, nil, io.Discard)
+	got := sourcesFor(want, nil, discardFor)
 	if len(got) != len(want) {
 		t.Fatalf("got %d sources for %d candidates", len(got), len(want))
 	}
@@ -292,7 +295,7 @@ func TestASourceFromDiscoveryCanActuallyCollectAPIN(t *testing.T) {
 		Path:   cannedPath(askingCard(cannedAnswers{Label: "card"})),
 		Vendor: "A vendor",
 		Origin: pkcs11.OriginKnown,
-	}}, entry, io.Discard)
+	}}, entry, discardFor)
 	t.Cleanup(func() { _ = CloseAll(context.Background(), sources) })
 
 	if len(sources) != 1 {

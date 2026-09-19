@@ -116,6 +116,27 @@ func (s Source) ModulePath() string {
 	return s.w.ModulePath()
 }
 
+// Origin says whether this module's path was the person's own configured one
+// or one of the installation paths this project has measured off real machines.
+//
+// It is here because what an audit entry may record about a module depends on
+// it: a known path is under Program Files or System32 and carries no personal
+// name by construction, where a configured path is a person's own installation
+// and can be anywhere, including under their user profile. SPEC §6.7 says the
+// audit log never contains personal names, and this is the only thing that
+// tells the caller which case it has.
+//
+// A Source built by NewSource rather than by Sources has no candidate, and
+// answers OriginKnown — the conservative direction here is the one that admits
+// less, and a caller that cannot establish a path was configured must not
+// record it as though it had been checked.
+func (s Source) Origin() pkcs11.Origin {
+	if s.candidate.Path == "" {
+		return pkcs11.OriginKnown
+	}
+	return s.candidate.Origin
+}
+
 // List implements keysource.Source.
 //
 // The worker answers with raw DER and an optional label, because the child

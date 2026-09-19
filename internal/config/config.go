@@ -176,6 +176,32 @@ type Config struct {
 	// the hash path has already built a CMS around a certificate it
 	// therefore already knows.
 	CertificateListingEnabled bool `json:"certificateListingEnabled"`
+
+	// PKCS11ModulePath is one extra PKCS#11 module to try, beyond the
+	// installation paths this project has measured off real machines.
+	//
+	// It is F11 §3's escape hatch, for every installation this project
+	// did not anticipate: a person whose issuer put its module somewhere
+	// unusual has no other way to reach it. Empty is the default and
+	// means "the known paths only", which is every machine this project
+	// has seen.
+	//
+	// **From this file and from nowhere else.** A module path supplied
+	// over the protocol is arbitrary code execution wearing a
+	// configuration field — a calling application that can name a DLL
+	// for this agent to load has taken the agent over, and checking the
+	// file first changes nothing about that. internal/keysource/pkcs11
+	// says the same thing at the other end, and neither place is
+	// sufficient on its own.
+	//
+	// omitempty, unlike every field above it. Those describe how the
+	// agent behaves and are worth writing out so a person can see and
+	// edit them; this one names a file on disk, is empty on every
+	// machine that does not need it, and writing `"pkcs11ModulePath":
+	// ""` into everybody's config.json would advertise a place to put a
+	// path to a DLL. The escape hatch is documented where escape hatches
+	// belong rather than in the file the settings window rewrites.
+	PKCS11ModulePath string `json:"pkcs11ModulePath,omitempty"`
 }
 
 const (

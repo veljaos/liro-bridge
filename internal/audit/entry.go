@@ -104,6 +104,54 @@ type Entry struct {
 	// Nil on every other entry, which is what makes "tell the person
 	// once, not on every subsequent signature" a property of the data
 	// rather than a flag somebody has to remember to clear.
+	// Backend is which key source produced the signature:
+	// keysource.Source.Name(), so "windows-cng", "pkcs11" or "softtoken".
+	// Empty means an entry written before this field existed, and is not
+	// a fourth value — every entry any existing log holds is one.
+	//
+	// It is here because a machine can have the same certificate visible
+	// through more than one backend (D-310 measured one card answering
+	// identically through CNG and through a vendor's PKCS#11 module),
+	// and D-311 decides which one signs. A year from now, "which one
+	// actually did" is a question only this field can answer.
+	Backend string
+
+	// Module names the PKCS#11 module, and is empty for every other
+	// backend. Two builds of one vendor's module five years apart
+	// differ by twenty-seven times on one call (D-305, D-271) and are
+	// identical in everything CK_INFO reports — same manufacturer, same
+	// library description, and a libraryVersion of two bytes that reads
+	// the same for both. **The path is the only thing that tells them
+	// apart**, which is why this field holds one and not a version.
+	//
+	// # What it holds, and the price of §6.7
+	//
+	// For a module found at one of the installation paths this project
+	// has measured off real machines, the **whole path**: those are
+	// under Program Files or System32 and carry no personal name by
+	// construction.
+	//
+	// For a module found at the path a person configured themselves, the
+	// **file name only**. A configured path is a person's own
+	// installation and can be anywhere, including under their user
+	// profile, where it would carry their name — and SPEC §6.7 says this
+	// log never contains personal names.
+	//
+	// **So the price is stated here rather than discovered later.**
+	// Somebody investigating a signature years from now, made through a
+	// module somebody had configured by hand, will want to know where
+	// that module was and will find only what it was called. That is not
+	// an oversight and it is not recoverable from the log: it is what
+	// §6.7 costs, paid here, on the one field where the useful value and
+	// the forbidden one are the same string.
+	//
+	// The distinction is pkcs11.Origin's, which the discovery code
+	// already draws for its own reason — a configured path failing is a
+	// person's instruction failing, where a known path being absent is
+	// not a failure at all. Leaning on a distinction that already exists
+	// is better than inventing one for this.
+	Module string
+
 	Discontinuity *Discontinuity
 
 	// PrevHash is the previous entry's Hash — zero-length for the
@@ -181,6 +229,23 @@ func (e Entry) CanonicalBytes() []byte {
 		buf = append(buf, channelMarker)
 		buf = appendString(buf, string(e.Channel))
 	}
+	// The backend and the module go behind their own marker, after the
+	// channel's, for the reason each of the three above has its own: an
+	// entry that names a backend must not be able to canonicalise to
+	// the same bytes as one that does not, and an entry written before
+	// this field existed must canonicalise to exactly what it always
+	// did. Every entry in every log on disk today has neither, so every
+	// one of them is unchanged by this field's arrival.
+	//
+	// Both are written whenever either is set, and both are
+	// length-prefixed, so "pkcs11 with no module" and "no backend with
+	// a module" are different bytes rather than an ambiguity nobody
+	// thought about.
+	if e.Backend != "" || e.Module != "" {
+		buf = append(buf, backendMarker)
+		buf = appendString(buf, e.Backend)
+		buf = appendString(buf, e.Module)
+	}
 	return buf
 }
 
@@ -191,6 +256,12 @@ const discontinuityMarker byte = 1
 
 // channelMarker introduces the optional trailing Channel field.
 const channelMarker byte = 2
+
+// backendMarker introduces the optional trailing Backend and Module
+// fields. Markers are numbered in the order the fields were added
+// rather than by any meaning, and each is emitted after the last, so
+// the next optional field is one more marker and nothing else.
+const backendMarker byte = 3
 
 // ComputeHash returns SHA-256 of e.CanonicalBytes() — e's own Hash and
 // PrevHash fields are irrelevant to the input except that PrevHash is
