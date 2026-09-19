@@ -29253,3 +29253,313 @@ So this is recorded rather than fixed, and it is recorded as a general finding
 rather than as a revocation footnote, because the next instance will not be
 `CERT_REVOKED` and the reader who needs this will not be looking for it under
 that name.
+
+---
+
+## D-313 — The agent reaches a PKCS#11 module at last: one worker per module for the life of the process, and an audit entry that says which backend signed and pays §6.7's price out loud
+
+**Date:** 2026-09-19
+**Phase:** F11 §4 — steps 1, 2 and 4, landed together
+
+F12 §2 built a worker, a protocol, a PIN seam, a lifecycle and nine entries of
+measurement, and **nothing in the product ever called any of it.** `internal/
+keysource/pkcs11` loaded modules in-process and nothing outside `main.go`
+imported it. That is [[D-247]]'s shape waiting to happen on the largest piece of
+work in the phase. This is the caller.
+
+### 1. The lifetime, which is the shape everything else depends on
+
+**One worker per discovered module, started lazily, closed when the process
+ends.** The alternative was one per signature, closed with the session, and it
+was rejected for two reasons rather than one.
+
+`C_Initialize` is the call [[D-272]] measured a real module dying inside, about
+once in a hundred. Paying it per signature rolls that die every time somebody
+signs. The worker *would* absorb it — absorbing it is what the worker is for —
+but at the cost of three process spawns and a visible pause on the unlucky one,
+and `LiveModule`'s own doc had already made this argument for the module:
+*"a session has to survive many calls, and paying C_Initialize per call rolls
+the same dice every time."*
+
+The second reason is sharper and is about a number nobody should have to
+invent. `keysource.Session.Close` takes no context. A worker closed with its
+session would need a shutdown budget chosen inside that method — and [[D-297]]
+left the per-request deadline deliberately open, *as a question with its own
+justification and its own owner*. Closing at process exit makes the bound the
+agent's own shutdown, which already exists.
+
+**What it costs, named rather than glossed:** one child process per discovered
+module, alive for the agent's lifetime, each holding a vendor DLL loaded with
+its `DllMain` run and staying run. Nexus's `personal64.dll` writes to standard
+error from inside it ([[D-303]]), which is why each child's output goes to the
+log tagged with its own module path rather than to this process's console.
+
+**`pkcs11ShutdownGrace` is five seconds and is chosen rather than measured,
+which the constant says out loud.** Nothing in this project has measured a real
+`C_Finalize`. What has been measured is that the slowest single module call on
+this hardware is [[D-305]]'s 856 ms `C_FindObjectsInit`, so five seconds is
+several times the slowest thing known — which is a defensible choice and not a
+finding, and the difference is written where the number is.
+
+### 2. The chain, and the sentinel it turned out to need
+
+D-311's rule as one more link in a fallback that already existed: **CNG, then
+each PKCS#11 module in turn, then the soft token.**
+
+In turn and not in parallel, because opening means logging in: two modules
+asked at once is two PIN screens for one signature, and one card behind two
+modules ([[D-271]]) would spend two attempts on one mistake.
+
+Writing it exposed a gap. Both not-found sites in the PKCS#11 backend returned
+a bare `fmt.Errorf`, so *"that certificate is not on this card"* could only be
+told from *"this module is broken"* by reading the English in it. Until §4
+nothing above that package had more than one place to look, so a sentence was
+enough. [[D-033]] already forbids masking a real failure behind a second attempt
+against an unrelated backend — **a rule a caller cannot apply if it cannot tell
+the cases apart.**
+
+`pkcs11.ErrCertificateNotFound` is that sentinel, and across the worker's pipe a
+string cannot carry it, because `errors.Is` does not survive `json.Marshal`.
+`Response` gained one bool. A bool and not a code: the parent needs exactly one
+question answered, `Err` stays a readable sentence as F11 §3 asks, and a general
+code field would invite the parent to branch on strings the child chose.
+
+So the walk is: not-found, carry on; worker died, log it and carry on (F11 §3's
+own rule, applied to a module that loaded and then died); **anything else stops
+the walk**, because the next module answering "not mine" must not become the
+explanation a person is shown for a card that was removed.
+
+### 3. `config.PKCS11ModulePath`, an escape hatch that had been designed and had no field
+
+F11 §3 says a configured path comes *"from the person's own configuration, and
+from nowhere else"*, and `pkcs11.Candidates` takes one. There was no field. A
+person whose issuer put its module somewhere unusual had no way to reach it.
+
+`omitempty`, unlike every field above it in that struct, and the reason is worth
+the line it costs: the others describe how the agent behaves and are worth
+writing out so a person can see and edit them, while this one names a file on
+disk and is empty on every machine that does not need it. **Writing
+`"pkcs11ModulePath": ""` into everybody's `config.json` would advertise a place
+to put a path to a DLL.** A test asserts that a config file written before this
+field existed is unchanged by being read and written back.
+
+### 4. Step 4, and the price of §6.7 stated rather than discovered
+
+`audit.Entry` gains `Backend` and `Module`, behind their own marker, emitted
+only when one of them is set — the same shape `AchievedLevel`, `Discontinuity`
+and `Channel` each used. **Every entry in every audit log on disk canonicalises
+to exactly what it always did.**
+
+That was measured rather than argued. `scripts/auditverify` re-verifies a real
+log against the working tree, and **the owner's own 316-entry chain verifies
+against this one.** The verifier was shown able to fail first: altering one
+field of entry 150 in a copy is reported as broken at entry 150. Without that
+control, "it verifies" is consistent with a verifier that says yes to anything —
+[[D-296]]'s first question, asked of the instrument rather than of the code.
+
+**What `Module` holds, and what it costs.** For a module at one of the
+installation paths this project has measured off real machines, the whole path:
+those are under Program Files or System32 and carry no personal name by
+construction. For a module at a path the person configured themselves, the file
+name only — that path can be anywhere, including under their user profile, where
+it would carry their name, and SPEC §6.7 says this log never contains one.
+
+**The price is written into the field's own doc comment rather than left to be
+found.** Somebody investigating a signature years from now, made through a
+hand-configured module, will want to know where that module was and will find
+only what it was called. That is not an oversight and it is not recoverable from
+the log. It is what §6.7 costs on the one field where the useful value and the
+forbidden one are the same string.
+
+The distinction is `pkcs11.Origin`'s, which discovery already draws for its own
+reason — a configured path failing is a person's instruction failing, where a
+known path being absent is not a failure at all. **Leaning on a distinction that
+already exists is better than inventing one for this**, and it is the owner's
+ruling.
+
+**No version field, and the refusal is the point.** The obvious thing to record
+is which build of a module signed, because [[D-305]] measured two builds of one
+vendor's module differing by twenty-seven times on one call. Measured today on
+all three modules on this machine, read-only, no card:
+
+```
+aetpkss1.dll                      "A.E.T. Europe B.V."             "Cryptographic Token Interface"
+TrustEdgeID\netsetpkcs11_x64.dll  "NetSeT Global Solutions d.o.o." "CardEdge PKCS#11 Library"
+MUP RS\Celik\netsetpkcs11_x64.dll "NetSeT Global Solutions d.o.o." "CardEdge PKCS#11 Library"
+```
+
+**The two NetSeT builds are identical in everything `CK_INFO` reports**, and its
+`libraryVersion` is two bytes that read `1.1` for both. The four-part numbers in
+D-271 and D-305 come from the Windows file version resource, not from PKCS#11 at
+all. So the path is the only discriminator — and a `libraryVersion` field would
+look like it answered which build somebody has and would not. The owner's
+ruling: *"a field that looks like it answers which build somebody has, and does
+not, is worse than no field."* That is [[D-310]]'s and [[D-312]]'s own argument
+turned on a tempting case.
+
+**`signerOrigin`** carries the answer from the one place that decides to the one
+place that records it. Between those two points the only thing in scope is a
+`keysource.Session`, which cannot say where it came from. The alternative was a
+method on that interface, which four implementations and every test fake would
+have to grow in order to answer a question only the chooser has ever had.
+
+### 5. Testing this meant running the one suite the traps warn about
+
+`cmd/liro-bridge`'s tests are the ones [[D-266]] recorded writing to the owner's
+real audit log — *the one file in this program whose whole value is that nothing
+writes to it except signing* — and four attempts to reproduce that half came
+back clean, so the cause is still unknown.
+
+I did not want to write wiring I could only test by running that suite, and
+said so. **The owner overruled it, correctly, and the reasoning is worth
+keeping:** an untested wiring change is worse than a carefully-run test, D-266's
+audit half has never been reproduced, so the risk avoided is one that has never
+been seen and the risk taken by not testing is certain.
+
+Run as agreed: snapshot by copy first, `LOCALAPPDATA` redirected,
+`TestAConsoleTheAgentIsAloneOnIsGivenBack` — the named, reproducible half —
+skipped. The whole package passes in 86 s. Afterwards, compared against the
+copies: **the audit log byte-for-byte identical, 316 entries**; `config.json`,
+`pairings.json`, `secrets.json`, `secrets.entropy` and `update-state.json` all
+identical; the `Run` key identical value by value.
+
+**And the redirect produced a finding nobody asked for.** It caught a whole
+`Liro` directory that would otherwise have gone into the owner's own —
+`logs\bridge.log`, an extracted `icon-18579.ico` ([[D-285]]), the full
+`ui-assets` tree and an entire WebView2 profile. What it did **not** contain is
+the interesting part: **no `audit` directory, no `pairings.json`, no
+`secrets.*`, not even redirected copies.** With that one test skipped, nothing
+in the suite writes any of them anywhere.
+
+That does not explain D-266, and it is not offered as an explanation. What it
+does is narrow it: **the test that reproducibly writes the `Run` key is also the
+only test that starts a real agent, and a real agent is what creates a device
+secret and a pairing.** D-266's two halves may have one cause. Not established
+— establishing it means running the skipped test deliberately and watching,
+which is its own measurement with its own agreement — but it is the first
+narrowing that question has had.
+
+---
+
+## D-314 — The `unsafeptr` warning is a recorded decision and not a blind spot; here are the five things this week that did pass because nothing was looking, and it is not one of them
+
+**Date:** 2026-09-19
+**Phase:** F12 — a claim of mine, checked and withdrawn
+
+**This entry begins by correcting itself.** Reporting on F11 §4 I said that
+`go vet`'s `possible misuse of unsafe.Pointer` at
+`internal/keysource/pkcs11/module_windows.go:348` was invisible to CI, called it
+*"a gap in the guard rather than a defect in the code"*, and the owner asked for
+it to be recorded as the fifth such gap this week.
+
+**It is not a gap.** `.golangci.yml` disables `unsafeptr` project-wide, in
+writing, with its reasoning attached:
+
+> unsafeptr is disabled project-wide: `internal/ui`'s hand-written COM vtable
+> implementations (F5 §2.1) must reinterpret the raw "this" machine word a
+> callback receives from foreign code as a `*T` — the exact pattern this
+> analyzer exists to catch for accidental misuse, but unavoidable and correct
+> for implementing a native callback ABI. Verified: isolating the conversion in
+> its own helper function does not change the verdict, since the check is
+> per-expression, not per-package. See [[D-080]].
+
+So somebody looked, decided, and wrote down why. The analyzer is silent because
+it was switched off on purpose, not because nothing points at it. **My report
+described a deliberate decision as an oversight, and the only reason that did
+not become a decision-log entry is that the file was read before the entry was
+written.**
+
+### What is true, and it is much smaller
+
+The flagged line is `module.fn`, which reads the i'th function pointer out of
+`CK_FUNCTION_LIST`:
+
+```go
+return *(*uintptr)(unsafe.Pointer(m.list + ckFunctionListBase + uintptr(i)*ckPtrSize))
+```
+
+That is the same category as the COM vtables the disable was written for —
+reinterpreting a machine word that foreign code handed us — in a different
+package. It is correct here for the same reason: `m.list` is an address from
+`LoadLibrary`, not Go memory, so there is nothing for a collector to move.
+
+The one true residual observation is that **the written justification names
+`internal/ui` and a second package now depends on the same disable.** The
+reason is still sound; it is just narrower than the use. Worth a sentence in
+`.golangci.yml` the next time somebody is editing it, and not worth a change of
+its own.
+
+### The five that did pass because nothing was looking
+
+Named, because the owner asked which — and because the list is more useful than
+any one of its entries. In order of when they were found this week:
+
+1. **`ui.CollectPIN` answered Cancel and "too long" identically** ([[D-307]]).
+   The function was complete, correct, guarded and tested, and returned
+   `(0, false, nil)` for two different things. It passed everything because
+   **nothing called it**: the defect could not be reached by any test until the
+   first caller existed.
+
+2. **The PIN-outlive AST guard had no positive control** ([[D-307]]). A check
+   that walks the syntax tree and refuses a PIN that survives its call — and
+   nobody had ever shown it could fire. It was green for as long as it had
+   existed, which is exactly what a guard that cannot fail looks like from
+   outside. `TestThePINOutliveRuleWouldActuallyFire` is that control, added
+   after the fact.
+
+3. **`SetForegroundWindow`'s return value was discarded** ([[D-309]]). The PIN
+   dialog sat behind Firefox for 3.8 seconds on its first live run. Windows is
+   entitled to refuse that call and documents when; **nothing in the program
+   could know that it had**, so no check, log or report would ever have
+   mentioned it. It was found by building an observer, not by anything failing.
+
+4. **`CERT_REVOKED` is presentable and unreachable** ([[D-310]], [[D-312]]).
+   Two green checks — every code has a message in every catalogue, `AllCodes`
+   is complete — guarantee between them that the code can be *displayed*, in
+   three languages, kept in step with every locale change. Neither asks whether
+   it can be *produced*, and nothing in the program can produce it. It has read
+   as maintained for eleven phases.
+
+5. **Two mutations survived this session's first pass** (this session, the
+   commit adding `worker.Sources`). The tests were green and two properties
+   were not held: `Sources` could forget to attach the candidate, and
+   `sourcesFor` could drop the PIN entry. The second is the one that matters —
+   every listing still works, every module still loads, and the only symptom is
+   `ErrNoPINEntry` at the moment a person has approved a signature. Green tests
+   over a wrong property, found only because the tests were attacked rather
+   than run.
+
+### The family next door, which is not the same thing
+
+Three discarded values were found this week — `SetForegroundWindow`'s `BOOL`
+([[D-309]]), `fetchCRL`'s parsed revocation list ([[D-310]]), and `Modules`
+writing a probe child's whole answer to `_`. Only the first is in the list
+above, because the other two are not failures of a check: nothing was wrong,
+and nothing was passing that should have failed. They are a value nobody kept,
+not a question nobody asked.
+
+The distinction is worth keeping because the remedies differ. A check that
+cannot fail needs a control. A value nobody kept needs a caller who wants it —
+and until there is one, discarding it is not a defect, which is why [[D-309]]'s
+own pointer block says the decision is made *on behalf of callers who do not
+exist yet* rather than saying it is wrong.
+
+### What this entry is for
+
+Two things, and the first is the reason it exists at all.
+
+**A claim about a guard is a claim, and claims get checked.** Saying "CI cannot
+see this" is a statement about the configuration, and the configuration is a
+file in the repository that takes ten seconds to read. It was not read before
+the claim was made. That is the same shape as everything in the list above —
+something believed because nothing had looked — arriving in the report rather
+than in the code, which is the one place this week's discipline had not been
+pointed.
+
+**And five is enough to stop calling it a coincidence.** Every item above was
+found by doing something other than running the tests: writing a caller,
+writing a control, building an observer, grepping for a producer, attacking the
+suite with mutations. **Not one of them was found by the tests going red.** A
+suite that is green is evidence that the things it checks are true, and this
+week it has been consistently misread as evidence that the things it does not
+check are also true.
