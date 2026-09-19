@@ -111,11 +111,14 @@
   </section>
 
   <div class="report-footer liro-fixed-region">
-    <div class="liro-row setting-row">
+    <!-- A label and the value beside it are two pieces of one phrase,
+         not a row with a control on the right, so they sit together at
+         the start of the line. See .report-pair. -->
+    <div class="liro-row setting-row report-pair">
       <span class="liro-text-small" data-i18n="main.report_output_label"></span>
       <span class="liro-text-small" id="report-output"></span>
     </div>
-    <div class="liro-row setting-row">
+    <div class="liro-row setting-row report-pair">
       <span class="liro-text-small" data-i18n="main.report_level_label"></span>
       <span class="liro-text-small" id="report-level"></span>
     </div>

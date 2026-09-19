@@ -29869,3 +29869,139 @@ through a PKCS#11 module, and with this option off — which is every machine �
 it still cannot on hardware where CNG works. The run that changes that is one
 PIN, one attempt, no retry, agreed in advance in [[D-268]]'s shape, and it is
 the next thing.
+
+---
+
+## D-317 — Step 3 closed on the card; the report screen put a label and its value at opposite ends of the window, which no layout test saw because the screen had never been given a long path; and half of what I diagnosed was wrong
+
+**Date:** 2026-09-19
+**Phase:** F11 §4 step 3, closed — and a photograph
+
+### Step 3 is closed
+
+The owner opened the certificate chooser with the Pošta card in the reader:
+
+- **`Savka Odžić` appears once. One row.** F11 §4 step 3, on a screen, by a
+  person looking at it.
+- The MUP certificate is listed and marked *"Ubacite karticu u čitač"* — that
+  card is not in the reader, and the screen says so rather than hiding it.
+- **Nothing said that two modules had failed.** Expected: [[D-315]] measured two
+  failure rows in `certs --json` and the window has nowhere to show them. Now
+  observed rather than predicted.
+- The list took about the seven seconds [[D-315]] measured, most of it
+  TrustEdgeID's probe child dying.
+
+**And D-311 was observed working, by accident.** The flow ran through to a
+signature — Escape did not leave where he expected it to — and *"it went through
+CNG and the PIN never touched our program."* That is the decision behaving
+exactly as decided, on hardware, seen rather than reasoned about. Throwaway
+document, throwaway binary, no harm.
+
+**Escape not leaving where it was expected is its own finding and is not
+chased here.** It cost a signature that was not intended. Recorded as an open
+question rather than a defect, because "where should Escape go from each step"
+is a decision about the flow and not a bug to patch quietly.
+
+### The defect, and the half of it that is real
+
+Two things on one screen, reported from a photograph:
+
+1. **"Nivo potpisa" and "B-B" pushed to opposite ends of the line**, so they do
+   not read as a label and its value.
+2. **"Sačuvano u" and the path overlapping**, the path appearing to start under
+   the label rather than after it.
+
+**The first is real, reproduced and fixed.** `.liro-row` is
+`justify-content: space-between`, which is right for a row whose right-hand side
+is a control — the documents step's output row, where two buttons sit there —
+and wrong for two pieces of one sentence. Measured: **441.4 points of empty
+space between the label and its value, in a row 528 points wide.** The fix is
+one line, `.report-pair { justify-content: flex-start; }`, and a test fails
+without it.
+
+**The second I could not reproduce, and the mechanism I blamed was already
+handled.** My first diagnosis was a missing `overflow-wrap`: the value's box
+shrinking under `min-width: 0` while unbreakable text spilled out of it. I wrote
+that into a three-rule fix and into a comment asserting *"these two rows never
+got it"*.
+
+`main.css:220` has carried this since before any of it:
+
+```css
+#report-output,
+#report-level {
+  overflow-wrap: anywhere;
+}
+```
+
+Measured with the new rules deleted outright and the row forced narrower and
+narrower — 528, 260, 180 and 120 points — the path wrapped correctly at every
+width, never overflowed its box, and never overlapped the label. **The comment
+was false and the two extra rules were redundant**, so the fix was cut back to
+the one line that is supported by a measurement.
+
+**What the owner saw is therefore unexplained.** Something about that screen on
+that run differs from this one and I do not know what — display scaling and the
+report step's real window width are the two candidates I would look at next. The
+screenshot did not reach me; with it, or with the scaling setting, this becomes
+answerable.
+
+### Why no layout test saw the part that is real
+
+**The report screen had never been rendered with a long path in it.**
+
+This suite does test long values. `TestMainWindowLongNameDoesNotWidenTheWindow`
+exercises a 250-character document *name* on the documents step, and its own
+comment says the long *path* case *"is exercised where paths are handled, in
+internal/jobs"* — which is true, and is about a package that handles paths
+rather than about a screen that displays one. Between those two the report step
+fell through: it takes a path, shows it, and nothing had ever given it one long
+enough to matter.
+
+It is [[D-279]]'s family — every test passed and a photograph caught it — and
+the seventh entry for [[D-314]]'s list, with the same property as the other six:
+**it was not found by anything going red.**
+
+### Which screens take a path, measured rather than guessed
+
+The owner asked which others are worth a pass. Every place a filesystem path
+reaches a page, and what holds it:
+
+| where | element | what keeps it in its box |
+|---|---|---|
+| main, documents step | `#output-folder` | `.setting-value` — `overflow-wrap:anywhere`, `min-width:0` |
+| main, documents step | `.file-folder` per row | own line (`flex: 1 1 100%`), `overflow-wrap:anywhere` |
+| main, queue step | `.file-folder` per row | the same rule |
+| **main, report step** | **`#report-output`** | **the id rule — and `.liro-row`'s `space-between`, which was the defect** |
+| settings | `#output-folder`, `#tsa-client-cert-path` | `<input>` elements in `.liro-field`, which stacks label above input |
+
+**No other screen displays a path at all** — consent shows file *names*, the
+audit log is forbidden from holding one (SPEC §6.7), and place, stamp,
+certificates, pairing and update have none.
+
+So **the report row was the only path in the program sitting in a `.liro-row`
+with `space-between` and a bare span.** Everything else either has its own line,
+a wrapper carrying the right rules, or is an input, which clips and scrolls and
+cannot overlap anything. `.liro-field` exists in settings for a related reason
+already recorded there: a side-by-side row divides the width between a label and
+a value, and Serbian labels are long.
+
+**Nothing else needs a pass**, and that is a measurement rather than a
+reassurance.
+
+### The test, and the control that corrected it twice
+
+`TestTheReportsLabelsAndValuesDoNotOverlapWithALongPath` renders the report with
+a path of the shape that found this, and checks three things per row: the value
+does not start before the label ends, the gap between them is not more than a
+quarter of the row, and neither escapes the row's own edges.
+
+**Its first version passed against the broken layout**, because I compared
+viewport coordinates against the row's *width* instead of its edges — an
+assertion that could not fail. The second version caught the chasm and still
+missed the overlap, which is how the overlap turned out not to be there.
+
+That is the control doing its job twice on one test, and it is the reason the
+entry above says "could not reproduce" rather than "fixed": without running the
+test against the old CSS, this would have shipped as a two-part fix for a
+one-part defect, with a false comment explaining the half that was not there.

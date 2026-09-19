@@ -167,6 +167,24 @@ body.drag-over #file-list {
   min-width: 0;
 }
 
+/* A label and its value read as one phrase, so they sit together at the
+   start of the line rather than at opposite ends of it.
+
+   .liro-row's justify-content:space-between is right for a row whose
+   right-hand side is a control — the documents step's output row, where
+   two buttons sit there — and wrong for two pieces of one sentence. On
+   the report it put "Nivo potpisa" and "B-B" at opposite ends of the
+   window, 441 points apart in a row 528 wide, where they stop reading as
+   a label and its value at all.
+
+   Wrapping is not part of this. #report-output and #report-level below
+   already carry overflow-wrap:anywhere and always did, and a long path
+   in these rows was measured wrapping correctly at every width down to
+   120 points — which is why this rule is one line and not three. */
+.report-pair {
+  justify-content: flex-start;
+}
+
 .setting-value {
   display: flex;
   align-items: baseline;
