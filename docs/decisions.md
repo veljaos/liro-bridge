@@ -29895,30 +29895,87 @@ than last lines, and grep the output for `typechecking error`. A lint run is
 not a build, and on another `GOOS` the difference is invisible unless somebody
 looks for it.
 
-### A defect found by writing the run down
+### Otkaži produced a signed document
 
-Drafting the protocol for the PKCS#11 signature turned up something the run
-itself would have hit in its first thirty seconds.
+**This is the worst defect this session found and it is the one this program
+exists to make impossible.**
 
-**A cancelled PIN fell through to the next backend.** `pkcs11.ErrPINCancelled`
-is neither "this module does not have the certificate" nor a worker failure, so
-the preference's walk-past rule caught it and carried on — to CNG, which on
-Windows means **the operating system's own PIN dialog appearing immediately,
-for the signature the person had just declined.**
+A person presses **Cancel** on a PIN prompt. They get a **signed document**.
 
-Measured with the guard removed: `err = <nil>`. Not a second prompt — in that
-test CNG *signed*. Cancelling this program's PIN screen produced a signature
-through another backend.
+`pkcs11.ErrPINCancelled` is neither "this module does not have the certificate"
+nor a worker failure, so the preference's deliberate walk-past rule — the one
+that exists so a broken module leaves nobody worse off — caught it and carried
+on to the next backend. On Windows the next backend is CNG, and CNG signing
+means the operating system's own PIN dialog appearing **for the signature the
+person had just declined.**
 
-SPEC §6.5.1 clause 5 is that one wrong PIN is one attempt. This is its
-neighbour and it had no clause: the person gave no PIN at all, and **nothing may
-turn "no" into "ask somewhere else"**. A cancellation now stops the chain
-wherever it happens, on both orders, with a test in both directions.
+**Measured with the guard removed: `err = <nil>`.** Not a second prompt. In that
+test CNG *signed*. The refusal became a signature.
 
-It is worth recording how it was found. Not by the tests, which were green; not
-by review; by **writing down what a person would see, in order, and noticing
-that step two had no answer.** The rehearsal was going to find it in front of
-the owner, at the cost of a PIN prompt he had just refused.
+**SPEC §18.2 forbids the outcome and nothing prevented it.** There was no clause
+to break, which is the part worth sitting with: §6.5.1 clause 5 says one wrong
+PIN is one attempt, and says nothing about a person who gives no PIN at all
+because the case had never existed — until today there was one backend that
+could ask, so declining it ended the matter by arithmetic rather than by rule.
+Adding a second backend turned "no" into "ask somewhere else", and the rule that
+would have forbidden it had never needed writing.
+
+A cancellation now stops the chain wherever it happens, on either order, with a
+test in both directions and a control that fails without the guard.
+
+### How it was found, which is the other half
+
+**Not by the tests, which were green. Not by review. By writing down what a
+person would see, in order, and noticing that step two had no answer.**
+
+The protocol for the run says: press `Otkaži`. Asking what happens next had no
+answer that was not "CNG is asked" — and there is no way to write that sentence
+down and leave it there.
+
+**So the rehearsal changed what it is for.** It was going to be the step that
+discovered this, in front of the owner, at the cost of a PIN prompt for a
+signature he had just refused. It is now the step that confirms the guard holds
+on real hardware. Both halves matter and neither is redundant: **the protocol
+found the defect, and the protocol is now the check** — writing the run down was
+an instrument, and running it is a different one.
+
+Three defects have now been found this session by writing down what should
+happen rather than by running anything: this, [[D-316]]'s hole in the fallback
+chain, and [[D-317]]'s survey of which screens take a path. None of the three
+would have gone red.
+
+### The module ordering, and a crash doing useful work by accident
+
+With the preference on, `openThroughPKCS11` asks each module in turn and stops
+at the first that fails for anything other than "not this certificate". On this
+machine that order matters more than it should:
+
+| | |
+|---|---|
+| 1. `C:\WINDOWS\System32etpkss1.dll` | has the Pošta card |
+| 2. `C:\Program Files\TrustEdgeID
+etsetpkcs11_x64.dll` | **fails discovery — its probe child dies inside `C_Initialize`** ([[D-315]]) |
+| 3. `C:\Program Files\MUP RS\Celik
+etsetpkcs11_x64.dll` | answers `CKR_DEVICE_ERROR` for a Pošta card |
+
+SafeSign is first in `knownModulePaths`, so the right module is asked first and
+the third is never reached. Checked rather than assumed, because had the order
+been reversed the run would have failed on `CKR_DEVICE_ERROR` for a reason with
+nothing to do with the seam being measured.
+
+**And the thing keeping the second one out of the way is that it crashes.** A
+module that fails discovery never becomes a source, so [[D-315]]'s crash — the
+one that closed F12 §2's exit item — is also, incidentally, what stops
+TrustEdgeID being asked for a certificate it does not have. That is a crash
+doing useful work by accident, **and it will not always**: the day the vendor
+fixes it, TrustEdgeID becomes a usable source sitting between SafeSign and MUP
+RS, and the order that happens to be right today is right for a reason nobody
+chose.
+
+`PKCS11ModulePath` is the forcing mechanism if it ever changes — a configured
+path is tried first — and it exists for its own reason ([[D-316]]) rather than
+for this one. Recorded so that whoever meets a `CKR_DEVICE_ERROR` on a working
+module knows where the order comes from.
 
 ### What this does not do
 
