@@ -27648,6 +27648,37 @@ coming back are still looking.
 > Nothing below is changed. It is a dated record of what four measurements
 > established, and this is an addition rather than a fifth item in its list.
 
+> **A fifth question, from [[D-322]], and this one *is* a fifth item in the
+> list below.** The four ask whether a check can do its job. This one asks
+> whether anybody did theirs with the answer:
+>
+> > **5. Did anything the check said actually get read — and if a count moved,
+> > was the difference explained or absorbed?**
+>
+> The rule, in one line, which is the whole of it:
+>
+> > **A discrepancy is explained or it is a finding, never absorbed.**
+>
+> It is here rather than in its own entry because it belongs beside the four,
+> and it was paid for the way they were. [[D-320]] was pushed with a wrong
+> conclusion, and the guard that would have caught it had already fired: the
+> extracted icon's file name carries its byte length, [[D-285]] put it there
+> for exactly this, and `icon-18315.ico` printed in that session's own machine
+> check as **three icon files against a snapshot recording two.** The
+> discrepancy was absorbed — *the product extracts its icon on start, so this
+> is normal* — which is a plausible cause standing in for a measurement, the
+> move [[D-266]] refused and [[D-305]] named as the least likely thing in this
+> project to be caught.
+>
+> **It is not [[D-285]]'s finding.** There the thing that failed was prose, and
+> the remedy is to build a guard. Here the guard existed, was mechanical, was
+> unambiguous, and failed **at the reader** — so a project that answers every
+> instrument failure by building a better instrument meets this one with
+> nothing to add. The owner's form of it: *a guard that fires and is read as
+> noise is worse than no guard, because it spends the alarm.*
+>
+> Nothing below is changed.
+
 **Date:** 2026-09-18
 **Phase:** F12 §2 — the instrument, not the code
 
@@ -31422,3 +31453,148 @@ scan. Restarting the agent rewrites the file, so it hides on its own.
 - **Restoring `bridge.json`, or stopping either agent.** The owner said he would
   stop one and asked which to keep; 5124 has already gone, and starting or
   stopping his agents is not this session's ([[D-268]], [[D-283]]).
+
+---
+
+## D-323 — The restart left the old agent running, so there are two again and the older one is the invisible one; the discovery file's lifecycle is unconditional at both ends, and the snapshot list is a guard that shrank
+
+**Date:** 2026-09-20
+**Phase:** F12 — closing the Windows half, and what goes into the Linux half
+
+**Three things, and the first is an answer to "tell me if anything you can check
+from there disagrees." Something does.**
+
+### 1. Autostart, the verb icon and `bridge.json` are all correct — and the restart left the old instance running
+
+| | state |
+|---|---|
+| `HKCU\…\Run\LiroBridge` | `…\Desktop\liro-bridge\liro-bridge.exe` tray — **back on this build** |
+| Explorer verb `Icon` | `…\Liro\icon-18579.ico` — **the current asset**, so *Potpiši* now draws the thinned mark |
+| `bridge.json` | present, written 14:21:28, `{"port": 17581, "agentVersion": "dev", "protocolVersion": 2}` |
+
+All three as intended. **But two agents are running, both from the repository
+root:**
+
+```
+PID 14864  started 13:06:42  listening 127.0.0.1:17580   <- not in bridge.json
+PID  6792  started 14:21:28  listening 127.0.0.1:17581   <- the one the file names
+```
+
+14864 never exited. So the restart added an instance rather than replacing one,
+and **the older agent holds a port that nothing can find** — which is the same
+state as before, arrived at from the other direction, and this time with both
+processes on the same build so it is not a build difference.
+
+**14864 is the one to stop, by exact PID** ([[D-122]]; [[D-315]] nearly killed
+six of Windows' own SearchHost processes by matching on an image name). Stopping
+it will also remove `bridge.json` — see §2 — so 6792 will need a restart after,
+or the surviving agent is the undiscoverable one again.
+
+### 2. The discovery file has no owner, measured in the code rather than inferred
+
+[[D-322]] left this as an open question, *consistent with* a second instance
+tearing down a file it did not write and explicitly not established. **The
+mechanism is now established, from the source rather than from the sequence:**
+
+- **`WriteBridgeFile` is unconditional at startup** (`protocol_windows.go:84`).
+  Whichever agent starts last overwrites the file with its own port. Nothing
+  checks for an existing file or a live agent.
+- **`RemoveBridgeFile` is unconditional at shutdown**
+  (`protocol_windows.go:146`). Whichever agent stops first deletes the file,
+  **whether or not it is the agent the file names.**
+
+That closes the mechanism half. The observational half stays open exactly as
+[[D-322]] wrote it — nothing watched the file, and it was not in this session's
+snapshot, so its contents at 13:06 and at 13:50 cannot be recovered.
+
+**The detail worth keeping is in `RemoveBridgeFile`'s own doc comment**, because
+it shows the concurrency was thought about:
+
+> *A file that is already gone is not an error: two agents shutting down
+> together, or a user who deleted it, are both states this should end in
+> silently.*
+
+**So the author considered two agents and handled the benign direction.** A file
+already gone is fine. Removing somebody else's is the direction that bites, and
+it is the one not covered. That is not carelessness — it is the shape where
+concurrency was reasoned about once and the reasoning stopped at the case that
+came to mind.
+
+**And `platform.NewLeader` is not the missing guard, which I was one grep away
+from claiming.** It has exactly one caller, `open_windows.go:104`, with
+`platform.ShellBatchLeaderName` — it is the Explorer **shell-batch** collector,
+so that right-clicking twenty PDFs produces one batch rather than twenty
+windows. It is correctly used for what it was built for, its doc comment cites
+SPEC §14.1 for why the mutex is `Local\` rather than `Global\`, and **reading it
+as an agent single-instance guard would have been [[D-320]]'s error again in a
+smaller place.** Nothing prevents a second `tray` agent in one session, and
+nothing ever claimed to.
+
+**Raised into F12 §7 rather than left to wait**, on the owner's instruction and
+his reasoning: Linux has its own discovery path, its own `$XDG_RUNTIME_DIR` and
+nothing built yet, and §6 already needs single-instance for the no-tray desktop
+— so the mechanism is wanted twice and should be decided once. `docs/phases/F12.md`
+gains **§7.1**, in the *decide and record* form the rest of that document uses,
+with three questions: whether a second instance refuses, hands over or runs
+alongside; who owns the file and whether removal must name its own port; and
+whether a stale file is distinguishable from a live one, which on Windows it is
+not. It also notes that `$XDG_RUNTIME_DIR` is cleared at logout, which
+`%LOCALAPPDATA%` is not and which may already do part of the work — **to be
+established rather than assumed.**
+
+### 3. The fifth question is now where the four are, and the snapshot list is the same failure again
+
+The owner's instruction was that *"a discrepancy is explained or it is a finding,
+never absorbed"* belongs where the four questions are and not in an entry of its
+own. **[[D-304]]'s heading now carries it**, in the pointer-block form that entry
+already uses for [[D-309]]'s addition and that [[D-305]] and [[D-309]] each carry
+for the same reason — the body is untouched, SPEC §17 is not bent, and the shape
+is [[D-125]]'s. It says plainly that it *is* a fifth item in that list, where
+D-309's addition said it was not.
+
+**And my own gap belongs beside the finding, which is the owner's point and
+sharper than I had it.** `bridge.json` was in the snapshot list of [[D-268]],
+[[D-272]], [[D-283]], [[D-285]] and [[D-287]], and not in mine. His framing:
+
+> **The snapshot list is not a habit; it is a list, and a list that shrinks
+> silently is a guard failing at the reader again.**
+
+That is the same failure as the icon count, one level up, and it is worse in one
+respect: the icon count was a discrepancy I read and dismissed, where the
+snapshot list was a **decision I never noticed making.** Five entries had
+converged on what to copy before anything ran, that convergence was the guard,
+and it degraded by omission with nothing to read.
+
+**And the cost was not hypothetical.** It is exactly why §2's observational half
+has to stay open: had `bridge.json` been copied at 13:09, its contents at that
+moment would be in hand, the 13:50 overwrite would be visible as a changed file
+rather than reconstructed from a port number, and the question would be closed
+instead of half-closed. **The one file the snapshot lost is the one file the
+session's last finding needed.**
+
+So the practical form, and it is duller than a mechanism: **the snapshot list is
+written down in one place and read from there, not reassembled from memory each
+session.** It is not built here — that is a change to how every session starts
+and belongs to whoever is given it, which is [[D-270]]'s own conclusion about a
+project-wide check it declined to build. What is recorded is that it shrank, and
+what it cost.
+
+**Rejected.**
+
+- **Putting the rule in its own entry.** The owner's instruction, and right: a
+  rule about reading a check belongs beside the four questions about checks, or
+  it is found by whoever is already thinking about instruments and missed by
+  whoever is not.
+- **Editing [[D-304]]'s body to add a fifth item to its numbered list.** SPEC
+  §17. The pointer block says it is a fifth item without rewriting a dated
+  record, which is what that form is for.
+- **Claiming `platform.NewLeader` is a single-instance guard nobody wired up.**
+  It has a caller and a purpose and both are correct. One more grep was the
+  difference between a finding and a repeat of this session's own error.
+- **Fixing the discovery file's ownership on Windows now.** It is a change to
+  the agent's lifecycle, the owner has closed the Windows half, and F12 §7.1 is
+  where it gets decided on the platform being built.
+- **Stopping PID 14864.** The owner's agents are his ([[D-268]], [[D-283]]).
+  Which one, and why, is in §1.
+- **Building something to stop the snapshot list shrinking.** Above, and it is
+  [[D-322]]'s own conclusion: a second guard inherits the same reader.
