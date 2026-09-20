@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"path/filepath"
+	"strings"
 
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/errs"
@@ -62,9 +62,61 @@ func (o signerOrigin) auditModule() string {
 		return ""
 	}
 	if o.configured {
-		return filepath.Base(o.module)
+		return fileNameOfAnyPath(o.module)
 	}
 	return o.module
+}
+
+// fileNameOfAnyPath is the file name of a path written for any platform, and it
+// is deliberately not filepath.Base.
+//
+// The two answer different questions, and only one of them is SPEC §6.7's.
+// filepath.Base answers "what is this path's last element *on this machine*";
+// §6.7 asks "does any directory component survive". Those come apart, measured
+// on a real Linux kernel and on this Windows machine with the same table of
+// paths:
+//
+//	                                        filepath.Base on
+//	input                                   windows                 linux
+//	C:\Users\Veljko\vendor\lib.dll          lib.dll                 the whole path
+//	C:netsetpkcs11_x64.dll                  netsetpkcs11_x64.dll    the whole string
+//	\\server\share\vendor\lib.dll           lib.dll                 the whole path
+//	/home/veljko/vendor/libaetpkss.so       libaetpkss.so           libaetpkss.so
+//
+// So the asymmetry is not that filepath.Base is "platform-dependent" in the
+// even-handed way that sounds. Windows' filepath already handles both
+// separators and the volume, so it gives the §6.7 answer for a path from either
+// platform; Linux's handles only '/' and returns the argument unchanged for a
+// Windows one — **including the user profile directory, which is exactly the
+// personal name §6.7 forbids this log to carry.**
+//
+// Splitting on all three characters on every platform removes the platform from
+// the answer, and that is the property being bought rather than a tidier
+// spelling. It is what lets the guard's own test assert the same thing in the
+// GOOS=windows and GOOS=linux views instead of asserting a Windows fact in one
+// of them and nothing in the other (D-295: two arms that are the same arm are
+// one arm).
+//
+// What it costs, in the safe direction: on Linux '\' and ':' are legal
+// *filename* characters, so a file genuinely named `weird\name.so` is reported
+// as `name.so`. That is a less useful file name and never a §6.7 leak, which is
+// the right way round for a privacy rule to be wrong.
+//
+// What it does not promise, said here because the doc comment on
+// audit.Entry.Module can be read as promising it: a *file name* can itself
+// carry a personal name — `/opt/veljko-vendor-lib.so` reduces to
+// `veljko-vendor-lib.so` — and no rule at this layer can tell a person's name
+// from a vendor's. Reducing a configured path to its file name is the decision
+// D-313 recorded; it bounds the exposure to one path element and does not
+// remove it.
+func fileNameOfAnyPath(p string) string {
+	// '/' and '\' are the two platforms' separators; ':' is what separates a
+	// Windows volume from a drive-relative path that has no separator at all
+	// (`C:lib.dll`), which filepath.Base strips on Windows and keeps on Linux.
+	if i := strings.LastIndexAny(p, `/\:`); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }
 
 // openCardOrSoftToken is the one place this program decides where a

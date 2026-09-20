@@ -30400,3 +30400,453 @@ What has *not* been done is a **batch** through PKCS#11 — this was one documen
 would mean one dialog per document and has never been seen. That is its own
 measurement and needs the owner's hands again, and it should be agreed the way
 this one was rather than assumed to follow.
+
+---
+
+## D-319 — The path-stripping function that keeps a personal name out of the audit log kept it in on Linux; the test supplied the input and the host supplied the mechanism, and that is a fifth shape rather than one of D-304's four
+
+**Date:** 2026-09-20
+**Phase:** F12 — CI red on [[D-318]]'s push, and the platform question it forces
+
+**The failure, on the `test (softtoken tag)` step of the Ubuntu job:**
+
+```
+--- FAIL: TestAConfiguredModulesPathIsNotWrittenIntoTheAuditLog
+    /a_configured_path_is_reduced_to_its_file_name
+  auditModule() = "C:\Users\Veljko\Desktop\vendor\netsetpkcs11_x64.dll",
+  want "netsetpkcs11_x64.dll"
+```
+
+Worth one line of precision the report did not have: it is the **softtoken**
+step and only that one. `keysources.go` is `//go:build windows || softtoken`, so
+the plain `go test ./... -race` step does not compile this file on Linux at all.
+The job that saw it is `go test -tags softtoken ./... -race -count=1`, and
+`-race` is incidental — the failure is not a race and would appear without it.
+
+### The question that was asked first, and the answer is in three parts
+
+*"Establish whether this is the test's platform or the program's."*
+
+**1. The program cannot leak through this route on Linux today, because nothing
+calls it there.** `auditModule`'s only caller is
+`interactive_windows.go:163`, which is `//go:build windows`. Measured rather
+than assumed — that is the whole grep, and `audit.Entry.Module` has exactly
+three readers, the other two being the store's own round-trip. On a
+`-tags softtoken` Linux build the function compiles and its only caller is the
+test. **That is [[D-247]]'s shape for the ninth time**, and it is why the test
+was the only thing that could have found this.
+
+**2. Nor would it leak once F12 gives it a caller**, because the path
+`auditModule` is handed always comes from the machine it is running on —
+`discover_other.go`'s known paths, F12 §10's p11-kit registry, or
+`config.PKCS11ModulePath` typed by a person on that machine. All `/`-separated,
+and `filepath.Base` answers those correctly. A Windows path cannot produce an
+audit entry on Linux by any route: `auditModule` is reached only after a module
+at that path has loaded and opened a session, and a `.dll` under `C:\Users` does
+not load on Linux.
+
+**So in the narrow sense it is the test's platform.** The test pinned its input
+— a literal Windows path — and left the mechanism ambient.
+
+**3. And the function is still wrong, for a reason that is not portability.**
+This is the part worth the entry. `filepath.Base` and SPEC §6.7 ask different
+questions:
+
+> `filepath.Base` answers *"what is this path's last element **on this
+> machine**"*. §6.7 asks *"does any directory component survive"*.
+
+Today the program asks the first and hopes it is the second. That is [[D-270]]'s
+finding in a new place — a rule keyed on what a thing is *called* rather than on
+what it can *hold* — and it is the same move as [[D-299]]: the mechanism was
+borrowed from the standard library because it reads right, not because it
+answers the rule.
+
+### The measurement, taken on both platforms rather than reasoned from one
+
+Twelve paths through `filepath.Base`, run as a real `windows/amd64` binary here
+and a real `linux/amd64` binary on the WSL Ubuntu kernel. The rows that matter:
+
+| input | `filepath.Base` on windows | on linux |
+|---|---|---|
+| `C:\Users\Veljko\Desktop\vendor\netsetpkcs11_x64.dll` | `netsetpkcs11_x64.dll` | **the whole path** |
+| `C:netsetpkcs11_x64.dll` (drive-relative, no separator) | `netsetpkcs11_x64.dll` | **the whole string** |
+| `\\fileserver\Veljko\vendor\lib.dll` | `lib.dll` | **the whole path** |
+| `C:/Users/Veljko/vendor/lib.dll` | `lib.dll` | `lib.dll` |
+| `/home/veljko/vendor/libaetpkss.so` | `libaetpkss.so` | `libaetpkss.so` |
+| `/opt/vendor/weird\name.so` | `name.so` | `weird\name.so` |
+
+**The asymmetry is not even-handed, and "platform-dependent" understates it in
+the wrong direction.** Windows' `filepath` handles both separators *and* the
+volume, so it gives §6.7's answer for a path from either platform. Linux's
+handles only `/` and returns a Windows path unchanged — **user profile
+directory included, which is precisely the personal name §6.7 forbids this log
+to carry.** So the function is correct on Windows for either input and correct
+on Linux only for Linux input. There is no platform on which it is wrong about
+its own paths, and exactly one on which it is wrong about the other's.
+
+The last row is the other half of the same fact and it is the reason the fix
+costs something: **on Linux `\` and `:` are legal filename characters**, so
+`weird\name.so` is one file whose name contains a backslash, and there
+`filepath.Base` is right where a both-separators rule is wrong.
+
+### The fix, and why not a suffix
+
+`fileNameOfAnyPath` splits on the last of `/`, `\` or `:`, on every platform.
+`auditModule` calls it; `path/filepath` is out of the file.
+
+**A `_windows` suffix on the test was refused and the reason is not only the
+owner's instruction.** A suffix would have stopped CI seeing it, which is the
+stated objection. The deeper one is that it would have left the *subject*
+platform-dependent, and then the Windows run and the Linux run would have been
+asserting different things — one a real property, the other nothing. That is
+[[D-295]] exactly: two arms that are the same arm are one arm. **Removing the
+platform from the answer is what lets the test keep no suffix and keep the
+Windows path**, which is the case the rule exists for, and makes one measurement
+answer for both views.
+
+Also refused: making the test build its input with `filepath.Join` so each
+platform asserts its own shape. It compiles everywhere and it deletes the only
+case that has ever mattered — a path with a person's name in it — from the Linux
+run, on the platform this phase exists to reach.
+
+**What it costs, in the safe direction.** A Linux file genuinely named
+`weird\name.so` is reported as `name.so`: a less useful file name, never a §6.7
+leak. A privacy rule that errs toward stripping more is erring the right way.
+
+### The control, and it is the half that shows the fix is the right one
+
+The fix was reverted and re-measured. **The mutation now fails on both
+platforms, where before it passed on one:**
+
+| | before this change | after |
+|---|---|---|
+| `filepath.Base`, run on Linux | **FAIL** — CI's message, reproduced verbatim locally | FAIL |
+| `filepath.Base`, run on Windows | **PASS** — invisible where the developer works | **FAIL** — the guard fires |
+
+The Windows column is the point. The defect used to be visible only where nobody
+was looking; it is now visible in both places, which is what "settled" has to
+mean for a function this phase is about to give a second platform.
+
+`TestTheAuditPathRuleDoesNotDependOnTheHostPlatform` is what makes the Windows
+column fail: it reads `keysources.go` from disk and refuses any call into `path`
+or `path/filepath` inside the two functions. From disk rather than through the
+build, so it asks the same question in both views and cannot answer differently
+in the one nobody runs it in ([[D-299]]). It carries a positive control on the
+declarations it found — a renamed function would make it pass by looking at
+nothing, which is the guard [[D-307]] found running for six months with no
+control — and a fixture test that runs the same checker over `filepath.Base`,
+`filepath.Split` and `path.Base` and requires all three to be reported.
+
+The guard exists rather than a comment because **the regression is the obvious
+edit**: `filepath.Base(o.module)` is shorter, reads correctly, is what was
+there, and looks right on the machine it would be written on. A note asking for
+it not to be done is what [[D-285]] and [[D-293]] each measured failing.
+
+### Which of D-304's four questions this is: none of them
+
+Asked for as "D-314's four questions" — the four live in [[D-304]]; D-314 is the
+list of things that passed because nothing was looking, which this also belongs
+on. Taking the four in turn:
+
+1. **Could this check have failed?** Yes. It did, on the first push.
+2. **Could this instrument have seen the absence it reports?** It reported a
+   presence, not an absence.
+3. **Is the instrument's resolution finer than the thing measured?** Resolution
+   is not involved.
+4. **Did this run actually run?** It ran.
+
+**So it is a fifth shape, and it is the mirror of the family's usual one.**
+[[D-291]] named that family as *a check whose input and whose expectation come
+from the same place*. This is the inverse:
+
+> **A check whose input and whose mechanism come from different places.** The
+> input was pinned — a literal Windows path in the source. The mechanism was
+> left ambient — the host platform's separator rule, supplied by whichever
+> machine happened to run it. Neither half is wrong. They were simply never tied
+> to each other, so the check asserted a Windows fact and then asked a Linux
+> question.
+
+The practical form, and the question to ask beside the other four: **when a
+check pins its input, ask what else it left the machine to supply.** Here it was
+one function's idea of a separator. It is the same class as [[D-290]]'s
+`-tags softtoken` control, where the pinned thing was the subject and the
+ambient thing was the build configuration — and this log already contains the
+general version, in [[D-290]]'s own words: *which build a control is valid under
+is part of the control*. What this adds is that the *platform* is too, and that
+a file with no OS suffix has made a claim about every platform whether its
+author meant to or not.
+
+**How it differs from [[D-295]], which is the nearest neighbour.** There, two
+lint arms could not disagree because the default already was the value: the
+check could not have failed anywhere. Here the check could fail, did fail, and
+failed in the one place the subject has no caller — so the failure was real
+about the test and not yet real about the program. **D-295's was a check that
+could not fail; this was a check that could only fail where nobody was looking.**
+
+**One inconsistency in the record, noticed while placing this and not resolved
+here.** [[D-296]]'s canonical table lists D-295 under question 1, while D-295's
+own body says it *passes* question 1 and fails a different one ("are these two
+arms actually two?"). Both were written the same week. Nothing turns on it and
+neither is edited — SPEC §17 — but a reader using D-296's table as the index
+should know the body disagrees with its own row.
+
+### What is not fixed, and it is a limit rather than a defect
+
+**A file name can itself carry a personal name.** `/opt/veljko-vendor-lib.so`
+reduces to `veljko-vendor-lib.so`, on every platform, before and after this
+change, and no rule at this layer can tell a person's name from a vendor's.
+
+It is named because `audit.Entry.Module`'s doc comment can be read as promising
+otherwise — it says a configured path is reduced to its file name *because* the
+directory is where a name would be. That is true of the paths anybody has
+measured and it is not a guarantee. Reducing to the file name is [[D-313]]'s
+decision and it **bounds** the exposure to one path element; it does not remove
+it. Not changed: the alternative is refusing to record the module at all for a
+configured path, which costs the support question D-313 already weighed, and
+that is the owner's call rather than a fix to make while repairing a CI job.
+
+Also left alone: `filepath.Base` everywhere else in the tree. The sweep found
+every other use is either a test or a path this program created or opened on the
+machine it is running on — the audit store's own chain file names, output
+naming, `os.CreateTemp`, discovery. **`auditModule` is the only site where an
+arbitrary, person-supplied path reaches a privacy rule**, which is why it is the
+only one that needed this.
+
+### The instrument, which was better than expected and then failed in a way that was mine
+
+**A real Linux run was available locally.** [[D-287]] ran a `linux/amd64` binary
+under the `docker-desktop` WSL distro; there is an Ubuntu distro here too, and
+`go test -c` for `linux/amd64` plus that kernel gives a genuine Linux verdict
+without waiting for CI. Every Linux number in this entry was taken that way and
+CI is the second opinion rather than the only one. **Worth writing down because
+this project has twice concluded that CI is the only instrument for a
+platform question** ([[D-295]], [[D-303]]): for anything that does not need
+cgo, `-race` or a GUI, it is not.
+
+**And an instrument of mine reported the wrong thing, on the icon half.** The
+tray capture BitBlt'd the screen at `Shell_TrayWnd`'s own rectangle and came
+back with a game HUD: a full-screen window was painted over the taskbar. The
+control I had written checked that the capture was *not blank* — 13 398 distinct
+colours — and that is a different question from whether it captured a taskbar.
+**A capture of a window's coordinates is not a capture of that window**, and
+`IsWindowVisible` returning true plus a correct `GetWindowRect` says nothing
+about what is drawn there. That is [[D-256]]'s, [[D-258]]'s and [[D-309]]'s state
+arriving from the other side, and [[D-304]]'s second question asked of my own
+control: it could have seen the absence of *pixels*, never the absence of a
+*taskbar*. `PrintWindow` with `PW_RENDERFULLCONTENT` is what rendered the real
+thing; plain `PrintWindow` returned TRUE and drew nothing at all, which is the
+same failure one flag over.
+
+**And a third, on the check that this entry's own backslashes had survived.**
+`grep -c 'C:\\Users\\Veljko\\...'` over this file returned **0**, which read as
+the heredoc hazard having eaten them. It had not: `grep -F` returns 2 and a
+byte-level count returns 2. The pattern was the problem — this `grep` interprets
+`\U` — so a check written to confirm that backslashes survived was itself
+defeated by backslash handling. That is [[D-293]] exactly, which is the entry
+about `grep -c` for a carriage return in a `grep` that strips them, and it is
+the third instrument in this session to report the wrong thing. **The settling
+reading is always the bytes**, and D-293 said so; I reached for `grep` first
+anyway.
+
+### The predictions
+
+Twelve, written before anything was measured, ranked, with the least certain
+named. **All twelve held**, including the one I expected least — that Windows'
+`filepath.Base` strips the volume from a drive-relative `C:foo.dll` — and
+including P12, that this would turn out to be none of D-304's four.
+
+**A thirteenth was formed mid-session and was wrong, which is the useful one.**
+On reading [[D-317]]'s note that this display runs at 150% scaling, I predicted
+that `SM_CXSMICON` would therefore be 24 rather than 16, that the tray was never
+drawing the 16 px frame, and that the owner's complaint was therefore about a
+frame with 15% of headroom rather than 1%. It would have been a tidy answer.
+Measured: **96 DPI, 100% scaling, `SM_CXSMICON` = 16**, and a 48-pixel taskbar,
+which is what 100% produces. The tray is drawing the 16 px frame and D-286's
+floor there is exactly the live constraint.
+
+It is recorded rather than dropped for two reasons. It is [[D-304]]'s own lesson
+again — I read a number out of an entry instead of measuring the machine. And it
+leaves a real open question: **D-317's 150% and today's 100% cannot both
+describe the same display at the same time**, so either the scaling changed
+since 19 September or D-317's figure was about something else. It matters
+because `SM_CXSMICON` is DPI-scaled — measured here at 16, 20, 24 and 32 for
+96, 120, 144 and 192 DPI — so *which frame the tray draws is a property of the
+person's scaling*, and the headroom differs by an order of magnitude between
+them. Anyone acting on the icon numbers below should establish the scaling
+first.
+
+### The icon: the floors re-measured, and there is no room at 16
+
+Re-measured rather than quoted, by sweeping each frame's stroke a hundredth of a
+pixel at a time through the generator's own renderer and its own connectivity
+question — not a second implementation, because the question is what the
+generator produces. [[D-286]]'s numbers reproduce exactly:
+
+| frame | drawn | floor | headroom | ink share drawn | at the floor |
+|---|---|---|---|---|---|
+| **16 px** | 0.94 | **0.93** | **0.01 px (1.1%)** | 23.7% | 22.9% |
+| 20 px | 1.14 | 1.11 | 0.03 px (2.6%) | 21.9% | 21.6% |
+| 24 px | 1.30 | 1.10 | 0.20 px (15.4%) | 20.6% | 18.2% |
+| 48 px | 2.15 | below 1.80 | large | 16.3% | — |
+
+**So: there is no room at 16 px.** One hundredth of a pixel, and spending it
+buys eight tenths of a percentage point of ink share — 23.7% to 22.9% — while
+landing on the cliff [[D-286]] declined to sit on, where the verdict turns on
+whether a single bridge pixel clears half coverage. The answer to the question
+as asked is *there is not*, and the recommendation is the owner's own: leave it.
+
+The comparison in the complaint is confirmed and is the gradient rather than the
+level, which is what [[D-286]] found the first time: 23.7% of the tile at 16
+against 16.3% at 48 is still a factor of 1.45, and it cannot be reduced from the
+16 px end because that end is on its floor. **Reducing it would mean adding
+weight at 48**, which inverts the instruction D-286 was given.
+
+### Where the icon actually is, which was not the expected finding
+
+The owner asked for it *where it sits, next to the other icons actually there*.
+Photographed, with `PrintWindow(PW_RENDERFULLCONTENT)` on the real
+`Shell_TrayWnd`, at 1:1 and magnified:
+
+**The Liro tile is not in the visible notification area at all.** Zero pixels
+within 48/255 of `#038387` anywhere in the 248-pixel strip — and looked at as
+well as counted, which is this project's standing requirement. What is there, in
+order: the `^` chevron, `SRP`, Wi-Fi, volume, the clock, the notification bell.
+The chevron is Windows 11's hidden-icon button, so the agent's icon is **in the
+overflow flyout**, which does not exist as a window until somebody opens it.
+
+The agent that owns it is running and is not the one the handover expected:
+**PID 14864 is the repository-root build from 2026-09-19 17:37, not the
+installed v0.9.2.** Its extracted `icon-18579.ico` is byte-identical to the
+committed `internal/ui/assets/icon.ico` (`59a889ec…`), whose last change is
+`26dacf6`, [[D-286]]'s thinning — so the icon the owner has been judging *is*
+the thinned one, which was the premise and is now checked rather than assumed.
+
+**Opening the flyout is a click, and a click on this machine is the owner's**
+([[D-094]]). So the picture is one step short, and a tool is left ready for it
+rather than a description: it waits, notices the flyout, photographs it with its
+neighbours, finds the tile by colour, and reports the tile's size and how much
+of it reads as white — the same number as the table above, measured off the
+screen instead of off the generator. The instructions are in the report to the
+owner.
+
+**Why this is not a footnote.** The complaint is that the white is too heavy *in
+the tray*, and the flyout is not the tray: Windows 11 draws overflow icons on a
+flyout background rather than on the taskbar, and the surround a 16 px tile sits
+against is most of what decides how heavy its white reads. Judging it against
+the wrong ground is [[D-285]]'s turquoise-wallpaper question in miniature, and
+that entry decided the tile's edge by measuring contrast against the ground it
+actually sits on. **Nothing here is a reason to change the icon, and it is a
+reason not to act on 1.1% of headroom until the picture is of the right
+surface.**
+
+### SPEC §19 gains the macOS deferral
+
+The owner's ruling, carried into the document because nobody had: **macOS is out
+of v1 and F13 is deferred rather than cancelled.** Two edits — the F13 row is
+marked, and a paragraph beside [[D-282]]'s own note gives the reason (there is
+no Mac here and none to be had, so F13 cannot be built with the machine in
+hand) and says what the deferral does *not* withdraw: §1.1's closing bullet,
+§6.4's Keychain row, §14's `~/Library/Application Support` path and §11.11's
+observation about CNG all remain statements about a platform this project
+intends to reach.
+
+It is a transcription rather than a decision — the ruling, the reason and the
+distinction are all the owner's — which is why it was made rather than drafted
+and held. The narrowness is [[D-225]]'s, [[D-232]]'s, [[D-276]]'s, [[D-278]]'s
+and [[D-287]]'s discipline: two edits were called for and two were made.
+
+### One failure on this machine that is not this session's
+
+`TestTheCommittedAssetIsWhatThisGeneratorProduces` fails here — 18 579 bytes
+committed against 18 880 produced. That is [[D-308]], to the byte: this machine
+runs go1.27.1 where `go.mod` names 1.26.5, the pixels are identical in all eight
+frames, and the test compares `compress/flate`'s output. D-308 records it,
+measured it, named three answers and left the choice to the owner. **It is not
+fixed here and the failure message's own advice — regenerate the asset — remains
+the one answer that is wrong.**
+
+### Verified
+
+`gofmt` clean. `go vet -unsafeptr=false` exit 0 in the `windows`, `linux` and
+`darwin` views, with and without the `softtoken` tag. `golangci-lint` 2.13.2 —
+the version CI pins — exit **0** in all three views and in both tagged views,
+with the output grepped for `typechecking error` and the exit code read rather
+than the last line ([[D-316]]: that pipeline once called a tree clean that did
+not compile). Builds for `windows/amd64`, `linux/amd64`, `darwin/amd64` and
+`darwin/arm64`. `checkdeps` OK (51 packages); `checkcss` OK. No `//nolint`.
+
+`internal/audit` green. The whole of `cmd/liro-bridge` green in 94 s, run
+[[D-313]]'s way: snapshot by copy first, `LOCALAPPDATA` redirected to a scratch
+directory, and `TestAConsoleTheAgentIsAloneOnIsGivenBack` — [[D-266]]'s named,
+reproducible half — skipped. The four affected tests also run on the real Linux
+kernel, where they are green and where the mutation is not.
+
+`-race` was not run and could not be: no C toolchain here and `CGO_ENABLED=0` is
+F0 §10. It was not installed to chase one ([[D-012]]). The failure is not a race
+and CI's Linux job is where the detector belongs.
+
+### The machine
+
+Snapshotted before anything ran, by **copy** and not by hash ([[D-153]],
+[[D-243]]): `reg export` of the Explorer verb key and the `Run` key, plus copies
+of `config.json`, the `audit` directory, `pairings.json` and `secrets.*`.
+
+Afterwards: `config.json`, `pairings.json`, `secrets.json` and
+`secrets.entropy` byte-identical to their copies; the audit chain identical and
+still **319 entries**; the `Run` key compared **value by value** rather than as
+a file ([[D-285]]: `reg export` does not emit values in a stable order); the
+Explorer verb key unchanged. Ten crash dumps, none added, none from this
+project.
+
+**No new `icon-NNNNN.ico`.** `internal/ui`'s window tests were never run
+unredirected, and the two files in `%LOCALAPPDATA%\Liro` are the ones that were
+there at the start, recorded in the snapshot manifest precisely so that a new
+one would be distinguishable — which is the only thing that has ever caught
+[[D-285]]'s hazard, after three authors read the note and walked into it anyway.
+
+The owner's tray agent (PID 14864) was left running and untouched. Every probe
+in this session was created and deleted in the same session ([[D-100]]) and
+wrote only into the session scratchpad; the one that outlived its shell was
+stopped **by exact PID after confirming its image name**, never by pattern —
+[[D-315]] nearly killed six of Windows' own SearchHost processes by matching
+`msedgewebview2`. `scripts/genicon/floorsweep_scratch_test.go` existed for one
+measurement and is deleted; `git status` carries three modified files and
+nothing else.
+
+**Rejected.**
+
+- **A `_windows` suffix on the test.** The owner's instruction, and the
+  additional reason above: it leaves the subject platform-dependent, so the two
+  views go on asserting different things and one of them asserts nothing.
+- **Building the test's input with `filepath.Join` per platform.** Compiles
+  everywhere and deletes the only case that matters from the Linux run.
+- **Calling it the test's defect and stopping there.** It is the test's input
+  and the program's mechanism, and the mechanism is the half that survives into
+  F12 §8's packaging and F12 §10's discovery.
+- **Reporting the program as leaking on Linux.** It is not, and it would not be
+  once it has a caller there. Saying so would have been the more alarming
+  reading and it is not the measured one.
+- **Hand-rolling the strip without `:`.** Then `C:foo.dll` still answers
+  differently on the two platforms, which defeats the one property the change is
+  for. It is not a personal-name leak; it is the platform back in the answer.
+- **Putting `fileNameOfAnyPath` in `internal/audit` so the rule lives with the
+  field whose price it pays.** Attractive, and nothing there could enforce it: a
+  *known* path is recorded whole and is full of separators, so the layer holding
+  `Entry` cannot tell a violation from correct behaviour. One caller, one place
+  ([[D-307]]'s test for when a new package earns itself: two readers, not one).
+- **Fixing the file name's own residual exposure.** Unfixable at this layer, and
+  the alternative is a decision about what the log records at all.
+- **Re-tuning the 16 px stroke to its floor.** One hundredth of a pixel for
+  eight tenths of a point of ink share, onto the cliff [[D-286]] declined for
+  reasons that have not changed.
+- **Shrinking `markFrac` at 16 px to buy turquoise margin.** [[D-286]] rejected
+  it and the rejection stands: it games the number rather than removing ink, and
+  it makes the mark jump in size between 16 and 20 in the contact sheet the
+  owner judges it by.
+- **Rendering the 16 px frame onto the flyout's measured background colour and
+  calling that the photograph.** It is a rendered frame, which is the one thing
+  the request ruled out, and the surround is exactly what is in question.
+- **Clicking the chevron.** [[D-094]]. The tool waits instead.
+- **Fixing [[D-308]]'s icon test while the suite was open.** Its remedy is a
+  decision about a shipped artefact and a committed check, and D-308 declined it
+  for the reason [[D-227]], [[D-233]] and [[D-249]] each give.

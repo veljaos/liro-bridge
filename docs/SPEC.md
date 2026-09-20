@@ -1179,9 +1179,13 @@ Three groups, fourteen phases. Each has a verifiable exit condition.
 |---|---|
 | **F11** | PKCS#11 layer (cgo, cross-compilation) |
 | **F12** | Linux: Secret Service, WebKitGTK, PDF preview limitation notice |
-| **F13** | macOS: Keychain, WKWebView, SafeSign |
+| **F13** | macOS: Keychain, WKWebView, SafeSign — **deferred, not in v1** (see below) |
 
 **Linux precedes macOS deliberately, and the order is not to be swapped back for tidiness.** A Linux machine is available today — a VPS or a virtual machine costs nothing — so the phase is built with the machine in hand, which is how every phase in this project has been built. macOS needs hardware that does not exist here, and writing it blind to verify later on a rented machine is the shape F11 spent a day proving does not work. Linux is also the cheaper place to meet the first platform that is not Windows: F11 measured `CK_ULONG` at 4 bytes on Windows and 8 on Linux, and the first encounter with a second platform will surface every wrong assumption about struct layout — better on a machine that can be rebuilt a hundred times for free.
+
+**macOS is out of v1, and F13 is deferred rather than cancelled.** There is no Mac here and none to be had, so F13 cannot be built the way every phase of this project has been built — with the machine in hand, measuring rather than reasoning. The paragraph above gives the reason that matters: writing a platform blind and verifying it later on a rented machine is the shape F11 spent a day proving does not work. **So v1 ships Windows and Linux.**
+
+The distinction between deferred and cancelled is the whole of this note. F13 keeps its number, its content and its place in this table, and **nothing in this document that names macOS is withdrawn** — not §1.1's closing bullet, not §6.4's Keychain row, not §14's `~/Library/Application Support` path, not §11.11's observation that PKCS#11 is required wherever there is no CNG. Each of those remains a statement about a platform this project intends to reach. What is withdrawn is any expectation that a *v1 release* covers three of them, and the one thing that would reopen the phase is a Mac.
 
 **F3 is the hardest and riskiest phase and deliberately precedes all UI work.** If `/ByteRange` is wrong, everything built on top of it is wasted. F2's soft token exists so that F3 through F6 can be developed without a card.
 
