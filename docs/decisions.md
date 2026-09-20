@@ -31598,3 +31598,241 @@ what it cost.
   Which one, and why, is in §1.
 - **Building something to stop the snapshot list shrinking.** Above, and it is
   [[D-322]]'s own conclusion: a second guard inherits the same reader.
+
+## D-324 — WebKitGTK 6.0 does not start on a stock Ubuntu 24.04: bubblewrap cannot create a user namespace, the remedy is an AppArmor profile the package ships rather than disabling the sandbox, and this VM is not the DMABUF case the handover thought
+
+**Date:** 2026-09-20
+**Phase:** F12 §3.2 — the first measurement ever taken on a Linux machine for
+this project
+
+**This is the first entry in this log written on Linux.** Everything before it
+was measured on Windows, and F12 §0.1 is explicit that a VM proves some things
+and not others. What is below is stated with that split attached.
+
+### The measurement, and it is not the failure F12 §3.2 predicted
+
+F12 §3.2 anticipates two failures — a blank window from the DMABUF renderer,
+and NVIDIA refusing to start — and one open question: *"WebKitGTK 6.0 always
+sandboxes its web process and needs `bubblewrap`. On Ubuntu 23.10 and later,
+AppArmor restricts user namespaces and `bwrap` can fail outright. Establish
+whether it works on Ubuntu 24.04 with the distribution's own package."*
+
+Established. **It does not work, and the symptom is not a blank window.** A
+WebKitGTK 6.0 web view, loading a local page on this machine with no
+environment variables set:
+
+```
+bwrap: setting up uid map: Permission denied
+** ERROR **: Failed to fully launch dbus-proxy: Child process exited with code 1
+timeout: the monitored command dumped core
+```
+
+**The process aborts.** Not a window that renders nothing — no window at all,
+and a core dump. F12 §3.2's own phrase is "can fail outright", and that is
+exactly what it does.
+
+The probe is `WebKit.WebView` driven through PyGObject against the
+distribution's own `gir1.2-webkit-6.0`, so nothing about it is this project's
+code: what failed is WebKitGTK 6.0 as Ubuntu ships it, on Ubuntu 24.04 as
+Ubuntu ships it.
+
+### The mechanism, measured rather than inferred from the message
+
+`bwrap` is **not setuid and carries no file capabilities** —
+`-rwxr-xr-x 1 root root 72160 /usr/bin/bwrap` — so it depends entirely on
+unprivileged user namespaces. This machine has
+`kernel.apparmor_restrict_unprivileged_userns = 1`.
+
+What that restriction does was read off the running kernel rather than out of a
+changelog. A process that creates a user namespace is **transitioned into the
+`unprivileged_userns` AppArmor profile**, and the transition is observable from
+inside the process itself:
+
+```
+before unshare(CLONE_NEWUSER) : unconfined
+unshare(CLONE_NEWUSER)        : OK
+after  unshare(CLONE_NEWUSER) : unprivileged_userns (enforce)
+```
+
+That profile's first line is `audit deny capability` — it denies every
+capability. And bwrap's arrangement is that the **parent** writes the child's
+`/proc/PID/uid_map`, which needs `CAP_SETUID` over the child's namespace. The
+parent has just been stripped of it, so the write is refused and bwrap dies at
+exactly the step its message names.
+
+**Creating the namespace is not what fails.** That is worth stating precisely,
+because the obvious reading of the restriction's name is that it forbids user
+namespaces and it does not:
+
+| | |
+|---|---|
+| `unshare(CLONE_NEWUSER)` | **succeeds** |
+| writing one's *own* `/proc/self/uid_map` | **succeeds** — no capability is needed to map your own uid |
+| writing a *child's* `/proc/PID/uid_map` | **refused** — needs `CAP_SETUID`, which the transition removed |
+
+So a program that maps its own uid works and a program that forks first does
+not, and bwrap forks first. A remedy aimed at "allow user namespaces" would be
+aimed at a step that already works.
+
+### The remedy is a packaging artefact, and Ubuntu has already written it 93 times
+
+The escape hatch F12 §3.2 names —
+`WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` — works, measured below, and it is
+not the answer. **Ubuntu's own answer is an AppArmor profile per binary, and
+`/etc/apparmor.d/` here holds 93 of them.** Every one has the same shape; this
+is the whole of the one for GNOME Web:
+
+```
+profile epiphany /usr/bin/epiphany{,-browser} flags=(unconfined) {
+  userns,
+}
+```
+
+A profile that grants everything (`flags=(unconfined)`) and exists only to say
+`userns,`, so that the named binary is **not** transitioned into
+`unprivileged_userns` when it makes one — and therefore keeps the capability
+bwrap needs. Its own comment says so: *"This profile allows everything and only
+exists to give the application a name instead of having the label
+'unconfined'."*
+
+They are shipped by the **`apparmor` package itself**, not by the applications.
+So a third-party package has to ship its own, which is the ordinary arrangement
+for anything outside the archive.
+
+**So F12 §3.2's instruction — "do not reach for it before measuring whether it
+is needed" — is answered in both directions.** The disable is needed to make
+WebKitGTK run at all on this machine today, and it is not what should ship: the
+sandbox is a real boundary around a web process, and a `.deb` that turns it off
+for every user is a worse artefact than one that carries four lines of AppArmor
+policy. **That moves the answer out of §3.2 and into §8**, where the two
+dependency lists already live, and it is a per-distribution answer rather than
+a Linux one: Fedora's SELinux has no equivalent of this restriction, so the
+Debian/Ubuntu package needs the profile and the Fedora one probably needs
+nothing.
+
+**Not yet established: that the profile is sufficient.** The mechanism above
+says it should be, and a mechanism is not a measurement — D-320 spent five
+sound measurements on an artefact that was not the one on screen. The run that
+settles it is one profile and one probe, it needs `sudo`, and the commands are
+with the owner.
+
+### With the sandbox off it renders correctly, which is the other half
+
+```
+load_finished : true
+js            : 560x653 | rgb(3, 131, 135)
+snapshot      : 560x653
+                #038387 x13615      (the page's own brand turquoise)
+                #16211F x4540       (the page's own background)
+                #FFFFFF x107        (the text)
+```
+
+The page asked for `#038387` on `#16211F` with white text and that is what came
+back, so **the blank-window failure F12 §3.2 leads with does not occur here.**
+
+The snapshot is `WebKitWebView.get_snapshot()` — WebKit rendering itself into a
+texture — and never a screen capture. That is D-122's `PrintWindow` reasoning in
+Linux form, and it earns itself for the same two reasons: taking the picture does
+not depend on the window being in front, and it does not take the foreground from
+whoever is using the machine. It is also the only form that would have been
+trustworthy here, since D-319 measured a screen capture of a window's own
+coordinates returning a completely different program's pixels.
+
+### The handover's premise about the DMABUF path is wrong, and this VM is not the representative case
+
+The handover says: *"with 3D acceleration on, this VM takes the DMABUF path
+§3.2 warns about rather than the software fallback — more representative than a
+headless VM."*
+
+Measured, it does not:
+
+```
+00:02.0 VGA compatible controller: VMware SVGA II Adapter
+MESA: error: ZINK: failed to choose pdev
+libEGL warning: egl: failed to create dri2 screen
+VMware: No 3D enabled (0, Success).
+```
+
+**VirtualBox's 3D acceleration setting is on and Mesa cannot get a hardware
+driver**, so everything is already on llvmpipe. GL itself works — a GLES 3.2
+context realises and GSK picks `GskGLRenderer` rather than the Cairo fallback —
+and the compositor advertises 104 DMABUF formats, so the *path* is available.
+What is not available is a GPU behind it.
+
+**Whether WebKit took the DMABUF path is not established, and the reason is
+worth recording because it is D-304's third question.** The two runs — with and
+without `WEBKIT_DISABLE_DMABUF_RENDERER=1` — produced **byte-identical PNGs**,
+same sha256, same 10428 bytes. That is consistent with "the same path was taken
+both times" and equally consistent with "two different paths produced the same
+picture of a static page", which they should. **A pixel comparison of a flat
+page cannot tell two renderers apart**, and reporting it as evidence that the
+variable did nothing would have been a measurement asserting more than its own
+resolution allows. `WEBKIT_DEBUG=Compositing` is not a channel this build knows,
+so the path was not nameable from outside.
+
+**What this means for the phase is the useful part.** F12 §0.1 says a VM cannot
+show the GPU path and that a VM that works proves nothing about a laptop with an
+NVIDIA card. This VM is *further* from that than the handover supposed: it is
+not a hardware-accelerated VM taking the DMABUF path, it is a software
+renderer. So the DMABUF and NVIDIA variables still go in on the advice, exactly
+as §3.2 says, and this machine has said nothing about either.
+
+### The predictions
+
+Written down before any of it (`scratchpad/predictions-f12-linux.md`), ranked,
+with the least certain named.
+
+| | predicted | outcome |
+|---|---|---|
+| P1 | `webview_go` cannot build on 24.04 — it wants `webkit2gtk-4.0`, which 24.04 does not ship | **held**, from its own cgo line |
+| P6 | this VM takes the DMABUF path because 3D acceleration is on | **FAILED** — no hardware driver at all |
+| P7 | *the one named least certain* — WebKitGTK renders correctly here despite the DMABUF path | **held, for the wrong reason.** It renders correctly, and not because the DMABUF path is benign: the path was never hardware in the first place |
+| P8 | `bwrap` works on 24.04 from the distribution package | **FAILED, and it is the entry** |
+| P9 | this kernel is newer than stock 24.04's and the userns half may differ | held — 7.0.0-31-generic against 24.04's own 6.8 |
+
+**P7 is the useful one and it is a half-credit rather than a hit.** The
+prediction was right about what the screen shows and wrong about why, and
+without P6 written down beside it the correct render would have been reported
+as *"the DMABUF path is fine on this VM"* — which is a sentence about a path
+this machine never took. That is D-305's shape exactly: **a wrong reason for a
+right conclusion is the least likely thing in this project to be caught**,
+because nothing prompts anybody to go back.
+
+P8 is the one that pays for the session. It was ranked MEDIUM on the reasoning
+that Ubuntu would not ship a browser engine that cannot start — and Ubuntu
+does not, because Ubuntu ships a profile for each of its own. A third-party
+package gets no such thing by default, and that is the difference the
+prediction missed.
+
+### What a VM cannot say here, stated rather than implied
+
+- **Nothing about NVIDIA or about a real DMABUF path.** §0.1, and this machine
+  is further from it than expected.
+- **Nothing about Fedora.** SELinux has no `apparmor_restrict_unprivileged_userns`
+  and F12 §11 names Fedora 44 as the second reference machine.
+- **Nothing about whether the AppArmor profile is sufficient**, which is the
+  one step outstanding and needs `sudo`.
+- **Kernel 7.0.0-31-generic is not stock 24.04's 6.8.** The userspace is 24.04
+  and the kernel is not, so a stock installation should be checked before this
+  is quoted as "Ubuntu 24.04 behaves like this".
+
+**Rejected.**
+
+- **Reporting the sandbox as working because the page rendered.** It rendered
+  with the sandbox switched off, which is a different claim, and running the
+  two as one experiment is how the finding would have been lost.
+- **Shipping `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` as the answer.** F12
+  §3.2 permits it and says to measure first; measuring turned up an answer that
+  keeps the sandbox, and a package that disables a web process's sandbox for
+  every user to save four lines of policy is the worse artefact.
+- **Reporting the byte-identical PNGs as evidence that the DMABUF variable does
+  nothing here.** D-304's third question: the instrument cannot resolve the
+  thing it would be asserting about.
+- **Taking the screen capture rather than WebKit's own snapshot.** D-122's
+  reasoning, and D-319 measured a capture of a window's coordinates coming back
+  with an unrelated program's pixels.
+- **Carrying the handover's DMABUF sentence forward.** It is wrong about this
+  machine, and a phase document or a handover quoting a machine property is a
+  claim the machine settles — D-287's own finding, and D-321's.
+
+---

@@ -143,8 +143,18 @@ func (a *protocolAgent) stop() {
 		slog.Debug("protocol: the listener did not shut down cleanly", "error", err)
 		_ = a.server.Close()
 	}
-	if err := api.RemoveBridgeFile(a.bridgePath); err != nil {
+	// The agent's own port is the ownership test (F12 §7.1): it removes
+	// the discovery file only when the file is still describing this
+	// agent. Another agent having claimed it is an ordinary state on a
+	// machine running two, and it is said out loud rather than passed
+	// over — D-322's rule is that a discrepancy is explained or it is a
+	// finding, never absorbed.
+	switch removed, err := api.RemoveBridgeFile(a.bridgePath, a.port); {
+	case err != nil:
 		slog.Warn("protocol: could not remove the discovery file", "error", err)
+	case !removed:
+		slog.Info("protocol: the discovery file was left alone; it names another agent",
+			"discoveryFile", a.bridgePath, "ourPort", a.port)
 	}
 	slog.Info("protocol: stopped", "port", a.port)
 }

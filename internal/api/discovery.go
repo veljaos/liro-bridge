@@ -79,19 +79,54 @@ func ReadBridgeFile(path string) (BridgeInfo, error) {
 	return info, nil
 }
 
-// RemoveBridgeFile deletes the discovery file. The agent calls it on
-// the way out, so that a client reading the file finds nothing rather
-// than a port nobody is listening on.
+// RemoveBridgeFile deletes the discovery file, but only if the file
+// names port. The agent calls it on the way out with its own port, so
+// that a client reading the file finds nothing rather than a port
+// nobody is listening on. It reports whether it removed anything.
+//
+// The port is the whole of the ownership test, and no field was added
+// to carry one: an agent knows which port it bound, and the file
+// already says which port it describes. D-186 declined a pid field
+// because it is one more thing an unauthenticated reader learns about
+// the machine, and that reasoning is untouched here — what makes the
+// test possible is a value the file has carried since F7.
+//
+// Why conditional, measured rather than argued. Both ends of this
+// file's life used to be unconditional, and D-323 measured what that
+// produces on a real machine: a second agent starts, overwrites the
+// file with its own port, exits, removes it — and the first agent is
+// left running, holding a port, and undiscoverable by the only
+// mechanism SPEC §14 permits, since an SDK must never scan ports. The
+// benign direction was already handled and is unchanged; this is the
+// harmful one.
+//
+// The write stays unconditional, and that is deliberate rather than
+// half a fix. Refusing to overwrite a live agent's file without a
+// single-instance mechanism to hand over to would produce the same
+// defect with the roles swapped: a second agent that starts, cannot
+// claim discovery, and runs invisibly. The write is right to be
+// unconditional until one agent per session is enforced (SPEC §14.1);
+// the removal was wrong either way.
 //
 // A file that is already gone is not an error: two agents shutting down
 // together, or a user who deleted it, are both states this should end
-// in silently. A file left behind by a crash is the case this cannot
-// help with, and an SDK's answer to it is the same as to no file at
-// all — the connection is refused, and the agent is not running.
-func RemoveBridgeFile(path string) error {
-	err := os.Remove(path)
-	if err == nil || errors.Is(err, fs.ErrNotExist) {
-		return nil
+// in silently.
+//
+// A file that cannot be read is left alone and reported. An agent that
+// removed what it could not identify would be back to unconditional
+// removal with extra steps, which is the behaviour being taken out.
+func RemoveBridgeFile(path string, port int) (removed bool, err error) {
+	info, err := ReadBridgeFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	case err != nil:
+		return false, err
+	case info.Port != port:
+		return false, nil
 	}
-	return err
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	return true, nil
 }
