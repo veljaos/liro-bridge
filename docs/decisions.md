@@ -30850,3 +30850,271 @@ nothing else.
 - **Fixing [[D-308]]'s icon test while the suite was open.** Its remedy is a
   decision about a shipped artefact and a committed check, and D-308 declined it
   for the reason [[D-227]], [[D-233]] and [[D-249]] each give.
+
+---
+
+## D-320 — Windows draws this icon with 38% more white ink than the file contains: the gap is the shell's rather than the generator's, the compositing hypothesis is refuted, and D-286's floor was measured against a surface nobody draws
+
+**Date:** 2026-09-20
+**Phase:** F12 — closing the Windows half, on the owner's instruction to establish
+the gap before changing anything
+
+**Decision: nothing is thinned, and the reason is a measurement rather than
+caution.** The owner's instruction was to bring him what the gap is and then what
+lever moves the number on screen. The gap is not where either of us thought, and
+the lever that looks obvious would make the file wrong to make the screen right.
+
+### Two corrections to the record before the measurement
+
+**D-317's 150% is resolved against the entry, not against the machine.** That
+figure was the owner's office machine and is probably 125%; this machine measures
+**96 DPI, 100%, `SM_CXSMICON` = 16**, with a 48-pixel taskbar. [[D-319]] left the
+contradiction open and named which way it would have to fall; it falls this way.
+His words, kept because the direction matters: *"you were right to measure the
+machine rather than trust the entry."* **A dated entry is a record of what was
+true where it was written, and a phase document or a handover that quotes one as
+a property of the machine in front of you is [[D-287]]'s own finding** — a claim
+about the tree that the tree settles.
+
+**And the first flyout run measured an empty flyout.** There was no tray icon at
+all: the agent had been closed since [[D-319]] found it at PID 14864. So the
+colour search reporting "no brand turquoise" was true and worthless. **That is
+[[D-304]]'s second question — could this instrument have seen the thing whose
+absence it reports — and the answer was no, because the thing was not there.**
+The instrument was sound; the premise was not. Recorded on the owner's
+instruction and because it is the cheapest kind of wasted run to repeat: *check
+the subject exists before believing a measurement of its absence.*
+
+### 1. Are the two numbers measuring the same thing? Partly not, and it is worth under two points
+
+Asked first, and answered first, because a gap that is arithmetic must be named
+before the rest is explained.
+
+The two numbers had different denominators and the *same* classification rule.
+The rule in both is *nearer to pure white than to `#038387`, in RGB, alpha
+ignored* — `markColour` is pure white in the generator too, so nothing differs
+there. What differed is which pixels were counted:
+
+| measure | white | denominator | % |
+|---|---|---|---|
+| generator, drawn stroke 0.94 | 58 | 244 **opaque** px of the frame | **23.8%** |
+| generator, at the floor 0.93 — the row quoted as "22.9%" | 56 | 244 | 22.9% |
+| the same file, over the whole 16×16 | 58 | 256 | 22.7% |
+| the same file, over the 228 **fully opaque** tile px | 58 | 228 | **25.4%** |
+| the capture, as reported | 78 | 240 (the tol-24 box) | **32.5%** |
+| the capture, over the 228 fully opaque px | 74 | 228 | **32.5%** |
+
+**So of the 8.7 points between 23.8% and 32.5%, about 1.6 are arithmetic** — the
+generator's `A >= 128` gate counts a half-covered corner pixel as tile where the
+228-pixel basis excludes it — **and they go the way that makes the gap look
+smaller than it is.** On a common basis the file reads 25.4%, not 22.9%.
+
+The last two rows agreeing at 32.5% is a **coincidence** of two different
+denominators, and is said so that nobody reads it as corroboration.
+
+**A third arithmetic effect is in my number rather than his, and it is larger.**
+A bounding box over a rounded tile on a light surface counts the corners as ink:
+`#D5D5D5` is nearer to white than to `#038387` by the very rule being used, so
+every background pixel inside the box scores as white. Over the full 16×16 the
+file composited on that background reads 70 white and the capture 82 — of which
+**12 and 8 respectively are background, not ink.** That is worth 3 to 5 points on
+its own and it is entirely an artefact of measuring a rounded tile with a
+rectangle.
+
+### 2. The 16×15 row is tolerance, not a lost row
+
+At tol 24 the box is 16×15 and at tol 48 it is 16×16. **Nothing is missing.** The
+row at y=58 is the tile's top row, which is mostly rounded corner blended into
+the light background, so its pixels sit outside a ±24-per-channel box and inside
+a ±48 one. Not the capture, not the compositing of the mark, and not a defect:
+**it is the icon's own corner radius surfacing through a tolerance.**
+
+It does say one thing worth keeping. The top and bottom rows are not symmetric —
+y=58 reads `#D5D5D5` at its left edge where y=73 reads `#C4CDCE` — so **the tile
+is not sitting on whole device rows.** That was then tested as a hypothesis for
+the ink and refuted (§4).
+
+### 3. The 48×12 hit in the taskbar is Word and Excel, and it is an artefact of my own tolerance
+
+Present in both runs, agent running or not, because it has nothing to do with
+this program. The 28 pixels inside tol 48 are `#0075B7`, `#006EB1`, `#0075B6`,
+`#006FB2` — Microsoft Word's blue — and one `#239758`, Excel's green, at
+x 378..426, which is the pinned-application strip.
+
+**They are inside the box because a ±48-per-channel box is not a distance.** It
+accepts blue from `0x57` to `0xB7`, and `#0075B7` sits exactly on that boundary
+while being nothing like the brand turquoise: its Euclidean distance from
+`#038387` is larger than several colours the box rejects. At tol 24 it vanishes,
+which is why the notification area reported clean at 6 and 24 and the taskbar did
+not at 48.
+
+**So it is not us, and the honest form is that my discriminator was the wrong
+shape** — a per-channel box where the thing it is meant to find is a point. It is
+recorded rather than left in the output looking like a measurement, which is what
+was asked.
+
+### 4. The hypothesis was compositing. It is refuted, and here is what the ink is
+
+The owner's guess, offered to be refuted: *Windows composites the tile onto the
+flyout's background, and edge pixels the generator counts as partly transparent
+read as white once composited.*
+
+**It cannot be that, and the reason is one line: the mark's pixels are fully
+opaque in the file.** The mark is drawn white *onto* the turquoise tile by the
+generator, so its antialiasing is already baked into opaque RGB. Compositing
+cannot reach it. The only pixels the background touches are the tile's
+transparent corners — which is §1's third effect, a measurement artefact, and
+worth 3 to 5 points rather than ten.
+
+What the ink actually is, measured with no threshold in it at all by summing each
+pixel's coverage fraction over the 228 opaque tile pixels:
+
+| | white ink | as a share of 228 |
+|---|---|---|
+| the file's 16 px frame | **54.6 px worth** | 24.0% |
+| what Windows drew | **75.6 px worth** | 33.1% |
+| ratio | **1.383** | |
+
+**Thirty-eight per cent more white ink on the screen than in the file.** That is
+the complaint measured, it is the first number anybody has about what the tray
+draws, and it is not a threshold effect — the coverage sum has no threshold.
+
+**The signature is a dilation, and four candidate mechanisms are excluded by it:**
+
+- **The capture's white set contains the file's exactly.** 58 in both, 16 on
+  screen only, **0 in the file only.**
+- **All 16 of the extra pixels touch a pixel that was already white. None is
+  isolated.**
+- 20 of the 228 got *darker*; the largest single move is a pixel going from
+  coverage 0.218 to 0.927.
+
+So: **not a translation or a sub-pixel offset** — those lose ink on the trailing
+edge and nothing was lost; the best-fitting shift (dy +0.25) *reduces* the count
+to 69. **Not a larger frame downscaled** — every larger frame gives less ink, 63,
+62, 65, 55, 59, 51 and 44 for 20 through 256 px, by box filter and by bilinear.
+**Not a different drawing** — the sets nest. **Not the threshold** — the coverage
+sum is threshold-free and moves by the same 38%.
+
+### 5. And it is not my instrument, which is the control this needed and nearly did not get
+
+`PrintWindow(PW_RENDERFULLCONTENT)` is a renderer, and it was the one step in the
+chain that had not been checked — after two instruments of mine had already
+reported the wrong thing in [[D-319]]. So the same shell window was captured both
+ways, `PrintWindow` and a screen `BitBlt`, with `WindowFromPoint` first
+confirming the taskbar was actually on top (the session's first capture read a
+game HUD off those coordinates).
+
+They differ: 4.1% of pixels identical, mean 14.2 per channel. **That reads as a
+failure and is not one**, and separating the two is the point:
+
+| region | mean luminance, PW vs BitBlt | high-pass detail sd ratio | high-pass correlation |
+|---|---|---|---|
+| whole taskbar | 213.7 vs 226.7 (**−13.0**) | 0.946 | **0.9980** |
+| pinned icons | 196.5 vs 207.5 (−11.1) | 0.945 | **0.9960** |
+| notification area | 209.2 vs 223.3 (−14.1) | 0.938 | **1.0000** |
+
+**Correlation of essentially 1.0 at the scale a 16 px icon's antialiasing lives
+at: `PrintWindow` does not resample, move or blur structure.** The whole
+difference is a near-uniform offset, which is what an acrylic taskbar is entitled
+to produce — `BitBlt` sees it blended with the wallpaper and `PrintWindow` sees
+its own rendering.
+
+**And both biases go the wrong way to explain the ink.** `PrintWindow` is 13
+counts *darker* and carries 6% *less* detail contrast. An instrument that
+inflated white would be brighter and sharper. **So if anything the 38%
+understates what is on the screen.**
+
+### 6. What this does to D-286, which is the part that outlives the icon
+
+[[D-286]] measured the 16 px stroke's floor at **0.93 px** — the thinnest at
+which the mark is one four-connected shape — and drew it at 0.94, one hundredth
+above. [[D-319]] re-measured both and they reproduce exactly.
+
+**That floor was measured on the file, and the file is not what anybody looks
+at.** On screen the shell adds 38% ink, which means the mark on screen is
+connected at weights where the file's is not, and the *screen's* floor is
+therefore lower than 0.93 — by how much, nobody has measured.
+
+This is [[D-161]]'s finding in a new place: a test asserting the right property
+against the wrong artefact. The connectivity test is right, `genicon` is the
+right place for it, and **the artefact it renders is the file rather than the
+surface** — which is correct for the generator's own purpose and is not the
+surface the complaint is about. D-286's own sentence that the floor is *"a
+rasterisation limit of roughly one pixel"* is true of the file's rasteriser and
+silent about the shell's.
+
+**It also explains why the complaint survived D-286.** That entry took the small
+end down 27.7% and the owner still read the tray as too heavy. It was: the file
+came down and the shell's 38% was added on top of whatever shipped.
+
+### 7. The lever, and the recommendation
+
+**Thinning the file is a lever and it is the wrong one**, for the reason the owner
+gave before the measurement existed and for one more the measurement adds:
+
+- The 16 px frame is **0.01 px above its own floor**, so there is no room to thin
+  without going under it. A mark below the file's floor would be two disconnected
+  pieces in the file and — because of the 38% — probably one shape on screen.
+  **The asset would fail its own test for a reason invisible in the asset**, which
+  is precisely what was ruled out.
+- **The same 16 px frame is used in places nothing dilates.** [[D-285]] measured
+  four: Explorer's listing, a hand-made shortcut, the tray, and the window's own
+  icon. Thinning for the tray thins it for the other three, where the file's own
+  weight is what is drawn.
+
+**The only lever that does not damage the file is a tray-only asset.**
+`Shell_NotifyIcon` takes an HICON of this program's choosing, and [[D-090]]'s
+loader takes it from the extracted icon at `SM_CXSMICON`, so a second, thinner
+16 px image drawn for the tray alone is buildable. It costs a second source of
+truth for a sixteen-pixel picture, with its own floor, its own connectivity test
+and its own drift — the shape this project has had to unpick for a
+classification rule ([[D-108]]), a question ([[D-124]]), a margin ([[D-138]]) and
+a stylesheet ([[D-183]]).
+
+**Recommendation: leave it, and the recommendation is the owner's own stated
+fallback.** With the correction that the honest sentence is not *"32.5% is what a
+16 px tile reads as on Windows 11"* — it is **"Windows draws whatever we ship
+with about 38% more white ink than we shipped, and our end of it is already on
+its floor."** Which of those is written down matters, because the first invites
+somebody to try a different mark and the second says where the ink comes from.
+
+### What is not established
+
+**Which shell mechanism dilates it.** The signature is a one-pixel-deep gain at
+the mark's edges with nothing lost, and candidates remain: the XAML tray
+re-rendering the HICON through an image pipeline, a premultiplication mismatch
+bleeding white outward, or an icon-scaling path that runs even at 1:1. **Naming
+one would be a guess**, and a guess here would be quoted later as the reason a
+remedy did or did not work. It is somebody else's code and this project measures
+it from outside; knowing *that* it is 38% and that it is a pure gain is enough to
+decide not to thin, which is the decision that was needed.
+
+**What the screen's own connectivity floor is.** It is lower than 0.93 and it has
+not been measured. Anyone who ever does build a tray-only asset needs that number
+and must take it off a capture rather than off the generator.
+
+**Whether the 38% holds at 20 and 24 px**, which is what a 125% or 150% desktop
+draws — the owner's office machine among them. One flyout at one scaling is one
+measurement.
+
+**Rejected.**
+
+- **Thinning the 16 px stroke.** §7.
+- **Thinning it and lowering the connectivity test's standard to match.** It
+  makes the check agree with the change rather than judge it, which is
+  [[D-286]]'s own reason for deleting the 1.25 px constant rather than re-tuning
+  it.
+- **Reporting the compositing hypothesis as confirmed.** It reads well, the owner
+  offered it to be refuted, and the mark's pixels are opaque. What compositing
+  does reach is the corners, and those are 8 to 12 pixels of background counted
+  as ink by a rectangle — real, and a fifth of the gap at most.
+- **Reporting the 38% without controlling `PrintWindow`.** It was the only
+  uncontrolled instrument in the chain and two others had already failed this
+  session. Had it been resampling, the entire number would have been mine.
+- **Leaving the 48×12 taskbar hit in the output.** It is Word and Excel, and the
+  fault is that my discriminator was a per-channel box rather than a distance.
+- **Chasing the shell mechanism further.** It would need a debugger on
+  `explorer.exe` or a XAML trace, on the owner's own machine, to choose between
+  candidates that all lead to the same decision.
+- **Building the tray-only asset now.** It is a second source of truth and a
+  product decision, not a repair, and the owner's ruling is to leave it.
