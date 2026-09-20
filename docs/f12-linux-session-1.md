@@ -11,8 +11,22 @@ discovery file), D-326 (§1, the linkage of a cgo-direct binary), D-327
 (§3.1 closed, and D-326 corrected), and a pointer block on D-322 (the
 instrument count reached nineteen).
 
-**§3.1, §3.2 and §7.1 are all answered.** What is left on this machine is
-listed in §4.
+**Session 2 — 2026-09-20, after a VM reset.** D-328 (the CI fuzz failure is
+Go's own coordinator), D-329 (§3.2's two variables in code), D-330 (the
+binding generates no async *starters*, so Go→page is hand-written cgo),
+D-331 (the window host), D-332 (`PostJSON` sends an object and the doc said
+a string), D-333 (the pages had drifted to `https://liro.invalid/`).
+
+**§3 is answered.** §3.1 and §3.2 in session 1 and D-329; §3's remaining box
+— every window on GTK4 and WebKitGTK 6.0 — has a host, and four of this
+program's own pages open on it. What is left on this machine is listed in §4.
+
+**A standing rule for this VM, from the owner:** *no load generators, ever.*
+A measurement that needs a loaded machine cannot be taken here and is
+recorded as **unmeasurable on this VM** rather than attempted. D-328 is the
+first entry written under it, and the reason: an attempt to sample a fuzz
+flake rate under eight busy-loop processes saturated the machine, produced
+nothing in two hours and twenty minutes, and cost a reset.
 
 ---
 
@@ -373,6 +387,15 @@ packages and the AppArmor profile were run by hand by the owner.
 
 ### What is actually left on this machine
 
+- **§3's last mile is `cmd/liro-bridge`, not `internal/ui`.** The window host
+  works and this program's pages load on it, but nothing drives them here:
+  `runSignCommand` and `runTray` are `!windows` stubs that print "only
+  supported on Windows in this phase". Wiring them is where §4's consent
+  flow, §5's PIN dialog and §6's tray actually meet, so it is those sections'
+  work rather than §3's leftovers. **It is also the commit that costs
+  `-race` on `cmd/liro-bridge`** — see the `checkptr` note above.
+- **`OnFilesDropped` is refused, not implemented** (D-331). GTK4's
+  `GtkDropTarget` is F6 §1's on this platform and nobody has written it.
 - **§6 — the tray.** D-326 established GTK4 has none, the C remedy
   (`libayatana-appindicator`) is GTK3-only and therefore unusable in a GTK4
   process, and there is **no `StatusNotifierWatcher` on this session bus**
