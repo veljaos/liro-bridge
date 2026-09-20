@@ -31306,14 +31306,15 @@ in the tray. The MSI has not been rebuilt since `cc24984`.
 
 ## D-322 — Six instruments failed in one session and one reached a pushed entry; the guard that would have caught it fired, was in the output, and was read as noise — which spends the alarm
 
-> **The count reached eighteen the next day, and the two that took it there
-> are the sharpest instances of this entry's own rule.** From the first Linux
-> session, 2026-09-20:
+> **The count reached nineteen the next day, and the first two that took it
+> there are the sharpest instances of this entry's own rule.** From the first
+> Linux session, 2026-09-20:
 >
 > | | what it was | how it failed |
 > |---|---|---|
 > | 17 | `git commit` on a VM with no configured identity | it failed, and the script printed `commit 1 done` on the next line because the exit code was never read |
 > | 18 | `pkill -f 'golangci-lint run'` to tidy up after a verification run | the pattern matched the shell's own process group and killed it |
+> | 19 | a script testing six binding versions, each in a fresh module | it reported all six failing, with `0` matching symbols and an empty error field, because it never ran `go mod tidy` and every build died before reaching the compiler |
 >
 > **Both are lessons this project had already paid for, and both were broken
 > by somebody who had read the entry containing them that same day.** Number
@@ -31334,6 +31335,17 @@ in the tray. The MSI has not been rebuilt since `cc24984`.
 > `set -e` or an explicit `rc=$?` enforces. The remedy for 18 already exists
 > as a project rule, *exact PID only*, and it was not applied because tidying
 > up did not feel like the kind of act the rule was about. It is.
+>
+> **Nineteen is a different shape and belongs here for the contrast.** It was
+> not a rule broken; it was a measuring instrument reporting a negative, which
+> is the report a reader is least likely to challenge because a negative looks
+> like a finding. It was caught only because the script printed its evidence —
+> a symbol count — beside its verdict, and the two disagreed. Had it printed
+> the verdict alone, [[D-327]] would have concluded that no version of the
+> binding builds on the target platform and F12 §3.1 would have gone looking
+> for a different one. **The remedy is not a rule to remember; it is printing
+> the number next to the word, so that an instrument can contradict itself in
+> front of a reader.**
 >
 > Nothing below is changed.
 
@@ -32119,7 +32131,7 @@ not F12 §7.1's question.
 
 ---
 
-## D-326 — What a GTK4 and WebKitGTK 6.0 binary actually links: five libraries, four packages, and SPEC §1.1's own test answered on the platform it was written for; the binding question is narrowed to one candidate and is not closed
+## D-326 — What a GTK4 and WebKitGTK 6.0 binary actually links when cgo reaches the libraries directly: five libraries, four packages, and SPEC §1.1's own test answered on the platform it was written for; the binding question is narrowed to one candidate and is not closed
 
 **Date:** 2026-09-20
 **Phase:** F12 §3.1 and §1 — measured on the Linux machine, with the dev
@@ -32129,7 +32141,23 @@ packages installed
 §3.1.** The two are separable and were deliberately separated, for a reason
 that is the first finding below.
 
-### The linkage is a property of the platform, not of the binding, so it was measured without one
+### Corrected by D-327 before either was pushed
+
+**The claim in this section's original title — that the linkage is a property
+of the platform rather than of the binding — is false, and D-327 measured it
+false.** The same program built through `gotk4` names **thirteen** libraries
+and yields an **eleven**-package `Depends` with a tighter GTK floor, because
+every generated Go package carries its own `#cgo pkg-config` line and so puts
+pango, cairo, graphene, gdk-pixbuf, libsoup and JavaScriptCore into
+`DT_NEEDED` directly instead of letting them arrive transitively.
+
+Everything measured below is still true **of the cgo-direct binary**, and the
+control column — this project's own static agent — is untouched by the
+correction. What is wrong is the generalisation, and the "Rejected" bullet
+that followed from it. Read the numbers here as one end of a range whose
+other end is in D-327, and take §8's `Depends` from whichever binary ships.
+
+### How the linkage was measured, and the premise that turned out to be wrong
 
 SPEC §1.1's fifth clause is not a description, it is an instruction:
 
@@ -32145,11 +32173,15 @@ applied now.
 
 The measurement is a **cgo-direct** program: a GTK4 window hosting a
 WebKitGTK 6.0 view, `#cgo pkg-config: gtk4 webkitgtk-6.0`, no Go binding
-anywhere in it. That is deliberate. Whatever wrapper this project eventually
-reaches WebKitGTK through, it reaches the same two shared libraries, and
-measuring the linkage through a binding would have mixed a property of the
-platform with a property of somebody's generated Go. It also means this number
-survives the §3.1 decision going either way.
+anywhere in it. That was deliberate and the reasoning was wrong. Whatever
+wrapper this project eventually reaches WebKitGTK through, it reaches the same
+two shared libraries **at run time** — which is not the same as naming the same
+set in `DT_NEEDED`, and `DT_NEEDED` is what §1.1 and `dpkg-shlibdeps` read. At
+the time this was written I believed that measuring the linkage through a
+binding would mix a property of the platform with a property of somebody's
+generated Go, and that this number would therefore survive the §3.1 decision
+going either way. It does not: the binding's own `#cgo` lines are part of the
+answer, not noise in it.
 
 | | the agent today, `CGO_ENABLED=0` | a GTK4 + WebKitGTK 6.0 window |
 |---|---|---|
@@ -32250,6 +32282,9 @@ nothing.
 binding's: `gotk4/pkg/core/gerror` needs `gobject-introspection-1.0`, which I
 did not include in the install list although it was in my own survey of the
 binding's pkg-config lines. `libgirepository1.0-dev` is the package.
+**That was true and it was not the whole blocker** — with the package present,
+`gotk4` v0.4.1 still does not compile on this machine's GLib, and the real
+constraint is a version rather than a package. D-327 has it.
 **So §3.1 stays open**, and what is outstanding is exactly the three numbers
 that decide it: whether it compiles at all, how long, and in how much memory.
 
@@ -32339,7 +32374,11 @@ is worth a deliberate measurement before the window layer is built on it.
 
 - **Measuring the linkage through the binding.** It would mix a property of
   GTK4 and WebKitGTK with a property of somebody's generated Go, and SPEC
-  §1.1's clause is about the platform.
+  §1.1's clause is about the platform. — **This rejection is withdrawn.**
+  §1.1's clause is about *the binary that ships*, and the binary that ships is
+  the one built through the binding. "Somebody's generated Go" is not
+  contamination of the measurement; it is half of what the measurement is
+  for. D-327 took it.
 - **Reporting 113 packages as the dependency list.** It is the transitive
   closure at run time, not what a `.deb` declares, and writing it into a
   packaging file would be 109 dependencies nobody has to state and every one
@@ -32354,3 +32393,289 @@ is worth a deliberate measurement before the window layer is built on it.
   binding's compile cost is a separate number that does not change it.
 - **Treating the signal warning as noise.** It is F12 §2's own hazard in the
   one process that has no worker to contain it.
+
+---
+
+## D-327 — §3.1 is closed: gotk4 pinned to v0.3.1, because the two current releases name GLib functions Ubuntu 24.04 does not have and declare no floor that would have said so; and the binding links thirteen libraries where cgo-direct links five, which corrects D-326
+
+**Date:** 2026-09-20
+**Phase:** F12 §3.1 — closed. Corrects D-326, which was written the same day
+and had not been pushed.
+
+**The decision: `github.com/diamondburned/gotk4/pkg` v0.3.1 with
+`github.com/diamondburned/gotk4-webkitgtk/pkg` `webkit/v6`, pinned, on a
+platform floor of Ubuntu 24.04 LTS.** It builds, it runs, and the whole of
+this project's page↔Go surface works through it — measured from inside the
+running process, below.
+
+### The wall is a version and not a package, which is not what D-326 predicted
+
+D-326 said §3.1 was blocked on `libgirepository1.0-dev`, a package I had
+omitted from my own install list. That was true and it was the smaller half.
+With the package present, the current release still does not compile:
+
+```
+glib/v2/glib.go:7685: could not determine what C.g_get_monotonic_time_ns refers to
+glib/v2/glib.go:8911: could not determine what C.g_log_get_always_fatal refers to
+glib/v2/glib.go:21974: could not determine what C.g_markup_parse_context_get_offset refers to
+glib/v2/glib.go:22039: could not determine what C.g_markup_parse_context_get_tag_start refers to
+glib/v2/glib.go:26194: could not determine what C.g_source_dup_context refers to
+glib/v2/glib.go:7683: could not determine what C.uint64_t refers to
+```
+
+Five GLib functions. **Asked of the machine rather than of the error message**
+— D-304's second question, of an instrument reporting absences, which is the
+question that caught two false absences in D-326:
+
+| | in `/usr/include/glib-2.0` | in `libglib-2.0.so.0` |
+|---|---|---|
+| `g_get_monotonic_time_ns` | 0 files | absent |
+| `g_log_get_always_fatal` | 0 files | absent |
+| `g_markup_parse_context_get_offset` | 0 files | absent |
+| `g_markup_parse_context_get_tag_start` | 0 files | — |
+| `g_source_dup_context` | 0 files | absent |
+| **control:** `g_get_monotonic_time` | `gmain.h`, `gmessages.h` | **present** |
+
+This machine has GLib 2.80.0, which is what 24.04 LTS ships. **Which GLib
+release introduced those five was not established here** — the generated
+source carries no `since` markers and I did not go to upstream for it — and it
+does not change the answer, because the answer is set by what the target
+platform has rather than by what upstream added when.
+
+**The part worth carrying is the shape of the failure, not the five names.**
+`gotk4`'s cgo line is:
+
+```
+// #cgo pkg-config: glib-2.0
+```
+
+No minimum version. So `pkg-config` succeeds on GLib 2.80, the build proceeds,
+and the mismatch surfaces fifteen minutes later as six unresolved C references
+in generated code. **That is SPEC §1.1's clause pointed at a different target:
+a `pkg-config` line is not a version constraint, and a build that gets past
+configuration is not evidence that the dependency is satisfied.** F12 §8 has
+to pin the binding, because the binding will not pin itself.
+
+### Where the boundary is
+
+The same one-import program (`glib/v2` and nothing else) against every tagged
+release, on this machine:
+
+| gotk4 | released | `glib/v2` on GLib 2.80 |
+|---|---|---|
+| v0.4.1 | 2026-08-09 | **fails** — 6 unresolved C references |
+| v0.4.0 | 2026-07-30 | **fails** — same 6 |
+| v0.3.1 | 2024-07-31 | **builds** |
+| v0.3.0 | — | builds |
+| v0.2.2 | — | builds |
+| v0.1.0 | — | builds |
+
+A clean boundary between v0.3.1 and v0.4.0, and a **two-year gap** between
+them: the last release that works on 24.04 predates 24.04's own successor
+cycle, and the two releases that followed it arrived within ten days of each
+other last month and both require a newer GLib. That is a maintenance fact
+about the binding and belongs beside the choice of it.
+
+`gotk4-webkitgtk`'s own `go.mod` requires `gotk4/pkg v0.1.0`, so pinning
+gotk4 to v0.3.1 is not a conflict — minimum version selection takes v0.3.1 and
+the webkit binding compiles against it unchanged.
+
+### The cost, which is P3's two halves separating
+
+Cold, on this 4-CPU 3.9 GB VM, with a dedicated empty build cache and the
+modules already downloaded, so this is compiling and not fetching:
+
+| | |
+|---|---|
+| wall clock | **14 min 52 s** |
+| CPU | 1123 s user + 322 s system |
+| peak resident | **2 021 508 kB (1.93 GiB)** |
+| binary | 21 049 752 bytes |
+| warm rebuild of one package | 4.1 s |
+
+**P13 held and P14 failed, and they were deliberately split before the
+measurement so that "P3 was right" could not later mean whichever half was
+convenient.** Minutes rather than seconds: fifteen of them, against 12.5 s for
+the cgo-direct program in D-326 that reaches the same two C libraries. But it
+fits in this machine's memory with room to spare — 1.93 GiB peak of 3.9 GB,
+no OOM kill, no need to reduce parallelism. The memory half came from a
+warning in the binding's README, and a warning in a README is not a
+measurement of a machine.
+
+**Fifteen minutes cold is a CI fact, not a developer fact** — the warm
+rebuild of the one package that changes is four seconds — and it is the number
+F12 §8's build pipeline has to budget for, on a runner that starts with an
+empty cache every time.
+
+### Thirteen libraries, not five: D-326's generalisation was wrong
+
+D-326 measured the linkage of a cgo-direct program and concluded the linkage
+is a property of the platform rather than of the binding. **It is not.** The
+same program built through gotk4:
+
+| | cgo-direct (D-326) | through gotk4 v0.3.1 |
+|---|---|---|
+| `PT_INTERP` | `/lib64/ld-linux-x86-64.so.2` | same |
+| `DT_NEEDED` | **5** | **13** |
+| imported symbols | 58 | **10 094** |
+| size | 2 395 320 B | 21 049 752 B |
+| `dpkg-shlibdeps` | **4 packages** | **11 packages** |
+
+The eight extra: `libglib-2.0`, `libpango-1.0`, `libgdk_pixbuf-2.0`,
+`libcairo-gobject`, `libcairo`, `libgraphene-1.0`, `libsoup-3.0`,
+`libjavascriptcoregtk-6.0`. **They are not new dependencies at run time** —
+every one of them was already in D-326's 131-object closure — but they move
+from *transitive* to *declared*, because each generated Go package carries its
+own `#cgo pkg-config` line and the linker records what it is told to link.
+
+So §8's `Depends` becomes:
+
+```
+libc6 (>= 2.34), libcairo-gobject2 (>= 1.10.0), libcairo2 (>= 1.15.12),
+libgdk-pixbuf-2.0-0 (>= 2.39.2), libglib2.0-0t64 (>= 2.79.2),
+libgraphene-1.0-0 (>= 1.10.0), libgtk-4-1 (>= 4.14.1),
+libjavascriptcoregtk-6.0-1, libpango-1.0-0 (>= 1.52.0),
+libsoup-3.0-0 (>= 3.3.1), libwebkitgtk-6.0-4 (>= 2.41.90)
+```
+
+**The version floors move too, and that is the half that can bite.**
+`libgtk-4-1 (>= 4.0.0)` cgo-direct becomes `(>= 4.14.1)` through the binding,
+because the generated code calls symbols added later. 24.04 ships 4.14.5 and
+satisfies it; a distribution with an older GTK4 would not, and nothing in the
+build would say so until the `.deb` refused to install.
+
+**D-326's method survives its conclusion.** Generating `Depends` with
+`dpkg-shlibdeps` from the shipped binary is still right, and is now more
+obviously right: a hand-written four-line list taken from the cgo-direct probe
+would have been wrong by seven packages and two version floors.
+
+### The surface works, and the running process said so
+
+A GTK4 window hosting a WebKitGTK 6.0 view, built through the pinned binding,
+exercising the three decisions this project's page layer rests on. Nothing is
+synthesised: the page's own script runs on load, which is what a page does,
+and the navigation is one the page initiates itself (D-094).
+
+```
+PROBE: allowed navigation to liro://app/index.html
+PROBE: URI scheme handler called for liro://app/index.html
+PROBE: page->Go message received: hello-from-the-page
+PROBE: refused navigation to https://example.invalid/
+PROBE: scheme=true message=true blockedNav=true
+PROBE: ALL THREE OK
+```
+
+- **D-082 / D-150** — the page is served from `liro://`, not `file://`:
+  `WebContext.RegisterURIScheme` with a `URISchemeRequestCallback`, finished
+  with a `gio.MemoryInputStream`.
+- **D-083** — the page→Go message surface:
+  `UserContentManager.RegisterScriptMessageHandler` plus
+  `ConnectScriptMessageReceived`, carrying a `javascriptcore.Value` that
+  arrived as a string.
+- **D-259** — nothing navigates away from our own pages:
+  `ConnectDecidePolicy`, `NavigationPolicyDecision.NavigationAction().Request().URI()`,
+  and `webkit.BasePolicyDecision(d).Ignore()`.
+
+**The last of those is an API shape D-326 got slightly wrong.** `Ignore()` is
+on `*PolicyDecision`; the callback is handed a `PolicyDecisioner` interface
+whose only other member is unexported, so the route to it is the generated
+`BasePolicyDecision` free function. Reading the binding said the method
+existed; only compiling against it said where.
+
+**Run with the sandbox switched off**, because no AppArmor profile on this
+machine names a Go binary (D-324, D-326) — so this run says nothing new about
+§3.2 and everything it reports is about the binding.
+
+### The nineteenth instrument failure, caught by its own arithmetic
+
+The version matrix above was first run by a script that reported all four
+versions failing. It printed, for each:
+
+```
+vX.Y.Z  FAILS (0 unresolved C symbols) first:
+```
+
+**Zero unresolved symbols, and a failure, and an empty "first" field.** The
+harness was `go get`-ing the module without `go mod tidy`, so every build died
+on a missing `go.sum` entry for an indirect dependency and never reached cgo
+at all. The count and the verdict contradicted each other and the contradiction
+is the only reason it was caught.
+
+**Had the script printed only the verdict, §3.1 would have been answered
+"no version of gotk4 builds on 24.04" and the phase would have gone looking
+for a different binding.** That is the expensive direction. D-322's count
+reaches nineteen, and this one belongs to the same family as the other two
+from today: an instrument reporting a *negative* result, believed because
+negatives look like findings. The habit that caught it was printing the
+evidence next to the conclusion so that the two can disagree in public.
+
+### Predictions
+
+Written in this session's scratchpad before the measurement, P13–P16 added
+before this specific build and split deliberately.
+
+| | | |
+|---|---|---|
+| P13 | compile takes minutes, not seconds; under ~60 s falsifies it | **held** — 14 min 52 s |
+| P14 | at least one package needs more than 4 GB; OOM or reduced parallelism | **failed** — 1.93 GiB peak, no OOM |
+| P15 | it builds once `gobject-introspection-1.0` is present, no further missing package | **failed** — the blocker was a version, not a package |
+| P16 | a `.deb` unpacked into `~/.local` with its `.pc` prefix rewritten links the same as one installed by `apt` | **held** |
+
+**P15 is the one to look at, and it failed the same way I had already failed
+once today.** D-326 records that my install list omitted a package that was in
+my own survey; P15 then predicted that adding that one package was the whole
+remedy. Both are the same error — treating a list I had assembled as complete
+because I had assembled it. The second time it was written down as a
+prediction first, which is the only reason it is legible as a repeat.
+
+### The prefix this was measured on, which is not a clean 24.04
+
+`sudo` on this machine requires a password I do not have, so
+`libgirepository1.0-dev` could not be installed. Instead the four `.deb`s were
+downloaded with `apt-get download` (no root), unpacked with `dpkg-deb -x` into
+`~/.local/gir-prefix`, the `.pc` files' `prefix=` rewritten to point there, and
+the `libgirepository-1.0.so` development symlink — which ships relative and
+dangles outside `/usr` — repointed by absolute path at the system library.
+`PKG_CONFIG_PATH` then names that prefix first.
+
+**P16 says this is equivalent and P16 held, but "it linked" is a weaker claim
+than "it is equivalent".** On a clean machine the one-line remedy is
+`apt-get install libgirepository1.0-dev`, and any number in this entry is worth
+re-taking there if it ever matters to a decision. It is called out because it
+is exactly the kind of thing a measurement can silently depend on.
+
+### What is not established
+
+- **Which GLib release added the five functions.** Not needed for the
+  decision; needed if anyone wants to say when 24.04 stops being the
+  constraint.
+- **Whether v0.3.1's generated surface is missing anything this project will
+  need.** It is generated against a GTK4 and WebKitGTK older than the 4.14.5
+  and 2.52.6 this machine runs, and everything F12 §3.1's own list asks for is
+  present. That is not the same as everything the window layer will ask for.
+- **The Fedora `Depends` equivalent**, still. D-326's note stands.
+- **Whether the signal-10 contention (D-326) bites under load.** This probe
+  ran for six seconds.
+- **The tray.** D-326 established GTK4 has none and the C remedy is GTK3-only;
+  nothing here changes that, and StatusNotifierItem over D-Bus in Go remains
+  unwritten and unmeasured.
+
+**Rejected.**
+
+- **Requiring a newer GLib and taking gotk4 v0.4.1.** It would make Ubuntu
+  24.04 LTS unsupportable, and 24.04 is F12's stated floor. The binding is
+  chosen to fit the platform; the platform is not chosen to fit the binding.
+- **Carrying gotk4 unpinned.** The next `go get -u` picks v0.4.x and the build
+  breaks on the target platform with an error that names GLib and not the
+  binding. The pin is the finding.
+- **Patching the five functions out of a vendored gotk4.** It is generated
+  code; the patch would be regenerated away and would have to be re-derived on
+  every update, and the two-year release gap means the update cadence is not
+  fast enough to make that cheap.
+- **Reporting D-326's four-package `Depends` as §8's answer.** It is the
+  cgo-direct binary's, and the cgo-direct binary is not what ships.
+- **Editing D-326 to remove the wrong generalisation.** Neither entry had been
+  pushed, so D-266 permits correction, and the correction is written as one —
+  the numbers stay, the conclusion drawn from them is marked withdrawn, and
+  the withdrawn "Rejected" bullet stays visible. An entry that quietly stopped
+  being wrong would teach nobody why it was.
