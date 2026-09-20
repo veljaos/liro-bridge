@@ -9,7 +9,6 @@ package ui
 // corresponds to, in declaration order starting after IUnknown's three
 // slots (0=QueryInterface, 1=AddRef, 2=Release) — see D-080.
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -426,26 +425,3 @@ func coreWebView2ExecuteScript(cw2 uintptr, script string) (string, error) {
 	}
 	return h.result, nil
 }
-
-// postJSONScript builds the tiny script PostJSON runs: JSON.parse the
-// payload (never string-concatenated into the script) and hand it to
-// the page's own __liroReceive function. json.Marshal already produces
-// valid JS-string-literal-safe output for embedding inside a
-// single-quoted... no: to avoid any string-escaping subtlety at the JS
-// layer, the payload itself is passed as a *second* JSON-encoded
-// argument to Function, decoded with JSON.parse on the page side — this
-// is the "never build JavaScript by string concatenation with user
-// data in it" rule from F5 §2.4 applied literally: the only thing
-// concatenated into the script text is the JSON encoding of the
-// payload, which json.Marshal guarantees is a single, self-contained
-// JSON value with no unescaped quote or script-terminating sequence
-// (Go's encoding/json escapes '<', '>', '&', U+2028 and U+2029 by
-// default specifically because JSON is often embedded in HTML/JS like
-// this).
-func postJSONScript(payload []byte) string {
-	return "window.__liroReceive && window.__liroReceive(" + string(payload) + ");"
-}
-
-// marshalMessagePayload is a small seam so window_windows.go's PostJSON
-// does not need to import encoding/json itself.
-func marshalMessagePayload(v any) ([]byte, error) { return json.Marshal(v) }

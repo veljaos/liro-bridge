@@ -148,14 +148,26 @@ type Options struct {
 
 // Window is a live, on-screen WebView2 host.
 type Window interface {
-	// PostJSON marshals v to JSON and runs it as a script argument in
-	// the page via ExecuteScript (F5 §2.4: "Go -> page:
-	// ExecuteScript with a JSON payload. Never build JavaScript by
-	// string concatenation with user data in it."). The page-side script
-	// embedded in every window's HTML defines a single
-	// `__liroReceive(json)` function that PostJSON's generated call
-	// invokes; JSON.parse, not string concatenation, is what turns the
-	// payload back into an object on the page side.
+	// PostJSON marshals v to JSON and delivers it to the page (F5 §2.4:
+	// "Go -> page: ExecuteScript with a JSON payload. Never build
+	// JavaScript by string concatenation with user data in it.").
+	//
+	// The page-side script embedded in every window's HTML defines a
+	// single `__liroReceive(payload)` function that PostJSON's
+	// generated call invokes, **and payload is an object, not a string
+	// to be parsed** — the JSON is inlined as a JavaScript object
+	// literal, which is safe because JSON is a subset of JavaScript
+	// literal syntax and encoding/json escapes `<`, `>` and `&`. The
+	// script is built in one place for every platform (postjson.go), so
+	// the two hosts cannot disagree about what a page receives.
+	//
+	// This comment used to say the payload arrived as a string and was
+	// turned back into an object with JSON.parse. It never did, and the
+	// Linux host was written from this description and silently dropped
+	// every payload as a result — assets/bridge.js returns early on
+	// anything that is not an object. Corrected here rather than only
+	// in the implementation, because the description is what the next
+	// implementation will be written from.
 	PostJSON(v any) error
 
 	// Eval runs script in the page and returns its JSON-encoded result

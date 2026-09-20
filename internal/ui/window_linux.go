@@ -9,7 +9,6 @@ package ui
 // over.
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -361,18 +360,15 @@ func (w *linuxWindow) markClosed() {
 }
 
 func (w *linuxWindow) PostJSON(v any) error {
-	payload, err := json.Marshal(v)
+	payload, err := marshalMessagePayload(v)
 	if err != nil {
 		return fmt.Errorf("ui: encoding a message for the page: %w", err)
 	}
-	// JSON.parse, never string concatenation with caller data in it
-	// (F5 §2.4). The payload is itself JSON-encoded a second time so
-	// that it arrives as one string literal.
-	quoted, err := json.Marshal(string(payload))
-	if err != nil {
-		return fmt.Errorf("ui: encoding a message for the page: %w", err)
-	}
-	_, err = w.Eval("__liroReceive(" + string(quoted) + ")")
+	// postjson.go, shared with the Windows host so the two cannot
+	// disagree about what a page receives. An earlier version of this
+	// line passed a JSON string for the page to parse, which
+	// assets/bridge.js drops on the floor; see that file's comment.
+	_, err = w.Eval(postJSONScript(payload))
 	return err
 }
 

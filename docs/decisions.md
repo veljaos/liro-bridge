@@ -33235,3 +33235,79 @@ whichever one someone tested.
   not-yets with the phase that owns each, because "returns
   `ErrUnsupportedPlatform`" on a platform the program now genuinely runs on is
   otherwise indistinguishable from something nobody noticed.
+
+---
+
+## D-332 — `PostJSON` sends an object and the doc comment said it sent a string, so the Linux host was written to the comment and would have dropped every payload in silence; the page bridge now speaks both hosts and the script that builds the call has one definition
+
+**Date:** 2026-09-20
+**Phase:** F12 §3 — the page side, which D-331 named as what was left.
+
+### The bug, and that it was not found by a test
+
+`window.go` described `Window.PostJSON` like this:
+
+> The page-side script embedded in every window's HTML defines a single
+> `__liroReceive(json)` function that PostJSON's generated call invokes;
+> **JSON.parse**, not string concatenation, is what turns the payload back into
+> an object on the page side.
+
+**The implementation has never done that.** `postJSONScript` inlines the JSON
+as a JavaScript *object literal*:
+
+```go
+return "window.__liroReceive && window.__liroReceive(" + string(payload) + ");"
+```
+
+and `assets/bridge.js` opens with `if (!payload || typeof payload !== "object")
+return;`.
+
+The Linux host was written from the comment. It JSON-encoded the payload a
+second time and passed a string, so **bridge.js would have returned early on
+every message** — no error, no log, nothing on screen. That is the same
+failure this file already carries a fourteen-line comment about, from the
+other direction: a pre-stringified `postMessage` argument once discarded every
+approve/cancel/selectCertificate click in silence.
+
+**It was caught by reading `bridge.js`, not by the tests**, and the reason is
+worth more than the bug. `TestPostJSONArrivesAsAnObjectNotAString` passed
+throughout. Its page defined `__liroReceive = function (json) { … JSON.parse(json) }`
+— **written from the same wrong sentence as the implementation.** A test and
+the code it tests, derived from one bad description, agree with each other and
+prove nothing.
+
+So the test that now exists serves **the file this program actually ships**:
+`Assets.ReadFile("assets/bridge.js")` into the window's own `fs.FS`. With the
+old implementation it fails; there is no page in it written by the same hand
+that wrote the host.
+
+### Decided
+
+- **One definition of the script, in `postjson.go`, with no build tag.** It
+  was in `webview2_windows.go`, where it was correct and invisible to the
+  platform that needed to match it. Sharing it makes the divergence impossible
+  rather than merely absent.
+- **`window.go`'s comment is corrected, not just the code.** The description
+  is what the next implementation will be written from — F13's macOS host will
+  read that sentence the way this one did.
+- **`bridge.js` resolves its native host once, at load.** `window.chrome.webview`
+  on WebView2, `window.webkit.messageHandlers.liro` on WebKitGTK. Neither
+  present means the page is being opened by something that is not this
+  program, and `liroSend` **throws rather than no-ops** — a click that cannot
+  be delivered must fail visibly the first time.
+- **Both hosts keep the object-not-string rule.** The Linux side could have
+  unwrapped a string and deliberately does not (D-331): leniency here would
+  make the stringify mistake work on one platform and fail on the other.
+
+### What is now demonstrated end to end on Linux
+
+Through the shipped `bridge.js`, on a real web process: `PostJSON` reaches
+`__liroOnMessage` and its `strings` land where `liroT` reads them; `liroAct`
+sends `approve` through `liroSend` to `OnMessage` and `__liroAction` reports
+what the click meant; and a page with neither host throws a named error. 66
+tests in `internal/ui` on this platform.
+
+**Still not established:** that any *real page* under `assets/pages/` renders
+here. These tests exercise the bridge with pages of their own; the windows
+this program ships also want `tokens.css`, `intents.css` and their own markup,
+and nothing has yet opened `consent.html` on Linux.

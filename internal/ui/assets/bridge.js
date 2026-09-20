@@ -1,7 +1,9 @@
-// Shared Go<->page bridge (F5 §2.4). Loaded by every window's page.
-// Go pushes JSON via ExecuteScript calling window.__liroReceive; the
-// page sends exactly one of three messages back via
-// window.chrome.webview.postMessage — approve, cancel, selectCertificate.
+// Shared Go<->page bridge (F5 §2.4). Loaded by every window's page, on
+// every platform. Go pushes a JSON object into window.__liroReceive;
+// the page sends exactly one of three messages back — approve, cancel,
+// selectCertificate — through whichever native host it is running in:
+// window.chrome.webview on WebView2, window.webkit.messageHandlers.liro
+// on WebKitGTK (F12 §3).
 (function () {
   "use strict";
 
@@ -48,20 +50,49 @@
     return Object.prototype.hasOwnProperty.call(strings, key) ? strings[key] : key;
   };
 
+  // Which host this page is in. WebView2 on Windows, WebKitGTK on
+  // Linux (F12 §3); the two spell "send a message to the native side"
+  // differently and agree about nothing else here.
+  //
+  // Resolved once, at load, rather than per send: if neither is present
+  // the page is being opened by something that is not this program —
+  // a browser, a test harness — and a click should fail visibly the
+  // first time rather than throw on every button press.
+  var post = (function () {
+    if (window.chrome && window.chrome.webview &&
+        typeof window.chrome.webview.postMessage === "function") {
+      return function (msg) { window.chrome.webview.postMessage(msg); };
+    }
+    if (window.webkit && window.webkit.messageHandlers &&
+        window.webkit.messageHandlers.liro) {
+      return function (msg) { window.webkit.messageHandlers.liro.postMessage(msg); };
+    }
+    return null;
+  })();
+
   window.liroSend = function (type, extra) {
     var msg = Object.assign({ type: type }, extra || {});
-    // Pass the object itself, not JSON.stringify(msg): WebView2's
-    // postMessage already serialises an object argument, and the native
-    // side's WebMessageAsJson returns that serialisation directly. A
-    // pre-stringified argument is instead treated as a *string* message,
-    // so WebMessageAsJson returns the JSON encoding of that string —
-    // i.e. the whole payload re-quoted and escaped one level deeper than
-    // internal/ui.ParseMessage (messages.go) expects, which silently
-    // dropped every approve/cancel/selectCertificate click as a result
-    // (logged as "not one of approve/cancel/selectCertificate", never
-    // surfaced to the user — verified directly against a real WebView2
-    // window, see docs/decisions.md).
-    window.chrome.webview.postMessage(msg);
+    if (!post) {
+      throw new Error("liro: no native message host (not WebView2, not WebKitGTK)");
+    }
+    // Pass the object itself, not JSON.stringify(msg). WebView2's
+    // postMessage already serialises an object argument and the native
+    // side's WebMessageAsJson returns that serialisation directly; the
+    // WebKitGTK side does the same thing through jsc_value_to_json. A
+    // pre-stringified argument is instead treated as a *string*
+    // message, so what the native side sees is the JSON encoding of
+    // that string — the whole payload re-quoted and escaped one level
+    // deeper than internal/ui.ParseMessage (messages.go) expects, which
+    // silently dropped every approve/cancel/selectCertificate click as
+    // a result (logged as "not one of approve/cancel/selectCertificate",
+    // never surfaced to the user — verified directly against a real
+    // WebView2 window, see docs/decisions.md).
+    //
+    // **Both hosts behave identically here, deliberately.** The Linux
+    // side could have unwrapped a string and did not, so that this
+    // mistake cannot work on one platform and fail on the other
+    // (D-331).
+    post(msg);
   };
 
   // setText inserts untrusted or trusted text via textContent, never
