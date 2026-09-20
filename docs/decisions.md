@@ -33374,3 +33374,143 @@ leave every machine as you found it, and that includes the working tree.
 reading what it does, and the thing that made it harmless was that it happened
 to be read-only against the repository rather than anything about the care
 taken.
+
+---
+
+## D-334 — The Linux work was built somewhere other than the machine it was written on for the first time, and two unrelated failures wear the same clothes: a dev package the runner never had, and a `./...` that cannot exist with cgo off
+
+**Date:** 2026-09-20
+**Phase:** F12 §3.1 — the CI half of it, which nothing had exercised.
+
+**This is the first time any of the Linux work has been compiled on a machine
+other than the VM it was written on.** It failed on the first push, which is
+the honest way for it to arrive. `ci` at `be326c4`, job `106158994721`, **32
+seconds**, at the first step that sweeps the module:
+
+```
+# github.com/diamondburned/gotk4/pkg/core/gbox
+# [pkg-config --cflags  -- glib-2.0]
+Package glib-2.0 was not found in the pkg-config search path.
+Package 'glib-2.0', required by 'virtual:world', not found
+```
+
+Everything else in the run was green — `windows` 5m49s, `sdk-typescript`
+2m10s, `packaging` 1m26s. It is not the code.
+
+**It is D-295's shape one platform over.** F12 §3a exists precisely because
+this VM has things a clean machine does not, and it lists them; what it could
+not list is which of them anything *depends* on, because nothing had ever
+tried to build without them. A dependency that exists only on the developer's
+machine has not been declared, however carefully it has been written down.
+
+### Two failures, and only one of them is about packages
+
+The pkg-config error is the one in the log, and fixing it does not make the
+job green, because a second failure is waiting three steps later and has a
+different cause.
+
+**Reproduced here rather than predicted:**
+
+```
+$ CGO_ENABLED=0 GOOS=linux go build -o dist/ ./...
+package .../internal/pinscreen
+	imports .../internal/ui
+	imports .../gotk4/pkg/gtk/v4: build constraints exclude all Go files
+exit status 1
+```
+
+`build linux/amd64` runs `go build -o dist/ ./...` with **`CGO_ENABLED: 0`**,
+and with cgo off gotk4's packages have no buildable Go files at all. **No
+amount of `apt-get install` fixes this**: it is not a missing library, it is
+a package that cannot exist in a cgo-free view. The two errors look alike in a
+log — both are "can't build gotk4" — and they have nothing to do with each
+other.
+
+### What the runner actually needs: two packages, not five
+
+The VM has five, and the question is what is *required* rather than what
+happened to be typed. Measured with `apt-cache depends --recurse`:
+
+| set | closure |
+|---|---|
+| `libgtk-4-dev libwebkitgtk-6.0-dev` | **618 packages** |
+| all five this VM has | 646 packages |
+
+The two dropped: **`libwebkit2gtk-4.1-dev`** is the GTK3 stack §3.1 evaluated
+and rejected — it is on the VM only as the comparison, and it is what dragged
+`libgtk-3-dev` in — and **`libpcsclite-dev`** is §9's, which nothing imports
+yet. `pkg-config` is already on `ubuntu-latest`.
+
+### What it costs, and whether caching is worth it
+
+**The `ci` job is the only machine in this project that runs `-race`** — it is
+where D-303 was caught — so slowing it is a real cost and not a cosmetic one.
+
+- **First run after this change: expect 15–22 minutes**, not the ~6 it runs
+  today. D-327 measured gotk4 cold at **14 min 52 s / 1.93 GiB peak on 4
+  CPUs**, and a GitHub runner is the same order.
+- **Steady state should return to roughly 7–8 minutes.** `actions/setup-go@v5`
+  caches `~/go/pkg/mod` **and** `~/.cache/go-build` by default, keyed on
+  `go.sum`, and `go.sum` changes rarely. Warm on this machine, `go vet
+  -unsafeptr=false ./...` across the whole module is **3.1 s**. The extra
+  ~60–90 s is the apt install.
+- **So caching is not an optimisation here, it is the thing that makes this
+  affordable** — and it is already on, which is why no cache step was added.
+  If `go.sum` moves, that run pays the fifteen minutes again.
+- **Unmeasured:** the actual first-run figure, and whether gotk4's build cache
+  strains the 10 GB per-repository cache limit. Both are answered by the next
+  push and neither is guessed at here.
+
+### Whether everything needs it: no, and the split is not where it looks
+
+Only the steps that sweep `./...` on `GOOS=linux` **with cgo available**: `go
+vet`, `golangci-lint`'s linux view, and the two `-race` runs. Not
+`golangci-lint (GOOS=windows)`, not the `CGO_ENABLED: 0` steps — which cannot
+have it — not `sdk-typescript`, not `packaging`, not `windows`.
+
+**And not the binary this project ships.** Measured, not assumed:
+
+```
+$ GOOS=linux go list -deps ./cmd/liro-bridge | grep internal/ui
+(nothing)
+$ CGO_ENABLED=0 GOOS=linux go build ./cmd/liro-bridge
+DT_NEEDED=0  PT_INTERP=0  ~10.2 MB
+```
+
+`cmd/liro-bridge` imports neither `internal/ui` nor `internal/pinscreen` on
+linux. **SPEC §1.1's static binary is intact and this changes nothing about
+it.** The single thing pulling gotk4 into a module-wide sweep is
+`internal/pinscreen`, which imports `internal/ui` unconditionally and which
+nothing on linux imports in turn — one package, reachable by no shipped code
+on this platform, is what made every `./...` need a GTK stack.
+
+### Decided
+
+- **Install two packages on the `ci` job**, `libgtk-4-dev` and
+  `libwebkitgtk-6.0-dev`, with `--no-install-recommends`.
+- **`build linux/amd64` narrows from `./...` to `./cmd/...`**, because what
+  that step exists to prove is that the shipped binary links no C, and that is
+  still proved. The asymmetry with the windows and darwin steps is deliberate
+  and carries its reason in the file.
+- **F0 §10's rule is restated**, not abandoned: "our own code is cgo-free on
+  linux" now reads *except `internal/ui` and its importers*, and `internal/ui`
+  is covered by the cgo-enabled steps instead.
+- **Rejected: `CGO_ENABLED: 1` for the linux build step.** It would make the
+  step pass by destroying the only thing it measures.
+- **Rejected: installing what the VM has.** Three of the five are not needed
+  and one of them is the stack §3.1 ruled out.
+
+### What this does not settle
+
+- **`-race` implies `checkptr`, and D-330 measured gotk4 failing it.** With
+  gotk4 now in the linux view of two `-race` steps, that wall is in scope. The
+  linux UI tests guard themselves — `t.Skip("no windowing system: ", err)` and
+  the bubblewrap skip in `webkitjs_linux_test.go:58` — so on a headless runner
+  they should skip before reaching a GTK call. **That is a runtime skip and not
+  a compile-time exclusion**, and it has never been observed on a runner. If
+  the next run dies inside `internal/ui` under `-race`, this is the reason and
+  not the packages.
+- **Nothing here has been run on CI yet.** Both changed commands were verified
+  on this VM only: `go vet -unsafeptr=false ./...` exit 0 in 3.1 s, and
+  `CGO_ENABLED=0 GOOS=linux go build -o dist/ ./cmd/...` exit 0 in 1.3 s. §0.1
+  applies.

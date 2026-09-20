@@ -14,6 +14,31 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # F12 §3.1: internal/ui's GTK4 + WebKitGTK 6.0 window host is cgo,
+      # so every module-wide sweep below that *can* use cgo — go vet,
+      # golangci-lint's linux view, and both -race runs — now needs the
+      # development packages on the runner.
+      #
+      # This is the first time the Linux work has been built anywhere but
+      # the machine it was written on, and the first push after it landed
+      # failed here in 32 seconds with `Package glib-2.0 was not found in
+      # the pkg-config search path`. D-295's shape, one platform over: a
+      # dependency that exists only on the developer's machine is not a
+      # dependency anyone has declared.
+      #
+      # **Two packages, not the five that machine happens to have.**
+      # libwebkit2gtk-4.1-dev is the GTK3 stack §3.1 evaluated and
+      # rejected — it is there only as the comparison, and it drags in
+      # libgtk-3-dev — and libpcsclite-dev is §9's, which nothing imports
+      # yet. Recursive closure measured with apt-cache: 618 packages for
+      # these two, 646 for all five. pkg-config is already on
+      # ubuntu-latest.
+      - name: GTK4 and WebKitGTK development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libwebkitgtk-6.0-dev
+
       - name: gofmt
         run: |
           fmt_out="$(gofmt -l .)"
@@ -332,8 +357,32 @@ jobs:
           GOOS: darwin
           GOARCH: arm64
 
+      # **linux is ./cmd/... where the other two are ./..., and that is a
+      # decision rather than a slip.** internal/ui's window host is
+      # cgo-only on this platform, so under CGO_ENABLED=0 its gotk4
+      # imports have no buildable Go files at all and `./...` fails with
+      # "build constraints exclude all Go files" — a cgo-*off* problem
+      # that no amount of apt can fix, which is why the install step
+      # above does not rescue this one. The two failures look alike in a
+      # log and have nothing to do with each other.
+      #
+      # What this step exists to prove is unchanged and still proved: the
+      # binary this project ships links no C. cmd/liro-bridge imports
+      # neither internal/ui nor internal/pinscreen on linux — measured,
+      # not assumed — and built this way it still reports DT_NEEDED 0 and
+      # no PT_INTERP at ~10.2 MB, which is F12 §1's table unchanged. (The
+      # exact byte count moves by a few dozen bytes with the output path,
+      # so it is not quoted here as a constant.)
+      #
+      # What is given up: the non-cmd packages lose their cgo-free check
+      # on *linux* specifically. They keep it on windows and darwin,
+      # which sweep ./... two steps above, so the only thing now
+      # unchecked is a linux-tagged file in a non-cmd package quietly
+      # acquiring a C dependency. F0 §10's rule reads "everything except
+      # internal/ui and its importers" from here on, and internal/ui
+      # itself is covered by the cgo-enabled steps instead.
       - name: build linux/amd64
-        run: go build -o dist/ ./...
+        run: go build -o dist/ ./cmd/...
         env:
           CGO_ENABLED: 0
           GOOS: linux
