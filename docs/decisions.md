@@ -32679,3 +32679,122 @@ is exactly the kind of thing a measurement can silently depend on.
   the numbers stay, the conclusion drawn from them is marked withdrawn, and
   the withdrawn "Rejected" bullet stays visible. An entry that quietly stopped
   being wrong would teach nobody why it was.
+
+---
+
+## D-328 — The CI fuzz failure is a race in Go's own fuzz coordinator at deadline expiry, not in `internal/pades/pdf`: `-fuzztime` is the entire context budget with nothing reserved for teardown, a bigger number would not reduce the per-run probability, and the rate is unmeasurable on this VM
+
+**Date:** 2026-09-20
+**Phase:** F12 — recorded and left, deliberately not patched.
+
+**The failure.** CI at `50ce144..b38b4b4`:
+
+```
+--- FAIL: FuzzParse (61.01s)
+    context deadline exceeded
+FAIL github.com/veljaos/liro-bridge/internal/pades/pdf 61.009s
+```
+
+60 seconds of fuzzing, 1.69M execs, 102 new interesting inputs, no crasher, no
+`testdata/fuzz` entry written, and none of the eight commits touches
+`internal/pades/pdf`. **It is not this repository's defect.** It has never been
+recorded here before — `grep 'context deadline exceeded' docs/` was empty.
+
+### What `-fuzztime=60s` against a 60-second context leaves for teardown
+
+**Nothing.** `internal/fuzz/fuzz.go:105`, Go 1.26.5 — the same toolchain CI
+resolves from `go.mod`:
+
+```go
+if opts.Timeout > 0 {
+    var cancel func()
+    ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+    defer cancel()
+}
+
+// fuzzCtx is used to stop workers, for example, after finding a crasher.
+fuzzCtx, cancelWorkers := context.WithCancel(ctx)
+```
+
+`-fuzztime` *is* the whole budget. Teardown runs after the deadline has already
+fired, on an expired context, and outside the budget — which is why `go test`
+reported **61.01s** against a 60-second limit rather than stopping at 60.
+
+### The mechanism, read from source rather than reproduced
+
+Two contexts: `ctx` carries the deadline, `fuzzCtx` is its child. On expiry the
+coordinator's select wakes (`fuzz.go:225`) and calls `stop(ctx.Err())`, which
+suppresses the error only on this comparison (`fuzz.go:129`):
+
+```go
+if err == fuzzCtx.Err() || isInterruptError(err) {
+    err = nil
+}
+```
+
+It compares the parent's error against **the child's**. Normally both are
+`DeadlineExceeded`, the comparison holds, and the run passes. But
+`context.cancel` (`context/context.go:563`) closes the parent's done channel
+*before* it cancels its children, all under the parent's lock:
+
+```go
+d, _ := c.done.Load().(chan struct{})
+if d == nil { c.done.Store(closedchan) } else { close(d) }
+for child := range c.children {
+    child.cancel(false, err, cause)
+}
+```
+
+`close(d)` makes the coordinator goroutine runnable immediately, and
+`cancelCtx.Err()` is an unsynchronised atomic load that takes no lock. So on a
+machine with a spare CPU the coordinator can reach the comparison while the
+cancelling goroutine is still inside that loop: `ctx.Err()` is
+`DeadlineExceeded`, `fuzzCtx.Err()` is still **nil**, the suppression fails,
+`fuzzErr` is set, and `testing/fuzz.go:368` turns it into `f.Fail()` and prints
+the error verbatim. The worker path (`stop(err)` where a worker returned
+`ctx.Err()`) reaches the same comparison and fails the same way.
+
+**Contention widens the window** — more runnable goroutines, later scheduling of
+the child-cancel loop — which matches the CI runner swinging between 0 and
+68k execs/sec.
+
+### Why a bigger `-fuzztime` is not the fix
+
+**The window is at deadline expiry and does not depend on how long the run
+fuzzed for.** Raising 60s to 120s samples exactly the same event exactly once
+more; the per-run probability is unchanged and the job just costs twice as
+long. The owner's instinct not to patch it with a bigger number was right for a
+stronger reason than suspected: the bigger number does not address the
+mechanism at all.
+
+### Decided
+
+- **Recorded and left.** The CI step exists so that nobody has to remember to
+  fuzz by hand (`ci.yml:193`). A rare shutdown flake does not defeat that, and
+  the signature is unambiguous: `FAIL` at just over `-fuzztime`, the error text
+  exactly `context deadline exceeded`, **no crasher printed and no
+  `testdata/fuzz` entry written**. A real finding writes a file.
+- **Rejected: raising `-fuzztime`.** Above.
+- **Rejected: catching the string in CI and passing the step.** It would mask
+  the one shape of genuine coordinator failure this project has no other view
+  of, to buy a re-run.
+- **Not ours to fix.** The fix belongs in `internal/fuzz`: compare against
+  `ctx.Err()`, or test `errors.Is(err, context.DeadlineExceeded)` when `doneC`
+  fired. **Whether upstream already tracks this was not checked** and no issue
+  was filed from here.
+- **On a repeat: re-run the job.** If it fails twice in a row on the same
+  commit, that is no longer this entry and the corpus is the place to look.
+
+### The rate is unmeasurable on this VM
+
+Establishing *how often* this fires needs a contended machine. **This VM does
+not get load generators** — a standing rule from the owner as of 2026-09-20,
+after an attempt to sample the rate under eight busy-loop processes saturated
+the machine, produced no sample in over two hours, and cost a reset. The rate
+is recorded as **unmeasurable here** rather than estimated from a run whose own
+load made the timing worthless. §0.1's warning about VMs applies with the extra
+edge that the instrument was the contention.
+
+**What that attempt cost, recorded because D-318's ledger asks for it:** two
+hours and twenty-one minutes, no commit, one VM reset. The mechanism above came
+from twenty minutes of reading `$GOROOT`, before any of it.
