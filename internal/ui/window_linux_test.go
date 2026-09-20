@@ -9,6 +9,7 @@ package ui
 
 import (
 	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -392,5 +393,69 @@ func TestTheRealBridgeJSFailsLoudlyWithNoNativeHost(t *testing.T) {
 	}
 	if !strings.Contains(got, "no native message host") {
 		t.Errorf("window.__err = %s, want it to name the missing host", got)
+	}
+}
+
+// A page this program actually ships, served from the assets it
+// actually ships, in a real window. D-332 left this open: everything
+// before it used pages written for the test.
+//
+// It is the first time consent.html has been opened anywhere but
+// Windows, and what it checks is deliberately shallow — that the
+// document parsed, its stylesheets and scripts were served and ran, and
+// the bridge is live in it. How it *looks* is not a thing a VM with a
+// software renderer can be asked (§0.1).
+func TestAShippedPageLoadsAndItsAssetsResolve(t *testing.T) {
+	requireWebKitCanStart(t)
+
+	assets, err := fs.Sub(Assets, "assets")
+	if err != nil {
+		t.Fatalf("fs.Sub: %v", err)
+	}
+
+	for _, page := range []string{
+		"/pages/consent.html",
+		"/pages/certificates.html",
+		"/pages/settings.html",
+		"/pages/main.html",
+	} {
+		t.Run(page, func(t *testing.T) {
+			w := newTestWindow(t, Options{
+				Assets:      assets,
+				VirtualHost: "liro.invalid",
+				StartPage:   page,
+			})
+
+			// The stylesheets are referenced root-relative, so each one
+			// is a real request back through the liro:// handler. A
+			// sheet that 404'd leaves no rule behind.
+			got, err := w.Eval("document.styleSheets.length")
+			if err != nil {
+				t.Fatalf("Eval: %v", err)
+			}
+			if got == "0" {
+				t.Errorf("no stylesheet resolved for %s", page)
+			}
+
+			// bridge.js is loaded the same way, and defines these.
+			for _, fn := range []string{"liroT", "liroSend", "__liroReceive"} {
+				got, err := w.Eval("typeof window." + fn)
+				if err != nil {
+					t.Fatalf("Eval typeof %s: %v", fn, err)
+				}
+				if got != `"function"` {
+					t.Errorf("%s: window.%s is %s, want function — bridge.js did not run", page, fn, got)
+				}
+			}
+
+			// And the page's own script, which is what would break if
+			// its <script src> had not resolved.
+			if got, err = w.Eval("typeof window.__liroOnMessage"); err != nil {
+				t.Fatalf("Eval: %v", err)
+			}
+			if got != `"function"` {
+				t.Errorf("%s: the page's own script did not run (__liroOnMessage is %s)", page, got)
+			}
+		})
 	}
 }

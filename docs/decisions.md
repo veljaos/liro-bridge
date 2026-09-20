@@ -33311,3 +33311,66 @@ tests in `internal/ui` on this platform.
 here. These tests exercise the bridge with pages of their own; the windows
 this program ships also want `tokens.css`, `intents.css` and their own markup,
 and nothing has yet opened `consent.html` on Linux.
+
+---
+
+## D-333 — The shipped pages had drifted from their own documented design into `https://liro.invalid/…`, which is WebView2's virtual host spelled as a URL; root-relative references restore what `assets.go` already said and are the only form both hosts can serve
+
+**Date:** 2026-09-20
+**Phase:** F12 §3 — closes D-332's open item.
+
+**`internal/ui/assets.go` has always said this:**
+
+> Callers pass `fs.Sub(ui.Assets, "assets")` as `Options.Assets` so the virtual
+> host root lines up with these files' own absolute references (e.g.
+> `"/pages/consent.html"` referencing `"/tokens.css"`).
+
+**No page did that.** All nine referenced `https://liro.invalid/tokens.css` and
+its neighbours — 45 absolute URLs — which works on Windows only because
+WebView2's `SetVirtualHostNameToFolderMapping` maps a hostname *under https*.
+WebKitGTK serves the same content over `liro://` (D-331), so on Linux every
+one of those was a cross-scheme request: the stylesheets would not have
+loaded, `bridge.js` would not have run, and the navigation policy would have
+refused them — a blank window with nothing wrong in the log.
+
+**Root-relative is not a Linux accommodation, it is the documented design.**
+`/tokens.css` resolves against the document's own origin, which is
+`https://liro.invalid/` on WebView2 and `liro://liro.invalid/` on WebKitGTK.
+The pages stop naming the host mechanism at all, which is why neither host
+appears in them now.
+
+### Demonstrated
+
+`consent.html`, `certificates.html`, `settings.html` and `main.html` opened
+on Linux from `fs.Sub(ui.Assets, "assets")` — **the first time any of them has
+been opened anywhere but Windows.** Each parses, resolves its stylesheets
+through the `liro://` handler, runs `bridge.js` (`liroT`, `liroSend`,
+`__liroReceive` are all functions) and runs its own page script
+(`__liroOnMessage`). 71 tests in `internal/ui` here; `scripts/checkcss` clean.
+
+**What that is not.** It says the documents parsed and their assets resolved.
+It says nothing about how they *look*: this is a VM with no hardware driver
+and a software renderer (§0.1, D-324), and no screenshot taken here decides
+anything about layout.
+
+### The same hard-coding survives in Go, one place, and is Windows-only today
+
+`cmd/liro-bridge/placewindow_windows.go` builds the scratch host's image URLs
+as `"https://" + placeScratchHost + "/" + name`. It is in a `_windows.go` file
+and nothing on Linux calls it, so it is correct where it stands and is
+**recorded here rather than changed**: the Linux place window does not exist,
+and the right moment to give that prefix one definition is when a second
+caller needs it, not before.
+
+### Note on how this was verified
+
+`scripts/checkcss` was the right tool and passed. `scripts/crlcheck` was run
+in the same breath on the assumption that a name starting "check" checked
+something local; it is the certificate revocation tool, it made a network
+request, and it wrote a dated baseline snapshot into
+`scripts/crlcheck/baseline/`. The file was deleted — the phase rule is to
+leave every machine as you found it, and that includes the working tree.
+**Recorded because the near-miss is the useful part:** a tool was run without
+reading what it does, and the thing that made it harmless was that it happened
+to be read-only against the repository rather than anything about the care
+taken.
