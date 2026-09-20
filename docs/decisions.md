@@ -31836,3 +31836,188 @@ prediction missed.
   claim the machine settles — D-287's own finding, and D-321's.
 
 ---
+
+## D-325 — The discovery file's owner is the agent whose port it names: removal becomes conditional, the write deliberately does not, and $XDG_RUNTIME_DIR answers one of the three questions and not the other two
+
+**Date:** 2026-09-20
+**Phase:** F12 §7.1 — decided and recorded, on the platform being built
+
+F12 §7.1 asks three questions and says to decide and record. This answers two of
+them and builds the smaller half of the second; the first is named, and why it
+is not built here is the substance rather than an apology.
+
+### First: SPEC already answers the question the phase document leaves open
+
+F12 §7.1 asks *"does a second instance refuse to start, hand over and exit, or
+run alongside?"* and frames concurrent instances as a supported configuration,
+citing SPEC §14.1. Read again, §14.1 says something narrower:
+
+> One agent instance **per user session**, not per machine.
+> ... The port range makes concurrent instances possible; the discovery file
+> makes them findable.
+
+**The concurrency SPEC supports is across sessions**, which is the RDP and
+terminal-services case §14.1 is about — and it says one instance per session.
+So "run alongside" is not one of three live options: within a session it is
+already the thing SPEC forbids, and the two agents D-323 measured on the owner's
+own machine were a **defect against SPEC §14.1**, not an unsupported-but-tolerated
+arrangement.
+
+That matters because it changes what is left to decide. Between refusing and
+handing over, **F12 §6 already wants handing over** — *"a `.desktop` entry
+launching the window, with single-instance handing the request to a running
+agent"* — so a second instance should pass its request to the running agent and
+exit, and refusing would leave a person who double-clicked a PDF with nothing.
+
+**Decided: hand over and exit. Not built here**, and the reason is that there is
+nowhere to hand *to* until F12 §6's product decision is made. §6 is a decision
+about what a stock GNOME desktop shows when the agent has no tray, and the
+hand-over channel — what a second process says to the first, and how the first
+raises a window it did not ask for — is downstream of that. Building the
+mechanism now would be choosing §6 by implication, which is the move D-201,
+D-227, D-233 and D-249 each declined for their own findings.
+
+### Second: who owns the file, and this half is built
+
+**The agent whose port the file names owns it.** `RemoveBridgeFile` takes that
+agent's own port and removes the file only when the file still describes it.
+
+**No field was added to carry an owner, and that is the point.** The obvious
+answer is a pid, and D-186 declined one — *"a PID is one more thing an
+unauthenticated reader learns about the machine"* — and that reasoning is
+untouched. It does not need to be revisited, because the test is already in the
+file: an agent knows which port it bound, and `bridge.json` has said which port
+it describes since F7. The ownership rule costs nothing an unauthenticated
+reader can see.
+
+Reproduced on Linux first, with the shipped functions rather than a
+re-implementation, because D-323's measurement was taken on Windows and the
+functions are platform-neutral Go:
+
+```
+after agent A starts : port 17580, written by "A"
+after agent B starts : port 17581, written by "B"
+after agent B stops  : the file is GONE
+RESULT: agent A is still running on 17580 and is now undiscoverable.
+```
+
+`TestAnAgentNeverRemovesAnotherAgentsDiscoveryFile` is that sequence committed,
+and it is written **as the sequence rather than as a call with a mismatched
+port**, because the sequence is what was observed on a real machine and the
+mismatched port is only the mechanism. Confirmed to fail against the behaviour
+it replaces, with the message naming the entry:
+
+```
+agent A removed a discovery file naming agent B's port; agent B is still
+running and is now undiscoverable (D-323)
+```
+
+**The write stays unconditional, and that is a decision rather than half a
+fix.** Refusing to overwrite a live agent's file, with no single-instance
+mechanism to hand over to, produces the same defect with the roles swapped: a
+second agent that starts, cannot claim discovery, and runs invisibly. The write
+is right to be unconditional *until* one agent per session is enforced; the
+removal was wrong either way. That asymmetry is in the function's own doc
+comment rather than only here, because the next person to look at this will be
+looking at the function.
+
+**A file that cannot be read is left alone and reported**, which is the third
+case and the only one that is a judgement rather than a consequence. An agent
+that removed what it could not identify would be back to unconditional removal
+with extra steps.
+
+**This changes Windows too, and it is meant to.** `RemoveBridgeFile` is shared,
+and F12 §7.1's own reason for raising a Windows defect in the Linux phase is
+that *"a rule decided once on the platform being built is cheaper than the same
+rule fixed twice."* D-323 said the fix was not that phase's; this is the phase
+whose own document asks for it.
+
+### Third: is a stale file distinguishable from a live one? On Windows no, and on Linux the answer has a caveat
+
+**Within a session: no, on either platform.** Measured — the whole of what a
+reader gets is `{Port:17580 AgentVersion:A ProtocolVersion:2}`, and nothing in
+it identifies the writer or says whether it is still alive. A file left by a
+crash reads exactly like a live agent until the connection is refused, which is
+what `RemoveBridgeFile`'s comment has said since F7 and is still true.
+
+**Across sessions: Linux answers it and Windows does not**, and F12 §7.1 asks
+whether `$XDG_RUNTIME_DIR` does some of this work. It does, and the mechanism
+was read off the running system rather than out of a manual page:
+
+```
+/run/user/1000  tmpfs  rw,nosuid,nodev,relatime,size=400476k,mode=700,uid=1000
+owned by        user-runtime-dir@1000.service
+                ExecStop=/usr/lib/systemd/systemd-user-runtime-dir stop 1000
+```
+
+**It is a tmpfs, and the unit that owns it unmounts it when the user's last
+session ends.** So a stale `bridge.json` cannot survive logout, and cannot
+survive a reboot either — not cleared file by file, unmounted wholesale. That
+is a property `%LOCALAPPDATA%` does not have at all, and F12 §7.1 was right to
+ask.
+
+**Two caveats, both load-bearing and neither obvious.**
+
+`Linger=no` is what makes it true. A user with `loginctl enable-linger` keeps
+`/run/user/$UID` mounted across logout, and then Linux behaves exactly like
+Windows. It is the default and it is not a guarantee, and a bookkeeper's machine
+configured for unattended services is precisely where it would be turned on.
+
+**And the fallback path has none of it.** `platform.BridgeFile` falls back to
+`~/.local/state/liro/bridge.json` when `$XDG_RUNTIME_DIR` is unset — measured
+here, and it is the path SPEC §14 names. That is ordinary disk: it survives
+logout, reboot and everything else, so on the fallback path Linux is Windows.
+
+So the honest form is: **the runtime directory answers the cross-session half
+of the question, for a non-lingering user, on the primary path only.** It does
+nothing about the case D-323 actually measured, which was two agents inside one
+session — and that is the case the ownership rule above is for.
+
+### One thing measured that nobody asked about
+
+The directory the agent creates inside the runtime directory is `0755` while the
+file itself is `0600`:
+
+```
+/run/user/1000            rwx------   (systemd's, mode=700 on the mount)
+/run/user/1000/liro       rwxr-xr-x   (ours)
+/run/user/1000/liro/bridge.json  rw-------   (ours)
+```
+
+Harmless on the primary path, because the 0700 mount is above it. **Not harmless
+on the fallback path**, where `~/.local/state/liro/` would be a world-readable
+directory on ordinary disk — the file's own 0600 protects its contents and not
+the fact of its existence. Recorded rather than changed: it is one constant in
+`WriteBridgeFile`, and changing a mode is a decision about what SPEC §6.4's
+"other users of the machine" boundary covers, which is not this entry's and is
+not F12 §7.1's question.
+
+### What is not established
+
+- **That hand-over is the right shape**, as against refusing. It follows from
+  §6's own sentence and §6 has not been decided.
+- **Anything about two real sessions.** A second logged-in user cannot be
+  created from here, and what was measured is one session's runtime directory
+  and the unit that owns it. D-200 recorded the same limit on Windows and said
+  so rather than implying two sessions had been tested.
+- **What the surviving agent does about being undiscoverable.** The ownership
+  rule stops agent A's file being destroyed by agent B; it does nothing about
+  agent A having been overwritten in the first place. That is single-instance's,
+  and it is the half not built.
+
+**Rejected.**
+
+- **A pid field, or any new field, to carry the owner.** D-186's reasoning is
+  unchanged and the port already answers it.
+- **Making the write conditional as well.** Above: the same defect with the
+  roles swapped, until there is a hand-over to perform.
+- **Removing a file that cannot be read.** Unconditional removal with extra
+  steps.
+- **Leaving the Windows behaviour alone and fixing only a Linux path.** There is
+  no Linux path to fix separately — the function is shared, which is why F12
+  §7.1 says the rule is cheaper decided once.
+- **Building single-instance in this session.** It decides F12 §6 by
+  implication, and §6 is a product decision the phase document reserves.
+- **Reporting `$XDG_RUNTIME_DIR` as solving the stale-file problem.** It solves
+  the cross-session half, for a non-lingering user, on the primary path — and
+  the case that was actually measured is none of those.
