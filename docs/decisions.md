@@ -32798,3 +32798,108 @@ edge that the instrument was the contention.
 **What that attempt cost, recorded because D-318's ledger asks for it:** two
 hours and twenty-one minutes, no commit, one VM reset. The mechanism above came
 from twenty minutes of reading `$GOROOT`, before any of it.
+
+---
+
+## D-329 — §3.2's two variables go in as a call rather than an `init()`, and the test that matters is presence rather than value: a user who set `WEBKIT_DISABLE_DMABUF_RENDERER=0` has turned the workaround off and keeps it off
+
+**Date:** 2026-09-20
+**Phase:** F12 §3.2 — the code half. The sandbox half closed in D-324.
+
+**The decision: `ui.PrepareWebKitEnvironment()`, an explicit call the Linux
+window host makes as its first statement, setting
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` and `__NV_DISABLE_EXPLICIT_SYNC=1` for
+whichever of the two the process does not already have.**
+
+### Neither variable was measured and both go in anyway
+
+§3.2 says so directly — *"Neither can be measured in a VM, so they go in on
+the advice and are verified when hardware exists"* — and D-324 established
+that this machine is further from the case than the handover assumed: there is
+no hardware driver at all (`VMware: No 3D enabled`), so WebKitGTK is on a
+software renderer and **never took the DMABUF path**. Two screenshots taken
+with and without `WEBKIT_DISABLE_DMABUF_RENDERER=1` came out byte-identical
+here, and D-324 already records why that is not evidence of anything. There is
+no NVIDIA hardware either. **§0.1 governs both entries in the table.**
+
+| variable | failure it addresses | measured here |
+|---|---|---|
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | blank windows on KWin, NVIDIA, some Mesa | **no** — no hardware driver |
+| `__NV_DISABLE_EXPLICIT_SYNC=1` | NVIDIA on Wayland does not start at all | **no** — no NVIDIA |
+
+Each carries its reason in the source rather than only here. They look
+interchangeable and are not: different failures, different symptoms, and a
+future reader deleting the "redundant" one would find nothing broken on any
+machine that never had the hardware. A test asserts no two entries share a
+reason, because a copied-and-edited third entry keeping the first one's reason
+is exactly the mistake that makes them look interchangeable.
+
+### Presence, not value — and the reason is `0`
+
+§3.2 asks for the user's value to be respected *"including to `0`"*. So the
+test is `os.LookupEnv`'s second result and never the string:
+
+```go
+if _, ok := lookup(v.name); ok {
+    continue
+}
+```
+
+**`os.Getenv` cannot express this.** It returns `""` both for a variable that
+is absent and for one deliberately set to empty — and setting
+`WEBKIT_DISABLE_DMABUF_RENDERER=` is a thing a person with hardware this
+program has never run on would reasonably type. Testing the value would
+silently overrule them. Whether WebKitGTK itself reads an empty value as off
+is WebKit's business and is not second-guessed: **this program supplies a
+default, it does not overrule an answer it was given.** The table-driven test
+covers `0`, `""`, `1`, `no` and `"  "` — all five left alone.
+
+### Rejected: an `init()`
+
+An `init()` cannot be forgotten by a later caller, and "both must be set
+before GTK initialises" is the kind of ordering requirement an `init()` exists
+for. It was still rejected. Package `internal/ui` is imported by the PKCS#11
+worker and by every test binary in this project; an `init()` would mutate the
+environment of all of them for a reason none of them have, and that
+environment is inherited by any child process they spawn — which on this
+project means a worker started to talk to a smart card. **A side effect that
+crosses a process boundary to solve a problem that process does not have is
+worse than the risk it removes.**
+
+The cost is real and is named rather than argued away: the window host can
+forget the call. The guard is the doc comment and the exit checklist, and the
+failure mode is visible — a blank window on the exact hardware §3.2 is about.
+
+### Rejected: wiring it to something today
+
+There is no GTK host. D-327 settled the binding and **nothing is built on it
+yet**, so there is no `NewWindow` on Linux for this to sit in front of —
+`window_other.go` still returns `ErrUnsupportedPlatform` for every platform
+that is not Windows. Wiring it into that shared `!windows` stub would put
+Linux policy on darwin's path as well. It waits for the host, which is the
+next thing §3 needs.
+
+### What was verified, and what a passing test here does not mean
+
+`gofmt` clean; `build` and `vet -unsafeptr=false` clean for linux, windows and
+darwin; `golangci-lint` 2.13.2 clean; the full suite green; and
+`go test -race ./internal/ui/` green — **the first race run this package has
+ever had on Linux**, available because this machine has gcc (D-326's note on
+`CGO_ENABLED`).
+
+**None of that is evidence the variables work.** The tests measure this
+program's policy — which variables it sets, and that it does not overwrite a
+user's — and cannot measure WebKitGTK's response to them, because the
+response needs hardware. The line in the exit checklist is *verified when
+hardware exists*, and it is still open.
+
+### Note on `errcheck`
+
+Two unchecked `os.Unsetenv` calls in the test were caught by the linter and
+fixed rather than annotated; this phase forbids `//nolint`. The fix is better
+than the original: `t.Setenv` is now called for its **cleanup** rather than
+its value — it records whether the variable was present beforehand and
+restores that exactly, including restoring it to absent — and the test then
+unsets it for the body. So a test about a process-wide side effect cannot
+itself leave one behind, which is "leave every machine as you found it"
+applied to the process rather than to the machine.
