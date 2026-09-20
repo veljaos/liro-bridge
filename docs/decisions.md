@@ -32903,3 +32903,203 @@ restores that exactly, including restoring it to absent — and the test then
 unsets it for the body. So a test about a process-wide side effect cannot
 itself leave one behind, which is "leave every machine as you found it"
 applied to the process rather than to the machine.
+
+---
+
+## D-330 — The WebKitGTK binding generates every async operation's *finishing* half and none of its starting halves, so `evaluate_javascript` — the whole of Go→page — cannot be reached through it; the remedy is hand-written cgo, and the grep that called it "present" was corrected in one direction only
+
+**Date:** 2026-09-20
+**Phase:** F12 §3 — answers the question D-327 left open, and corrects two
+rows of `docs/f12-linux-session-1.md` that are already pushed.
+
+**Measured, in `gotk4-webkitgtk` `webkit/v6` (the pinned pseudo-version,
+2024-01-08):**
+
+| | count |
+|---|---|
+| exported functions | **1273** |
+| `*Finish` methods | **29** |
+| parameters of type `GAsyncReadyCallback` | **0** |
+
+**Not one asynchronous operation can be started through this binding.** Both
+halves of the GLib async pattern are needed and only the second was
+generated — which is the more confusing failure, because the half that *is*
+present is the half whose name contains the operation.
+
+### What that costs this project, specifically
+
+| C function | in `WebKitWebView.h` | needed for | reachable |
+|---|---|---|---|
+| `webkit_web_view_evaluate_javascript` | line 507 | **`Window.PostJSON` and `Window.Eval`** — every byte this program sends to a page | **no** |
+| `webkit_web_view_get_snapshot` | line 583 | D-100/D-122's capture | **no** |
+
+The first is not a feature among others. `PostJSON` is how the consent window
+is told what it is consenting to; without it the window layer has no Go→page
+direction at all.
+
+### D-327 left this open in exactly these words, and was right to
+
+> **Whether v0.3.1's generated surface is missing anything this project will
+> need.** […] everything F12 §3.1's own list asks for is present. That is not
+> the same as everything the window layer will ask for.
+
+It is missing something, and §3.1's closure still stands: the binding is the
+right one, the pin is right, and the three surfaces D-327 actually exercised
+end to end — the `liro://` scheme, page→Go messages, refused navigation — are
+genuinely there and were re-verified here.
+
+### The instrument was corrected in one direction only
+
+`docs/f12-linux-session-1.md` has a table of "does it expose what has already
+been decided", and two of its rows say **present** on the strength of a grep
+that matched `EvaluateJavascriptFinish` and `SnapshotFinish`. The document
+records, two paragraphs below that table, that the same grep had reported two
+*false absences* and that D-296's second question caught them.
+
+**That correction was applied in one direction and not the other.** Having
+found the instrument reporting things absent that were present, I did not ask
+whether it was also reporting things present that were absent — and
+`SnapshotFinish` is precisely the name that should have prompted it, because
+finding a `*Finish` is not evidence that anything can be started. The rows are
+marked in the document rather than deleted, with the reason.
+
+**The generalisation worth keeping:** an instrument found wrong in one
+direction has not thereby been found right in the other. A grep for a name is
+evidence about a *name*, and an async API's name lives in two functions.
+
+### Decided: hand-written cgo, which is what the other platform already does
+
+`internal/ui/webkitjs_linux.{h,c,go}` calls
+`webkit_web_view_evaluate_javascript` directly, taking the view pointer from
+the binding's own `Object.Native()`, and converts the result with
+`jsc_value_to_json`.
+
+**This is not a new kind of thing for this project.** F5 §2.1 established that
+WebView2 has no supported Go binding and that the vtable layout, callback
+trampolines and message loop are written by hand against the C ABI. The Linux
+side now has a much smaller version of the same arrangement: the binding
+carries the 1273 functions that were generated correctly, and the handful it
+did not generate are written out.
+
+- **Rejected: dropping to `webkit2gtk-4.1`.** It is the GTK3 stack, ruled out
+  on §3.1's own floor, and the binding's `webkit2` package has the identical
+  gap — it was checked, not assumed.
+- **Rejected: regenerating the binding.** It would make this project the
+  maintainer of a 1273-function generated package to gain two functions, and
+  the regeneration would be against 2.52.6 while the floor is 24.04's stack.
+- **Rejected: a user script that polls.** Go→page would become "leave a value
+  somewhere and hope the page looks", which is not a call and has no result.
+
+### It works, measured on a real web process
+
+```
+--- PASS: TestEvaluateJavascriptReturnsTheEnginesOwnJSON
+    --- PASS: .../number     1 + 1                            -> 2
+    --- PASS: .../string     document.body.textContent.trim() -> "ok"
+    --- PASS: .../boolean    typeof window === 'object'       -> true
+    --- PASS: .../undefined  void 0                           -> null
+--- PASS: TestEvaluateJavascriptEncodesAnObject
+--- PASS: TestEvaluateJavascriptReportsAThrownException
+--- PASS: TestEvaluateJavascriptLeavesNothingInTheRegistry
+```
+
+**Run with the sandbox switched off**, because no AppArmor profile on this
+machine names a Go binary (D-324) — so, exactly as D-327 had to say of its
+own probe, this run says nothing about §3.2 and everything it reports is
+about the bridge.
+
+The test **does not set `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS` itself**,
+and that is a decision rather than an omission. A suite that quietly disabled
+the sandbox to stay green would hide D-324's finding on every machine forever.
+It checks the precondition instead — by running `bwrap --dev-bind / / true`,
+the same operation WebKit's sandbox performs, rather than by reading
+AppArmor's settings and reasoning about what they imply (D-201) — and skips
+with the remedy named when it fails. Unmodified on this machine it now skips;
+before the check existed it took the whole test binary down with `SIGTRAP`,
+which is what D-324 says the *program* does.
+
+### Two things the C ABI charged for, both worth carrying
+
+**Every pointer crosses as an integer.** The first version passed
+`*C.WebKitWebView` and Go refused it at run time:
+
+```
+panic: runtime error: argument of cgo function has Go pointer to unpinned Go pointer
+```
+
+`Object.Native()` hands out a `uintptr` to begin with, so keeping it one all
+the way into C is both what it honestly is and what the checker accepts. The
+side benefit is that the Go file now contains **no `unsafe.Pointer`
+conversion at all**, so the `unsafeptr` exemption this project carries for its
+Windows COM code (D-080) is not extended to Linux to buy it.
+
+**`view.Native()` compiles and is the wrong function.** A `WebKitWebView` is
+also a `GtkWidget`, and `GtkWidget` has its own `Native()` returning a
+`*gtk.NativeSurface`. Both exist, both compile in the same place, and only one
+is the GObject address WebKit's C API wants; the route to the right one is
+`coreglib.BaseObject(view).Native()`. **This is D-327's own lesson recurring**
+— *"Reading the binding said the method existed; only compiling against it
+said where"* — except that here it compiled too, and only running it would
+have said which.
+
+### The shape of the call, which is the part that can deadlock
+
+An evaluation completes **through the GLib main loop**. So the start is
+marshalled onto the UI thread and the wait happens off it:
+
+```go
+err := theUIThread.do(func() { C.liro_eval_start(view, cScript, token) })
+// ...then, off the UI thread:
+r := <-p.done
+```
+
+A `do()` that wrapped the whole call would occupy the main loop waiting for
+the thing the main loop delivers. **Calling it from the UI thread deadlocks
+for the same reason and is documented rather than guarded**, matching how the
+Windows side treats re-entrancy.
+
+The token is an integer and never a Go pointer, because `user_data` is C
+memory for as long as the operation is in flight and cgo forbids a Go pointer
+living there. A registry keyed by that integer is what brings the callback
+back to the waiting goroutine.
+
+### `-race` stops working on anything that touches gotk4, and that is not a race
+
+`go test -race ./internal/ui/` passed on this machine earlier **today**, at
+`c1a8105`, when the package was still pure Go: `ok … 1.039s`. With gotk4 in it:
+
+```
+fatal error: checkptr: pointer arithmetic result points to invalid allocation
+  KarpelesLab/weak.(*Ref[...]).value    ref.go:20
+  gotk4/pkg/core/intern.gets            intern.go:318
+  gotk4/pkg/core/intern.goToggleNotify  intern_export.go:27
+  gtk/v4._Cfunc_gtk_window_set_child
+```
+
+**`-race` implies `checkptr`, and the two questions had to be separated
+before anything could be concluded.** With `-gcflags=all=-d=checkptr=0` the
+same package is `ok … 2.403s` — so **the race detector finds no data race**,
+and what fails is `checkptr` objecting to pointer arithmetic inside gotk4's
+weak-reference interning, in a dependency, reached from a single GTK call.
+Nothing in this entry's code is implicated, and saying so required the second
+run rather than a reading of the first.
+
+**`cmd/liro-bridge` is unaffected today and will not stay that way.** It was
+checked rather than assumed: the only non-Windows files naming `internal/ui`
+are `interactive_other.go` and `tray_other.go`, and both name it in a
+*comment* — neither imports it. So `go test -race ./cmd/liro-bridge/` is
+`ok … 9.393s` and F12's exit checklist line about `-race` being newly possible
+holds. **It stops holding the day the window host is wired in**, and the
+choice then is `-d=checkptr=0` or no race check on the command. That is worth
+deciding deliberately rather than discovering in the commit that causes it.
+
+### Not established
+
+- **Whether any *other* async operation this program will need is missing.**
+  The count says all of them are; which ones matter is a question for the
+  windows that have not been written. The two above are the two that block
+  §3 today.
+- **Whether a newer `gotk4-webkitgtk` fixes it.** The module is a
+  pseudo-version with no tags; nothing newer was fetched or tested here.
+- **Anything about behaviour.** This entry is about what is callable. What the
+  call does on a real page is measured where the window host is.

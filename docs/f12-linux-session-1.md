@@ -72,16 +72,24 @@ been decided":
 
 | decision | what it needs | |
 |---|---|---|
-| D-083 | the three-message page→Go surface | `RegisterScriptMessageHandler`, `UserContentManager`, `EvaluateJavascript` — **present** |
+| D-083 | the three-message page→Go surface | `RegisterScriptMessageHandler`, `UserContentManager` — **present**. `EvaluateJavascript` — **ABSENT, and this row said otherwise** (D-330) |
 | D-259 | a window refuses to become any document but its own page | `ConnectDecidePolicy`, `NavigationPolicyDecision`, `PolicyDecision.Ignore`, `NewWindowAction` — **present** |
 | D-082, D-150 | assets from a virtual host, never `file://` | `WebContext.RegisterURIScheme(scheme, callback)`, `SecurityManager` — **present** |
-| D-100, D-122 | a capture that does not take the foreground | `SnapshotRegion`, `SnapshotOptions`, `SnapshotFinish` — **present** |
+| D-100, D-122 | a capture that does not take the foreground | the types — **present**. The call that starts a snapshot — **ABSENT**, same cause (D-330) |
 | D-114, D-123 | dropped files reach the frame | `gtk4` `DropTarget`, `NewDropTarget`, `ConnectDrop` — **present** |
 
 **Two of these were first reported absent and were my grep rather than the
 binding** — `URISchemeHandler` is a callback type and not a handler type, and
 the snapshot method is `SnapshotFinish` rather than `GetSnapshot`. D-296's
 second question, asked of an instrument that was reporting absences.
+
+**And the correction went one step too far.** Having found the grep reporting
+false absences, I accepted what it reported *present* without asking the same
+question of it — and `SnapshotFinish` is exactly the name that should have
+been asked about twice, because finding it is not evidence that a snapshot can
+be *started*. Two rows above are wrong for that reason and are marked. The
+instrument was corrected in one direction only, which is the failure D-330
+records; the three synchronous entries were re-verified and stand.
 
 ### Two things that are genuinely missing, and one of them is a wall
 
@@ -270,6 +278,21 @@ number is worth re-taking there if it ever decides anything:
 sudo apt-get install -y libgirepository1.0-dev
 ```
 
+**The VM was reset between session 1 and session 2, and that sorted this list
+into two halves that behave differently** — worth knowing before trusting any
+of it:
+
+| survives a reset | does not |
+|---|---|
+| everything above: the `apt` packages, `~/.local/gir-prefix`, `~/go/bin`, the AppArmor profile, `~/.cache/go-build` | anything under `/tmp` — every scratchpad, probe binary and sampler output from session 1 is gone |
+
+So the prefix is still there and still works, and `PKG_CONFIG_PATH` has to be
+exported again in each new shell because it is an environment variable and
+never was a property of the machine. **`libgirepository1.0-dev` itself has
+still never been installed** — `dpkg.log` has no record of it by any route,
+which is worth stating plainly because D-327 says "with the package present"
+and means *this prefix*, not the package.
+
 **Installed by `go install` (no root):**
 
 ```
@@ -302,11 +325,35 @@ packages and the AppArmor profile were run by hand by the owner.
 - **`golangci-lint` is installed now**, pinned to CI's 2.13.2, in `~/go/bin`.
   D-295's three views, and read the **exit code** rather than the last line —
   D-316 measured that pipeline calling a tree clean that did not compile.
-- **A real Linux `-race` run is available here for the first time.** This
-  machine has gcc and `CGO_ENABLED` defaults to 1, so `go test -race` works —
-  which no machine in this project has ever had. D-287 records `cmd/liro-bridge`
-  as never having been race-checked anywhere; that is now possible for whatever
-  the Linux view of that package comes to contain.
+- **A real Linux `-race` run is available here for the first time — and it
+  has an expiry date.** This machine has gcc and `CGO_ENABLED` defaults to 1,
+  so `go test -race` works, which no machine in this project has ever had.
+  D-287 records `cmd/liro-bridge` as never having been race-checked anywhere;
+  **it now has been, on this machine: `ok … 9.393s`.**
+
+  **But `-race` implies `checkptr`, and gotk4 does not survive it.** Measured
+  (D-330):
+
+  ```
+  fatal error: checkptr: pointer arithmetic result points to invalid allocation
+    KarpelesLab/weak.(*Ref[...]).value    ref.go:20
+    gotk4/pkg/core/intern.gets            intern.go:318
+    gotk4/pkg/core/intern.goToggleNotify  intern_export.go:27
+    gtk/v4._Cfunc_gtk_window_set_child
+  ```
+
+  It is not a data race — with `-gcflags=all=-d=checkptr=0` the same package
+  is **`ok … 2.403s`, clean** — it is gotk4's object interning doing pointer
+  arithmetic `checkptr` rejects, in a dependency, reached from one GTK call.
+
+  **`cmd/liro-bridge` is unaffected today and will not stay that way.**
+  Checked rather than assumed: the only non-Windows files that mention
+  `internal/ui` are `interactive_other.go` and `tray_other.go`, and both
+  mention it in a *comment* — neither imports it. So that package is still
+  pure Go on Linux. **The day the window host is wired into it, `-race` on
+  `cmd/liro-bridge` hits the wall above**, and the choice will be between
+  `-d=checkptr=0` and not race-checking the command at all. Worth knowing
+  before that commit rather than after it.
 - **The snapshot list.** D-323 recorded that it shrank and what that cost. On
   this machine the list is short because there is nothing to snapshot yet —
   and the moment the agent is first run here, it becomes
