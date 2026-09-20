@@ -31118,3 +31118,155 @@ measurement.
   candidates that all lead to the same decision.
 - **Building the tray-only asset now.** It is a second source of truth and a
   product decision, not a repair, and the owner's ruling is to leave it.
+
+---
+
+## D-321 — [[D-320]]'s mechanism is wrong: the shell adds nothing, the tray was drawing D-285's un-thinned icon because the Start menu launches the installed build, and D-286's thinning has never reached the owner's tray
+
+**Date:** 2026-09-20
+**Phase:** F12 — a pushed entry corrected, one commit after it was pushed
+
+**[[D-320]] concluded that Windows draws this icon with 38% more white ink than
+the file contains. That is wrong, and this entry supersedes §4, §5, §6 and §7 of
+it.** SPEC §17 forbids editing an entry, and D-320 had been pushed, so it stands
+as written and this is what a reader must reach.
+
+**What is true: the tray was drawing a different file.** The capture matches
+`icon-18315.ico` — the asset at `cc24984`, [[D-285]]'s icon, the one [[D-286]]
+was written to replace — essentially exactly:
+
+| the capture, against | white ink in the file | ratio capture/file | reads-as-white | mean \|pixel diff\| |
+|---|---|---|---|---|
+| **`icon-18315.ico`** (cc24984, pre-thinning) | 74.4 px worth | **1.016** | file 75, capture 74 — **only-capture 0, only-file 1** | **6.54** |
+| `icon.ico` as committed (26dacf6, thinned) | 54.6 px worth | 1.383 | file 58, capture 74 — only-capture 16 | 17.33 |
+
+**A ratio of 1.016 and zero threshold crossings in either direction.** The 38%
+was never the shell. It was the difference between two versions of the asset,
+and D-320 compared the screen against the wrong one.
+
+### How the wrong file got drawn, measured
+
+The owner started the agent from the **Start menu** for the second flyout run.
+That shortcut targets
+`C:\Users\Veljko\AppData\Local\Programs\Liro Bridge\liro-bridge.exe`, the
+**installed** binary, dated **2026-09-16 13:50:34** — which embeds the asset as
+it stood at `cc24984` and predates `26dacf6`, D-286's thinning. On start it
+extracted its own asset to `%LOCALAPPDATA%\Liro\icon-18315.ico` at 13:50:09, the
+same minute as the capture, and set its tray icon from it ([[D-090]]'s loader,
+[[D-285]]'s extraction).
+
+The asset's whole history is three commits, and the byte lengths are the
+discriminator [[D-285]] built into the extracted file's own name:
+
+```
+26dacf6  18579  the mark is thinned at every size        <- committed, current
+cc24984  18315  the solid turquoise tile                  <- what the tray drew
+f78d468  13717  F5: agent windows, tray, consent screen
+```
+
+### So the complaint was right and about the icon D-286 already replaced
+
+**The owner has been looking at the pre-D-286 icon in his tray this whole time**,
+and reporting it as too heavy, which it is: 32.6% of the tile against the
+thinned asset's 24.0%, on the same 228-pixel basis. [[D-286]]'s own table gives
+30.7% → 23.8% for that frame by its own measure, which agrees.
+
+**That is why the complaint survived D-286.** Not because the shell added weight
+on top of the thinning, which is what D-320 concluded — but because the thinning
+never arrived. D-286 changed the repository; the tray was drawing a build from
+before it.
+
+**The answer to "what lever moves the number on screen" is therefore: install a
+build that carries the current asset.** The improvement the owner asked for is
+already committed, measured, and eight and a half points lighter. Nothing needs
+thinning, and D-320's §7 reached the right instruction — *leave it* — for the
+wrong reason, which is worse than reaching it for the right one because the
+reason is what the next person acts on.
+
+### What was actually wrong with my reasoning, and it is the oldest one in this log
+
+**[[D-161]]'s shape: the right property against the wrong artefact.** Every
+measurement in D-320 was sound. The coverage sums, the set nesting, the
+adjacency of all sixteen extra pixels, the exclusion of translation and of every
+downscaled frame, the `PrintWindow` control — all of it holds. It was all
+computed against a file that was not on the screen.
+
+**And [[D-319]] contains the seed of it, in a sentence I wrote to reassure
+myself.** That entry says the extracted `icon-18579.ico` is byte-identical to the
+committed asset, *"so the icon the owner has been judging is the thinned one,
+which was the premise and is now checked rather than assumed."* The check was
+real and it answered the wrong question: it established what **PID 14864**, the
+repo-root build, would draw. The tray the owner looked at belonged to a
+different process. **I verified the agent I had found rather than the agent that
+drew the icon**, and then quoted my own verification as a settled premise one
+message later.
+
+The general form, and it is the one worth keeping: **"checked rather than
+assumed" is only as good as the identity of the thing checked.** D-320 spent five
+measurements excluding mechanisms and none establishing which file was on screen
+— and the file was the only variable that mattered. The cheapest possible check
+would have found it: the extracted icon's own name carries its byte length,
+[[D-285]] put it there for exactly this, and `icon-18315.ico` appeared in the
+directory listing at the capture's own timestamp. **It was in the output of the
+final machine check, counted as "3 icon files" against a snapshot that recorded
+two, and it was nearly filed as the product doing its job.**
+
+### What survives from D-320
+
+Stated explicitly, because a superseded entry that is wrong in one place gets
+read as wrong throughout:
+
+- **§1, the denominators.** Unaffected. The two numbers used different
+  denominators, worth about 1.6 points on a common basis, and the corner-as-ink
+  artefact of measuring a rounded tile with a rectangle is worth 3 to 5 more.
+  Both still true, and both still in my reported number rather than the owner's.
+- **§2, the 16×15 row.** Unaffected: tolerance, not a lost row, not a clip.
+- **§3, the 48×12 taskbar hit.** Unaffected: Word's blue and Excel's green,
+  inside a ±48-per-channel box because a box is not a distance.
+- **§5, the `PrintWindow` control.** Unaffected, and it is now doing useful work
+  rather than clearing a suspect: it measured `PrintWindow` as structurally
+  faithful (high-pass correlation 0.996–1.0000) and biased about 13 counts dark.
+  The residual against the correct file is a mean of 6.54 per channel in exactly
+  that direction, with no threshold crossings — **so the capture is the old asset
+  plus the instrument's own measured darkening, and the shell adds nothing
+  detectable.** Had the control not been run, that residual would have had no
+  explanation and this entry would have had to guess at one.
+- **§6's forward-looking note is wrong and is withdrawn.** D-286's floor of
+  0.93 px was measured against the file, and the file *is* what the shell draws,
+  byte for byte. There is no separate "screen floor" lower than the file's. The
+  claim rested entirely on the 38%.
+
+### Two things on the machine the owner should know
+
+**Both builds are running right now**, each with its own tray icon:
+
+```
+PID 14864  C:\Users\Veljko\Desktop\liro-bridge\liro-bridge.exe        tray   (2026-09-19, thinned asset)
+PID  5124  C:\Users\Veljko\AppData\Local\Programs\Liro Bridge\...exe  tray   (2026-09-16, old asset)
+```
+
+So the flyout now holds two Liro tiles drawn from different assets, which is
+incidentally the cleanest possible side-by-side and is also two agents competing
+for one card. Neither was started or stopped by this session.
+
+**And the installed v0.9.2 is behind the repository on the icon**, which is worth
+saying plainly because [[D-319]]'s report said the opposite about which build was
+in the tray. The MSI has not been rebuilt since `cc24984`.
+
+**Rejected.**
+
+- **Editing [[D-320]].** SPEC §17, and it was pushed. [[D-266]] corrected an entry
+  before pushing and said why that was permitted — *"SPEC §17's rule against
+  editing entries protects a record somebody may have read, and nobody had."*
+  Somebody could have read this one.
+- **Withdrawing D-320 wholesale.** Four of its seven sections are unaffected and
+  two of them answered questions the owner asked directly. A reader needs to know
+  which parts to keep, which is why they are listed.
+- **Reporting the 1.016 ratio as "the shell adds 1.6%".** It is within the
+  instrument's own measured darkening and there is nothing left to attribute.
+- **Rebuilding the MSI, or installing a current build, to make the tray show the
+  thinned icon.** It is the answer and it is the owner's to run; installing over
+  his own machine's agent is not this session's to do ([[D-268]], [[D-283]]).
+- **Concluding anything about how the icon reads at 20 or 24 px.** Still
+  unmeasured, still what a 125% or 150% desktop draws, and his office machine is
+  one.
