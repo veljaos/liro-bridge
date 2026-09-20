@@ -31306,6 +31306,37 @@ in the tray. The MSI has not been rebuilt since `cc24984`.
 
 ## D-322 — Six instruments failed in one session and one reached a pushed entry; the guard that would have caught it fired, was in the output, and was read as noise — which spends the alarm
 
+> **The count reached eighteen the next day, and the two that took it there
+> are the sharpest instances of this entry's own rule.** From the first Linux
+> session, 2026-09-20:
+>
+> | | what it was | how it failed |
+> |---|---|---|
+> | 17 | `git commit` on a VM with no configured identity | it failed, and the script printed `commit 1 done` on the next line because the exit code was never read |
+> | 18 | `pkill -f 'golangci-lint run'` to tidy up after a verification run | the pattern matched the shell's own process group and killed it |
+>
+> **Both are lessons this project had already paid for, and both were broken
+> by somebody who had read the entry containing them that same day.** Number
+> 17 is [[D-316]]'s finding exactly — *"a return value discarded because the
+> caller did not think it needed it"*, which that entry recorded about a lint
+> pipeline calling a tree clean that did not compile — in a session that cited
+> D-316 twice while doing it. Number 18 is [[D-315]]'s: that entry nearly
+> killed six of Windows' own SearchHost processes by matching `msedgewebview2`,
+> and its conclusion is that **a pattern that matches what you are looking for
+> will also match things you have never thought about.**
+>
+> Neither cost anything. What they cost is the argument that prose is the
+> remedy. This entry already concluded that a second guard inherits the same
+> reader; the pair above is the same sentence pointed one step further back:
+> **a rule you have just read and then break is not a rule anybody else will
+> follow from prose either.** The remedy for 17 is mechanical and cheap —
+> read the exit code, which is what [[D-316]] already said to do and what a
+> `set -e` or an explicit `rc=$?` enforces. The remedy for 18 already exists
+> as a project rule, *exact PID only*, and it was not applied because tidying
+> up did not feel like the kind of act the rule was about. It is.
+>
+> Nothing below is changed.
+
 **Date:** 2026-09-20
 **Phase:** F12 — the count, on the owner's instruction, and the rule it earns
 
@@ -31710,11 +31741,51 @@ a Linux one: Fedora's SELinux has no equivalent of this restriction, so the
 Debian/Ubuntu package needs the profile and the Fedora one probably needs
 nothing.
 
-**Not yet established: that the profile is sufficient.** The mechanism above
-says it should be, and a mechanism is not a measurement — D-320 spent five
-sound measurements on an artefact that was not the one on screen. The run that
-settles it is one profile and one probe, it needs `sudo`, and the commands are
-with the owner.
+**Measured, and it is sufficient — and how it is sufficient is the part that
+decides what §8 ships.** A profile naming nothing but the Python interpreter
+the probe runs under, installed and loaded by the owner:
+
+```
+profile liro-f12-probe /usr/bin/python3.12 flags=(unconfined) {
+  userns,
+}
+```
+
+With it in place and **no environment variables set at all**, WebKitGTK 6.0
+starts, loads and renders — a PNG byte-identical to the sandbox-off run, same
+sha256. The transition is what the profile stops, observed from inside the
+process rather than inferred from the outcome:
+
+```
+label before unshare(CLONE_NEWUSER) : liro-f12-probe (unconfined)
+label after  unshare(CLONE_NEWUSER) : liro-f12-probe (unconfined)
+```
+
+Against `unconfined` → `unprivileged_userns (enforce)` without it. The
+namespace is created either way; what changes is whether the process keeps the
+capability its child's uid map needs.
+
+**And the profile must name the binary that starts the tree, not bwrap.** That
+is the rule §8 needs and it was measured rather than assumed, because the
+obvious reading of "bwrap needs a profile" is wrong:
+
+| | |
+|---|---|
+| `bwrap` run from a shell, which has no profile | **fails** — `setting up uid map: Permission denied` |
+| `bwrap` run from the profiled interpreter | **succeeds**, reporting `label=liro-f12-probe (unconfined)` |
+
+It inherits. So a profile naming `/usr/bin/bwrap` would be both wrong and
+ineffective, and Ubuntu's own profiles agree: the one for GNOME Web names
+`/usr/bin/epiphany` and never mentions bwrap. **What the Debian and Ubuntu
+package ships is a profile naming the agent's own installed binary**, and
+everything the agent spawns — bwrap, the web process, the network process,
+the dbus proxy — is covered by it.
+
+**One thing this does not establish**, and it is the difference between a
+measurement and a package: the profile above names an interpreter at a path
+that exists on this machine, and a real one names an installed binary at a
+path the packaging decides. Whether AppArmor is content with the install
+location §8 chooses is a question for §8.
 
 ### With the sandbox off it renders correctly, which is the other half
 
@@ -31790,13 +31861,37 @@ with the least certain named.
 | P8 | `bwrap` works on 24.04 from the distribution package | **FAILED, and it is the entry** |
 | P9 | this kernel is newer than stock 24.04's and the userns half may differ | held — 7.0.0-31-generic against 24.04's own 6.8 |
 
-**P7 is the useful one and it is a half-credit rather than a hit.** The
-prediction was right about what the screen shows and wrong about why, and
-without P6 written down beside it the correct render would have been reported
-as *"the DMABUF path is fine on this VM"* — which is a sentence about a path
-this machine never took. That is D-305's shape exactly: **a wrong reason for a
-right conclusion is the least likely thing in this project to be caught**,
-because nothing prompts anybody to go back.
+**P7 is the useful one, and it is useful in a direction this log has not
+recorded before: the prediction I flagged as least certain misled me by
+holding rather than by failing.**
+
+Every entry in this project that turns on a prediction turns on one that
+*failed* — D-268's four wrong outcomes, D-272's three refuted hypotheses,
+D-256's four in one session, D-286's P1. The standing lesson is that a
+prediction that fails is worth more than one that holds. P7 is the other case
+and it is more dangerous, because nothing about it announces itself.
+
+P7 said the window would render correctly despite taking the DMABUF path. It
+rendered correctly. **Marked as held, on its own, it would have been recorded
+as evidence that the DMABUF path is benign on this VM** — a sentence about a
+path this machine never took, written with a tick beside it. The only thing
+that stopped it is that P6 sat two lines above in the same file and P6 failed:
+the VM has no working GPU driver at all, so the render says nothing about
+DMABUF and never could have.
+
+So the shape, named so it is recognisable later: **a prediction that holds for
+a reason other than the one it was made for reads exactly like a
+confirmation.** A failed prediction forces a look; a held one closes the
+question. Where the reasoning behind a prediction was itself untested — and
+P7's was, it rested on P6 — holding is not evidence that the reasoning was
+right, and the entry has to say which of the two was checked.
+
+That is D-305's *"a wrong reason for a right conclusion is the least likely
+thing in this project to be caught"* arriving one step earlier: D-305 is about
+a conclusion nobody revisits, and this is about the prediction that would have
+produced it. The practical form is cheap — **when a prediction holds, ask
+which of its premises were measured**, and if the answer is none of them, it
+is an observation rather than a confirmation.
 
 P8 is the one that pays for the session. It was ranked MEDIUM on the reasoning
 that Ubuntu would not ship a browser engine that cannot start — and Ubuntu
