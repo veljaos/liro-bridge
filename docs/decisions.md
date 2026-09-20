@@ -32116,3 +32116,241 @@ not F12 §7.1's question.
 - **Reporting `$XDG_RUNTIME_DIR` as solving the stale-file problem.** It solves
   the cross-session half, for a non-lingering user, on the primary path — and
   the case that was actually measured is none of those.
+
+---
+
+## D-326 — What a GTK4 and WebKitGTK 6.0 binary actually links: five libraries, four packages, and SPEC §1.1's own test answered on the platform it was written for; the binding question is narrowed to one candidate and is not closed
+
+**Date:** 2026-09-20
+**Phase:** F12 §3.1 and §1 — measured on the Linux machine, with the dev
+packages installed
+
+**This entry answers SPEC §1.1's own required test and does not answer F12
+§3.1.** The two are separable and were deliberately separated, for a reason
+that is the first finding below.
+
+### The linkage is a property of the platform, not of the binding, so it was measured without one
+
+SPEC §1.1's fifth clause is not a description, it is an instruction:
+
+> **The test is what the binary links against, never which flag built it.**
+> ... What it requires is that the claim be checked against the binary's own
+> `PT_INTERP` and `DT_NEEDED`, and that the packaging declare every library
+> found there. **A build command is not evidence about a dependency.**
+
+D-287 wrote that clause after a prediction failed — `purego` builds at
+`CGO_ENABLED=0` and still names glibc's loader — and it has never been applied
+to the thing it was written for, because there was no Linux machine. It is
+applied now.
+
+The measurement is a **cgo-direct** program: a GTK4 window hosting a
+WebKitGTK 6.0 view, `#cgo pkg-config: gtk4 webkitgtk-6.0`, no Go binding
+anywhere in it. That is deliberate. Whatever wrapper this project eventually
+reaches WebKitGTK through, it reaches the same two shared libraries, and
+measuring the linkage through a binding would have mixed a property of the
+platform with a property of somebody's generated Go. It also means this number
+survives the §3.1 decision going either way.
+
+| | the agent today, `CGO_ENABLED=0` | a GTK4 + WebKitGTK 6.0 window |
+|---|---|---|
+| size | 10 231 252 bytes | **2 395 320 bytes** |
+| `PT_INTERP` | **none** | `/lib64/ld-linux-x86-64.so.2` |
+| `DT_NEEDED` | **0** | **5** |
+| imported symbols | **0** | 58 |
+
+The five: `libwebkitgtk-6.0.so.4`, `libgtk-4.so.1`, `libgio-2.0.so.0`,
+`libgobject-2.0.so.0`, `libc.so.6`.
+
+**The control is the interesting column.** This project's own agent, built for
+`linux/amd64` at `CGO_ENABLED=0` on a real Linux, names no interpreter, needs
+no library and imports no symbol — which is D-287's measurement reproduced by
+a second session on a machine D-287 did not have. §1.1's opening claim is
+therefore still true of the Windows artefact and still true of what ships
+today, and what changes is exactly what §1.1 says changes.
+
+**And the GTK4 binary is a quarter the size of the static one**, which is the
+right way round and worth stating because it is counter-intuitive: a
+dynamically linked binary carries none of the runtime it borrows.
+
+### Five libraries is not five dependencies, and the difference is §8's whole answer
+
+At run time the loader maps **131 shared objects**, and mapping every one of
+them back to its Debian package gives **113 packages** — GStreamer, ICU,
+Kerberos, Vulkan, Wayland, libxml2, libsoup, seccomp, and a long tail.
+
+That number is not the `Depends` line, and writing it down as one would be the
+mistake this section exists to prevent. **`dpkg-shlibdeps` — the tool a real
+`.deb` build uses, and what nFPM and debhelper drive — was run against the
+binary and answers with four:**
+
+```
+shlibs:Depends= libc6 (>= 2.34), libglib2.0-0t64 (>= 2.28.0),
+                libgtk-4-1 (>= 4.0.0), libwebkitgtk-6.0-4 (>= 2.5.3)
+```
+
+Four, because `Depends` is computed from `DT_NEEDED` and the other 109
+packages arrive through those four packages' own `Depends`. The two GLib
+entries collapse into one package. **So SPEC §1.1's "declare every library
+found there" and a four-line `Depends` are the same requirement**, and F12
+§8's Debian dependency list is generated rather than written: it comes out of
+the binary, by the tool the archive itself uses, and cannot drift from what
+the binary needs.
+
+**What this does not give is the Fedora list.** F12 §8 says the two are
+written separately because the names differ, and nothing here measured Fedora.
+The equivalent tool is `rpmbuild`'s own automatic `Requires`, which works the
+same way from the same `DT_NEEDED` — so the *method* transfers and the names
+have to come off a Fedora machine.
+
+**Nor does it cover `pcscd` or `libccid`.** Those are F12 §9's and are a
+run-time service and a driver rather than anything this binary links, so they
+will never appear in a `DT_NEEDED` and have to be declared by hand. That is
+worth saying because the method above is otherwise complete, and a reader
+could reasonably conclude the whole dependency list is generated. It is not.
+
+### The build cost, and the binding question is not this number
+
+Cold, with the build cache emptied first, on this 4-CPU 4 GB VM:
+
+| | |
+|---|---|
+| wall clock | **12.5 s** |
+| peak resident | **286 MB** |
+| binary | 2.4 MB |
+
+That is the cost of cgo reaching GTK4 and WebKitGTK and nothing else. **It is
+not the cost of the binding**, and P3 predicted the binding's own compile would
+be minutes and might not fit in this machine's memory — which is still
+untested, below.
+
+### §3.1: three candidates out on their own cgo lines, one blocked
+
+| candidate | demands | |
+|---|---|---|
+| `webview/webview_go` | `gtk+-3.0 webkit2gtk-4.0` | **excluded** — `libwebkit2gtk-4.0-dev` is not in noble in any form; `libwebkit2gtk-4.0-doc` is a transitional dummy package. It cannot build on the floor F12 §3.1 sets. |
+| `gotk3/gotk3` | `gtk+-3.0` | **excluded** — GTK3 |
+| `gotk4` + `gotk4-webkitgtk` `webkit/v6` | `gtk4`, `webkitgtk-6.0` | the only candidate reaching GTK4 / WebKitGTK 6.0 |
+
+It covers every API this project's own decisions rest on, checked against the
+entries rather than against a feature list — D-083's `RegisterScriptMessageHandler`
+and `EvaluateJavascript`, D-259's `ConnectDecidePolicy` and
+`PolicyDecision.Ignore`, D-082 and D-150's `RegisterURIScheme`, D-122's
+`SnapshotFinish`, D-114's `DropTarget` in `gotk4`. **Two of these were first
+reported absent and were my grep rather than the binding** — the URI scheme
+takes a callback and not a handler type, and the snapshot method is
+`SnapshotFinish` rather than `GetSnapshot`. D-304's second question, asked of
+an instrument reporting absences.
+
+**It is generated against WebKitGTK 2.42 and this machine runs 2.52.6**, and
+the module is a pseudo-version dated 2024-01-08. Being generated makes
+staleness cheaper than it would be for hand-written code and does not make it
+nothing.
+
+**And it does not build yet**, for a reason that is mine rather than the
+binding's: `gotk4/pkg/core/gerror` needs `gobject-introspection-1.0`, which I
+did not include in the install list although it was in my own survey of the
+binding's pkg-config lines. `libgirepository1.0-dev` is the package.
+**So §3.1 stays open**, and what is outstanding is exactly the three numbers
+that decide it: whether it compiles at all, how long, and in how much memory.
+
+### GTK4 has no tray, and the C answer is unavailable
+
+F12 §3.1 names "several windows and a tray" as the requirement. `GtkStatusIcon`
+was removed in GTK4 and `gotk4`'s `gtk/v4` has no replacement — measured, not
+assumed. The usual remedy is `libayatana-appindicator`, and on this machine:
+
+```
+libayatana-appindicator3-1  Depends: libgtk-3-0t64 (>= 3.0.0)
+```
+
+**It is GTK3.** Loading GTK3 and GTK4 into one process is not supported, so the
+C library is not available to a GTK4 agent at all. What remains is speaking
+**StatusNotifierItem over D-Bus**, in Go — which SPEC §1.1's fifth clause
+already prefers on its own terms: *"a pure-Go D-Bus client compiled at
+`CGO_ENABLED=0` was measured to stay fully static"*, and *"a dependency that
+can be satisfied in Go is not a reason to declare one"*. So the tray, if there
+is one, links nothing and adds nothing to the four-package `Depends` above.
+
+Measured beside it, and belonging to F12 §6 rather than here: **there is no
+`StatusNotifierWatcher` on this session bus**, under any of three names,
+against a control that first confirmed `busctl` can see `org.gnome.Shell`.
+Ubuntu ships `gnome-shell-extension-appindicator` and it is installed. So §6's
+*"Ubuntu ships an AppIndicator extension; Fedora does not"* is true and is not
+the whole of it — **shipping it and it being active are different things** —
+and that is §6's to decide rather than this entry's.
+
+### Two things the running binary said that nothing static could have
+
+**The AppArmor finding is confirmed from Go, not only from the probe.** The
+profile D-324 measured names a Python interpreter; this binary has none, and
+it fails identically:
+
+```
+bwrap: setting up uid map: Permission denied
+** ERROR **: Failed to fully launch dbus-proxy: Child process exited with code 1
+SIGTRAP: trace trap
+```
+
+With `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` the same binary runs for as
+long as it is left alone. **So the agent's own installed binary is what the
+`.deb`'s AppArmor profile has to name**, corroborated from the language the
+agent is written in rather than inferred from a probe in another one.
+
+**And the failure surfaces as a Go runtime crash**, which is how a person
+would meet it: `SIGTRAP: trace trap` with a register dump, not a message about
+a sandbox. Worth knowing before somebody meets it on a machine without the
+profile and goes looking for a bug in this program.
+
+**WebKitGTK installs a signal handler over the Go runtime's**, and said so:
+
+```
+Overriding existing handler for signal 10. Set JSC_SIGNAL_FOR_GC if you want
+WebKit to use a different signal
+```
+
+**That is F12 §2's own warning arriving from an unexpected direction.** §2
+warns that a vendor PKCS#11 module *"can install signal handlers that crash a
+Go runtime"* and builds the worker process to contain it. Here it is not a
+vendor module — it is the webview, in the agent's own process, where there is
+no worker and cannot be one. Signal 10 is `SIGUSR1`, JavaScriptCore uses it to
+drive garbage collection, and `JSC_SIGNAL_FOR_GC` is the documented way to
+move it.
+
+**Nothing failed because of it in this measurement** — the binary ran happily
+for twenty-five seconds with a window up — and it is recorded because it is a
+live contention between two runtimes in one process, with a named remedy, that
+nobody would find by reading either project's documentation. Whether the Go
+runtime and JSC actually collide, and under what load, is not established and
+is worth a deliberate measurement before the window layer is built on it.
+
+### What is not established
+
+- **Whether the binding compiles**, and at what cost. The three numbers §3.1
+  turns on. Blocked on one package.
+- **The Fedora dependency list.** The method transfers, the names do not.
+- **Whether the GTK3 / `webkit2gtk-4.1` alternative differs in linkage.** It
+  installs here and was not measured, because F12 §3.1 already rules GTK3 out
+  on its own grounds and a second linkage measurement would have been for a
+  candidate nobody is choosing.
+- **That the signal contention is harmless.** One run of twenty-five seconds
+  is not a measurement of a garbage collector under load.
+
+**Rejected.**
+
+- **Measuring the linkage through the binding.** It would mix a property of
+  GTK4 and WebKitGTK with a property of somebody's generated Go, and SPEC
+  §1.1's clause is about the platform.
+- **Reporting 113 packages as the dependency list.** It is the transitive
+  closure at run time, not what a `.deb` declares, and writing it into a
+  packaging file would be 109 dependencies nobody has to state and every one
+  of which can go stale.
+- **Writing the `Depends` line by hand from the five `DT_NEEDED` entries.**
+  `dpkg-shlibdeps` produces it from the binary and resolves the versions;
+  a hand-written list is the same fact in a second place, which this project
+  has had to remove for a rule (D-108), a question (D-124) and a margin
+  (D-138).
+- **Installing `libgirepository1.0-dev` and carrying on before recording
+  this.** The linkage measurement is complete and stands on its own, and the
+  binding's compile cost is a separate number that does not change it.
+- **Treating the signal warning as noise.** It is F12 §2's own hazard in the
+  one process that has no worker to contain it.
