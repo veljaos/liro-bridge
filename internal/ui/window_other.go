@@ -1,11 +1,14 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package ui
 
-// NewWindow is unsupported outside Windows (see ErrUnsupportedPlatform).
-// This exists only so the package — and anything built on top of it —
-// cross-compiles, mirroring
+// NewWindow is unsupported outside Windows and Linux (see
+// ErrUnsupportedPlatform). This exists only so the package — and
+// anything built on top of it — cross-compiles, mirroring
 // internal/keysource/windowscng/conn_other.go's unsupportedConn.
+//
+// Linux has its own implementation in window_linux.go (F12 §3) and is
+// excluded from this file's build tag; macOS is F13's.
 func NewWindow(Options) (Window, error) {
 	return nil, ErrUnsupportedPlatform
 }

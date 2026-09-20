@@ -33103,3 +33103,135 @@ deciding deliberately rather than discovering in the commit that causes it.
   pseudo-version with no tags; nothing newer was fetched or tested here.
 - **Anything about behaviour.** This entry is about what is callable. What the
   call does on a real page is measured where the window host is.
+
+---
+
+## D-331 — F12 §3's last box: the GTK4 and WebKitGTK 6.0 window host, with three places where the platform cannot do what the Windows contract says and each is refused, replaced or diverged from on purpose rather than quietly
+
+**Date:** 2026-09-20
+**Phase:** F12 §3 — *"Every window this program has, on GTK4 and WebKitGTK
+6.0."* The host exists and the `Window` contract is satisfied. What it is not
+yet wired to is at the bottom.
+
+**Measured on a real GTK4 window hosting a real WebKitGTK web process** — 63
+passing tests in `internal/ui` on this platform, of which these are the
+contract:
+
+| | |
+|---|---|
+| `NewWindow` blocks until the start page's scripts have run | the first `PostJSON` lands in a ready page, so this fails rather than flakes |
+| `PostJSON` arrives as an object, not a string | payload carrying `"` and `\` survives — no JavaScript built by concatenation (F5 §2.4) |
+| a page message reaches `OnMessage` | D-083's surface, page-driven |
+| an unknown type is dropped **before** `OnMessage` | checked by ordering: a good message sent after a bad one arrives first |
+| `Navigate` swaps the page and keeps the native window | `Handle()` unchanged across it |
+| the window refuses to leave its own pages | D-259; `location.href = "https://example.invalid/"` and it is still on its own page |
+| `Close` is idempotent, and later calls report `ErrWindowClosed` | |
+| `OnFilesDropped` is refused | below |
+
+### Three places the platform will not do what the contract says
+
+**1. `Handle()` — kept non-zero, and it is not an OS window handle.** The
+contract says never 0 once `NewWindow` has returned, and its one stated
+purpose is parenting the Windows CNG PIN prompt through
+`NCRYPT_WINDOW_HANDLE_PROPERTY`. There is no CNG here (SPEC §11.11) and
+**Wayland has no such thing as a window id a client may hand to another
+process, even in principle.** It returns the `GtkWindow`'s GObject address:
+non-zero as promised, consumed by nothing on this platform, and the value
+`Options.Owner` is matched against — so "the window this one was opened from"
+keeps working, which is the half of `Handle` that has meaning here. Owner
+becomes `gtk_window_set_transient_for`, which gets the two behaviours the
+`Owner` doc comment says matter: kept above its owner by the compositor, and
+centred on it.
+
+**2. `AlwaysOnTop` — accepted, ignored, and logged.** §4: no protocol lets a
+Wayland client raise itself. **This is not an error, unlike (3), because §4
+has already designed the replacement** — a new window per request rather than
+a hidden one shown again, a notification alongside, and nothing in the consent
+argument resting on the window being in front. The X11 fallback that would
+restore the flag is refused on §4.1's grounds: under X11 any local client can
+send synthetic input to any window, so `xdotool` could click Approve. **The
+harder path is the more secure one**, and D-094's rule against synthetic input
+has more force against an attacker than against a test.
+
+**3. `OnFilesDropped` — a hard error, `ErrDropNotImplemented`.** GTK4's
+`GtkDropTarget` is not wired. A window that became a drop target on Windows
+and quietly did not here would hand a caller a feature that works on one
+machine and does nothing on another; failing where the window is created names
+it immediately. **The difference from (2) is whether a designed replacement
+exists** — §4 supplies one for always-on-top, nothing supplies one for drop.
+
+### `Eval` diverges from the Windows contract, deliberately
+
+WebKit refuses to marshal a host object back across
+`evaluate_javascript`. Measured:
+
+```
+void 0                              -> "null"
+undefined                           -> "null"
+document.body                       -> Unsupported result type
+window.webkit.messageHandlers.liro  -> Unsupported result type
+…postMessage({…})                   -> Unsupported result type
+```
+
+So **a script must end in something JSON can encode**, and a bare
+`postMessage(…)` call needs `; void 0` after it — which the tests do, with the
+reason written next to it rather than as a charm.
+
+**It is reported as an error and not as the JSON `"null"` the Windows side
+produces.** window.go's contract describes WebView2, where an unencodable
+value *and a thrown exception* both come back as `"null"`. Answering that way
+here would make a script that is simply wrong indistinguishable from one that
+returned nothing. **This package has already paid for a silent drop once:**
+`assets/bridge.js` carries the comment about every
+approve/cancel/selectCertificate click being discarded without a word. The
+divergence is recorded rather than smoothed over.
+
+### Where the page's content comes from, and who may reach it
+
+`liro://<host>/<path>`, a custom scheme (D-330's sibling in D-082/D-150):
+never `file://`, never a local HTTP server, and a scheme that cannot be
+confused with the network. Registered **once per process** on the default web
+context — registering twice is a warning and the second handler silently never
+runs — and as both *local* and *secure*, because an opaque origin is not a
+secure context and that silently disables a list of web APIs that grows every
+release.
+
+**The scheme is process-wide and what a request may reach is per window**, so
+the handler resolves `URISchemeRequest.WebView()` against a registry keyed by
+the view's GObject address. A request from a view this process does not know
+is refused rather than served from some other window's content, and a host
+that was not mapped is refused rather than defaulted to the other one —
+`Assets` and `ScratchDir` exist because they have *different lifetimes*, and
+serving one for the other would erase that at the only point it is checkable.
+
+### The message surface is not lenient, on purpose
+
+`javascriptcore.Value.ToJson` is the deliberate analogue of WebView2's
+`WebMessageAsJson`: it serialises whatever the page passed. `bridge.js` passes
+the object rather than a stringified one, and its comment records why. **This
+does not unwrap a string even though it easily could**, because being lenient
+would make that page bug work here and fail on Windows — the two platforms
+would disagree about a message surface, and the bug would be invisible on
+whichever one someone tested.
+
+### Not established, and the next thing
+
+- **The shipped pages do not talk to this host yet.** `assets/bridge.js` calls
+  `window.chrome.webview.postMessage`, which is WebView2's spelling; WebKit's
+  is `window.webkit.messageHandlers.liro.postMessage`. The tests above use
+  their own page. **Until `bridge.js` learns both, no window this program
+  actually ships will work on Linux** — that is the next piece of §3 and it is
+  page-side, not host-side.
+- **`OnClosed` on a user-initiated close is wired and not demonstrated.**
+  Demonstrating it means clicking a title-bar button, and D-094 forbids
+  synthetic input — with §4.1's extra edge that on Wayland it is not possible
+  anyway. It is checked by reading, which is stated rather than implied.
+- **Nothing about hardware.** Every run above was with
+  `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`, because no AppArmor profile
+  here names a Go binary (D-324), and on a software renderer (§0.1). The tests
+  do not set that variable themselves — they check the precondition with
+  `bwrap` and skip — so on an unmodified machine they skip rather than lie.
+- **`showNativeMessage`, `pickFolder`, `pickFiles`, `iconFilePath`** are named
+  not-yets with the phase that owns each, because "returns
+  `ErrUnsupportedPlatform`" on a platform the program now genuinely runs on is
+  otherwise indistinguishable from something nobody noticed.
