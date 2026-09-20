@@ -31270,3 +31270,155 @@ in the tray. The MSI has not been rebuilt since `cc24984`.
 - **Concluding anything about how the icon reads at 20 or 24 px.** Still
   unmeasured, still what a 125% or 150% desktop draws, and his office machine is
   one.
+
+---
+
+## D-322 — Six instruments failed in one session and one reached a pushed entry; the guard that would have caught it fired, was in the output, and was read as noise — which spends the alarm
+
+**Date:** 2026-09-20
+**Phase:** F12 — the count, on the owner's instruction, and the rule it earns
+
+**The owner asked for the count to be in the record rather than in a report,
+because it is the honest number and it is why the record is worth anything.** It
+is six, in one session, and one of them reached `origin/master`.
+
+| | what it was | how it failed |
+|---|---|---|
+| 1 | the tray capture's control | proved the `BitBlt` was **not blank** — 13 398 distinct colours — which is a different question from whether it captured a *taskbar*. It had captured a full-screen game over one. [[D-304]]'s second question asked of my own control |
+| 2 | the DPI prediction | read [[D-317]]'s 150% out of an entry instead of measuring the machine, and built a hypothesis on it. 96 DPI, `SM_CXSMICON` 16 |
+| 3 | `grep -c` for this entry's own backslashes | returned 0; the bytes were fine. This `grep` interprets `\U`. [[D-293]]'s exact shape, on a check written to confirm backslashes survived |
+| 4 | the brand-colour discriminator | a **±48-per-channel box is not a distance**, so Word's `#0075B7` sits exactly on the blue boundary and scored as brand turquoise. §3 of [[D-320]] |
+| 5 | **[[D-320]]'s comparison** | every measurement sound, all of it against a file that was not on the screen. **Pushed as `d2dc103`, corrected by [[D-321]] as `d77d682`** |
+| 6 | `grep -a` on a `reg export` | returned nothing for a value that is there: `reg export` writes UTF-16LE. Ran **while checking whether the machine claim in my own correction held** |
+
+Nine were recorded across the whole project before this week ([[D-304]]). Six in
+one session is not a worse week; it is what happens when instruments are checked
+at all, and the ones above were found by checking rather than by anything going
+red. **Not one of the six was caught by a test.**
+
+### The rule this earns, and it is the owner's
+
+> **A guard that fires and is read as noise is worse than no guard, because it
+> spends the alarm.**
+
+That is his sentence and it is the loudest thing in this entry. The mechanism
+behind failure 5 is exactly it, and every piece was in place:
+
+- [[D-285]] put the asset's **byte length into the extracted icon's own file
+  name**, deliberately, so that one version could be told from another at a
+  glance.
+- [[D-319]] recorded the two files present at session start **in the snapshot
+  manifest, for the stated reason that a new one would then be
+  distinguishable** — and said so in as many words.
+- `icon-18315.ico` duly appeared, at `13:50:09`, the same minute as the capture.
+- It appeared **in my own final machine check**, which printed `icon-*.ico : 3`
+  against a snapshot recording two.
+
+**And I read it as the product doing its job.** The guard was mechanical, it
+fired correctly, it was in the output, and the reading discarded it — so the
+alarm was spent and the next thing that needed it had nothing left to ring.
+
+**This is a fifth question to ask beside [[D-304]]'s four, and it is not about
+the check.** The four ask whether a check *can* do its job. This one asks
+whether anybody did theirs with the answer:
+
+> **5. Did anything the check said actually get read — and if a count moved,
+> was the difference explained or absorbed?**
+
+It is distinct from [[D-285]]'s *a note is not a guard*, and the distinction is
+the point. There, the thing that failed was prose, and the remedy is to build a
+guard. **Here the guard existed and was better than prose — a byte count in a
+file name, unmissable and unambiguous — and it still failed, at the reader.** A
+project that answers every instrument failure by building a better instrument
+will meet this one and have nothing to add. The remedy is smaller and duller:
+**a discrepancy is explained or it is a finding; it is never absorbed.** Three
+files against a snapshot of two is a discrepancy. Naming a plausible cause for
+it — *the product extracts its icon on start, so this is normal* — is precisely
+the shape [[D-266]] refused when it declined to name a cause from four changed
+files, and [[D-305]] named as the least likely thing in this project to be
+caught: **a wrong reason for a right-looking conclusion.**
+
+### Two numbers that agreed for unrelated reasons, which is worth its own sentence
+
+[[D-320]] reported the capture at **32.5%** two ways: 78 white over the 240-pixel
+tolerance-24 box, and 74 over the 228 fully-opaque tile pixels. **The two agree
+to the decimal and are different measurements of different pixel sets.**
+
+The coincidence is not harmless, because agreement is what a reader takes for
+corroboration. Both numbers are right, neither confirms the other, and the only
+reason they match is that the box's extra twelve pixels happen to contain about
+the same *share* of white as the tile does — which is itself an artefact: those
+twelve are rounded corner, they are **background**, and they scored as ink
+because `#D5D5D5` is nearer to white than to `#038387` under the very rule being
+applied. **A rectangle measuring a rounded tile on a light surface counts its own
+margin as the thing it is measuring.**
+
+So the sentence worth keeping is not about icons: **two figures that agree are
+corroboration only if they could have disagreed**, and two views of one
+bounding box could not.
+
+### The machine, which moved after it was verified and not by this session
+
+Recorded because [[D-319]]'s report asserted the Run key unchanged, and that
+claim needs its scope stated rather than quietly outlived.
+
+| | at 13:09 (snapshot) | at 13:38 (my last check) | now |
+|---|---|---|---|
+| `HKCU\…\Run\LiroBridge` | the repo-root build | **identical** | **the installed build** |
+
+So the verification was true when taken and the value changed afterwards, when
+the owner started the installed agent from the Start menu at about 13:50 and it
+registered autostart to itself — which is what [[D-249]], [[D-253]] and
+[[D-285]] each record an agent doing on startup. **Not this session's, and the
+honest form is the table rather than "unchanged".**
+
+Three consequences of that launch are live on the machine now:
+
+- **Autostart points at the 2026-09-16 installed build**, so the *old* icon's
+  build is what returns on next logon.
+- **The Explorer verb's `Icon` is `…\Liro\icon-18315.ico`** — the pre-[[D-286]]
+  asset. Right-click *Potpiši* draws the heavy mark, which is the second place
+  the old icon is live and corroborates [[D-321]] from a direction nobody looked.
+- **`bridge.json` is absent while PID 14864 holds `127.0.0.1:17580`.** The agent
+  is up, has a port, and is undiscoverable: SPEC §14 says SDKs read that file and
+  **must never scan ports**.
+
+### One open question, stated as open
+
+**Whether a second agent instance's exit removed the surviving agent's discovery
+file.** The sequence is: 14864 wrote `bridge.json` at 13:06; the installed agent
+5124 started about 13:50; 5124 has since exited; `bridge.json` is gone and 14864
+still holds 17580.
+
+That is consistent with a second instance tearing down a file it did not write,
+and it is **not established** — nothing here watched the file, and
+`bridge.json` was not in this session's snapshot, which is a gap in my own
+snapshot list that [[D-268]], [[D-272]], [[D-283]], [[D-285]] and [[D-287]] all
+included and I did not. So it cannot be compared and its contents cannot be
+recovered.
+
+It is worth someone's attention because SPEC §14.1 makes concurrent instances a
+**supported** configuration — one agent per user session, the port range exists
+to make them possible, the discovery file to make them findable — and a
+teardown that removes another instance's discovery file would make the surviving
+agent unreachable by exactly the mechanism §14 forbids replacing with a port
+scan. Restarting the agent rewrites the file, so it hides on its own.
+
+**Rejected.**
+
+- **Reporting four.** The owner counted four from my report; the honest number is
+  six, because a fifth failed inside the correction of the fourth and a sixth
+  inside the verification of the fifth. Under-counting would make the entry a
+  better story and a worse record.
+- **Filing this under [[D-285]]'s heading.** That entry is about prose standing in
+  for a guard. This is about a working guard whose output was read and
+  discarded, which needs a different remedy and would be lost as a footnote to
+  the other.
+- **Building something to catch it.** The obvious move is a check that fails when
+  the config directory gains a file the snapshot did not record. It is buildable
+  and it is the wrong lesson: the guard already existed and was ignored, so a
+  second guard inherits the same reader. What changes the outcome is the habit —
+  explain the discrepancy or treat it as a finding — and a habit is not shipped.
+- **Restoring `bridge.json`, or stopping either agent.** The owner said he would
+  stop one and asked which to keep; 5124 has already gone, and starting or
+  stopping his agents is not this session's ([[D-268]], [[D-283]]).
