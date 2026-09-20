@@ -1,14 +1,18 @@
 # F12 Linux — session 1
 
 **What this is:** what was measured on the first Linux machine this project
-has ever had, and what is blocked and on what. `docs/decisions.md` D-324,
-D-325 and D-326 are the entries; this is the working state between them, and
-what the next session needs that is not a decision.
+has ever had, and what is blocked and on what. `docs/decisions.md` D-324 to
+D-327 are the entries; this is the working state between them, and what the
+next session needs that is not a decision.
 
 **Written:** 2026-09-20, Ubuntu 24.04.5 VM.
 **Entries this session:** D-324 (§3.2, the sandbox), D-325 (§7.1, the
-discovery file), D-326 (§3.1 and §1, the linkage), and a pointer block on
-D-322 (the instrument count reached eighteen).
+discovery file), D-326 (§1, the linkage of a cgo-direct binary), D-327
+(§3.1 closed, and D-326 corrected), and a pointer block on D-322 (the
+instrument count reached nineteen).
+
+**§3.1, §3.2 and §7.1 are all answered.** What is left on this machine is
+listed in §4.
 
 ---
 
@@ -41,12 +45,13 @@ same check. No `sudo`, and it lands in `~/go/bin`.
 
 ---
 
-## 1. §3.1 is not answered, and here is everything that is
+## 1. §3.1 is answered: gotk4 v0.3.1, pinned
 
-The binding question is **not closed**. The dev packages are installed and the
-linkage is measured (D-326); what is missing is one further package and
-therefore the three numbers the choice actually turns on. What follows is
-measured and is not the decision.
+**The decision is D-327.** `github.com/diamondburned/gotk4/pkg` **v0.3.1**
+with `github.com/diamondburned/gotk4-webkitgtk/pkg` `webkit/v6`, pinned,
+against a platform floor of Ubuntu 24.04 LTS. It builds, it runs, and this
+project's whole page↔Go surface works through it. What follows is the
+supporting measurement.
 
 ### The candidates, and three of four are already out
 
@@ -105,12 +110,13 @@ fully static"*, and *"a dependency that can be satisfied in Go is not a reason
 to declare one"*. So the tray, if there is one, is Go and D-Bus and links
 nothing.
 
-### What is measured now, and the one thing still blocking §3.1
+### The linkage, and the correction that matters most to §8
 
-The dev packages are installed and **the linkage question is answered** —
-D-326 has it, and it was measured cgo-direct rather than through the binding,
-because the five libraries a GTK4 and WebKitGTK window needs are a property of
-the platform rather than of whichever Go wrapper reaches them:
+D-326 measured a **cgo-direct** program — GTK4 and WebKitGTK reached straight
+from `#cgo pkg-config`, no binding — and concluded the linkage is a property
+of the platform. **That conclusion is wrong and D-327 corrects it**; both
+entries were written the same day and neither had been pushed, so the
+correction is written as one rather than the entry quietly edited.
 
 | | the agent today, `CGO_ENABLED=0` | GTK4 + WebKitGTK 6.0 |
 |---|---|---|
@@ -120,29 +126,43 @@ the platform rather than of whichever Go wrapper reaches them:
 | size | 10 231 252 B | 2 395 320 B |
 | cold cgo build | — | 12.5 s, 286 MB peak |
 
-And **`dpkg-shlibdeps` gives §8's Debian `Depends` line from the binary
-itself** — four packages, against 113 in the run-time closure, because the
-rest arrive transitively:
+**Built through the binding instead, the same program names thirteen** —
+because every generated Go package carries its own `#cgo pkg-config` line, so
+pango, cairo, graphene, gdk-pixbuf, libsoup and JavaScriptCore move from
+transitive to declared. None of them is a new dependency at run time; all
+eight extras were already in the 131-object closure.
 
-```
-libc6 (>= 2.34), libglib2.0-0t64 (>= 2.28.0),
-libgtk-4-1 (>= 4.0.0), libwebkitgtk-6.0-4 (>= 2.5.3)
-```
+| | cgo-direct | through gotk4 v0.3.1 |
+|---|---|---|
+| `DT_NEEDED` | 5 | **13** |
+| imported symbols | 58 | **10 094** |
+| size | 2 395 320 B | 21 049 752 B |
+| `dpkg-shlibdeps` | 4 packages | **11 packages** |
 
-**§3.1 itself is still open, on one package I should have listed and did
-not.** `gotk4/pkg/core/gerror` needs `gobject-introspection-1.0`, which was in
-my own survey of the binding's pkg-config lines and not in the install block I
-wrote. The binding has never been compiled, so the three numbers §3.1 turns on
-— does it build, how long, in how much memory — are not taken.
+**So §8's `Depends` is the eleven-package line, generated from the binary
+that ships** — and the version floors move with it, `libgtk-4-1 (>= 4.0.0)`
+becoming `(>= 4.14.1)`. 24.04 ships 4.14.5 and satisfies it; nothing in the
+build would have said so until a `.deb` refused to install somewhere older.
 
-```
-sudo apt-get install -y libgirepository1.0-dev
-```
+### The cost, and the wall that is a version rather than a package
 
-Then, in this session's scratchpad or rebuilt from D-326 in a few minutes:
-`go build` the two-import program that opens a GTK4 window with a WebKit view,
-under `/usr/bin/time -v`, from a cold cache. P3 predicted minutes and possibly
-more memory than this VM has; neither half is tested.
+| | |
+|---|---|
+| cold build, empty cache, 4 CPUs | **14 min 52 s** |
+| peak resident | **1.93 GiB** — fits this 3.9 GB VM, no OOM |
+| binary | 21 049 752 B |
+| warm rebuild of one package | 4.1 s |
+
+Fifteen minutes cold is a **CI** number, not a developer one, and it is what
+§8's pipeline has to budget on a runner that starts empty every time.
+
+**gotk4 v0.4.0 and v0.4.1 do not compile on this platform at all.** They name
+five GLib functions that do not exist in 24.04's GLib 2.80, and their cgo line
+is a bare `pkg-config: glib-2.0` with no minimum version — so configuration
+succeeds and the mismatch surfaces fifteen minutes later as unresolved C
+references in generated code. v0.3.1 (2024-07-31) is the last release that
+builds here; v0.4.0 arrived two years after it. **The pin is the finding**,
+and `go get -u` is what breaks it.
 
 ---
 
@@ -225,6 +245,31 @@ libpcsclite-dev
 not in the end needed, since GTK3 is ruled out on §3.1's own floor.
 `libpcsclite-dev` is §9's and is not yet used by anything.
 
+**Unpacked into a user prefix, because `sudo` here wants a password:**
+
+```
+~/.local/gir-prefix/     libgirepository1.0-dev, libgirepository-1.0-dev,
+                         gir1.2-girepository-2.0-dev, gobject-introspection
+                         (1.80.1-1, fetched with `apt-get download`,
+                          unpacked with `dpkg-deb -x`)
+```
+
+The `.pc` files in it have their `prefix=` rewritten to point at the prefix,
+and `libgirepository-1.0.so` — which ships as a relative symlink and dangles
+outside `/usr` — is repointed by absolute path at the system library. Reach it
+with:
+
+```
+export PKG_CONFIG_PATH=$HOME/.local/gir-prefix/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
+```
+
+**On a machine with working `sudo` this is one line instead**, and every §3.1
+number is worth re-taking there if it ever decides anything:
+
+```
+sudo apt-get install -y libgirepository1.0-dev
+```
+
 **Installed by `go install` (no root):**
 
 ```
@@ -244,7 +289,13 @@ the reason the owner gave: it is a thing a measurement here could silently
 depend on.** Any WebKitGTK measurement taken on this machine through
 `python3` is now taken with the sandbox working, where a clean 24.04 would
 abort. Anything measured through a *Go* binary is unaffected, because no
-profile names one.
+profile names one — which is why D-327's probe had to be run with
+`WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS`, and why that run says nothing
+about §3.2.
+
+**`sudo` on this VM requires a password.** So nothing above was installed by
+this session except the `go install` and the unpacked prefix; the `apt`
+packages and the AppArmor profile were run by hand by the owner.
 
 ## 4. What the next session should not have to rediscover
 
@@ -265,3 +316,31 @@ profile names one.
 - **`$XDG_RUNTIME_DIR` is a tmpfs unmounted at last logout**, so anything left
   there does not survive — measured, with `Linger=no` load-bearing. D-325 has
   the detail and the two caveats.
+- **The gotk4 pin is load-bearing and silent.** `go get -u` takes v0.4.x,
+  which does not compile on 24.04, and the error names GLib rather than the
+  binding. D-327. If the module ever moves into `go.mod` proper, it wants a
+  comment saying why the version is old.
+- **Fifteen minutes cold.** Any CI job that builds the window layer from an
+  empty cache should expect it, and the warm figure — four seconds for the one
+  package that changed — is the one that describes working on it.
+
+### What is actually left on this machine
+
+- **§6 — the tray.** D-326 established GTK4 has none, the C remedy
+  (`libayatana-appindicator`) is GTK3-only and therefore unusable in a GTK4
+  process, and there is **no `StatusNotifierWatcher` on this session bus**
+  although Ubuntu's AppIndicator extension is installed. So the remaining work
+  is StatusNotifierItem over D-Bus in Go, and the question §6 has to answer
+  first is what happens when nothing is watching.
+- **§7.1's hand-over half.** D-325 decided the ownership rule and built it;
+  what a second instance *does* — refuse, hand over, or run alongside — is
+  decided and deliberately not built, because building it would settle §6 by
+  implication.
+- **The signal-10 contention.** WebKitGTK overrides the Go runtime's handler
+  for `SIGUSR1` and says so on every start. Nothing has failed because of it
+  in runs of six and twenty-five seconds. `JSC_SIGNAL_FOR_GC` is the named
+  remedy and it has never been exercised.
+- **Nothing NVIDIA, and nothing DMABUF.** This VM has no working GPU driver
+  (`VMware: No 3D enabled`), so it is a software renderer and says nothing
+  about either of §3.2's two original failures. §0.1 applies to every finding
+  in this document.
