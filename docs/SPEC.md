@@ -343,7 +343,7 @@ Consequences that must be implemented:
 
 - Every batch requires an explicit approval, from every entry point, with no exception and no "remember this application" checkbox.
 - The consent window is owned by the agent process. It is never rendered by, styled by, or influenced by the calling application.
-- The consent window must be brought to the foreground and must not be suppressible by the caller.
+- **The consent window is put in front of the person by every means the platform offers, and it must never be suppressible by the caller.** On Windows the agent raises it and the call is reliable. Where the platform does not let a program raise its own window, §6.5.2 says what the agent does instead — and nothing in the security model depends on the window having been seen.
 - Session lifetime is bounded. A session is closed when the batch completes, when the window closes, or after a short idle timeout.
 
 #### 6.5.1 When the module has no protected authentication path
@@ -382,6 +382,28 @@ Every clause below is a requirement.
 - **The CNG path is untouched.** On Windows, where the operating system's own smart card provider collects the PIN, §6.5's arrangement is unchanged and none of this applies.
 
 This bites only on the PKCS#11 path, and within it only on modules that do not advertise a protected path. **Measured on a Pošta card through SafeSign: it does not advertise one either — `CKF_PROTECTED_AUTHENTICATION_PATH` is clear, so every clause above is live on the path this project's PKCS#11 work is judged by. No module measured so far offers a protected path. The first clause is nonetheless checked per token every time, because the flag is a property of a token through a module rather than of an issuer, and a reader with a pinpad would answer differently through the same DLL.**
+
+#### 6.5.2 When the window cannot put itself in front
+
+**Measured on Ubuntu 24.04, GNOME 46 and Wayland, and this subsection exists because the clause above cannot be kept literally there.** A client cannot raise itself; the compositor decides, and it answered the same call two different ways depending on whether it was already attending to this program.
+
+| what was asked | answer |
+|---|---|
+| a **new** window, from a process idle for 45 seconds, while another application had focus | **took focus**, 0.47 s later |
+| `present()` on an **existing, unfocused** window, same conditions | **did not raise it** — still unfocused 3 s later |
+| a **clicked desktop notification**, window unfocused beforehand | **did not raise it**, and carried no activation token |
+
+D-337 has the readings and their limits, and every one of them was taken on a GTK4 window with a WebKitGTK view in it showing this program's own page — the artefact a person is shown, not a stand-in. The third row is bounded in a way that matters: the notification carried no `desktop-entry` hint, because nothing was installed to name one, so the shell could not associate it with the window. It says *no token without a desktop entry*. It does not say the shell sends none.
+
+Every clause below is a requirement.
+
+- **A new window for every request.** Never a hidden window shown again, never one re-used between requests. It is the only arrangement measured to work, and it is also what a person sees: a window that appears is one that was not there a moment ago.
+- **A desktop notification alongside where one can be posted, and it is a prompt to go and look rather than a way to reach the window.** Measured: clicking it raised nothing.
+- **The notification is best-effort, and its absence is never a refusal.** On a desktop with no notification service the agent logs plainly that it could not post one and carries on. Refusing to sign because a notification could not be shown would block a person for no security gain: the window exists either way, and the timeout protects either way.
+- **The caller half is unconditional.** No request, header, parameter, configuration or pairing may suppress, defer, pre-answer or style the consent window. That clause is about the caller rather than about the compositor, and nothing here softens it.
+- **Nothing in the security argument may depend on the window having been seen.** A request nobody answers times out as `CONSENT_TIMEOUT` and nothing is signed. That is the safe failure and it is the one this program already had: D-288 established that the code never assumed the window was in front — only this document's sentence did.
+- **The X11 fallback is refused.** Running under XWayland restores always-on-top, and restores with it the ability of any local client to send synthetic input to any window — so another program could click Approve. This program has refused synthetic input in its own tests since D-094, and the reasoning applies with more force to an attacker than to a test. F12 §4.1.
+- **Windows is unchanged.** The agent raises its window there, and this subsection permits nothing for it — the way §1.1 permits a linkage only for Linux and §6.5.1 permits a PIN in memory only for a module with no protected path.
 
 ### 6.6 What the consent screen shows
 

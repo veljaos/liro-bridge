@@ -33892,6 +33892,34 @@ session could have absorbed the rest without noticing.
 
 ## D-337 — F12 §4 measured rather than predicted: a new window takes focus on this compositor even from a process idle for 45 seconds, an existing one cannot be raised at all, and a clicked notification did not raise it either — with the last result bounded by a hint the probe could not carry
 
+> **Every row above has been re-taken on the real artefact, and all five
+> hold.** The readings in the table were first taken on a bare GTK4 toplevel,
+> which is the one substitution that could have changed an answer: a
+> WebKitGTK window has more to paint, and focus-stealing prevention is a rule
+> about timestamps. Re-taken on a GTK4 window whose only child is a
+> WebKitGTK view showing this program's own `/pages/consent.html`, with the
+> instrument unchanged:
+>
+> | | bare GTK4 | WebKitGTK |
+> |---|---|---|
+> | new window, just launched, foreign window active | took focus, 1.10 s | took focus, **0.42 s** |
+> | second new window, our own window active | took focus, 0.14 s | took focus, **0.20 s** |
+> | `present()` on existing, our own other window active | raised it, 0.12 s | raised it, **0.03 s** |
+> | new window, process idle 45 s | took focus, 0.52 s | took focus, **0.47 s** |
+> | `present()` on existing, **unfocused**, foreign window active | did not raise it | **did not raise it** |
+>
+> **A prediction written down beforehand failed, and its failure is the
+> mechanism.** The WebKitGTK window was expected to be answered *later* and
+> is answered *sooner*: the toplevel maps when GTK shows it and does not wait
+> for the web process's first frame, so the delay the substitution was
+> suspected of introducing is not in the path at all. That is why this is a
+> measured absence rather than an unobserved risk.
+>
+> **This is what makes the table fit to be quoted by SPEC §6.5.2**, which now
+> does. A specification may not rest on a stand-in — the right property on the
+> wrong artefact is [[D-161]]'s shape — and it no longer does.
+
+
 **Date:** 2026-09-21
 **Phase:** F12 §4 — the measurements the design rests on. The SPEC §6.5
 amendment they force is drafted and is the owner's.
