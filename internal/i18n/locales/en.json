@@ -349,6 +349,8 @@
   "stampwindow.sign": "Sign",
   "stampwindow.subtitle_settings": "How your signature is drawn, until you change it here.",
   "stampwindow.title": "Signing method",
+  "startup.already_running": "Liro Bridge is already running. Its window has been asked to come up.",
+  "startup.handover_failed": "Liro Bridge is already running, but this could not reach it. Use its tray icon or its window.",
   "step.back": "Back",
   "step.counter": "Step %d of %d",
   "step.next": "Next",

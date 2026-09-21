@@ -50,6 +50,13 @@
     </div>
 
     <div class="actions">
+      <!-- Quit is here for the desktop that has no tray to put it in
+           (F12 §6): on a stock GNOME the agent has no icon and no menu,
+           and this window is the only thing a person can reach it
+           through. Hidden unless this window belongs to a running
+           agent — in every other case the window *is* the process and
+           closing it is quitting. -->
+      <button id="quit-btn" class="liro-btn liro-btn-quiet" data-i18n="tray.quit" hidden></button>
       <button id="clear-btn" class="liro-btn liro-btn-quiet" data-i18n="main.clear"></button>
       <button id="browse-btn" class="liro-btn liro-btn-secondary" data-i18n="main.browse"></button>
       <!-- The label is Go's: this step ends in Next when a certificate

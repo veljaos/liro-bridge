@@ -349,6 +349,8 @@
   "stampwindow.sign": "Потпиши",
   "stampwindow.subtitle_settings": "Како се ваш потпис црта, док ово не промените.",
   "stampwindow.title": "Метод потписивања",
+  "startup.already_running": "Liro Bridge већ ради. Затражено је да се његов прозор прикаже.",
+  "startup.handover_failed": "Liro Bridge већ ради, али овај покушај није могао да га досегне. Користите његову иконицу у системској траци или његов прозор.",
   "step.back": "Назад",
   "step.counter": "Корак %d од %d",
   "step.next": "Даље",

@@ -245,3 +245,50 @@ func (b *Inbox) DiscardIfStale(maxAge time.Duration, now time.Time) (int, error)
 	}
 	return n, nil
 }
+
+// openRequestFileName is the second file this directory holds: a
+// request for the running agent to show its window, with no documents
+// attached.
+//
+// It is separate from the inbox rather than a line in it because the
+// inbox is a list of paths and a marker that was not a path would be a
+// value every reader of it has to know to skip. F12 §7.1's handover —
+// "a second launch hands its request to the running agent and exits" —
+// is about `liro-bridge open`, which takes no arguments at all, so what
+// travels is the request and nothing else.
+const openRequestFileName = "open-request"
+
+// RequestOpen asks the running agent to show its main window.
+//
+// Creating the file is the whole message; its contents are never read.
+// A request that is already there is left alone: two launches while the
+// agent has not yet looked are one window, not two.
+func (b *Inbox) RequestOpen() error {
+	dir := filepath.Dir(b.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, openRequestFileName), os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// TakeOpenRequest reports whether a request was waiting, and removes it.
+//
+// Removing before acting rather than after: a window that fails to open
+// is not a reason to open it again on the next tick, and a request that
+// was consumed by an agent that then died is a request a person can
+// make again by clicking the thing they clicked the first time.
+func (b *Inbox) TakeOpenRequest() (bool, error) {
+	err := os.Remove(filepath.Join(filepath.Dir(b.path), openRequestFileName))
+	switch {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err):
+		return false, nil
+	default:
+		return false, err
+	}
+}

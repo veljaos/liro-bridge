@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/config"
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
@@ -51,6 +52,22 @@ func runOpen(ctx context.Context, args []string, out io.Writer, cfg config.Confi
 	// The autostart entry is applied alongside it for the same reason
 	// and, until F10, for a worse one: nothing applied it at all
 	// (applyAutostart).
+	// F12 §7.1: if an agent is already running, this launch is a person
+	// asking to see the window it already has. Opening a second one
+	// would be two windows onto one agent's state, and on a desktop
+	// with no tray it is the *only* way a person reaches the agent, so
+	// getting it wrong is how somebody ends up with two.
+	if _, live := liveAgent(); live {
+		c := i18n.Load(cfg.Locale)
+		if err := handOver(); err != nil {
+			slog.Warn("open: an agent is already running and this launch could not reach it", "error", err)
+			fprintln(out, c.T("startup.handover_failed"))
+			return 1
+		}
+		fprintln(out, c.T("startup.already_running"))
+		return 0
+	}
+
 	applyStartupRegistrations(cfg)
 
 	return runMainWindow(ctx, cfg, cfg.Locale, nil)

@@ -245,8 +245,15 @@ func pair(origin, name string) (string, string) {
 	}
 	var ok struct{ AppID, DeviceSecret string }
 	must(json.Unmarshal(body, &ok))
+	// What a person pastes back into their own shell, in their shell's
+	// syntax rather than in one of them.
+	keep := "export %s=%s\n"
+	if runtime.GOOS == "windows" {
+		keep = "set %s=%s\n"
+	}
 	fmt.Println("Keep these; the secret is returned once and never again:")
-	fmt.Printf("  set LIRO_APP_ID=%s\n  set LIRO_SECRET=%s\n", ok.AppID, ok.DeviceSecret)
+	fmt.Printf("  "+keep, "LIRO_APP_ID", ok.AppID)
+	fmt.Printf("  "+keep, "LIRO_SECRET", ok.DeviceSecret)
 	return ok.AppID, ok.DeviceSecret
 }
 

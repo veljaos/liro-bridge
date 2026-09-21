@@ -96,9 +96,12 @@ def pair(origin, name):
     )
     if status != 200:
         raise SystemExit("pair/confirm: %s" % ok)
+    # The two lines below are what a person pastes back into their own
+    # shell, so they are their shell's syntax and not one of them.
+    keep = "set %s=%s" if os.name == "nt" else "export %s=%s"
     print("Keep these; the secret is returned once and never again:")
-    print('  set LIRO_APP_ID=%s' % ok["appId"])
-    print('  set LIRO_SECRET=%s' % ok["deviceSecret"])
+    print("  " + keep % ("LIRO_APP_ID", ok["appId"]))
+    print("  " + keep % ("LIRO_SECRET", ok["deviceSecret"]))
     return ok["appId"], ok["deviceSecret"]
 
 

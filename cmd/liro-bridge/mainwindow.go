@@ -106,6 +106,13 @@ type mainWindow struct {
 	// is not more trusted than a person dropping files".
 	remote *remoteBatch
 
+	// quitAgent stops the agent this window belongs to, and is nil for
+	// every window that is not the agent's own — a `sign --in` run, or
+	// an `open` with no agent behind it, where the window *is* the
+	// process and closing it is quitting. When it is nil the page is
+	// told so and shows no Quit at all (F12 §6).
+	quitAgent func()
+
 	// waiting is the desktop notification posted alongside a window
 	// nobody in this room asked for (SPEC §6.5.2), held so that it can
 	// be taken down when the request it announced has been answered.
@@ -346,7 +353,14 @@ func exitFor(reason errs.Code) int {
 // list already on screen, exactly as a dropped file does. Nothing is
 // stranded and nothing is signed that the person did not select.
 func runMainWindowWatching(ctx context.Context, cfg config.Config, locale string, initialPaths []string, inbox *jobs.Inbox) int {
+	return runAgentWindow(ctx, cfg, locale, initialPaths, inbox, nil)
+}
+
+// runAgentWindow is runMainWindowWatching with the agent's own stop
+// behind it, for the window the agent opens for itself (F12 §6).
+func runAgentWindow(ctx context.Context, cfg config.Config, locale string, initialPaths []string, inbox *jobs.Inbox, quitAgent func()) int {
 	m := newMainWindow(cfg, locale)
+	m.quitAgent = quitAgent
 	if len(initialPaths) > 0 {
 		_, notices := m.queue.Add(initialPaths)
 		m.notices = notices
@@ -670,6 +684,17 @@ func (m *mainWindow) loop(ctx context.Context) {
 				if done := m.handleAction(ctx); done {
 					return
 				}
+			case ui.MessageTypeQuit:
+				// Only the agent's own window offers this, and a window
+				// that is not the agent's has no quitAgent to call — so
+				// a message sent by anything else does nothing at all.
+				if m.quitAgent == nil {
+					slog.Debug("signing window: a quit was asked for by a window that does not own an agent")
+					continue
+				}
+				slog.Info("signing window: the person quit the agent from its own window")
+				m.quitAgent()
+				return
 			}
 		}
 	}
@@ -911,6 +936,9 @@ func (m *mainWindow) filesPayload(kind string) map[string]any {
 		// document" button next to a row that already says exactly that
 		// is a button that does nothing.
 		"outputFolderChosen": m.cfg.OutputFolder != "",
+		// F12 §6: whether this window can stop the agent behind it. A
+		// desktop with no tray has no other way to.
+		"canQuit": m.quitAgent != nil,
 	}
 	if kind == "init" {
 		payload["strings"] = m.staticStrings()
@@ -979,6 +1007,9 @@ func (m *mainWindow) staticStrings() map[string]string {
 		"main.report_failures_title", "main.report_output_label",
 		"main.report_level_label", "main.open_output", "main.export_report",
 		"main.new_batch", "main.finish", "consent.per_signature_pin_warning",
+		// The tray's own word for it, because it is the same action and
+		// a second wording for one thing is how two of them drift.
+		"tray.quit",
 		// The questions asked between the approval and the first
 		// signature live on this page now, so its static labels do too.
 		"consent.tsa_choice_title", "consent.tsa_choice_explain",

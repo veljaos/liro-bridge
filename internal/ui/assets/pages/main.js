@@ -384,3 +384,26 @@
     }
   });
 })();
+
+  // F12 §6: the agent's own window is where Quit lives on a desktop with
+  // no tray. The button is hidden until a payload says this window
+  // belongs to a running agent, so the window a person opened as a
+  // one-off never offers to quit something that is not there.
+  (function () {
+    var btn = document.getElementById("quit-btn");
+    if (!btn) {
+      return;
+    }
+    btn.addEventListener("click", function () {
+      window.liroSend("quit");
+    });
+    var previous = window.__liroOnMessage;
+    window.__liroOnMessage = function (payload) {
+      if (payload && typeof payload.canQuit === "boolean") {
+        btn.hidden = !payload.canQuit;
+      }
+      if (previous) {
+        previous(payload);
+      }
+    };
+  })();

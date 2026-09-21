@@ -34442,6 +34442,21 @@ saying out loud that the cheapness is the timing rather than the decision.
 
 ## D-341 — F12 §4 built: a window per request that was already true and is now enforced, a notification over pure-Go D-Bus, and two `.exe` calls that had become reachable on a platform with no `.exe`
 
+> **§4 ran end to end on Linux, from a caller, and one clause of it is
+> still unwatched.** The owner paired with the six digits, approved in the
+> consent window, and got `/tmp/lt/doc-signed.pdf` at B-B: the whole
+> protocol flow — discovery file, pairing, request, consent window,
+> notification beside it, signature — works on this platform. The tray
+> icon was in the GNOME bar beside the system icons while it happened.
+>
+> **What was not seen is the withdrawal.** GNOME's banner went away on its
+> own timeout before the approval, so the moment the notification was
+> taken down when the request was answered was not observed by eye. It is
+> covered by a test and by the code path being the same one, and that is
+> not the same as somebody watching it happen — recorded as unwatched
+> rather than counted.
+
+
 > **Verified by hand the same night, by the owner, on all four things it
 > changed.** The method screen no longer scrolls; the report screen's
 > "Otvori fasciklu" opened Files; the audit log is at
@@ -34785,4 +34800,162 @@ attacker chose is worse than one that does not decrypt.
   F12 §8 packages this, the installation notes are where it belongs too.
 - **Nothing about macOS**, whose Keychain is F13's and whose stub still
   refuses.
+
+---
+
+## D-344 — F12 §7.1 answered in one place: a second launch hands its request to the running agent and exits, and a discovery file is a claim that gets dialled rather than believed
+
+**Date:** 2026-09-21
+**Phase:** F12 §7.1, decided with §6 because §6 needs it — the owner ruled
+the shape and this is it built.
+
+F12 §7.1 asked three questions. They are one question asked from three
+sides, and the answer to all three is the same sentence: **the file says
+what it says, and the port is asked.**
+
+### Does a second instance refuse, hand over, or run alongside?
+
+**It hands over and exits**, both for `tray` and for `open`.
+
+A second agent is not a tidiness problem. It takes a second port, writes its
+own discovery file over the first one's, and leaves the first running,
+holding a port, and **unreachable by the only mechanism SPEC §14 permits** —
+which is not hypothetical: it is [[D-323]], observed twice in one afternoon
+on Windows, where the restart left the old agent running and the older one
+was the invisible one.
+
+What "hands over" means is the smallest thing that can mean anything: the
+launch leaves an **open-request** beside the shell inbox and stops, and the
+running agent — which now watches that directory whether or not it has a
+window up — opens its window. A person who clicks a launcher twice gets one
+window, because a request already waiting is left alone rather than counted.
+
+### Who owns `$XDG_RUNTIME_DIR/liro/bridge.json`?
+
+**The agent whose port it names**, which [[D-325]] decided for removal. What
+is added here is the other half it could not answer: **an agent that finds a
+file naming a port nobody answers on may replace it.** Before this, an agent
+could only ever have believed such a file or ignored it.
+
+### Is a stale file distinguishable from a live one?
+
+**On Windows it was not** — `RemoveBridgeFile`'s own comment said so: "a file
+left by a crash reads like a live agent until the connection is refused." It
+is here, and the distinction is a measurement:
+
+- **The file supplies a port; the port is asked.** `GET /v2/health`, the one
+  endpoint that needs no pairing and exists for exactly this question.
+- **"Something is listening" is not the answer.** The port range is small
+  and fixed (SPEC §14), so another program may hold the port this one used
+  last time. What makes it *this* program is that it answers with a protocol
+  version, which cannot happen by accident. Three tests say so from the
+  wrong side: a server that 404s, a server that says `OK`, and a server whose
+  JSON has no protocol version are each **not** an agent.
+- **750 ms, once, at startup.** Every `open` and every `tray` pays it before
+  doing anything, against a loopback listener in a process on this machine.
+
+**There was a stale one on this machine while this was being written** —
+`/run/user/1000/liro/bridge.json`, left by a run that did not shut down
+cleanly — which is the case this exists for, found by looking rather than by
+reasoning about it.
+
+### And Quit from the window, because a desktop with no tray has nowhere else
+
+The owner's default asks for it and [[D-342]] is why: on a stock GNOME
+desktop the agent has no icon and no menu, so its own window is the only
+thing a person can reach it through. **The page's message vocabulary goes
+from three to four**, which is the part that needed justifying rather than
+doing:
+
+- The cost is that a page which could be made to send `quit` could stop the
+  agent. That is a denial of service, not a signature.
+- The same page can already send `approve`, **which is the consent gate**
+  (SPEC §6.5). A surface that already carries the decision worth attacking
+  is not meaningfully worse for carrying the one that stops the program.
+- The button is hidden unless the window belongs to a running agent, and the
+  handler does nothing when it does not: a `sign --in` window and an `open`
+  with no agent behind it have no agent to stop — closing them *is* quitting.
+
+### Decided
+
+- **One agent per user session**, by handing over rather than by refusing:
+  a refusal would leave a person's click doing nothing.
+- **A discovery file is a claim.** It is dialled, and the answer must be
+  this program's.
+- **A stale file may be replaced**, and the log says so when it is.
+- **Quit is on the agent's own window**, and the page vocabulary is four.
+- **Rejected: trusting the file.** It is what D-323 cost.
+- **Rejected: a bare TCP connect.** It cannot tell this program from
+  whatever else took the port.
+- **Rejected: a new protocol endpoint for the handover.** F12 forbids a
+  protocol change, and the inbox this program already has is a per-user
+  local file that needs no server.
+
+### What this does not settle
+
+- **The live handover has not been watched by eye.** The stale path was run
+  end to end on this machine — the log says the file was stale and the
+  window opened anyway — and the live path is covered by tests, because
+  watching it needs two processes at once and this machine's rule is one.
+- **What happens to a second `sign --in` while an agent runs** is unchanged
+  and deliberately so: it is a batch with its own documents, not a request
+  to see the agent, and it opens its own window as it always has.
+
+---
+
+## D-345 — Every example client could only ever have worked on Windows, and nothing noticed because nothing had run one anywhere else
+
+**Date:** 2026-09-21
+**Phase:** F12 — found while looking for something to send the agent a
+request with.
+
+**All seven of `sdk/examples`' clients read
+`%LOCALAPPDATA%\Liro\bridge.json` and nothing else.** `sign.py`,
+`sign.go`, `Sign.cs`, `Sign.java`, `sign.php`, `liro-test-client.ps1`, and
+the two `.mjs` demos through their shared helper. On any other platform
+each of them reports that Liro Bridge is not running — **while it is
+running** — because the file it looks for is not where SPEC §14 says the
+agent writes it.
+
+**This is not a detail and it is recorded as its own entry for that
+reason.** These are the files an integrator is pointed at; they are the
+first thing anybody writes their own client from. A person on Linux
+following the documentation would have concluded the agent was broken, and
+been right about everything except the cause.
+
+### Why nothing caught it
+
+- **CI never runs them.** The `sdk-typescript` job builds and tests the
+  SDK; the examples are "one client per language, protocol only" (SPEC §5)
+  and there is no runner for PHP, C#, Java or PowerShell in this project,
+  nor should there be.
+- **Nobody had run one off Windows**, because until tonight there was no
+  agent off Windows to run one against.
+- **The first-class SDK is correct**, which is the part that hides it: the
+  TypeScript SDK's `discovery.ts` has all three platforms, including
+  `XDG_RUNTIME_DIR` and the `~/.local/state` fallback. So the thing SPEC
+  §20 says integrators should use was right, and the teaching material
+  beside it was not.
+
+### What was fixed, and what deliberately was not
+
+**`sign.py` and `sign.go`**, being the two this machine can run and check.
+Both now follow SPEC §14's three paths with the same fallback the agent
+itself uses. `sign.py` also stopped telling a Linux user to type `set
+LIRO_APP_ID=…`, which is Windows shell syntax for the one line a person
+pastes back into their own shell.
+
+**The other five are left**, and that is a decision rather than an
+omission: they are in languages this machine cannot run, and a fix nobody
+can execute is how a wrong example gets written twice. The same goes for
+the two documents that quote the Windows path.
+
+### What this does not settle
+
+- **Five clients and two documents are still Windows-only**, and anybody
+  reaching for `Sign.java` on Linux today meets the same wall.
+- **Nothing checks this.** A guard would have to run seven languages, and
+  the honest smaller version — a test that each example mentions
+  `XDG_RUNTIME_DIR` — is a test of a string rather than of behaviour.
+  Worth someone's judgement rather than a reflex.
 

@@ -28,6 +28,7 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
@@ -41,7 +42,54 @@ import (
 // than being handed a copy taken at startup. Handing that copy on is
 // what made a saved language come back as the old one: the value
 // reached disk correctly and was then never read again.
+// oneWindow keeps the agent to one main window at a time.
+//
+// SPEC §10.2 is about the steps of one flow — "the signing window is one
+// window" — and this is the same idea one level up: the tray's Open
+// item, a handover from a second launch, and documents arriving in the
+// inbox are three ways to ask for the window, and a person who asks
+// twice wants the window they already have rather than two of them.
+type oneWindow struct {
+	mu   sync.Mutex
+	open bool
+}
+
+// run calls f unless a window is already up, and reports whether it did.
+func (o *oneWindow) run(f func()) bool {
+	o.mu.Lock()
+	if o.open {
+		o.mu.Unlock()
+		return false
+	}
+	o.open = true
+	o.mu.Unlock()
+
+	defer func() {
+		o.mu.Lock()
+		o.open = false
+		o.mu.Unlock()
+	}()
+	f()
+	return true
+}
+
 func runTray(cfg config.Config, version string) int {
+	// F12 §7.1: one agent per user session. A second one would take a
+	// second port, write its own discovery file over the first one's,
+	// and leave the first running and unreachable by the only mechanism
+	// SPEC §14 permits — which is D-323, observed rather than imagined.
+	if _, live := liveAgent(); live {
+		c := i18n.Load(cfg.Locale)
+		if err := handOver(); err != nil {
+			slog.Warn("tray: an agent is already running and this launch could not reach it", "error", err)
+			fmt.Println(c.T("startup.handover_failed"))
+			return 1
+		}
+		slog.Info("tray: an agent is already running, so this launch handed it the request and stopped")
+		fmt.Println(c.T("startup.already_running"))
+		return 0
+	}
+
 	// One pairing store for the life of the process (see openPairings):
 	// the settings window revokes through it, and the protocol
 	// authenticates against it, and F7 2.4 makes revoking immediate.
@@ -52,6 +100,7 @@ func runTray(cfg config.Config, version string) int {
 	// replace this binary — so closing it twice must not panic.
 	quitOnce := sync.OnceFunc(func() { close(quit) })
 	openedAWindow := false
+	windows := &oneWindow{}
 
 	// F6 §2: the entry is on by default, so it is registered when the
 	// agent starts rather than only when Settings is opened and saved.
@@ -92,9 +141,8 @@ func runTray(cfg config.Config, version string) int {
 			// pointing at one (F6 §1). Opened empty: the drop zone and
 			// Browse are how documents get in from here.
 			openedAWindow = true
-			now := currentConfig(cfg)
-			if code := runMainWindow(context.Background(), now, now.Locale, nil); code != 0 {
-				slog.Warn("tray: the main window returned an error", "code", code)
+			if !windows.run(func() { openAgentWindow(cfg, nil, quitOnce) }) {
+				slog.Debug("tray: Open was clicked while the window was already up")
 			}
 		},
 		OnSettings: func() {
@@ -123,6 +171,12 @@ func runTray(cfg config.Config, version string) int {
 	}
 	defer func() { _ = t.Close() }()
 
+	// F12 §7.1's other half: the agent listens for a launch that handed
+	// its request over, and for documents the Explorer verb or a second
+	// launch left in the inbox. Without this the handover would be a
+	// message nobody reads.
+	go watchForHandovers(cfg, windows, quit, &openedAWindow, quitOnce)
+
 	// SPEC §15.2's daily check. It runs for the life of the tray, it
 	// never installs anything, and the only thing it can do on its own
 	// is open the window that asks (F10 §5).
@@ -133,4 +187,49 @@ func runTray(cfg config.Config, version string) int {
 		time.Sleep(trayExitGrace)
 	}
 	return 0
+}
+
+// openAgentWindow shows the agent's own window, with any documents that
+// came with the request.
+func openAgentWindow(cfg config.Config, paths []string, quitAgent func()) {
+	now := currentConfig(cfg)
+	box := jobs.NewInbox(shellInboxDir())
+	if code := runAgentWindow(context.Background(), now, now.Locale, paths, box, quitAgent); code != 0 {
+		slog.Warn("tray: the main window returned an error", "code", code)
+	}
+}
+
+// watchForHandovers opens the window when another launch asks for it.
+//
+// Two things arrive the same way and mean the same thing — show the
+// person the window — so they are polled together: an open-request from
+// a second launch (F12 §7.1), and documents dropped in the inbox by the
+// shell integration. The window this opens watches the inbox itself
+// while it is up, so documents arriving after it opens reach the window
+// already on screen rather than a second one.
+func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct{}, opened *bool, quitAgent func()) {
+	box := jobs.NewInbox(shellInboxDir())
+	ticker := time.NewTicker(inboxPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-quit:
+			return
+		case <-ticker.C:
+			asked, err := box.TakeOpenRequest()
+			if err != nil {
+				slog.Warn("tray: reading the handover request failed", "error", err)
+			}
+			if !asked {
+				if n, err := box.Count(); err != nil || n == 0 {
+					continue
+				}
+			}
+			*opened = true
+			if !windows.run(func() { openAgentWindow(cfg, nil, quitAgent) }) {
+				slog.Debug("tray: a launch handed over while the window was already up")
+			}
+		}
+	}
 }

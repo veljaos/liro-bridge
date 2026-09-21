@@ -5,16 +5,33 @@ import (
 	"log/slog"
 )
 
-// MessageType is one of the exactly three things the page is allowed to
-// ask for (F5 §2.4): approve, cancel, and select a certificate by
-// thumbprint. Anything else is dropped and logged — the message surface
-// is kept this small deliberately.
+// MessageType is one of the four things the page is allowed to ask for
+// (F5 §2.4): approve, cancel, select a certificate by thumbprint, and
+// quit. Anything else is dropped and logged — the message surface is
+// kept this small deliberately.
+//
+// **It was three until F12 §6, and the fourth was added with its
+// reasoning rather than by widening a list.** A stock GNOME desktop
+// draws no tray (D-342), so on that desktop the tray's Quit item does
+// not exist and the agent's own window is the only thing a person can
+// reach it through. The alternative was leaving somebody with a running
+// agent and no way to stop it that does not involve a terminal.
+//
+// What it costs, stated rather than waved past: a page that could be
+// made to send "quit" could stop the agent. That is a denial of
+// service and not a signature — and the same page can already send
+// "approve", which *is* the consent gate (SPEC §6.5). A surface that
+// already carries the decision worth attacking is not made meaningfully
+// worse by carrying the one that stops the program; the reason to keep
+// the list short is that every entry has to be justified, and this one
+// is.
 type MessageType string
 
 const (
 	MessageTypeApprove           MessageType = "approve"
 	MessageTypeCancel            MessageType = "cancel"
 	MessageTypeSelectCertificate MessageType = "selectCertificate"
+	MessageTypeQuit              MessageType = "quit"
 )
 
 // Message is one validated message from the page.
@@ -52,6 +69,8 @@ func ParseMessage(raw []byte) (Message, bool) {
 		return Message{Type: MessageTypeApprove}, true
 	case MessageTypeCancel:
 		return Message{Type: MessageTypeCancel}, true
+	case MessageTypeQuit:
+		return Message{Type: MessageTypeQuit}, true
 	case MessageTypeSelectCertificate:
 		if m.Thumbprint == "" {
 			return Message{}, false
