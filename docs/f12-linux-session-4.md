@@ -145,6 +145,30 @@ this section gives. The next push is.
 
 ---
 
+### The push, and the first evidence that could have failed
+
+Run `35628430772` is green on all five jobs — the owner pushed it. `ci` 7 m
+06 s, **`linux-gui` 27 m 26 s**, `windows` 5 m 38 s, `sdk-typescript` 2 m
+09 s, `packaging` 1 m 02 s.
+
+**Where the 27 minutes went**, per step rather than guessed: `go vet
+(internal/ui)` **768 s**, which is gotk4 compiling cold; the `-race` probe
+**806 s**, which is gotk4 compiling *again* because an instrumented build is a
+separate cache namespace; everything else together ~64 s. The cache saved
+**183 MB** under its own key, so the arrangement D-335 reasoned about did
+happen. **Prediction for the next push: 2–4 minutes.** If it is not, the
+instrumented objects are not surviving in the cache and the probe stops
+running on every push.
+
+**The probe passed** — `ok internal/ui 1.088s` — and that is a smaller claim
+than it looks: too fast to have opened a window, so the GTK tests skipped on
+the headless runner as D-334 supposed. It is not evidence that gotk4 survives
+`checkptr`, only that nothing which ran reached it. The step had no `-v`, so
+even the skipping was inferred; it has one now. [[D-336]] is where that shape
+— a silence that reads as an answer — is written down.
+
+---
+
 ## 2. SPEC §19 gained two paragraphs about a machine nobody has to own
 
 In the **deferral entry**, not the F13 table row, because it is about what

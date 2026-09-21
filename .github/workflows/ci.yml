@@ -518,9 +518,15 @@ jobs:
       # all. Read the output; do not read the tick.
       - name: probe — does internal/ui survive -race, given gotk4 and checkptr
         continue-on-error: true
+        #
+        # -v, and only here: the first run of this step printed `ok
+        # internal/ui 1.088s` and nothing else, which is too fast to have
+        # opened a window and therefore says the GTK tests skipped — but
+        # says it by inference. The gate above does not need to know why
+        # it passed; a probe does.
         run: |
           set +e
-          go test ./internal/ui/... -race -count=1
+          go test ./internal/ui/... -race -count=1 -v
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then

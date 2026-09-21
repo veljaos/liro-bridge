@@ -33519,6 +33519,48 @@ on this platform, is what made every `./...` need a GTK stack.
 
 ## D-335 — The `ci` job installs no GTK, because that absence is the only thing that proves the shipped code needs none: the package nobody named, the warm cache that could not have reported it missing, and one symbol in one file putting a GTK stack behind fifty packages
 
+> **It is green on a runner that has never seen this machine, which is the
+> first evidence about any of this that could have failed.** Run
+> `35628430772`, 2026-09-21: `ci` 7 m 06 s, `linux-gui` 27 m 26 s, `windows`
+> 5 m 38 s, `sdk-typescript` 2 m 09 s, `packaging` 1 m 02 s. The guard passed
+> there, the 50-package `CGO_ENABLED=0` build passed there, and the three apt
+> packages were enough.
+>
+> **The shape this entry found is [[D-295]]'s, and it is worth naming as
+> such.** D-295's lesson was that a check run over one view twice is not two
+> views. Here the dependency existed in the **softtoken view only** —
+> `cmd/liro-bridge` reached gotk4 under `-tags softtoken` and under nothing
+> else — so a boundary check that swept the untagged view alone would have
+> reported the opposite of the truth, confidently, on every push. That is why
+> the guard checks both views rather than one, and it is the same mistake one
+> platform and one build-tag over.
+>
+> **Where the 27 minutes went, measured per step rather than guessed:**
+>
+> | step | |
+> |---|---|
+> | `go vet (internal/ui)` | **768 s** — this is gotk4 compiling cold, D-327's figure on a runner |
+> | the `-race` probe | **806 s** — gotk4 compiling *again*, instrumented, because a race build is a separate cache namespace |
+> | everything else together | ~64 s, of which apt is 24 s and lint is 25 s |
+>
+> So the probe roughly doubles this job on a cold cache and should cost
+> nothing on a warm one. The cache saved **182 910 715 B** under its own key,
+> which is the arrangement this entry reasoned about and could not measure.
+> **Prediction, written before the next push: `linux-gui` comes in at 2–4
+> minutes.** If it does not, the build cache is not covering the instrumented
+> objects and the probe moves off every-push rather than staying.
+>
+> **And the probe passed, and proves less than it looks.** `ok
+> github.com/veljaos/liro-bridge/internal/ui 1.088s` — which is too fast to
+> have opened a window, so the GTK tests skipped themselves on a headless
+> runner exactly as D-334 supposed. **That is not evidence that gotk4
+> survives `checkptr`**, which D-330 measured from inside a real GTK call; it
+> is evidence that nothing which ran reached one. The step had no `-v`, so
+> even the skipping is inferred rather than shown, and it has one now. A
+> probe that cannot say why it passed is a weaker instrument than it appears,
+> which is the same shape as the warm cache in the entry below.
+
+
 **Date:** 2026-09-21
 **Phase:** F12 §3.1 — the CI half again, one push after [[D-334]].
 
@@ -33759,4 +33801,90 @@ and the first two pushes settle it.
   has still never rendered a page on this machine: no `liro-f12-window`
   AppArmor profile is loaded, and there is still no Liro state anywhere under
   `$HOME` (session 1 §0's baseline, re-checked today and unchanged).
+
+---
+
+## D-336 — The briefing described a state the repository was not in, and what caught it was [[D-304]]'s fifth question pointed at the instructions rather than at an instrument
+
+**Date:** 2026-09-21
+**Phase:** F12 — not a section of it. This is about how a session starts.
+
+**The session opened with a state of the phase**, in the owner's own words: the
+first WebKitGTK window opened, then the consent screen, then a whole signing
+flow ending in a signed PDF; three `os.Exit` calls in code that must not exit;
+the log ending around D-339; a push that split the CI jobs, after which *"the
+job that failed is `ci`, not `linux-gui`"*; and the current display server
+being X11.
+
+**None of that was in the repository.** Checked before anything was touched:
+
+| instrument | what it reported |
+|---|---|
+| `git log`, `git reflog`, `git stash`, branch list | tip `1d90ba8`, session 3's own commit. Nothing after it, nothing stashed, one branch |
+| `git fetch origin` | `origin/master` **equal** to the local tip, 0 ahead and 0 behind — so not an unpushed-work case either |
+| `docs/decisions.md` | **334 entries**; the log ended at D-334 |
+| `.github/workflows/ci.yml` | four jobs, none named `linux-gui`; no push had ever split them |
+| `grep -rn 'os\.Exit' internal/` | nothing outside tests |
+| the machine: `$HOME`, `/etc/apparmor.d`, `journalctl --list-boots` | no Liro state anywhere, no `liro-f12-window` profile, and no boot between 20 Sept 22:36 and 21 Sept 15:57 — so no session ran in the gap, and the surviving older boot records rule out a snapshot rollback |
+| `XDG_SESSION_TYPE` | `wayland` |
+
+**The cause, from the owner, recorded because it is the useful half:** several
+reports had reached him as **empty documents**, and were answered as though
+they had been read. What those answers contained then entered the next
+briefing as fact.
+
+### Why this is the same defect as everything else in this log
+
+**An empty document that reads as a document is an instrument that cannot
+fail.** It returns successfully, it returns nothing, and nothing in the return
+distinguishes "there was no finding" from "there was no file". That is
+[[D-322]]'s seventeenth instrument — `git commit` failing while the next line
+printed `commit 1 done` because the exit code was never read — and it is the
+warm build cache in [[D-335]], which answers `exit 0` to a question about a
+dependency it never re-asked. **Three different mechanisms, one shape: a
+silence indistinguishable from an answer.**
+
+**So D-304's five questions apply to a briefing.** They were written for
+instruments — *could this check have failed; could this instrument have seen
+the absence it reports; is its resolution finer than the thing measured; did
+this run actually run; was any discrepancy explained or absorbed* — and
+nothing in them is about machinery. A statement of where the phase stands is a
+reading taken off something, and the fifth question is the one that fires
+here.
+
+**What the briefing was right about is what made the rest plausible**, and
+that is worth stating rather than smoothing over. The CI failure was quoted
+exactly, down to the package name, and it was real. §3.1 and §3.2 *are*
+closed. The window host *does* exist and *does* stop at one call.
+`SetForegroundWindow`, `GetDpiForWindow` and the tray *are* what did not port.
+Every part of it that was in the tree was accurate — which is precisely why a
+session could have absorbed the rest without noticing.
+
+### Decided
+
+- **D-335 keeps its number.** The owner ruled it. If a session elsewhere
+  produced D-335 through D-339, the collision is a fact to be resolved then
+  rather than a gap to be reserved now.
+- **When the brief and the tree disagree, the tree is what gets worked from**,
+  because it is the thing that can be measured, and **the disagreement is
+  recorded rather than resolved into a story.** `docs/f12-linux-session-4.md`
+  §0 is that record, and a session document gains such a section whenever it
+  is needed.
+- **Neither half is treated as noise.** The briefing's accurate parts were
+  used; its unverifiable parts were left out of everything durable —
+  specifically, SPEC §19's new paragraph cites [[D-330]], [[D-331]],
+  [[D-332]] and [[D-333]] rather than the `os.Exit` calls, because SPEC
+  governs every phase and may not rest on something no grep can find.
+- **Rejected: asking first and waiting.** The disagreement did not block any
+  of the session's work — CI was red for reasons visible in the tree — so the
+  finding was recorded, the work was done, and the disagreement was reported
+  with it rather than in place of it.
+
+### What this does not settle
+
+- **Where the described state came from is not established**, and this entry
+  does not speculate. It is recorded as the owner reported it.
+- **How many other documents were empty is unknown.** If a report matters
+  and cannot be shown to have arrived, it is worth asking for again — the
+  cheapest version of this check is a word count.
 
