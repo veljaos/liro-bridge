@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -41,8 +42,25 @@ import (
 // --- README ---
 var base string // http://127.0.0.1:<port>, from the discovery file
 
+// bridgeFile is where the agent writes its port, per SPEC §14 — one path
+// per platform. This example knew only the Windows one until somebody ran
+// the agent on Linux and it could not be found.
+func bridgeFile() string {
+	switch runtime.GOOS {
+	case "windows":
+		return filepath.Join(os.Getenv("LOCALAPPDATA"), "Liro", "bridge.json")
+	case "darwin":
+		return filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "Liro", "bridge.json")
+	default:
+		if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+			return filepath.Join(dir, "liro", "bridge.json")
+		}
+		return filepath.Join(os.Getenv("HOME"), ".local", "state", "liro", "bridge.json")
+	}
+}
+
 func discover() error {
-	b, err := os.ReadFile(filepath.Join(os.Getenv("LOCALAPPDATA"), "Liro", "bridge.json"))
+	b, err := os.ReadFile(bridgeFile())
 	if err != nil {
 		return fmt.Errorf("Liro Bridge is not running: %w", err) // never scan ports
 	}

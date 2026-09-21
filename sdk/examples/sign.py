@@ -39,9 +39,25 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # --- README ---
-BASE = "http://127.0.0.1:%d" % json.load(
-    open(os.path.join(os.environ["LOCALAPPDATA"], "Liro", "bridge.json"))
-)["port"]                                     # read the file; never scan ports
+def bridge_file():
+    """Where the agent writes its port, per SPEC §14 — one path per platform.
+
+    This example knew only the Windows one until somebody ran the agent on
+    Linux and it could not be found. Never scan ports: the file is the only
+    way an SDK is allowed to find the agent.
+    """
+    if os.name == "nt":
+        return os.path.join(os.environ["LOCALAPPDATA"], "Liro", "bridge.json")
+    if sys.platform == "darwin":
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support",
+                            "Liro", "bridge.json")
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        return os.path.join(runtime, "liro", "bridge.json")
+    return os.path.join(os.path.expanduser("~"), ".local", "state", "liro", "bridge.json")
+
+
+BASE = "http://127.0.0.1:%d" % json.load(open(bridge_file()))["port"]
 
 
 def call(method, path, body=None, app_id=None, secret=None):
