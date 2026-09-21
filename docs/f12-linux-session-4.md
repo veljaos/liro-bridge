@@ -365,6 +365,64 @@ the design goes to the owner first.
 
 ---
 
+## 6. The window host opened, and the readings were re-taken on the real artefact
+
+**The profile is installed and the window host works end to end. Nothing on
+this machine had ever done this.**
+
+```
+[  0.00s] mode=host — internal/ui.NewWindow on /pages/consent.html
+[  1.13s] OPEN    the window host is up and /pages/consent.html finished loading
+[  2.15s] PAGE    document.hasFocus()=true  document.title=""
+[ 13.27s] RESULT  the host opened one of this program's own pages and answered JavaScript
+```
+
+Three things closed at once, each of which had been open since session 3:
+
+- **D-324's remedy, through the real host.** Session 3 died at `LoadURI` with
+  `bwrap: setting up uid map: Permission denied`. With the profile naming the
+  binary, WebKitGTK's sandbox starts and the page loads in 1.13 s. The
+  AppArmor profile is the answer, measured now from the program rather than
+  from a probe.
+- **D-330's hand-written `Eval` bridge ran against a real page**, and
+  answered. The whole of Go→page works on this platform: the binding
+  generates no way to start `evaluate_javascript`, `internal/ui` supplies one
+  in cgo, and it returns values.
+- **`document.title` is empty and that is correct** — no page in
+  `internal/ui/assets/pages` carries a `<title>`, because the window's title
+  is `Options.Title` and belongs to the toplevel rather than to the document.
+
+`Overriding existing handler for signal 10` still appears on every start
+(session 1's open item), and `VMware: No 3D enabled` still means software
+rendering (§0.1).
+
+### The same instrument, the other artefact
+
+Every reading in [[D-337]] came from a bare GTK4 toplevel. Re-taken against a
+GTK4 window whose only child is a WebKitGTK view loading this program's own
+`/pages/consent.html` over a custom scheme — the same shape `internal/ui`
+builds:
+
+| | bare GTK4 | WebKitGTK |
+|---|---|---|
+| new window, just launched, foreign window active | took focus, 1.10 s | **took focus, 0.42 s** |
+| second new window, our own window active | took focus, 0.14 s | **took focus, 0.20 s** |
+| `present()` on existing window, our own other window active | raised it, 0.12 s | **raised it, 0.03 s** |
+| new window from a process idle 45 s | took focus, 0.52 s | **took focus, 0.47 s** |
+
+**A prediction written down before the run failed**: I expected the WebKitGTK
+window to be answered *later*, since it has more to paint and
+focus-stealing prevention is a rule about timestamps. It is answered sooner.
+The toplevel maps when GTK shows it and does not wait for the web process's
+first frame, so the thing the substitution was suspected of changing is not
+in the path at all.
+
+**One row is still outstanding** — `present()` on an unfocused WebKitGTK
+window with a foreign window focused — because it needs a person to click
+away, and it is the row the specification's wording rests on.
+
+---
+
 ## 5. What the next session should do first
 
 1. **Push and watch one run.** It is the first that could ever have proved
