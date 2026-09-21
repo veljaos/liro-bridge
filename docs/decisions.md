@@ -33514,3 +33514,249 @@ on this platform, is what made every `./...` need a GTK stack.
   on this VM only: `go vet -unsafeptr=false ./...` exit 0 in 3.1 s, and
   `CGO_ENABLED=0 GOOS=linux go build -o dist/ ./cmd/...` exit 0 in 1.3 s. §0.1
   applies.
+
+---
+
+## D-335 — The `ci` job installs no GTK, because that absence is the only thing that proves the shipped code needs none: the package nobody named, the warm cache that could not have reported it missing, and one symbol in one file putting a GTK stack behind fifty packages
+
+**Date:** 2026-09-21
+**Phase:** F12 §3.1 — the CI half again, one push after [[D-334]].
+
+**[[D-334]] installed two development packages on the `ci` job and the next
+push failed anyway**, in 1 m 8 s, at the same step, on a *third* pkg-config
+name that neither of them supplies:
+
+```
+# github.com/diamondburned/gotk4/pkg/core/gerror
+# [pkg-config --cflags  -- glib-2.0 gobject-introspection-1.0]
+Package gobject-introspection-1.0 was not found in the pkg-config search path.
+```
+
+Run `35542306925`, job `ci`, step `go vet`. Everything else green: `windows`
+5 m 45 s, `packaging` 57 s, `sdk-typescript` 2 m 7 s.
+
+There are two layers to it and the second is the one worth the entry.
+
+---
+
+### The shallow layer: the instrument could not have seen the absence it was asked about
+
+D-334 chose two packages by asking what the development VM had, and closed
+with: *"Both changed commands were verified on this VM only: `go vet
+-unsafeptr=false ./...` exit 0 in 3.1 s."* Asked D-304's first question —
+**could that check have failed?** — the answer is no, twice over, and the
+second reason is the one that generalises.
+
+**First: the file is not on this machine at all, and no package on it owns
+one.** Not "present as some other package's dependency", which was the
+hypothesis:
+
+```
+$ pkg-config --exists gobject-introspection-1.0 ; echo $?
+1
+$ dpkg -S gobject-introspection-1.0.pc
+dpkg-query: no path found matching pattern *gobject-introspection-1.0.pc*
+```
+
+What satisfied it was session 1's hand-unpacked `~/.local/gir-prefix` reached
+through an exported `PKG_CONFIG_PATH` — a thing `docs/f12-linux-session-1.md`
+§3a lists precisely because a measurement could silently depend on it. It did.
+
+**Second, and this is the sharper half: a warm build cache does not
+re-resolve `pkg-config`, so the sweep passes with the file unreachable.**
+Measured today, in a shell with an empty `PKG_CONFIG_PATH`:
+
+| | |
+|---|---|
+| `go vet -unsafeptr=false ./...` | **exit 0, 7.1 s** |
+| the same, forcing one gotk4 package to rebuild | **exit 1, 0.265 s**, byte-identical to CI's error |
+
+The forced rebuild is `go build -gcflags='…/core/gerror=-l' …/core/gerror`,
+which changes that package's action ID and nothing else. **So the green sweep
+was not evidence about the dependency; it was evidence that the dependency had
+already been resolved once, twenty months of `~/.cache/go-build` ago.** Any
+`go build`, `go vet` or `go test` on a machine with a warm cache is blind to a
+missing `pkg-config` file by construction, and `docs/f12-linux-session-3.md`
+§5 had already recorded that every timing here is a warm one — the same
+property, met from the timing side, one step short of this consequence.
+
+**The package that has it is `gobject-introspection`, not any `-dev` one.**
+Measured with `apt-get download` and `dpkg-deb -c`, no root required:
+
+| package | ships `gobject-introspection-1.0.pc` |
+|---|---|
+| `gobject-introspection` 1.80.1-1 | **yes** |
+| `libgirepository1.0-dev` | no — it `Depends:` on the above |
+| `libgirepository-1.0-dev` | no — same |
+| `libgtk-4-dev` | no, and it depends on neither |
+
+So session 1 §3a's *"on a machine with working sudo this is one line instead:
+`sudo apt-get install -y libgirepository1.0-dev`"* works, and works for a
+reason it does not state, and costs the `gir1.2-*` packages for nothing.
+Recursive closure: **618** packages for `libgtk-4-dev libwebkitgtk-6.0-dev`,
+**677** with `gobject-introspection` added.
+
+---
+
+### And a third failure stood behind those two, which no package could have cleared
+
+`go vet` is the first step that sweeps the module, so it is the one that
+reports. Three steps further down, `the soft token and the no-consent signing
+paths are absent from a release build` runs `go build -tags softtoken` at
+`CGO_ENABLED=0`. Measured on a worktree at the pre-fix tip:
+
+```
+package .../cmd/liro-bridge
+	imports .../internal/pinscreen
+	imports .../internal/ui
+	imports .../gotk4-webkitgtk/pkg/javascriptcore/v6: build constraints exclude all Go files
+exit status 1
+```
+
+D-334 met this shape once and answered it by narrowing `build linux/amd64` to
+`./cmd/...` — and `./cmd/liro-bridge` is exactly what this step builds, under
+the one tag that reaches `internal/pinscreen`. **So adding the third apt
+package would have moved the red three steps down the job rather than clearing
+it**, and what clears it is the import rather than the runner. After the
+change: exit 0 for both binaries, and all six of that step's symbol assertions
+pass here.
+
+### The deeper layer: the job that failed is `ci`, and `ci` should not have been able to fail this way
+
+The owner's question was whether the split had stopped doing what its entry
+claimed. **It had not, because there was no split**: D-334 decided to install
+GTK *on* `ci`, and this repository has one ubuntu job which does exactly that.
+The property — *a job with no GTK, proving by compiling that nothing shipped
+needs any* — was not a claim that had quietly lapsed. It was one nothing had
+ever made.
+
+It is worth making, because **F0 §10's rule and SPEC §1.1's "only what needs
+it gets it" have no enforcement otherwise.** With GTK on the one Linux job,
+every sweep can reach a GTK stack, so a package acquiring a C dependency
+compiles, passes and says nothing. D-334 saw this and wrote the consequence
+down — *"the only thing now unchecked is a linux-tagged file in a non-cmd
+package quietly acquiring a C dependency"* — and that is the gap this entry
+closes rather than widens.
+
+**Adding `gobject-introspection` to `ci` would have turned it green today and
+spent that.** It is one line and it was refused.
+
+---
+
+### One symbol, and fifty packages behind it
+
+D-334 named `internal/pinscreen` as *"one package, reachable by no shipped
+code on this platform, [which] is what made every `./...` need a GTK stack"*,
+and left it. Measured now, it is narrower than a package: it is **one
+reference to one symbol.**
+
+`internal/pinscreen/pinscreen_other.go` returned `ui.ErrUnsupportedPlatform`
+from a function whose entire body is a refusal. A Go package is atomic, so
+naming that sentinel made `internal/pinscreen` depend on gotk4 — and through
+it:
+
+| view | did `cmd/liro-bridge` reach gotk4 on linux? |
+|---|---|
+| untagged | no |
+| `-tags softtoken` | **yes**, through `internal/pinscreen` |
+
+**A dependency that exists in one build view and not the other is the hardest
+kind to notice**, and `test (softtoken tag)` is a step this project runs on
+every push.
+
+**And the sentinel had stopped being the right one anyway.** Its own doc
+comment reads *"ui: WebView2 is only supported on Windows"* — true when it was
+written, and false since [[D-331]] gave Linux a GTK4 and WebKitGTK host that
+opens this program's windows. What Linux has no dialog for is the **PIN**
+(F12 §5), which is a different window and a different statement. The refusal
+was returning a sentence about the wrong thing, and paying a GTK stack to say
+it.
+
+So `pinscreen.ErrNoDialogOnThisPlatform` is declared in the package's own
+neutral file, and `pinscreen_other.go` imports `internal/ui` no longer. It is
+a refusal, and a refusal is not a window: the package that draws windows did
+not have to be named to write one.
+
+**Measured after, on both views:** the packages needing `internal/ui` on linux
+are exactly one, and it is `internal/ui`. `CGO_ENABLED=0 GOOS=linux go build
+./...` now fails on that package alone and names it.
+
+---
+
+### What the two jobs are
+
+| | `ci` | `linux-gui` |
+|---|---|---|
+| GTK on the runner | **none, deliberately** | `libgtk-4-dev`, `libwebkitgtk-6.0-dev`, `gobject-introspection` |
+| packages | the 50 that do not need it | `internal/ui`, plus golangci-lint's whole-module linux view |
+| proves | nothing shipped needs a C library on linux | the window host compiles, lints and tests somewhere other than the VM it was written on |
+
+**The exclusion is computed and then asserted, which is the difference between
+a filter and a guard.** A filter that silently grows is how a package
+acquiring a GTK dependency would leave the sweeps instead of failing them. The
+guard lists every package that reaches `internal/ui`, in both the untagged and
+the softtoken view, and fails unless that list is exactly `internal/ui`.
+
+**The guard was checked against a control**, because a check that has only
+ever passed is D-304's first question wearing a tick: pointed at
+`internal/pinscreen` instead, the same code reports two packages under
+`-tags softtoken` and one without it — so it can see both arms, and it would
+have failed on yesterday's tree.
+
+**`build linux/amd64` gets its scope back.** D-334 narrowed it to `./cmd/...`
+and recorded what that gave up; it now builds all 50 packages at
+`CGO_ENABLED=0`, so a linux-tagged file anywhere acquiring a C dependency
+fails again. The shipped binary is unchanged and was re-measured:
+**`DT_NEEDED` 0, no `PT_INTERP`, 10 231 220 B.**
+
+**`linux-gui` gets its own build cache.** `actions/setup-go` derives one key
+from the OS, the Go version and `go.sum`, so both ubuntu jobs would compute
+the same one; the first to finish saves it and the other's save is refused.
+That would be `ci`, whose cache holds no gotk4 objects at all, and `linux-gui`
+would pay D-327's cold build — 14 m 52 s on four CPUs — on every push. So it
+sets `cache: false` and keys its own. **This is reasoned rather than measured**
+and the first two pushes settle it.
+
+---
+
+### Decided
+
+- **`ci` installs no GTK**, and sweeps the 50 packages that do not need it —
+  `go vet`, both `-race` runs, and a `CGO_ENABLED=0` build of all of them.
+- **A guard step computes and asserts the boundary**, in two build views, and
+  fails with the reason rather than widening the list.
+- **`linux-gui` owns `internal/ui`**: the three apt packages, vet, the
+  GOOS=linux lint view, and the tests.
+- **`internal/pinscreen` no longer imports `internal/ui`**, and the sentinel
+  it returns now says what is actually missing.
+- **Rejected: adding `gobject-introspection` to `ci`.** One line, green
+  immediately, and it spends the property the job exists for.
+- **Rejected: a build tag making `internal/ui` fall back to its stub when cgo
+  is off.** `./...` would build everywhere again, and a package that acquired
+  a window dependency would then compile against a stub and pass — the same
+  shape as D-334's rejected `CGO_ENABLED: 1`, which would have made a step
+  pass by destroying what it measures.
+- **Rejected: hand-listing the excluded packages in the workflow.** It is the
+  same rule in two places, which D-108, D-124 and D-138 each had to remove
+  once.
+
+### What this does not settle
+
+- **Nothing here has been run on CI either.** Everything above was measured on
+  this VM, where the guard, both `-race` sweeps (2 m 04 s and 1 m 43 s, exit
+  0), the 50-package `CGO_ENABLED=0` build, all three golangci-lint views and
+  `internal/ui`'s own tests pass — and where, as the first half of this entry
+  establishes, a warm cache cannot report the one class of failure the runner
+  just reported twice. §0.1 applies and so does that.
+- **`-race` over `internal/ui` is a probe rather than a gate.** D-330 measured
+  gotk4 failing `checkptr`, which `-race` implies; the linux UI tests skip
+  themselves where there is no windowing system, but that is a runtime skip
+  and not a compile-time exclusion, and it has never been observed on a
+  runner. The probe cannot fail the job and prints its own verdict. **A green
+  tick on it means it ran, not that it passed** — read the output.
+- **The cache-key collision is reasoned, not measured** — see above.
+- **Nothing in this entry opens `internal/ui` on a screen.** The window host
+  has still never rendered a page on this machine: no `liro-f12-window`
+  AppArmor profile is loaded, and there is still no Liro state anywhere under
+  `$HOME` (session 1 §0's baseline, re-checked today and unchanged).
+
