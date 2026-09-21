@@ -67,6 +67,31 @@ and **has never run end to end on this platform. Whichever of §6 or §7
 wires the agent mode should re-run it before doing anything else**, because
 it is the one part of §4 that nobody has watched work.
 
+**§6 is decided and the agent runs here** ([[D-342]]). The premise was
+re-taken first, because §6 could not rest on a disagreement: the watcher is
+owned by `gnome-shell`, is **not** D-Bus-activatable, and the extension
+appears in every boot's journal including session 1's — which does not settle
+what session 1 saw and does settle the thing that matters, since a name owned
+by a panel is a name that is absent on a stock desktop and arrives *after* an
+autostarted agent. So the tray is offered and never required: the item and its
+`com.canonical.dbusmenu` menu are exported whether or not anybody is
+listening, registered if there is somewhere to register, and registered again
+when a watcher appears. Measured: *"the tray icon was accepted by this
+desktop's tray host"*.
+
+`runTray` is the agent rather than the tray, and making it neutral gave four
+things their Linux caller back — the certificates window, the audit log
+window, the daily update check, and the protocol server.
+
+**And the thing that was actually blocking §4 was neither §4 nor §6**
+([[D-343]]): the agent had no secret store on this platform, so the pairing
+store would not open, so the protocol listener would not start, so nothing
+could send it a request. SPEC §6.4's file branch is built — AES-256-GCM under
+a key bound to the machine, the user and the installation, with §6.4's
+required warning saying the Secret Service is not the one in use. **Measured
+after: protocol listening on 17580, discovery file written, tray icon
+accepted.**
+
 **What comes after §4:** §5's PIN dialog (native, not in the page — SPEC §10;
 `pinscreen.ErrNoDialogOnThisPlatform` is what refuses today), then §6's tray
 question, then §8's packaging. §7's remaining question is where the audit
@@ -84,9 +109,9 @@ true and is worth keeping true. `~/go/bin` is not on `PATH`, so invoke
 `golangci-lint` by absolute path, and read exit codes rather than last lines
 ([[D-316]]).
 
-**What is open, in the order it is likely to matter:** a caller-driven
-request on this platform, which needs §6's or §7's wiring and is what would
-exercise §4 end to end; drag and drop, which needs `gdk_file_list_get_files` that the binding does not
+**What is open, in the order it is likely to matter:** §4 watched end to end,
+which nothing now blocks; single instance and Quit-from-the-window, which are
+§6's last two; the Secret Service branch of §6.4; drag and drop, which needs `gdk_file_list_get_files` that the binding does not
 generate ([[D-330]]'s shape, third instance) and whose absence the page still
 invites; the Settings window's two Windows-shaped rows on Linux; PKCS#11 here,
 compiled and never exercised; and `lowerLevel`, which is not a Linux question
@@ -672,25 +697,33 @@ only one platform — the same as D-338's suffixes and D-335's `ci` job.
    is on this platform now; the second says what a person found in one run
    that no test saw, and how each of the three was diagnosed by measuring the
    thing rather than the guess.
-2. **§4 end to end, which is the one thing about it nobody has watched.**
-   It is built, guarded and verified by hand ([[D-341]]), and no request
-   from a caller has ever reached it here, because the protocol server is
-   reached from `runTray`. Wiring the agent mode is §6's and §7's; the
-   moment it is wired, send a request and watch a window open for it with a
-   notification beside it, and then watch the notification go when the
-   request is answered.
-3. **Watch the first `linux-gui` run after a cold cache.** D-335 predicted 2–4
+2. **§4 end to end, which is now possible and has still not been watched.**
+   The agent serves the protocol here as of [[D-342]] and [[D-343]], so a
+   caller can reach it: `sdk/examples/sign.py` is the one that needs nothing
+   installed (there is no `node` on this machine). Two terminals — the agent
+   in one, the client in the other — and what to watch is a pairing window,
+   then a consent window **with a notification beside it**, then the
+   notification going when the request is answered.
+3. **§6's two remaining pieces**, both named in the owner's default and
+   neither built: single instance and handover — what a second
+   `liro-bridge open` does while an agent is running, who owns
+   `$XDG_RUNTIME_DIR/liro/bridge.json` ([[D-325]] settled removal only), and
+   how a stale discovery file is told from a live one; and **Quit reachable
+   from the main window**, so that a person on a desktop with no tray can
+   stop the agent.
+4. **The Secret Service branch of SPEC §6.4.** Every Linux agent takes the
+   file fallback today and logs that it did.
+5. **Watch the first `linux-gui` run after a cold cache.** D-335 predicted 2–4
    minutes warm against 27 cold; if it is still 27, the instrumented objects
    are not surviving in the cache and the `-race` probe stops running on every
    push.
-4. **Read `fitToContent`'s numbers.** It logs `declared` against `measured`
+6. **Read `fitToContent`'s numbers.** It logs `declared` against `measured`
    for every step; the method step is the one that overflowed, and the header
    bar fix gave it back 37 points. Whether it still needs more is a number in
    the next run's log rather than an opinion.
-5. **Not §6.** The tray's first question is still unanswered — and note that
-   `org.kde.StatusNotifierWatcher` *is* on this bus today where session 1
-   found nothing watching (§4 above), so the premise that question rests on
-   needs re-taking before it is decided.
+7. **§6's premise is no longer open**, and §4 of this document is the old
+   reading. [[D-342]] re-took it and records why the disagreement stopped
+   mattering rather than being settled.
 
 **§0.1 applies to everything in this document**: a virtual machine with no
 working GPU driver, and a graphics driver that calls its own configuration

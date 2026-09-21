@@ -34604,3 +34604,185 @@ Windows facts came with it — the same class as D-339's
 - **Whether the method step still needs more than its declared height** is
   still a number in the next run's log (D-339).
 
+---
+
+## D-342 — F12 §6 decided: the agent is not the tray, the tray is offered rather than required, and the premise both readings rested on was re-taken first
+
+**Date:** 2026-09-21
+**Phase:** F12 §6 — the product decision it asks for, and the code under it.
+
+### The premise, re-taken, because §6 could not be decided on a disagreement
+
+Session 1 measured **no** `org.kde.StatusNotifierWatcher` on this session bus;
+the fourth session measured one. [[D-337]]'s session recorded that as
+unresolved and said §6 must not be decided on either reading. Taken again:
+
+| | |
+|---|---|
+| present now | **yes** — owned by `gnome-shell`, PID 2332, with `ubuntu-appindicators@ubuntu.com` reporting `State: ACTIVE` |
+| D-Bus-activatable | **no** — `busctl --list --activatable` does not carry it |
+| in the journal | `gnome-shell … Extension ubuntu-appindicators@ubuntu.com already installed` on **every boot**, including the ones session 1 ran on |
+
+**So the disagreement is not resolved, and it stops mattering.** The journal
+line says the shell *found* the extension, not that it was enabled, so it
+cannot settle what session 1 saw; and this entry deliberately does not
+speculate. What the ownership does settle is the thing §6 needed: **the name
+belongs to whatever is drawing trays, and there is nothing to activate.** It
+is absent on a stock GNOME desktop, and on a desktop that has one it appears
+when the shell gets to its extensions — *after* an agent that autostart
+started.
+
+**That is the design constraint, and it holds under either reading of session
+1**, which is the useful way out of a disagreement that cannot be settled:
+make the answer not depend on it.
+
+### Decided
+
+- **Where something is drawing trays, the agent shows an icon** — the same
+  five-item menu it has on Windows, through StatusNotifierItem and
+  `com.canonical.dbusmenu`, both spoken directly over the session bus.
+  Measured on this desktop: *"the tray icon was accepted by this desktop's
+  tray host"*.
+- **Where nothing is, the agent runs anyway and says nothing.** No error, no
+  fallback window, no nagging. `newTray` fails only when there is no session
+  bus at all; a desktop with no watcher is a supported desktop, and F12 §6
+  rules out requiring an extension to change that.
+- **It registers whenever a watcher appears**, by following
+  `NameOwnerChanged`. A single check at startup is the version of this that
+  is wrong on exactly the desktop that has a tray: the agent starts at login
+  and the shell loads extensions when it gets to them.
+- **`runTray` is the agent, not the tray.** It is renamed in substance rather
+  than in name: the function that starts the protocol listener, the discovery
+  file and the daily update check now lives in a platform-neutral file and
+  opens an icon if it can. What a person reaches on a trayless desktop is the
+  desktop entry (F12 §8) and the main window, which is where Settings, the
+  certificate list and the audit log are reached from anyway.
+- **Rejected: libayatana-appindicator**, which [[D-326]] already measured is
+  a GTK3 library and cannot be loaded into a GTK4 process at all.
+- **Rejected: an icon name instead of pixels.** A themed name needs an
+  installed icon file, which is F12 §8's packaging; pixels work with nothing
+  installed, and the source is the same `icon.ico` every other platform draws
+  from rather than a second icon that would drift ([[D-285]], [[D-286]]).
+
+### What the tray costs, in dependencies: nothing
+
+SPEC §1.1's rule — *"a dependency that can be satisfied in Go is not a reason
+to declare one"* — is what this is. The item, the menu and the registration
+are `godbus/dbus/v5`, already present for [[D-341]]'s notification, and F12
+§8's `Depends:` line is unchanged.
+
+### What came with it, because the tray was its only caller
+
+Making the agent mode neutral gave four things their Linux caller back, which
+is what they had been orphaned for want of: the certificates window, the audit
+log window, the daily update check, and the protocol server itself. They are
+in platform-neutral files again, and `unused` is clean in all three views.
+
+### What this does not settle
+
+- **Single instance and handover** — F12 §7.1's question, which §6 needs and
+  which the owner asked to have decided here. It is **not built**: what a
+  second `liro-bridge open` does while an agent is running, who owns
+  `$XDG_RUNTIME_DIR/liro/bridge.json`, and how a stale file is told from a
+  live one. [[D-325]] settled removal; the rest is next.
+- **Quit from the main window.** The owner's default asks for it so that a
+  person on a trayless desktop can stop the agent, and the main window has no
+  such control yet. It is a page, three catalogues and a message type.
+- **What a stock GNOME desktop actually looks like** with this running. The
+  no-watcher path is exercised here through `dbus-run-session`, which is a
+  bus with nothing on it — the agent's behaviour, honestly, and not Fedora's
+  desktop.
+
+---
+
+## D-343 — The agent could not serve the protocol on Linux because it had no secret store, and SPEC §6.4's file branch is what unblocks it: a key bound to the machine, the user and the installation
+
+**Date:** 2026-09-21
+**Phase:** F12 §7 — the secrets half, found from §6 rather than looked for.
+
+**It was found by running the agent rather than by reading it.** The first
+`liro-bridge tray` on Linux produced two errors and they were one:
+
+```
+ERROR pairings: could not open the pairing store
+      error="opening the secret store: platform: encrypted secret storage is
+             not implemented on this platform"
+ERROR tray: the protocol could not be started
+      error="there is no pairing store, so nothing could be authenticated"
+```
+
+**So F12 §4's end-to-end verification was never blocked on §4 or on §6.** It
+was blocked on §7: no secret store, no pairing store, no protocol listener,
+no request from a caller to open a window for. The chain is only visible
+from the end.
+
+### What was built, and what was deliberately not
+
+SPEC §6.4 names two mechanisms for this platform and prefers the first:
+*"Secret Service (libsecret) where available, otherwise an encrypted file
+with a key derived from machine-id + user, with a clear warning in the
+log"*. **The file is built and the Secret Service is not**, so the selection
+takes the file every time — and says so, at `WARN`, which is §6.4's own
+requirement and is the thing that keeps a staged implementation from looking
+like a finished one.
+
+**The seam was already there**, which is why this is small: `fileSecretStore`
+and its entropy file are platform-neutral and take a `protector`, and Windows
+plugs DPAPI into it. Linux plugs in **AES-256-GCM under HKDF-SHA256**, and
+what the key is derived from is the whole of the design:
+
+| binding | from | what it denies |
+|---|---|---|
+| the machine | `/etc/machine-id`, then `/var/lib/dbus/machine-id` | the blob decrypting on another computer |
+| the user | the numeric uid | it decrypting in another account here |
+| the installation | the entropy file beside it (SPEC §6.4's "additional entropy stored alongside") | a copy of `secrets.json` on its own being worth anything |
+
+**A missing machine-id is an error and never a default.** A constant fallback
+would derive the same key on every machine — the one property this exists to
+deny — and would do it silently, on exactly the minimal systems where nobody
+is watching.
+
+### Why a file is defensible here, which F12 §7 asks for rather than assumes
+
+*"An unlocked keyring does not protect against malware running as the same
+user either."* Both mechanisms protect against another user of the machine
+and against a copy taken elsewhere; neither protects against code already
+running as the person whose secret it is. That is the same boundary SPEC §6.5
+draws for the PIN, and it is why this product's gate is the consent screen
+rather than storage.
+
+### The tests are about the thing rather than the round trip
+
+A store that wrote plaintext would pass every round-trip test ever written,
+so one test reads `secrets.json` back and fails if the secret — or any
+recognisable part of it — is in it. Another protects under one entropy file
+and tries to open it with another, which is §6.4's "copying the blob is not
+enough" stated as an assertion. A third flips one bit of the stored blob and
+requires the open to fail, because a secret that decrypts to something an
+attacker chose is worse than one that does not decrypt.
+
+### Decided
+
+- **`$XDG_CONFIG_HOME/liro`'s file store**, AES-256-GCM, HKDF-SHA256 over
+  machine-id, uid and the entropy file, with the `WARN` §6.4 requires.
+- **Rejected: falling back silently.** The non-Windows stub refused for a
+  reason — *"a device secret in plain JSON is the one outcome §6.4 exists to
+  prevent, and a fallback nobody notices is how it would arrive"* — and the
+  warning is what keeps that true now that there is a fallback.
+- **Rejected: building the Secret Service first**, tonight, to do it in
+  §6.4's preferred order. It is a session, a collection, an unlock prompt and
+  a negotiated encryption algorithm; the file branch is what the protocol
+  listener needed to start at all, and the order is fixed in the selection so
+  that adding the first branch changes one function.
+
+### What this does not settle
+
+- **The Secret Service branch**, which is the one §6.4 prefers and the one a
+  GNOME desktop actually has. Until it exists, every Linux agent takes the
+  fallback and logs that it did.
+- **Whether the warning is loud enough.** It is one `WARN` at startup in a
+  file a person does not read. If the file store is still the only one when
+  F12 §8 packages this, the installation notes are where it belongs too.
+- **Nothing about macOS**, whose Keychain is F13's and whose stub still
+  refuses.
+
