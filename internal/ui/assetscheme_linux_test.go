@@ -116,3 +116,40 @@ func TestAssetContentTypeDoesNotDependOnTheMachine(t *testing.T) {
 		t.Errorf("unknown extension = %q, want application/octet-stream", got)
 	}
 }
+
+// TestHostURLProducesAURIThisHostWillServe is the guard the defect it was
+// written for did not have.
+//
+// cmd/liro-bridge built the placement window's image addresses as
+// "https://" + host + "/" + name, which is WebView2's virtual-host
+// spelling and is nothing at all on this platform: the custom scheme is
+// what a window here serves, so every rendered page image and the
+// stamp's own image failed to load. What a person saw was WebKitGTK's
+// broken-image mark, which is a question mark in a box — reported as
+// "the placement picker showed question marks where the stamp's text
+// should be", and correctly not diagnosed as a font problem (D-339).
+//
+// A test that only asserted the string would have been written to
+// whatever the code did. This asserts the property that actually
+// matters: an address this program hands a page is an address this
+// program's own resolver will answer.
+func TestHostURLProducesAURIThisHostWillServe(t *testing.T) {
+	hosts := testHosts()
+
+	for _, c := range []struct{ host, path, body string }{
+		{"scratch.invalid", "page-1.png", "\x89PNG"},
+		{"scratch.invalid", "/page-1.png", "\x89PNG"},
+		{"liro.invalid", "consent.html", "<!doctype html>consent"},
+	} {
+		uri := HostURL(c.host, c.path)
+
+		data, _, err := resolveAsset(uri, hosts)
+		if err != nil {
+			t.Errorf("HostURL(%q, %q) = %q, which this host refuses: %v", c.host, c.path, uri, err)
+			continue
+		}
+		if string(data) != c.body {
+			t.Errorf("HostURL(%q, %q) = %q served %q, want %q", c.host, c.path, uri, data, c.body)
+		}
+	}
+}

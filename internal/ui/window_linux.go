@@ -124,6 +124,23 @@ func NewWindow(opts Options) (Window, error) {
 
 		w.win = gtk.NewWindow()
 		w.win.SetTitle(opts.Title)
+		// **The size request is on the view and not on the window, and
+		// that is the whole of what Options.Width and Options.Height
+		// mean.** They are documented as the client area — the room the
+		// page gets — and WebView2 gives exactly that. GTK4 does not:
+		// a window here wears a client-side-decoration header bar, and
+		// gtk_window_set_default_size counts it, so a window asked for
+		// 440x380 handed its page 440x343. Measured, at four sizes: the
+		// width was exact every time and the height was short by 37
+		// every time, which is the header bar and not a font metric
+		// (D-339).
+		//
+		// Asking the *view* for the size instead makes the contract
+		// true: GTK sizes the window around its child's request, so the
+		// chrome is added rather than subtracted. These windows are all
+		// SetResizable(false), so a minimum size request is also the
+		// final size.
+		w.view.SetSizeRequest(opts.Width, opts.Height)
 		w.win.SetDefaultSize(opts.Width, opts.Height)
 		// F5 §2.3: every window this program has is fixed-size.
 		w.win.SetResizable(false)
@@ -464,6 +481,11 @@ func (w *linuxWindow) Resize(width, height int) error {
 	return theUIThread.do(func() {
 		// GTK keeps the window where it is; there is no re-centring to
 		// suppress, which is what Resize's contract asks for.
+		//
+		// The request goes on the view for the reason NewWindow gives:
+		// these numbers are the page's room, and the header bar is the
+		// window's business rather than the caller's.
+		w.view.SetSizeRequest(width, height)
 		w.win.SetDefaultSize(width, height)
 	})
 }
@@ -550,3 +572,9 @@ func pickFiles(uintptr, string, string, string) ([]string, bool, error) {
 // register a menu icon with, and §8's desktop entry names the icon by
 // XDG theme name rather than by path.
 func iconFilePath() (string, error) { return "", ErrUnsupportedPlatform }
+
+// hostURL is HostURL on the platform whose web view has no virtual-host
+// mapping and is served a custom scheme instead.
+func hostURL(host, path string) string {
+	return assetScheme + "://" + host + "/" + trimLeadingSlash(path)
+}

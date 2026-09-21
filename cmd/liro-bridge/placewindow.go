@@ -343,7 +343,7 @@ func (s *placeSession) post(win ui.Window, page int, scale float64, want placeme
 		"scale":     scale,
 		"box":       []float64{info.Box[0], info.Box[1], info.Box[2], info.Box[3]},
 		"rotate":    info.Rotate,
-		"image":     "https://" + placeScratchHost + "/" + name,
+		"image":     ui.HostURL(placeScratchHost, name),
 		"bounds":    map[string]float64{"minX": minX, "minY": minY, "maxX": maxX, "maxY": maxY},
 		"corners":   jsCorners,
 		"x":         x,
@@ -474,7 +474,7 @@ func writeStampPreview(scratch string, cert *x509.Certificate, stamp *pades.Stam
 		slog.Warn("placement: the stamp image could not be encoded", "error", err)
 		return "", preview.WidthPt, preview.HeightPt
 	}
-	return "https://" + placeScratchHost + "/stamp.png", preview.WidthPt, preview.HeightPt
+	return ui.HostURL(placeScratchHost, "stamp.png"), preview.WidthPt, preview.HeightPt
 }
 
 func buildPlaceInit(c *i18n.Catalogue, cfg config.Config, pageCount int, stampURL string, stampW, stampH float64) map[string]any {

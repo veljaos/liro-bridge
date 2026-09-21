@@ -40,6 +40,8 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/veljaos/liro-bridge/internal/audit"
 	"github.com/veljaos/liro-bridge/internal/cli"
@@ -282,6 +284,66 @@ func (m *mainWindow) show(step flowStep) {
 	case stepMethod:
 		m.postStampStep()
 	}
+
+	m.fitToContent(w, h)
+}
+
+// stepMaxHeight bounds what a measured step is allowed to grow to.
+//
+// It is a bound and not a design height: no screen in this program is
+// meant to be this tall, and a step that measures taller has something
+// wrong with it that a bigger window would only hide. The right answer
+// is the monitor's own work area, which neither window host exposes to
+// this package yet; until one does, this stops a measurement from
+// producing a window taller than the screen it is on.
+const stepMaxHeight = 900
+
+// fitToContent grows the window to the height its content actually
+// needs, leaving the declared height as a floor.
+//
+// **Every height in this file was measured on Windows**, and a height
+// measured on one platform is a fact about that platform. The same
+// pages in WebKitGTK, with this desktop's own UI font rather than Segoe
+// UI, are taller: the method step arrived on Linux needing a scrollbar
+// to reach its own buttons, which nothing in this project's tests could
+// have seen because every test of these screens is a Windows test
+// against a WebView2 window.
+//
+// So the number stops being the answer and becomes the floor, and the
+// page says how much room it needs. That is D-208's own rule — it
+// objected to "arriving at a height by reasoning instead of by looking"
+// — applied to the one thing that can always look, which is the page.
+//
+// **It grows and never shrinks**, for two reasons. A measurement taken
+// before the step's content has finished arriving is too small rather
+// than too large, and shrinking on it would be a window that jumps;
+// and the declared heights are deliberate minimums on the platform
+// they were measured on, where a card and a gap of white nobody asked
+// for was the objection in the first place.
+func (m *mainWindow) fitToContent(width, declared int) {
+	got, err := m.win.Eval("document.documentElement.scrollHeight")
+	if err != nil {
+		// Not a failure of the step: the window still shows what it
+		// showed, at the height this platform's own numbers chose.
+		slog.Debug("signing flow: could not measure the step's content height", "error", err)
+		return
+	}
+	measured, err := strconv.Atoi(strings.Trim(strings.TrimSpace(got), `"`))
+	if err != nil {
+		slog.Debug("signing flow: the step's content height did not read as a number", "value", got)
+		return
+	}
+
+	slog.Debug("signing flow: step height", "declared", declared, "measured", measured, "width", width)
+	if measured <= declared {
+		return
+	}
+	if measured > stepMaxHeight {
+		slog.Warn("signing flow: a step measured taller than any screen in this program should be, and was capped",
+			"measured", measured, "cap", stepMaxHeight)
+		measured = stepMaxHeight
+	}
+	m.resize(width, measured)
 }
 
 // gotoPage navigates the window to page unless it is already there.

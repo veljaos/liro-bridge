@@ -33,3 +33,8 @@ func pickFiles(uintptr, string, string, string) ([]string, bool, error) {
 // iconFilePath has no other-platform implementation this phase: there
 // is no Explorer to register a menu icon with (SPEC §11.11).
 func iconFilePath() (string, error) { return "", ErrUnsupportedPlatform }
+
+// hostURL has no host to name on a platform with no web view, and an
+// empty string is the honest answer rather than a URL that would be
+// requested and refused.
+func hostURL(string, string) string { return "" }

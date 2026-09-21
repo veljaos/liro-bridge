@@ -218,6 +218,26 @@ type Window interface {
 	Handle() uintptr
 }
 
+// HostURL is the address a window's own content has at one of its
+// virtual hosts — Options.VirtualHost, or Options.ScratchHost.
+//
+// It exists because the scheme is not the same on both platforms and a
+// caller must not have to know which it is on. WebView2 maps a virtual
+// host under `https://`; WebKitGTK has no such mechanism and this
+// package answers it with a custom URI scheme, so the same content is
+// at `liro://` there (D-333 for the same divergence met from the page
+// side). A caller that hardcodes either one is correct on one platform
+// and silently broken on the other: the image simply does not load,
+// and what a person sees is the web view's own broken-image mark —
+// which in WebKitGTK is a question mark in a box, reported as
+// "question marks where the stamp should be" (D-339).
+//
+// Pages reference their *own* host's content with root-relative paths
+// and need none of this. This is for the second host: the placement
+// window's rendered page images, which live in a directory rather than
+// in the binary and therefore cannot be root-relative to the first.
+func HostURL(host, path string) string { return hostURL(host, path) }
+
 // DetectRuntime reports whether the WebView2 Evergreen Runtime is
 // installed (F5 §2.2), and its version string if so. It never launches
 // a window — this is safe to call at startup to decide whether to show

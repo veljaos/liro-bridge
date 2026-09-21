@@ -53,6 +53,7 @@ package ui
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1017,4 +1018,10 @@ func (w *window) Close() error {
 // without synchronisation for the window's entire remaining lifetime.
 func (w *window) Handle() uintptr {
 	return w.hwnd
+}
+
+// hostURL is HostURL on the platform whose web view maps a virtual host
+// under https, which is what SetVirtualHostNameToFolderMapping does.
+func hostURL(host, path string) string {
+	return "https://" + host + "/" + strings.TrimPrefix(path, "/")
 }
