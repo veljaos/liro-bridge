@@ -54,11 +54,34 @@
 package pinscreen
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
 )
+
+// ErrNoDialogOnThisPlatform is what the PIN entry returns where this program
+// has no PIN dialog to draw. It lives in the neutral file so that a caller
+// branching on it compiles on every platform, including the one where it can
+// never be returned.
+//
+// It replaces ui.ErrUnsupportedPlatform, which the non-Windows Entry returned
+// until F12 §3 closed, and both halves of that replacement are reasons:
+//
+//   - **That sentinel's own sentence stopped being true here.** It reads "ui:
+//     WebView2 is only supported on Windows", and since D-331 internal/ui has
+//     a GTK4 and WebKitGTK host that opens this program's windows on Linux.
+//     What Linux has no dialog for is the PIN (F12 §5), which is a different
+//     statement about a different window.
+//
+//   - **Naming it cost every other package on this platform a GTK stack.** A
+//     Go package is atomic: the one reference to a sentinel declared in
+//     internal/ui made internal/pinscreen depend on gotk4, and through it
+//     every module-wide sweep on Linux — go vet, the linters, the race
+//     detector, and cmd/liro-bridge's own softtoken view. [[D-335]] measured
+//     that and this is the half of the remedy that lives in the code.
+var ErrNoDialogOnThisPlatform = errors.New("pinscreen: no PIN dialog on this platform")
 
 // Prompt is the text one PIN screen shows, already localised.
 //

@@ -5,17 +5,21 @@ package pinscreen
 import (
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource/pkcs11"
-	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
 // Entry returns a PIN entry that refuses, because there is no dialog to draw
 // yet on this platform.
 //
-// It returns ui.ErrUnsupportedPlatform rather than pkcs11.ErrNoPINEntry, and
+// It returns ErrNoDialogOnThisPlatform rather than pkcs11.ErrNoPINEntry, and
 // the difference is the whole of what this file says: ErrNoPINEntry means
 // nobody wired one up, which is a caller's omission and fixable by wiring one
 // up. This is a platform that has no PIN dialog at all, which is F12 §5's work
 // and not a mistake at the call site.
+//
+// The sentinel was ui.ErrUnsupportedPlatform until [[D-335]], and this file no
+// longer imports internal/ui at all. Its declaration carries both reasons; the
+// one that belongs here is that a refusal is not a window, so the package that
+// draws windows did not have to be named to write one.
 //
 // Text, in the neutral file, builds the same sentences here as it does on
 // Windows — deliberately, since F12 §5's GTK dialog will want them and a
@@ -31,6 +35,6 @@ func Entry(cat *i18n.Catalogue, owner uintptr) pkcs11.PINEntry {
 	_, _ = cat, owner
 	return func(dst []byte, req pkcs11.PINRequest) (int, error) {
 		_, _ = dst, req
-		return 0, ui.ErrUnsupportedPlatform
+		return 0, ErrNoDialogOnThisPlatform
 	}
 }
