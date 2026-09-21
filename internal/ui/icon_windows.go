@@ -20,9 +20,6 @@ import (
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
 
-//go:embed assets/icon.ico
-var trayIconICO []byte
-
 const (
 	imageIcon      = 1
 	lrLoadFromFile = 0x00000010

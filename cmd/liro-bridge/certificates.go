@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // runCertificatesWindow implements the tray's "Certificates" item

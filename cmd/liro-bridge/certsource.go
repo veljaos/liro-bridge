@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // The certificate source behind GET /v2/certificates.

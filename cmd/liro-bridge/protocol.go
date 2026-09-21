@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // Starting the protocol: the loopback listener, the discovery file, and

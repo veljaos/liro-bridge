@@ -1,6 +1,22 @@
-//go:build windows
-
 package main
+
+// The agent mode: the process that is running when nobody is looking at
+// a window.
+//
+// **It is not "the tray", although it is reached by a command with that
+// name, and F12 §6 is where that distinction had to be made.** A stock
+// GNOME desktop draws no tray at all, and requiring an extension to fix
+// that is the one answer §6 rules out. So what this function does is
+// run the agent — the protocol listener, the discovery file, the daily
+// update check — and *offer* an icon to whatever is drawing trays. On a
+// desktop with one, that is the icon and menu this program has had
+// since F5. On a desktop without, the agent is still there and still
+// serving, and the way to it is the desktop entry that opens the main
+// window (F12 §8) rather than a menu nobody can see.
+//
+// internal/ui.NewTray is what makes that shape possible rather than a
+// branch here: on linux it exports its objects whether or not anything
+// is listening, and registers if and when something appears (D-342).
 
 import (
 	"context"
@@ -14,22 +30,6 @@ import (
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
-
-// webView2ExitGrace is a brief pause before the tray subcommand returns
-// (and the process reaches ExitProcess), given only after at least one
-// WebView2 window has actually been opened and closed during this
-// session (Task 8, F5 first-real-run review). ui.Window.Close already
-// waits for this process's own COM teardown to finish before returning
-// (D-0xx), but the WebView2 runtime's own browser process — a separate
-// executable — tears itself down asynchronously once that happens, on
-// its own schedule; this is what gives it a little more of that
-// schedule to run before this process disappears out from under it,
-// which is what actually produces its "Failed to unregister class
-// Chrome_WidgetWin_0" console line (emitted by that browser process,
-// not by any code in this repository) when the two race. Not applied
-// when no such window was ever opened this session — a user who only
-// ever used the tray menu's Quit should never wait for anything.
-const webView2ExitGrace = 400 * time.Millisecond
 
 // runTray implements F5 §3's product shape: the agent starts minimised
 // to tray with no window, and stays running until Quit.
@@ -130,7 +130,7 @@ func runTray(cfg config.Config, version string) int {
 
 	<-quit
 	if openedAWindow {
-		time.Sleep(webView2ExitGrace)
+		time.Sleep(trayExitGrace)
 	}
 	return 0
 }

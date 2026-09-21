@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // runAuditLogWindow implements the tray's "View audit log" item
