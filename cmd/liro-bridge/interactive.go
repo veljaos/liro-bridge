@@ -846,13 +846,13 @@ const maxOutputSuffix = 1000
 // directory is several chains, each of which believes it is the only
 // one.
 //
-// **Where it goes on linux is still F12 §7's question**, and this does
-// not answer it: ConfigDir's default branch is $XDG_CONFIG_HOME/liro,
-// while §7 says the audit chain's directory belongs under
-// $XDG_STATE_HOME. Moving it there is a decision about a path a person
-// may already have files in, and it is made with §7's other three.
+// **Where it goes on linux is F12 §7's question and is now answered**:
+// $XDG_DATA_HOME/liro/audit, through platform.DataDir, which says why
+// there rather than under $XDG_STATE_HOME or $XDG_CONFIG_HOME
+// ([[D-340]]). Windows and macOS are unchanged — DataDir is ConfigDir
+// on both — so this moves one platform's path and no existing file.
 func auditDir() string {
-	return filepath.Join(platform.ConfigDir(runtime.GOOS, platform.OSEnv), "audit")
+	return filepath.Join(platform.DataDir(runtime.GOOS, platform.OSEnv), "audit")
 }
 
 func newAuditStore() (*audit.Store, error) {

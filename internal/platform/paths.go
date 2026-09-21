@@ -53,6 +53,35 @@ func LogDir(goos string, env Env) string {
 	}
 }
 
+// DataDir returns the directory holding the agent's own data, as
+// distinct from its configuration: today that is the audit log, and
+// nothing else.
+//
+// **On Windows and macOS it is the same directory as ConfigDir**, which
+// is where those platforms put both and where this program's audit log
+// has always been. The split exists for Linux, where XDG separates the
+// two and the audit log is on the data side of that line.
+//
+// **$XDG_DATA_HOME rather than $XDG_STATE_HOME, and that is a decision
+// about what the audit log is** (F12 §7, D-340). The XDG specification
+// describes $XDG_STATE_HOME as holding data that is "not important
+// enough to be stored in $XDG_DATA_HOME", and backup tools commonly
+// skip it — which is the wrong fate for SPEC §6.7's hash chain, whose
+// whole purpose is to be evidence of what somebody signed, possibly in
+// front of a court. It is not configuration either, so not
+// $XDG_CONFIG_HOME.
+func DataDir(goos string, env Env) string {
+	switch goos {
+	case "windows", "darwin":
+		return ConfigDir(goos, env)
+	default:
+		if xdg := env("XDG_DATA_HOME"); xdg != "" {
+			return filepath.Join(xdg, "liro")
+		}
+		return filepath.Join(env("HOME"), ".local", "share", "liro")
+	}
+}
+
 // ConfigFile returns the full path to config.json for the current platform.
 func ConfigFile(goos string, env Env) string {
 	return filepath.Join(ConfigDir(goos, env), "config.json")

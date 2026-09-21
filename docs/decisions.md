@@ -34363,3 +34363,78 @@ literal as the first argument to `platform.ConfigDir` or its siblings.
   deleted, to `/tmp/lt/stray-audit/`, because a hash chain is evidence even
   when it is in the wrong place.
 
+---
+
+## D-340 — F12 §7's last path is decided: the audit log lives under `$XDG_DATA_HOME`, because a hash chain is evidence rather than state, and it is decided now because nobody on this platform has a file there yet
+
+**Date:** 2026-09-21
+**Phase:** F12 §7 — the audit chain's home, which §7 asked for and
+[[D-339]] made urgent.
+
+**The decision.** `$XDG_DATA_HOME/liro/audit`, falling back to
+`$HOME/.local/share/liro/audit`, through a new `platform.DataDir`.
+
+**Windows and macOS do not move.** `DataDir` is `ConfigDir` on both, which is
+where this program's audit log has always been, so this changes one platform's
+path and no existing file. A test asserts that equality rather than the two
+paths separately, because the thing worth protecting is that they stay the
+same directory.
+
+### Why not `$XDG_STATE_HOME`, which is what F12 §7 suggested
+
+§7 wrote *"the directory it guards moving to `$XDG_STATE_HOME`"*, and the
+owner ruled otherwise on what the file is. The XDG base directory
+specification describes `$XDG_STATE_HOME` as holding data that is **"not
+important enough to be stored in `$XDG_DATA_HOME`"** — its examples are
+logs, history, recently-used files, view state — and backup tools commonly
+skip it for exactly that reason.
+
+**SPEC §6.7's chain is not that.** It is the record of every signature this
+program ever made, each entry hashing the one before it so that none can be
+removed or altered without breaking the rest. Its whole purpose is to be
+evidence, and a person may one day need it in front of a court. A directory
+whose definition is "not important enough to back up" is the wrong home for
+the one file this program keeps in order to be believed later.
+
+`$XDG_CONFIG_HOME` is wrong for the plainer reason: it is not configuration,
+and nothing about it is user-editable.
+
+### Why now, which is part of the decision
+
+**Because nobody on Linux has a file there yet.** The agent has been able to
+write an audit entry on this platform for a matter of hours, and the only
+entries that exist are two the owner made tonight with a soft token and a
+throwaway PDF — which [[D-339]] moved out of the repository they landed in.
+There is nothing to migrate, no person whose chain would split, and no
+release that has promised the other path.
+
+**The same decision after a release is a migration**, with a chain that must
+be moved without breaking its hashes and a version that has to read both
+places while it happens. That is the cost this timing avoids, and it is worth
+saying out loud that the cheapness is the timing rather than the decision.
+
+### Decided
+
+- **`$XDG_DATA_HOME/liro/audit`** on Linux, `platform.DataDir` for it, and
+  `ConfigDir` on Windows and macOS unchanged.
+- **Rejected: `$XDG_STATE_HOME`**, on what the specification says state is
+  for and on what a backup tool does with it.
+- **Rejected: `$XDG_CONFIG_HOME`** — the audit log is not configuration, and
+  D-339 only put it there by being the first thing that was not the working
+  directory.
+- **Rejected: migrating anything.** There is nothing to migrate, and code
+  that reads two locations would outlive the two days in which either was
+  ever written.
+
+### What this does not settle
+
+- **The other half of §7** — Secret Service where it exists and a `0600` file
+  where it does not — is untouched and unbuilt.
+- **Whether the audit log should be readable by a backup tool at all** is a
+  question this answers by implication rather than deliberately: putting it
+  under `$XDG_DATA_HOME` means an ordinary backup takes it, which is
+  intended, and it also means an ordinary backup takes a record of what
+  somebody signed. SPEC §6.7 already forbids personal names, file names and
+  document contents in it, so what travels is timestamps, thumbprints and
+  outcomes.
+
