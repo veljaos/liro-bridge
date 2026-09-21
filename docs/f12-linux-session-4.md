@@ -329,6 +329,26 @@ end, by measurement, on the platform it was written about.
   focus the way `raise` does, and prints `INVALID` instead of a result if
   the window is active when the click arrives.
 
+  **The rerun is clean and the answer is no.** Precondition held — the window
+  was unfocused for 3 s before the notification went out — and three seconds
+  after the click it was still unfocused:
+
+  ```
+  [  4.78s] SENT    notification id=3 — the window is unfocused
+  [  6.65s] SIGNAL  ActionInvoked, window active BEFORE the click=false
+  [  6.65s]         NO token arrived
+  [  6.68s] SIGNAL  NotificationClosed id=3 reason=2 (dismissed by the person)
+  [  9.68s] RESULT  3s after the click, WITHOUT a token: window active=false
+  ```
+
+  **So on this machine the notification is a prompt to go and look, not a way
+  to reach the window** — and the token half is bounded: the probe could
+  carry no `desktop-entry` hint, because nothing is installed and there is no
+  `.desktop` file to name, so the shell had no way to map the notification to
+  the window. The finding is **no token without a desktop-entry hint**, and
+  it is deliberately not *"GNOME does not send tokens"*. F12 §8 now carries
+  the measurement that is waiting for a package. [[D-337]].
+
   Two things from the void run do stand: **no `ActivationToken` arrived**,
   which is not yet interpretable either way, and the probe's own
   `NotificationClosed` handler called `Variant.String()` — that is

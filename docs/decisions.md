@@ -33888,3 +33888,136 @@ session could have absorbed the rest without noticing.
   and cannot be shown to have arrived, it is worth asking for again — the
   cheapest version of this check is a word count.
 
+---
+
+## D-337 — F12 §4 measured rather than predicted: a new window takes focus on this compositor even from a process idle for 45 seconds, an existing one cannot be raised at all, and a clicked notification did not raise it either — with the last result bounded by a hint the probe could not carry
+
+**Date:** 2026-09-21
+**Phase:** F12 §4 — the measurements the design rests on. The SPEC §6.5
+amendment they force is drafted and is the owner's.
+
+**F12 §4 opens by asserting that the consent window cannot put itself in
+front**, and §0 of that document lists it as one of three things the platform
+says rather than a Linux inconvenience. It had never been measured here.
+These are the readings, on Ubuntu 24.04, **GNOME 46, Wayland**, GTK 4.14.5,
+software rendering.
+
+### The instrument, and what it cannot see
+
+A plain GTK4 probe: a toplevel, a label, no WebView. **Focus is a property of
+the toplevel and the compositor rather than of what is painted inside it**,
+which is what makes the substitution legitimate — and the substitution has one
+edge. **A WebKitGTK window takes longer to map, and focus-stealing prevention
+is a rule about timestamps**, so a window that appears later could be answered
+differently. The same probe is worth re-running against the real host now that
+F12 §3's profile is installed.
+
+It lives outside the repository, and that is [[D-335]]'s guard working as
+intended: a GTK-dependent package anywhere in this module except internal/ui
+fails the `ci` job by design.
+
+**No synthetic input anywhere ([[D-094]]).** Every focus change is one this
+program asked the compositor for; every reading is taken off the window
+itself; and the two clicks in the table below are a person's.
+
+### The readings
+
+| what was asked | answer |
+|---|---|
+| a **new** window, opened 0.1 s after the person launched the process | **took focus**, 1.10 s |
+| a **second** new window, while our own first window was active | **took focus**, 0.14 s |
+| `present()` on an existing window, while **another window of our own** was active | **raised it**, 0.12 s |
+| a **new** window from a process **idle for 45 s**, with a foreign window active | **took focus**, 0.52 s |
+| `present()` on an existing **unfocused** window, foreign window active, no token | **did not raise it** — still inactive 3 s later |
+| a **clicked notification**, window unfocused beforehand | **did not raise it**, and **no activation token arrived** |
+
+**Rows three and five are the same call and different answers**, and the
+difference is the whole finding: `gtk_window_present` is honoured when the
+compositor is already attending to this application and refused when it is
+not. A measurement that stopped at row three would have reported the opposite
+of the truth — which is why row five exists, and why the probe that takes it
+refuses to report at all unless the window has been inactive for three
+seconds first.
+
+**Row four is what makes row six matter.** The agent is not an application a
+person just launched: it starts at login and opens a window hours later
+because a request arrived. That case was measured on purpose and the answer
+is that a *new* window is still given focus.
+
+### So the shape is decided by the platform rather than chosen
+
+> **A new window per request works. Re-showing an existing one does not.**
+
+Which is what F12 §4 already required on its own reasoning — *"a new window
+for every request, not a hidden one shown again"* — reached from the other
+end, by measurement, on the platform it was written about. **It is now a
+mechanism rather than a preference**, and the arrangement it rules out is the
+one a Windows-shaped port would have reached for: one long-lived consent
+window, hidden and re-shown.
+
+### The token result, bounded, because the bound is the honest part
+
+**No `ActivationToken` arrived with the click, and this does not say that
+GNOME does not deliver activation tokens.** The interface carries
+`ActivationToken(u, s)` — introspected on this bus, not assumed — and
+`GetCapabilities` includes `actions`. What the probe could not carry is a
+**`desktop-entry` hint**, because nothing is installed on this machine: there
+is no `.desktop` file to name. Without it the shell has no way to associate
+the notification with the window, and the absent token may be that rather
+than a policy.
+
+**So the finding is: no token without a desktop-entry hint, measured.**
+Whether an installed program with a real desktop entry is answered
+differently is a measurement waiting for a package, and it is noted in F12 §8
+where the package will be built.
+
+### The run before it was void, and is recorded as void
+
+The first notification run sent the notification 0.33 s after opening its
+window, so the window was still active when it was clicked. There was nothing
+to raise, and "active afterwards" was a reading with nothing behind it —
+**a probe that can report a result when its own precondition never held is an
+instrument that cannot fail.** That is the third of this family in two days,
+after [[D-335]]'s warm cache and [[D-336]]'s empty document. It was caught by
+the owner reading the transcript rather than by anything in the probe, and
+the probe now establishes the precondition and prints `INVALID` instead of a
+result when it does not hold.
+
+**And a fourth was found by reading rather than by running**: the probe's
+`NotificationClosed` handler called `Variant.String()` — which is
+`g_variant_get_string` — on a `(uu)` tuple, something the binding's own
+documentation calls an error. The handler had never fired, so nothing had
+gone wrong yet. Fixed, and the rerun reads `reason=2 (dismissed by the
+person)`.
+
+### Decided
+
+- **A new window per request**, never a hidden one shown again, and never one
+  re-used across requests.
+- **A notification alongside is a prompt to go and look, not a way to reach
+  the window** — measured, on this compositor, without a desktop entry.
+- **It is best-effort.** A session with no notification service is logged
+  plainly and is not a refusal: blocking a person's signature over an
+  undeliverable notification buys nothing, since the window exists either way
+  and the timeout protects either way. **The owner ruled this.**
+- **An unanswered window times out as `CONSENT_TIMEOUT` and nothing is
+  signed.** The owner ruled this too, and it is [[D-288]] unchanged: the
+  security never rested on the window being seen.
+- **Rejected: the X11 fallback**, on F12 §4.1's own terms and not on these
+  measurements — under X11 any local client can send synthetic input to any
+  window, so restoring always-on-top restores the ability for another program
+  to click Approve.
+- **Rejected: reporting row three as the answer.** It is the same call as row
+  five and it is the case the agent never has.
+
+### What this does not settle
+
+- **One compositor.** GNOME 46 on Wayland. KWin, stock GNOME on Fedora, and
+  X11 are unmeasured — and X11 is refused anyway.
+- **The real window.** Every reading is from a bare GTK4 toplevel; a
+  WebKitGTK window maps later and focus-stealing prevention is about timing.
+- **The desktop-entry hint**, above — a measurement waiting for F12 §8.
+- **The amendment itself.** SPEC §6.5's third bullet cannot be kept literally
+  on this platform; the replacement is drafted and goes to the owner before it
+  is written, as [[D-287]]'s amendment did.
+
