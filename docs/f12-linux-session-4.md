@@ -204,7 +204,41 @@ so it is not cited in a document that governs every phase.
 
 ---
 
-## 4. What the next session should do first
+## 4. Two things this machine says today that it did not say yesterday
+
+Both were free, both were taken with session 1 §3's own control — `busctl`
+can see `org.gnome.Shell`, twelve names today — and both bear on sections
+that are still open.
+
+**`org.kde.StatusNotifierWatcher` is on this session bus.** Owned by
+`gnome-shell`, PID 2332, with `ubuntu-appindicators@ubuntu.com` reporting
+`State: ACTIVE`. **Session 1 §3 measured it absent on 20 September**, tried
+three spellings, and concluded that on this installation *"a tray icon
+published right now would have nobody watching"*, adding that it was worth one
+check on a second machine before §6 is decided on it. The second check has
+happened on the same machine, one boot later, and **disagrees**.
+
+*Why* they disagree is not established and cannot be: that session is gone, so
+whether the extension had not yet activated, or the measurement reached a
+different bus, is not recoverable. It is recorded as a disagreement rather
+than resolved into a story. What follows from it is narrower and is enough:
+**session 1's sentence must not be carried into §6 as a property of Ubuntu.**
+The tray's first question — what happens when nothing is watching — is still
+the right question, and this machine is no longer an example of the answer.
+
+**This session is Wayland.** `XDG_SESSION_TYPE=wayland`,
+`XDG_CURRENT_DESKTOP=ubuntu:GNOME`. Worth stating plainly because §4's entire
+design question is about what Wayland does not permit, and because the
+briefing described the current state as being on X11 (§0).
+
+**And `org.freedesktop.Notifications` is on the bus too**, owned by `gjs`, PID
+2452 — the shell's own extension process. That is the listener F12 §4's
+"a desktop notification alongside" needs, and it exists here, which is one
+fewer assumption in the shape that goes to the owner.
+
+---
+
+## 5. What the next session should do first
 
 1. **Push and watch one run.** It is the first that could ever have proved
    anything about the boundary, and D-335 names what it may still find: the
