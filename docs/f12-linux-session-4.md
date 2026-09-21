@@ -423,6 +423,68 @@ away, and it is the row the specification's wording rests on.
 
 ---
 
+## 7. The two things every WebKit run prints, answered
+
+### `Overriding existing handler for signal 10` — noted and harmless, and here is the reason
+
+Session 1 listed this as open. JavaScriptCore takes **SIGUSR1** for its
+garbage collector's thread suspension, in a process that is also a Go
+runtime, which is precisely the class F12 §2 names as a reason the PKCS#11
+worker exists. Three facts settle it, all read off this machine rather than
+recalled:
+
+- **Go does not use signal 10 for itself.** `go1.26.5`'s own signal table,
+  `/usr/local/go/src/runtime/sigtab_linux_generic.go`:
+
+  ```
+  /* 10 */ {_SigNotify, "SIGUSR1: user-defined signal 1"},
+  ```
+
+  `_SigNotify` alone — no `_SigThrow`, no `_SigPanic`, no `_SigUnblock`. It
+  means the runtime wants the signal only so that `os/signal.Notify` can
+  deliver it, and does nothing with it otherwise.
+- **The runtime's own signal is a different one.**
+  `runtime/signal_unix.go:74`: `const sigPreempt = _SIGURG` — signal 23.
+  Asynchronous preemption, which is the thing whose loss would actually
+  break a Go program, is not what WebKit took.
+- **Nothing in this program asks for it.** No file under `internal/` or
+  `cmd/` imports `os/signal`, names `SIGUSR1`, or calls `signal.Notify` at
+  all.
+
+So what WebKit takes away is a capability no part of this program uses. **The
+cost is real but it is contingent and silent**: if anything here ever calls
+`signal.Notify(syscall.SIGUSR1)`, it will simply never fire, with no error at
+the call and no warning beyond the line WebKit already prints at startup. The
+remedy is named in that line — `JSC_SIGNAL_FOR_GC` — and the place for it is
+`PrepareWebKitEnvironment`, which already exists to set variables before GTK
+initialises (D-329). It is **not** set now, deliberately: nothing needs it,
+and a third variable set on speculation is the opposite of what D-329
+decided.
+
+### The `GLib-GIO-WARNING` after exit — teardown order, in a process that is not ours
+
+```
+(process:2): GLib-GIO-WARNING **: Error releasing name
+org.webkit.app-….Sandboxed.WebProcess-…: The connection is closed
+```
+
+**`(process:2)` is the evidence.** That is GLib's log prefix carrying the
+process's own pid, and pid 2 is not something this agent can be: it is pid 2
+*inside bubblewrap's pid namespace*. The name it failed to release says the
+same thing twice more — `Sandboxed` and `WebProcess`. So the warning comes
+from WebKitGTK's sandboxed web process while it is shutting itself down, not
+from the program.
+
+And the sequence says what it is: the message arrives **after** `Close()`
+returned and after the run's own `RESULT` line. The UI process closed the
+view, which closed the connection, and the child then tried to unregister a
+bus name over a connection that had already gone. **Nothing depends on that
+release** — a D-Bus name dies with its connection — so it is an ordering
+artefact of teardown and not a leak. Harmless, and worth having written down
+once so it is not diagnosed again.
+
+---
+
 ## 5. What the next session should do first
 
 1. **Push and watch one run.** It is the first that could ever have proved
