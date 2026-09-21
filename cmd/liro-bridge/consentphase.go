@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // What the consent phase needs that is not a screen: the decision it

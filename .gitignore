@@ -2,6 +2,11 @@
 /dist/
 *.exe
 *.syso
+# `go build ./cmd/...` writes the executable into the working directory,
+# and on linux and macOS it has no extension to be caught by *.exe above.
+# Harmless until F12 §3 made cmd/liro-bridge build on linux at all, at
+# which point a 31 MB binary walked into a commit behind `git add -A`.
+/liro-bridge
 
 # Go
 *.test

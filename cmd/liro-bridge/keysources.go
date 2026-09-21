@@ -1,5 +1,3 @@
-//go:build windows || softtoken
-
 package main
 
 import (
@@ -190,22 +188,6 @@ func openCardOrSoftToken(hwnd uintptr, cfg config.Config) func(context.Context, 
 
 // opener is one backend's attempt at a signing session.
 type opener func(context.Context, keysource.Thumbprint) (keysource.Session, signerOrigin, error)
-
-// dropOrigin adapts the chooser for callers that have nowhere to record where a
-// session came from.
-//
-// The headless commands are those callers: they write no audit entry at all —
-// internal/audit's Entry is constructed in exactly one place, and it is the
-// window flow — so there is nothing for the origin to reach. One rule in one
-// place, wrapped where it is not wanted, rather than a second copy of a
-// three-backend fallback that would have to be kept in step with this one
-// (D-108, D-124, D-138).
-func dropOrigin(open opener) func(context.Context, keysource.Thumbprint) (keysource.Session, error) {
-	return func(ctx context.Context, thumbprint keysource.Thumbprint) (keysource.Session, error) {
-		sess, _, err := open(ctx, thumbprint)
-		return sess, err
-	}
-}
 
 // openInOrder holds every rule about which backend signs, separated from the
 // wiring that builds them so that the rules can be exercised without a card, a

@@ -38,10 +38,26 @@ jobs:
       # that surprised: cmd/liro-bridge pulled the whole GTK stack
       # through internal/pinscreen under `-tags softtoken` and through
       # nothing at all without it.
-      - name: the only package that needs GTK on linux is internal/ui
+      # **Two packages now, and the second one arriving is F12 §3 landing
+      # rather than a regression.** internal/ui is the window host;
+      # cmd/liro-bridge is the agent, which since D-338 opens those
+      # windows on linux and therefore links what they link. SPEC §1.1
+      # says so in as many words — "on Linux the binary is dynamically
+      # linked against the system's WebKitGTK, its GTK stack and libc" —
+      # so the list below is the specification's own shape, and what
+      # this guard protects is that it stops there.
+      #
+      # A third entry is the thing to look at. It means some package
+      # that is not a window and is not the agent has acquired a window
+      # dependency, which is how a GTK stack ends up behind code that
+      # ships without one.
+      - name: only the window host and the agent need GTK on linux
         run: |
           set -eu
           ui=github.com/veljaos/liro-bridge/internal/ui
+          expected="$(printf '%s\n%s' \
+            github.com/veljaos/liro-bridge/cmd/liro-bridge \
+            github.com/veljaos/liro-bridge/internal/ui)"
 
           needs_ui() {
             go list "$@" -f '{{.ImportPath}}{{range .Deps}}{{if eq . "'"$ui"'"}} needs-ui{{end}}{{end}}' ./... |
@@ -50,20 +66,22 @@ jobs:
 
           for view in "untagged" "-tags softtoken"; do
             case "$view" in untagged) found="$(needs_ui)" ;; *) found="$(needs_ui $view)" ;; esac
-            if [ "$found" != "$ui" ]; then
+            if [ "$found" != "$expected" ]; then
               echo "FAIL: in the $view view, the packages needing GTK on linux are:"
               echo "$found"
-              echo "Expected exactly: $ui"
+              echo "Expected exactly:"
+              echo "$expected"
               echo
-              echo "A package outside internal/ui has acquired a window dependency."
-              echo "That is not a CI problem to widen this list for: it puts a GTK"
-              echo "stack behind code that ships without one (SPEC §1.1). See D-335."
+              echo "A package that is neither the window host nor the agent has"
+              echo "acquired a window dependency. That is not a CI problem to widen"
+              echo "this list for: it puts a GTK stack behind code that ships"
+              echo "without one (SPEC §1.1). See D-335 and D-338."
               exit 1
             fi
-            echo "OK: $view — only $ui needs GTK"
+            echo "OK: $view — exactly the window host and the agent"
           done
 
-          go list ./... | grep -vx "$ui" > "$RUNNER_TEMP/gtk-free-packages.txt"
+          go list ./... | grep -vxF "$expected" > "$RUNNER_TEMP/gtk-free-packages.txt"
           echo "$(wc -l < "$RUNNER_TEMP/gtk-free-packages.txt") packages sweep without GTK"
 
       - name: gofmt
@@ -156,6 +174,142 @@ jobs:
         env:
           CGO_ENABLED: 1
 
+      # F3 §16.5/SPEC §16.5: the PDF parser accepts foreign input and must
+      # never panic, allocate unboundedly, or loop forever on it. 60s per
+      # push/PR is a floor, not a substitute for the longer local runs
+      # this phase's report cites (12.6M+18M executions clean) — it exists
+      # so a future regression is caught automatically, not only when
+      # someone remembers to fuzz by hand again.
+      - name: fuzz internal/pades/pdf.FuzzParse
+        run: go test ./internal/pades/pdf/... -run=^$ -fuzz=FuzzParse -fuzztime=60s
+        env:
+          CGO_ENABLED: 0
+
+      # Cross-compilation must work from day one (F0 §8), even though only
+      # Windows has a real implementation so far. CGO_ENABLED=0 here keeps
+      # these builds honest about not depending on a C toolchain, per the
+      # "no cgo until phase 11" rule in F0 §10.
+      - name: build windows/amd64
+        run: go build -o dist/ ./...
+        env:
+          CGO_ENABLED: 0
+          GOOS: windows
+          GOARCH: amd64
+
+      - name: build darwin/arm64
+        run: go build -o dist/ ./...
+        env:
+          CGO_ENABLED: 0
+          GOOS: darwin
+          GOARCH: arm64
+
+      # **linux is the guard step's package list where the other two are
+      # ./..., and that is a decision rather than a slip.** internal/ui's
+      # window host is cgo-only on this platform, so under CGO_ENABLED=0
+      # its gotk4 imports have no buildable Go files at all and `./...`
+      # fails with "build constraints exclude all Go files" — a cgo-*off*
+      # problem that no package installed anywhere can fix. It is a
+      # different failure from a missing pkg-config file and the two look
+      # alike in a log (D-334).
+      #
+      # What this step proves: every package this project ships on linux
+      # compiles with no C toolchain and no GTK, which is F0 §10's rule
+      # and the binary half of SPEC §1.1. cmd/liro-bridge imports neither
+      # internal/ui nor internal/pinscreen on linux — measured, not
+      # assumed — and built this way it still reports DT_NEEDED 0 and no
+      # PT_INTERP at ~10.2 MB, F12 §1's table unchanged. (The exact byte
+      # count moves by a few dozen bytes with the output path, so it is
+      # not quoted here as a constant.)
+      #
+      # **D-334 narrowed this to ./cmd/... and gave up the cgo-free check
+      # for every other package on linux; D-335 gives it back**, because
+      # the list is now everything except the one package that genuinely
+      # cannot be in it. A linux-tagged file in any other package quietly
+      # acquiring a C dependency fails here again, which is what F0 §10
+      # is for.
+      - name: build linux/amd64
+        run: go build -o dist/ $(cat "$RUNNER_TEMP/gtk-free-packages.txt")
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: amd64
+
+  # **The other half of the boundary the `ci` job draws.** internal/ui is
+  # the one package in this module that needs a GTK stack on linux
+  # (D-335), so it is the one package this job exists for: everything
+  # that must compile C lives here, and nothing that ships does.
+  #
+  # Why a second job rather than three more apt packages in the first
+  # one: the first job's *absence* of GTK is what proves the shipped
+  # code needs none, and a job cannot prove that while installing it.
+  # D-334 tried the other arrangement and the claim went unproven for
+  # exactly one push. The two jobs also run in parallel, so the race
+  # detector's verdict on the other 50 packages no longer waits behind a
+  # fifteen-minute gotk4 build.
+  linux-gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          # setup-go's own cache key is the same string in both ubuntu
+          # jobs — same OS, same Go version, same go.sum — so whichever
+          # finishes first saves it and the other's save is refused. That
+          # would be `ci`, whose cache holds no gotk4 objects at all, and
+          # this job would then pay D-327's cold build (14 m 52 s on four
+          # CPUs) on every single push. Hence its own key below.
+          cache: false
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: linux-gui-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: linux-gui-go-
+
+      # **Three packages, and the third is the one D-334 could not see.**
+      # libgtk-4-dev and libwebkitgtk-6.0-dev are what gotk4's own cgo
+      # lines name most of; `gobject-introspection` carries
+      # gobject-introspection-1.0.pc, which gotk4/pkg/core/gerror needs
+      # and which neither of the other two pulls in — measured with
+      # apt-cache, and measured again as the reason the push after D-334
+      # still failed.
+      #
+      # It is `gobject-introspection` and not `libgirepository1.0-dev`:
+      # the .pc file is in the tools package, the -dev package merely
+      # depends on it, and naming the -dev one costs the gir1.2-*
+      # packages for nothing. Recursive closure: 618 packages for the
+      # first two, 677 with this one added.
+      #
+      # On the development VM this dependency was satisfied by a
+      # hand-unpacked prefix on PKG_CONFIG_PATH, which is precisely why
+      # no measurement taken there could report it missing (D-335).
+      - name: GTK4, WebKitGTK and gobject-introspection development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libwebkitgtk-6.0-dev gobject-introspection
+
+      # Both of these cover the GOOS=linux view that the `ci` job cannot:
+      # vet for internal/ui itself, and golangci-lint for the whole
+      # module, since it loads every package it is pointed at and cannot
+      # be told to skip one.
+      - name: go vet (the two packages that link GTK)
+        run: go vet -unsafeptr=false ./internal/ui/... ./cmd/liro-bridge/...
+
+      - name: golangci-lint (GOOS=linux)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+
+      # No -race here, and the step below says why rather than leaving it
+      # to be rediscovered. This is the run that gates: it must pass.
+      - name: test (the two packages that link GTK)
+        run: go test ./internal/ui/... ./cmd/liro-bridge/... -count=1
+
       # Two things must be impossible to enable in a release build, and
       # this checks the binary rather than trusting either build tag.
       #
@@ -209,8 +363,10 @@ jobs:
             echo "OK: $sym is present when the tag is passed"
           done
         env:
-          CGO_ENABLED: 0
-
+          # No CGO_ENABLED: 0 any more, and that is the point of the move:
+          # since D-338 the linux agent links WebKitGTK (SPEC §1.1), so a
+          # step that builds it cannot be a step that forbids a C toolchain.
+          CGO_ENABLED: 1
       # This is F2's exit condition (F2 §6.1): a signature produced by
       # sign-digest verifies with OpenSSL, a tool that shares no code
       # with this project, with no hardware present at all.
@@ -244,19 +400,10 @@ jobs:
           openssl dgst -sha256 -verify /tmp/pub.pem -signature /tmp/sig.bin /tmp/input.txt | tee /tmp/verify.out
           grep -q "Verified OK" /tmp/verify.out
         env:
-          CGO_ENABLED: 0
-
-      # F3 §16.5/SPEC §16.5: the PDF parser accepts foreign input and must
-      # never panic, allocate unboundedly, or loop forever on it. 60s per
-      # push/PR is a floor, not a substitute for the longer local runs
-      # this phase's report cites (12.6M+18M executions clean) — it exists
-      # so a future regression is caught automatically, not only when
-      # someone remembers to fuzz by hand again.
-      - name: fuzz internal/pades/pdf.FuzzParse
-        run: go test ./internal/pades/pdf/... -run=^$ -fuzz=FuzzParse -fuzztime=60s
-        env:
-          CGO_ENABLED: 0
-
+          # No CGO_ENABLED: 0 any more, and that is the point of the move:
+          # since D-338 the linux agent links WebKitGTK (SPEC §1.1), so a
+          # step that builds it cannot be a step that forbids a C toolchain.
+          CGO_ENABLED: 1
       # F3's own exit condition, automated the same way F2's was: sign a
       # PDF with the soft token (no hardware, no network credential
       # needed for this step — B-B, no TSA), and check the result with
@@ -373,132 +520,53 @@ jobs:
 
           openssl cms -verify -inform DER -in /tmp/sig.der -noverify -binary -content /tmp/sig.content -out /dev/null
         env:
-          CGO_ENABLED: 0
+          # No CGO_ENABLED: 0 any more, and that is the point of the move:
+          # since D-338 the linux agent links WebKitGTK (SPEC §1.1), so a
+          # step that builds it cannot be a step that forbids a C toolchain.
+          CGO_ENABLED: 1
 
-      # Cross-compilation must work from day one (F0 §8), even though only
-      # Windows has a real implementation so far. CGO_ENABLED=0 here keeps
-      # these builds honest about not depending on a C toolchain, per the
-      # "no cgo until phase 11" rule in F0 §10.
-      - name: build windows/amd64
-        run: go build -o dist/ ./...
-        env:
-          CGO_ENABLED: 0
-          GOOS: windows
-          GOARCH: amd64
-
-      - name: build darwin/arm64
-        run: go build -o dist/ ./...
-        env:
-          CGO_ENABLED: 0
-          GOOS: darwin
-          GOARCH: arm64
-
-      # **linux is the guard step's package list where the other two are
-      # ./..., and that is a decision rather than a slip.** internal/ui's
-      # window host is cgo-only on this platform, so under CGO_ENABLED=0
-      # its gotk4 imports have no buildable Go files at all and `./...`
-      # fails with "build constraints exclude all Go files" — a cgo-*off*
-      # problem that no package installed anywhere can fix. It is a
-      # different failure from a missing pkg-config file and the two look
-      # alike in a log (D-334).
+      # **SPEC §1.1's own test, on the artefact it is about.** The
+      # clause says it in as many words: "the test is what the binary
+      # links against, never which flag built it ... what it requires is
+      # that the claim be checked against the binary's own PT_INTERP and
+      # DT_NEEDED, and that the packaging declare every library found
+      # there."
       #
-      # What this step proves: every package this project ships on linux
-      # compiles with no C toolchain and no GTK, which is F0 §10's rule
-      # and the binary half of SPEC §1.1. cmd/liro-bridge imports neither
-      # internal/ui nor internal/pinscreen on linux — measured, not
-      # assumed — and built this way it still reports DT_NEEDED 0 and no
-      # PT_INTERP at ~10.2 MB, F12 §1's table unchanged. (The exact byte
-      # count moves by a few dozen bytes with the output path, so it is
-      # not quoted here as a constant.)
-      #
-      # **D-334 narrowed this to ./cmd/... and gave up the cgo-free check
-      # for every other package on linux; D-335 gives it back**, because
-      # the list is now everything except the one package that genuinely
-      # cannot be in it. A linux-tagged file in any other package quietly
-      # acquiring a C dependency fails here again, which is what F0 §10
-      # is for.
-      - name: build linux/amd64
-        run: go build -o dist/ $(cat "$RUNNER_TEMP/gtk-free-packages.txt")
-        env:
-          CGO_ENABLED: 0
-          GOOS: linux
-          GOARCH: amd64
-
-  # **The other half of the boundary the `ci` job draws.** internal/ui is
-  # the one package in this module that needs a GTK stack on linux
-  # (D-335), so it is the one package this job exists for: everything
-  # that must compile C lives here, and nothing that ships does.
-  #
-  # Why a second job rather than three more apt packages in the first
-  # one: the first job's *absence* of GTK is what proves the shipped
-  # code needs none, and a job cannot prove that while installing it.
-  # D-334 tried the other arrangement and the claim went unproven for
-  # exactly one push. The two jobs also run in parallel, so the race
-  # detector's verdict on the other 50 packages no longer waits behind a
-  # fifteen-minute gotk4 build.
-  linux-gui:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          # setup-go's own cache key is the same string in both ubuntu
-          # jobs — same OS, same Go version, same go.sum — so whichever
-          # finishes first saves it and the other's save is refused. That
-          # would be `ci`, whose cache holds no gotk4 objects at all, and
-          # this job would then pay D-327's cold build (14 m 52 s on four
-          # CPUs) on every single push. Hence its own key below.
-          cache: false
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: linux-gui-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: linux-gui-go-
-
-      # **Three packages, and the third is the one D-334 could not see.**
-      # libgtk-4-dev and libwebkitgtk-6.0-dev are what gotk4's own cgo
-      # lines name most of; `gobject-introspection` carries
-      # gobject-introspection-1.0.pc, which gotk4/pkg/core/gerror needs
-      # and which neither of the other two pulls in — measured with
-      # apt-cache, and measured again as the reason the push after D-334
-      # still failed.
-      #
-      # It is `gobject-introspection` and not `libgirepository1.0-dev`:
-      # the .pc file is in the tools package, the -dev package merely
-      # depends on it, and naming the -dev one costs the gir1.2-*
-      # packages for nothing. Recursive closure: 618 packages for the
-      # first two, 677 with this one added.
-      #
-      # On the development VM this dependency was satisfied by a
-      # hand-unpacked prefix on PKG_CONFIG_PATH, which is precisely why
-      # no measurement taken there could report it missing (D-335).
-      - name: GTK4, WebKitGTK and gobject-introspection development packages
+      # Until D-338 this project proved the opposite thing on linux — a
+      # CGO_ENABLED=0 build with DT_NEEDED 0 — because the agent had no
+      # windows here and needed no C. It has them now, so the honest
+      # check is not that the list is empty but that it is exactly the
+      # thirteen D-327 measured, no more. A fourteenth would be a
+      # dependency nobody declared, which is what §8's packaging line is
+      # generated from.
+      - name: the agent links exactly the libraries SPEC §1.1 and F12 §8 account for
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev libwebkitgtk-6.0-dev gobject-introspection
+          set -eu
+          go build -o dist/liro-bridge-linux ./cmd/liro-bridge
 
-      # Both of these cover the GOOS=linux view that the `ci` job cannot:
-      # vet for internal/ui itself, and golangci-lint for the whole
-      # module, since it loads every package it is pointed at and cannot
-      # be told to skip one.
-      - name: go vet (internal/ui)
-        run: go vet -unsafeptr=false ./internal/ui/...
+          expected="libc.so.6 libcairo-gobject.so.2 libcairo.so.2 libgdk_pixbuf-2.0.so.0 libgio-2.0.so.0 libglib-2.0.so.0 libgobject-2.0.so.0 libgraphene-1.0.so.0 libgtk-4.so.1 libjavascriptcoregtk-6.0.so.1 libpango-1.0.so.0 libsoup-3.0.so.0 libwebkitgtk-6.0.so.4"
+          # LC_ALL=C, and it is not decoration: with the runner's own
+          # locale, sort collates punctuation loosely and puts
+          # libcairo-gobject.so.2 before libc.so.6, so the same thirteen
+          # libraries compare unequal to the same thirteen libraries.
+          # Measured, by this check failing on a machine whose list was
+          # right.
+          found="$(readelf -d dist/liro-bridge-linux | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
 
-      - name: golangci-lint (GOOS=linux)
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.13.2
+          echo "DT_NEEDED: $found"
+          if [ "$found" != "$expected" ]; then
+            echo "FAIL: the agent's dynamic dependencies are not the set F12 §8 declares."
+            echo "expected: $expected"
+            echo "found:    $found"
+            exit 1
+          fi
 
-      # No -race here, and the step below says why rather than leaving it
-      # to be rediscovered. This is the run that gates: it must pass.
-      - name: test (internal/ui)
-        run: go test ./internal/ui/... -count=1
+          if ! readelf -l dist/liro-bridge-linux | grep -q INTERP; then
+            echo "FAIL: no PT_INTERP — this binary is static, which on linux means"
+            echo "the window layer is not in it and something linked less than it should."
+            exit 1
+          fi
+          echo "OK: thirteen libraries and an interpreter, which is what §1.1 permits and §8 declares"
 
       # **A probe, not a gate** — it cannot fail this job, and a green
       # tick on it means only that it ran.
@@ -516,7 +584,7 @@ jobs:
       # invalid allocation", the remedy is -gcflags=all=-d=checkptr=0 and
       # the decision to make is whether internal/ui is race-checked at
       # all. Read the output; do not read the tick.
-      - name: probe — does internal/ui survive -race, given gotk4 and checkptr
+      - name: probe — do the GTK packages survive -race, given gotk4 and checkptr
         continue-on-error: true
         #
         # -v, and only here: the first run of this step printed `ok
@@ -526,7 +594,7 @@ jobs:
         # it passed; a probe does.
         run: |
           set +e
-          go test ./internal/ui/... -race -count=1 -v
+          go test ./internal/ui/... ./cmd/liro-bridge/... -race -count=1 -v
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then

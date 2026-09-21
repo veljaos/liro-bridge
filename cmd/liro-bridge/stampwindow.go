@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // The signing method: one choice with three outcomes.

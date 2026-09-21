@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // The Settings window, which lived in tray_windows.go because the tray

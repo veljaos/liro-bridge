@@ -13,7 +13,7 @@ import (
 // is what errcheck would otherwise flag repeatedly for no benefit.
 //
 // They live in their own file, with no build constraint, because
-// main.go and interactive_other.go use them on every platform. They
+// main.go and interactive.go use them on every platform. They
 // were previously in ui_assets.go, which is Windows-only in everything
 // but its filename — see that file's own note.
 func fprintln(w io.Writer, a ...any)               { _, _ = fmt.Fprintln(w, a...) }

@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // The signing window (F6 §1, §3, §4, §5): the one window a person
@@ -299,21 +297,6 @@ func newMainWindow(cfg config.Config, locale string) *mainWindow {
 	}
 }
 
-// gatherCertificatesBeforeOpening enumerates before there is a window,
-// for the one caller that has to be able to answer without ever showing
-// one: a protocol request, which is answered with a code (SPEC §7).
-// Nothing a person started comes through here — `sign` opens its window
-// first and lets the answer arrive into it (D-236).
-func (m *mainWindow) gatherCertificatesBeforeOpening(ctx context.Context) error {
-	report, err := m.gather(ctx)
-	if err != nil {
-		slog.Error("signing flow: listing certificates failed", "error", err)
-		return err
-	}
-	m.applyListing(certificateListing{report: report})
-	return nil
-}
-
 // applyListing records one enumeration: what to offer, and — when there
 // is nothing to offer — which of SPEC §7's codes says why.
 func (m *mainWindow) applyListing(l certificateListing) {
@@ -387,7 +370,7 @@ func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep
 		// the loop and does nothing else — reading two hundred files'
 		// sizes here would hold up every callback behind it, and the
 		// loop is where the queue lives anyway.
-		OnFilesDropped: func(paths []string) { m.dropped <- paths },
+		OnFilesDropped: filesDroppedHandler(func(paths []string) { m.dropped <- paths }),
 		OnClosed:       func() { close(m.closed) },
 	})
 	if err != nil {

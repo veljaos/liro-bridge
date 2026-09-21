@@ -1,4 +1,4 @@
-//go:build !softtoken && windows
+//go:build !softtoken
 
 package main
 

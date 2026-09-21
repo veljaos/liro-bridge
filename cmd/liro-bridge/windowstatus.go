@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // One line of feedback under a window's actions, and the shape an

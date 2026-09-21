@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 import (
@@ -202,36 +200,6 @@ func auditChainNotice(c *i18n.Catalogue, store *audit.Store, d *audit.Discontinu
 		return fmt.Sprintf(c.T("audit.chain_continued_here"), d.PreviousFile, store.Dir())
 	}
 	return fmt.Sprintf(c.T("audit.chain_continued"), d.PreviousFile, newFile, store.Dir())
-}
-
-// levelRank orders the three PAdES levels so lowerLevel can pick the
-// weakest one a batch actually reached. Reporting the weakest — not the
-// strongest, and not the last — is what keeps the reported level honest
-// for a batch where only some documents got a timestamp (SPEC §18.11).
-func levelRank(level string) int {
-	switch pades.Level(level) {
-	case pades.LevelBB:
-		return 1
-	case pades.LevelBT:
-		return 2
-	case pades.LevelBLT:
-		return 3
-	default:
-		return 0
-	}
-}
-
-func lowerLevel(a, b string) string {
-	if levelRank(a) == 0 {
-		return b
-	}
-	if levelRank(b) == 0 {
-		return a
-	}
-	if levelRank(b) < levelRank(a) {
-		return b
-	}
-	return a
 }
 
 // isTSAFailure reports whether err is the timestamp step failing, as

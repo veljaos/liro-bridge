@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // The visual stamp placement window (F6b).

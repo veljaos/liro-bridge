@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // Exporting the audit log, and saying what came out — including the

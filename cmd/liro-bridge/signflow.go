@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // The signing flow: one window, several steps.
@@ -762,21 +760,6 @@ func (m *mainWindow) applicationName() string {
 		return m.remote.req.Application
 	}
 	return consent.ApplicationLocal
-}
-
-// withoutRememberedPlacement drops the position a person placed by
-// looking at a page, and leaves everything else about the stamp alone —
-// whether there is one, which corner, which page, the reference line.
-//
-// It is a value returned rather than a field cleared because the
-// configuration it is applied to is this run's own copy: what is on
-// disk is the person's standing answer and is not touched (D-103).
-func withoutRememberedPlacement(cfg config.Config) config.Config {
-	if cfg.StampPosition == config.StampPositionCustom {
-		cfg.StampPosition = config.DefaultStampPosition
-	}
-	cfg.StampPlacedPage, cfg.StampX, cfg.StampY = 0, 0, 0
-	return cfg
 }
 
 // applySuppliedStamp folds a caller's supplied answer into the

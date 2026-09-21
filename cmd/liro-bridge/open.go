@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 // The two ways into the main window that are not the tray: `liro-bridge

@@ -1,5 +1,3 @@
-//go:build windows || softtoken
-
 package main
 
 import (
