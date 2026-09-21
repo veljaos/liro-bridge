@@ -485,6 +485,66 @@ once so it is not diagnosed again.
 
 ---
 
+## 8. §3's last mile: the agent opens its own window here now
+
+[[D-338]] is the entry. What a reader needs without opening it:
+
+**The port was a filename problem.** A throwaway copy of `cmd/liro-bridge`
+with every `_windows` suffix neutralised compiled for `GOOS=linux` — the
+whole windowed flow, ~3 800 lines, with exactly one genuine failure
+(`console_windows.go`). So the work was moving code to where its callers are,
+not writing code.
+
+**Two files were holding things that were not theirs**: `tray_windows.go` had
+the Settings window, the audit export and every window's status line;
+`uninstall_windows.go` had the stale-preview sweep. Both split, the first as a
+pure move verified line by line.
+
+**The first run was refused by the program's own honesty.** `sign` got as far
+as `ui: dropped files are not implemented on Linux yet` — D-331 chose to
+refuse a window that asks for drops rather than ignore the request, and the
+signing window has always asked. Drops need `gdk_file_list_get_files`, which
+the binding does not generate (D-330's shape, third instance), so the caller
+asks for them only where they work and the gap is written down.
+
+**Then it ran.** With the AppArmor profile in place and the binary at the
+profiled path:
+
+```
+$ liro-bridge sign --in doc.pdf
+(runs; opens its window; waits)
+```
+
+**And the binary is what SPEC §1.1 describes**, measured on the artefact
+rather than on a probe: `PT_INTERP` present, **`DT_NEEDED` exactly the
+thirteen libraries D-327 predicted**, 31 661 504 B.
+
+### The boundary inverted one session after it was drawn
+
+§1's `ci` job proves nothing shipped needs a C library on linux — and the
+agent now does, which is what SPEC §1.1 always said. So the guard expects two
+packages instead of one and still fails on a third; the steps that build the
+agent moved to `linux-gui`; and the linux proof stopped being "`DT_NEEDED` is
+0" and became §1.1's own test. **The new assertion caught a flaw in itself
+before CI ever ran it**: `sort` collates punctuation by locale, so the same
+thirteen libraries compared unequal to the same thirteen libraries until
+`LC_ALL=C` pinned it.
+
+### Two things found on the way that are not about Linux
+
+- **`lowerLevel` has no caller.** It computes the weakest PAdES level a batch
+  reached — SPEC §18.11's rule — and nothing in the program invokes it; the
+  only reference is a Windows-only test. Either the report computes the level
+  another way or a mixed batch reports a level it did not reach. D-247's
+  shape, and it needs the Windows reporting path in front of somebody.
+- **A 31 MB binary walked into a commit.** `go build ./cmd/...` drops the
+  executable in the working directory and `.gitignore` covered `*.exe` but
+  not an extensionless linux binary — harmless until today, when the command
+  started building here. Caught in `git show --stat` before any push; the
+  commit was amended and `/liro-bridge` is ignored now.
+
+---
+
 ## 5. What the next session should do first
 
 1. **Push and watch one run.** It is the first that could ever have proved

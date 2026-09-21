@@ -34049,3 +34049,163 @@ person)`.
   on this platform; the replacement is drafted and goes to the owner before it
   is written, as [[D-287]]'s amendment did.
 
+---
+
+## D-338 — F12 §3's last mile was a filename problem: the agent's windowed flow is platform-neutral code that wore Windows suffixes, `sign` and `open` are Linux commands now, and the CI boundary inverted the day the agent started linking GTK
+
+**Date:** 2026-09-21
+**Phase:** F12 §3 — the wiring session 1 called "§3's last mile", done.
+
+**The question was how big the port is, and the answer was measured rather
+than estimated.** A throwaway copy of `cmd/liro-bridge` with every `_windows`
+suffix neutralised, compiled for `GOOS=linux`:
+
+```
+$ GOOS=linux go build -tags softtoken ./cmd/zz-linuxtry
+(exit 0)
+```
+
+**The whole windowed flow compiled** — the main window, the signing flow, the
+consent phase, the placement and stamp windows, the settings window, the
+protocol flow, the update paths. Of ~3 800 lines, exactly one file failed for
+a genuine reason (`console_windows.go`, `syscall.NewLazyDLL`), and it already
+had a non-Windows counterpart. **So the port was not a port.** It was a
+filename claim that had stopped being true, and D-295's shape yet again: a
+thing asserted about a platform that nobody had asked the platform about.
+
+### What is genuinely Windows, named rather than assumed
+
+`console_windows.go` (attaching to a console), `webview2_windows.go` (a
+runtime to detect — on Linux the web view is a package dependency the
+distribution resolves, SPEC §1.1), `uninstall_windows.go`, the Explorer menu,
+`runTray`, and the protocol *server's* driver. Everything else moved.
+
+**Two files were carrying code that did not belong to them**, which is why
+the flip did not work on the first attempt:
+
+- **`tray_windows.go` held the Settings window, the audit export and every
+  window's status line.** 709 lines of which the tray was about 130. Split
+  four ways, as a pure move — verified as one: no line of the old file is
+  absent from the new four and no line in them is new.
+- **`uninstall_windows.go` held the stale-preview sweep**, which is not an
+  uninstall and not Windows: it collects rendered pages of somebody's
+  documents that a crash left behind (D-243), on any platform with a
+  placement window.
+
+### Three seams, each a decision
+
+- **`applyExplorerMenu` returns nil on Linux.** F12 §8 refuses to reproduce a
+  context-menu verb there. `platform.NewShellMenu`'s stub refuses with an
+  error — correctly, since it is asked to register something real — and
+  reporting that to a person as a failed save would say something went wrong
+  when nothing did.
+- **`applyStartupRegistrations` registers nothing, and says why for each
+  half.** Autostart is F12 §8's XDG `.desktop` entry and is not built;
+  calling the refusing stub would put a warning in the log at every start
+  about a feature nobody has written, so it says it once, at debug, and only
+  when the person actually asked for it.
+- **`filesDroppedHandler` is nil on Linux, and this is the one that
+  mattered.**
+
+### The refusal that worked, and stopped everything
+
+The first run of `liro-bridge sign` on Linux got this far and no further:
+
+```
+ERROR signing window: could not open
+      error="ui: dropped files are not implemented on Linux yet (F12 §3, F6 §1)"
+```
+
+**That is [[D-331]] working exactly as designed.** It chose to *refuse* a
+window whose caller asks for drops rather than silently ignore the request —
+and the signing window has always asked. So the first real use of the Linux
+host was refused by the host's own honesty, which is the best possible way for
+that decision to be tested.
+
+**Why drops are not simply implemented: [[D-330]]'s shape, a third time.**
+`gtk.NewDropTarget` is in the binding. `ConnectDrop` is in the binding.
+`gdk.GTypeFileList` is in the binding. And `gdk.FileList` is a type **with no
+methods at all** — `gdk_file_list_get_files`, the one call that turns a drop
+into paths, is not generated. Reading a drop therefore needs hand-written cgo
+beside `webkitjs_linux.c`, which is F6 §1's port and not §3's window. What a
+person loses meanwhile is dragging documents onto the window, and **the
+window's own page still invites it** — a lie this seam does not fix, recorded
+here for whoever writes the drop target or the page's platform text.
+
+### What `unused` found when 3 800 lines arrived in a view that had never seen them
+
+Fifty findings, and every one correct: symbols whose only callers are the
+agent modes. The project's own rule for code whose callers are one platform's
+is the filename suffix (D-111), so the resolution was to put each symbol where
+its caller lives — the audit-log and certificate windows, pairing, the
+protocol server's driver, and `mainwindow`'s remote-batch entry point.
+
+**One of the eight survivors is a finding rather than a placement problem.**
+`lowerLevel` and `levelRank` compute the weakest PAdES level a batch actually
+reached — SPEC §18.11's rule, so that a batch where only some documents got a
+timestamp is not reported as though all of them did. **Nothing calls them.**
+The only reference in the tree is a Windows-only test. That is [[D-247]]'s
+shape exactly — implemented, tested, never invoked — and it means either the
+reporting path computes the level another way and these are dead, or it does
+not and a mixed batch reports a level it did not reach. Deciding which needs
+the Windows reporting path in front of somebody. They are parked in
+`batchlevel_windows.go` with that written on them.
+
+### The boundary inverted, one session after it was drawn
+
+[[D-335]] built a CI job whose *absence* of GTK proved that nothing shipped
+needed a C library on linux. **The agent now needs one**, which SPEC §1.1 has
+said all along — "on Linux the binary is dynamically linked against the
+system's WebKitGTK, its GTK stack and libc". So:
+
+- **The guard expects two packages**, `internal/ui` and `cmd/liro-bridge`, and
+  still fails on a third. That is the claim worth keeping: the window host and
+  the agent link GTK, and nothing else does.
+- **The steps that build the agent moved to `linux-gui`**, because a step that
+  builds it cannot be a step that forbids a C toolchain.
+- **The linux proof stopped being "`DT_NEEDED` is 0" and became SPEC §1.1's
+  own test**, which is the better of the two and is the one the clause
+  actually asks for: the binary names **exactly the thirteen libraries D-327
+  measured**, and a `PT_INTERP`. A fourteenth would be a dependency nobody
+  declared, and F12 §8's `Depends` line is generated from that list.
+
+**That assertion caught a flaw in itself before it ever ran on CI.** `sort`
+collates punctuation by locale, so `libcairo-gobject.so.2` sorted before
+`libc.so.6` and the same thirteen libraries compared unequal to the same
+thirteen libraries. `LC_ALL=C` pins it. An instrument whose verdict depends on
+the runner's locale is an instrument that fails on a machine other than the
+one it was written on, which is [[D-334]]'s lesson in a smaller coat.
+
+### And a 31 MB binary walked into a commit
+
+`go build ./cmd/...` writes the executable into the working directory, and
+`.gitignore` covered `*.exe` but not a linux binary with no extension —
+harmless until this change made `cmd/liro-bridge` build on linux at all. It
+was caught in `git show --stat` before the push and the commit was amended.
+`/liro-bridge` is ignored now, with the reason on the line.
+
+### Decided
+
+- **`sign` and `open` are real commands on Linux.** `runSignCommand`'s
+  "only supported on Windows in this phase" stub is deleted.
+- **`tray` is not**, and that is F12 §6's undecided question rather than a
+  missing implementation — written on `tray_other.go` where somebody will
+  meet it.
+- **Rejected: implementing drops to unblock the window.** It is F6 §1's port,
+  it needs cgo the binding does not supply, and the seam says so.
+- **Rejected: a lint exception for the fifty orphans.** They were correct.
+
+### What this does not settle
+
+- **Nobody has clicked Approve yet.** The window opens and waits; a person
+  pressing the button, and a signed PDF coming out of it, is the next thing
+  and it needs the owner's hands.
+- **The Settings window has two Windows-shaped rows on Linux** — "start with
+  Windows" and the Explorer menu — which are §8's and §6's to answer.
+- **PKCS#11 on Linux is compiled and unexercised.** The key-source wiring is
+  neutral now; whether a real module loads here is F12 §2's and F11 §4's.
+- **Every test of the ported flow is a `*_windows_test.go`.** The Linux build
+  of it is covered by compilation, by lint, by both race suites and by one
+  real run. That is not the same as tested, and the next thing that goes
+  wrong here will say so.
+
