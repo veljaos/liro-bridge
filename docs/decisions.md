@@ -34438,3 +34438,148 @@ saying out loud that the cheapness is the timing rather than the decision.
   document contents in it, so what travels is timestamps, thumbprints and
   outcomes.
 
+---
+
+## D-341 — F12 §4 built: a window per request that was already true and is now enforced, a notification over pure-Go D-Bus, and two `.exe` calls that had become reachable on a platform with no `.exe`
+
+**Date:** 2026-09-21
+**Phase:** F12 §4 — the code for the shape [[D-337]] measured and SPEC
+§6.5.2 fixed.
+
+### Clause 1 was already true, and that was the problem
+
+**"A new window for every request. Never a hidden window shown again,
+never one re-used between requests."** Established before writing anything:
+every window in this program is a fresh `ui.NewWindow`, `runProtocolFlow`
+builds a new `mainWindow` per request, and the local `sign` path is a new
+process. **Nothing caches or hides a window, and nothing ever did.**
+
+So §4's first clause needed no restructuring — **it needed a guard.** The
+property was true by accident of how the code was written, and became a
+requirement the night SPEC §6.5.2 was amended, with nothing that would
+notice if it stopped being true. The test creates windows through a seam,
+runs three flows, and asserts three distinct windows each closed exactly
+once. Under a mutation that caches one and skips the close — *the natural
+optimisation, and on Windows an invisible and correct one* — it reports
+`3 runs created 1 windows`.
+
+**That mutation is worth naming because of what it would cost on this
+platform and not on the other.** On Windows a re-used window is raised and
+the person sees it. Here, D-337 measured that an existing window cannot be
+raised at all: `gtk_window_present` on an unfocused window does nothing and
+a clicked notification does not raise it either. A cached window is
+therefore a consent request nobody is asked about, for as long as something
+else is in front of it.
+
+### The notification, and what it is not
+
+`internal/platform` gains a `Notifier` behind the same shape as
+`NewAutostart` and `NewShellMenu`: a D-Bus implementation on linux, an
+honest refusal everywhere else. **Windows is not missing it** — §6.5.2
+permits nothing for a platform whose window host raises its own window, and
+a no-op reporting success would make its log claim a notification had been
+posted where none is.
+
+- **It offers no actions.** The interface can carry buttons, and a button
+  would send an activation token a program could raise a window with —
+  measured, on this desktop, no token arrives and nothing is raised
+  ([[D-339]]). A button that did nothing when pressed is worse than no
+  button.
+- **`expire_timeout` is 0, which the specification defines as never.** The
+  person this is for is, by assumption, not looking at this screen; a
+  banner that vanished in four seconds would be the notification §6.5.2
+  does not want.
+- **It is withdrawn when the request is answered**, however the run ended.
+  One still saying a signature is waiting, for a batch answered ten minutes
+  ago, is worse than never posting it.
+- **It is posted only for a request that came from a caller.** The existing
+  comment beside `AlwaysOnTop` said the first step was the test for "the
+  person did not initiate this" — **and it is not**: `sign --in` starts at
+  the approval too. `m.remote` is the test. The comment is corrected rather
+  than the behaviour, since topmost is right for both.
+- **The call is bounded at three seconds.** The window is already on screen
+  by then, and a notification daemon that does not answer is not a thing to
+  keep a person waiting behind.
+
+**Three guards, one mutation-verified:** a caller's request posts exactly
+one and withdraws it exactly once, withdrawing twice is harmless, a
+notifier that fails leaves nothing held and stops nothing, and a person's
+own run posts none. Removing the `m.remote` test makes the last one report
+`a local run posted 1 notifications, want none`.
+
+### The dependency, under SPEC §8.6
+
+**`github.com/godbus/dbus/v5` v5.2.2**, BSD-2-Clause, pure Go, no cgo.
+
+*What it does:* speaks the D-Bus wire protocol — the socket, the SASL
+EXTERNAL handshake, the type system's marshalling — so this program can
+make one method call on the session bus.
+
+*Why the standard library is insufficient:* it has no D-Bus at all. The
+alternative inside the standard library is to write the handshake and a
+marshaller for `susssasa{sv}i` by hand.
+
+*Why not by hand anyway,* which this project does for ASN.1 and for PDF:
+because those are the places where a third-party bug produces a signature
+that looks correct and is invalid (SPEC §12.1). **A desktop notification is
+best-effort and cosmetic** — its total failure costs a person nothing that
+the window and the timeout do not already cover — so hand-writing a wire
+protocol for it would be care spent where it buys least. The owner ruled
+the same way.
+
+*Why not libnotify:* it is a C library, and SPEC §1.1 is explicit that "a
+dependency that can be satisfied in Go is not a reason to declare one".
+This keeps `internal/platform` compiling at `CGO_ENABLED=0` and adds
+nothing to F12 §8's `Depends:` line.
+
+### Two `.exe` calls that had become reachable
+
+[[D-338]] made `cmd/liro-bridge`'s window code compile on linux, and two
+Windows facts came with it — the same class as D-339's
+`ConfigDir("windows")`, found by reading rather than by anything failing:
+
+- **`explorer.exe`** opened the output folder from the report screen. Now
+  a seam: Explorer on Windows, **`xdg-open` elsewhere**, the path an
+  argument to the process and never a shell command. That difference is
+  the whole of the care the function needs — a folder called `Q3 "final"`
+  is one argument here and several words with an unbalanced quote through
+  `sh -c`. **The `//nolint:gosec` that rode along with the old line is
+  gone and nothing missed it**: lint is clean in all three views without
+  it, because gosec is not among this project's linters. It had been
+  suppressing a warning nobody was making.
+- **`msiexec.exe`** installed a downloaded MSI when the person pressed
+  Install. On linux that is meaningless — F12 §8: "a package manager is
+  the expected route" — and the honest answer is **not an error**. The
+  update window gains a third state: *"Updates come from your package
+  manager"*, in three locales, saying that nothing needs installing by
+  hand, that this window is only reporting a newer version, and that
+  nothing has gone wrong. The check itself is untouched: knowing a version
+  exists is useful anywhere; installing it belongs to apt and dnf.
+
+### Decided
+
+- **A seam for every window created and every notification posted**, so
+  the two clauses have tests rather than comments.
+- **No actions on the notification** until a packaged desktop entry makes
+  D-339's token measurement come out differently (F12 §8 carries it).
+- **`godbus/dbus/v5`**, recorded above under SPEC §8.6.
+- **`xdg-open` with the path as an argument**, never through a shell.
+- **The update offer is answered rather than removed** on linux. Whether
+  the offer should appear there at all is F12 §8's to decide, and removing
+  a button is a page change with three catalogues behind it.
+- **Rejected: posting the notification for a local run.** It would tell
+  somebody a window they just opened is open.
+
+### What this does not settle
+
+- **Nothing on linux can produce a request from a caller yet**, so the
+  notification's own flow path is exercised by tests and by hand and not
+  by the program end to end: the protocol server is reached from `runTray`
+  (protocol_windows.go), and the tray is F12 §6's undecided question. **The
+  first thing §6 or §7 wires should re-run this.**
+- **The notification carries no `desktop-entry` hint**, because nothing is
+  installed to name — F12 §8, and it is the same measurement D-339 left
+  waiting there.
+- **Whether the method step still needs more than its declared height** is
+  still a number in the next run's log (D-339).
+

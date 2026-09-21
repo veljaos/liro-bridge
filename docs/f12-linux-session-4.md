@@ -34,16 +34,23 @@ exactly as long as there was only one platform.*
 | a Linux font needing more room | every window got **37 fewer points** than asked — the GTK4 header bar | the size request moved to the view; four sizes exact |
 | *nobody reported it* | the audit log written to **`./Liro/audit`**, relative, because `ConfigDir` was passed the literal `"windows"` | `runtime.GOOS`, plus two mutation-verified guards |
 
-**What §4 has left, now that SPEC §6.5.2 is written.** The specification is
-amended and the measurements are under it ([[D-337]]): a new window per
-request works on this compositor, re-showing an existing one does not, and a
-clicked notification raises nothing. **None of that is built yet.** What §4
-still needs is the code: a new window per request rather than a re-used one,
-a desktop notification posted alongside — best-effort, never a refusal,
-logged plainly when there is no service — and nothing in the consent path
-resting on the window having been seen. `org.freedesktop.Notifications` is on
-this session bus. The caller half and the `CONSENT_TIMEOUT` half are
-unchanged and already true.
+**§4 is built** ([[D-341]]). Clause 1 turned out to be true already — every
+window here is a fresh `ui.NewWindow` and nothing ever cached one — so what
+it needed was a guard, which is now what would notice if somebody made the
+natural optimisation of holding a window between requests. On this
+compositor that optimisation is a consent request nobody is asked about,
+because D-337 measured that an existing window cannot be raised at all.
+
+The notification is `internal/platform`'s `Notifier`: pure-Go D-Bus
+(`godbus/dbus/v5`, recorded under SPEC §8.6), no actions — a button would
+promise a raise that D-339 measured does not happen — never expiring until
+the request is answered, withdrawn when it is, bounded at three seconds, and
+posted only for a request that came from a caller. Three guards cover it.
+
+**What §4 has left is not §4's**: nothing on linux can produce a request
+from a caller yet, because the protocol server is reached from `runTray`
+and the tray is §6's undecided question. The flow path is covered by tests
+and by hand; **the first thing §6 or §7 wires should re-run it.**
 
 **What comes after §4:** §5's PIN dialog (native, not in the page — SPEC §10;
 `pinscreen.ErrNoDialogOnThisPlatform` is what refuses today), then §6's tray
@@ -62,8 +69,9 @@ true and is worth keeping true. `~/go/bin` is not on `PATH`, so invoke
 `golangci-lint` by absolute path, and read exit codes rather than last lines
 ([[D-316]]).
 
-**What is open, in the order it is likely to matter:** §4's code; drag and
-drop, which needs `gdk_file_list_get_files` that the binding does not
+**What is open, in the order it is likely to matter:** a caller-driven
+request on this platform, which needs §6's or §7's wiring and is what would
+exercise §4 end to end; drag and drop, which needs `gdk_file_list_get_files` that the binding does not
 generate ([[D-330]]'s shape, third instance) and whose absence the page still
 invites; the Settings window's two Windows-shaped rows on Linux; PKCS#11 here,
 compiled and never exercised; and `lowerLevel`, which is not a Linux question

@@ -56,6 +56,22 @@
   </div>
 </main>
 
+<!-- A state that is neither success nor failure: this platform installs
+     its software through a package manager, so there is no installer for
+     this window to run and nothing has gone wrong (SPEC §6.5.2's sibling
+     case — the route is different, not broken). F12 §8 decides whether
+     the offer should appear here at all; until it does, pressing Install
+     lands here rather than on an error. -->
+<main id="state-notice" hidden>
+  <p class="liro-display" data-i18n="update.package_route_title"></p>
+  <div class="lines liro-scroll-region">
+    <p class="field-value" id="notice-body"></p>
+  </div>
+  <div class="actions">
+    <button id="notice-close-btn" class="liro-btn liro-btn-primary" data-i18n="update.close"></button>
+  </div>
+</main>
+
 <script src="/bridge.js"></script>
 <script src="/pages/update.js"></script>
 </body>

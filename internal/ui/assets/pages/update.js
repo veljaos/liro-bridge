@@ -5,7 +5,7 @@
   // nothing between payloads — the trap D-120 and D-121 each had to
   // remove once.
   function show(which) {
-    ["available", "working", "failed"].forEach(function (name) {
+    ["available", "working", "failed", "notice"].forEach(function (name) {
       document.getElementById("state-" + name).hidden = name !== which;
     });
   }
@@ -26,6 +26,12 @@
       show("working");
       return;
     }
+    if (payload.type === "notice") {
+      window.liroSetText(document.getElementById("notice-body"), payload.model.body);
+      show("notice");
+      document.getElementById("notice-close-btn").focus();
+      return;
+    }
     if (payload.type === "failed") {
       window.liroSetText(document.getElementById("failed-body"), payload.model.body);
       show("failed");
@@ -40,6 +46,9 @@
     window.liroSend("cancel");
   });
   document.getElementById("close-btn").addEventListener("click", function () {
+    window.liroSend("cancel");
+  });
+  document.getElementById("notice-close-btn").addEventListener("click", function () {
     window.liroSend("cancel");
   });
   document.addEventListener("keydown", function (ev) {

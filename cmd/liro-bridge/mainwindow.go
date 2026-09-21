@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,6 +31,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/pades"
 	"github.com/veljaos/liro-bridge/internal/pades/dss"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
+	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/signing"
 	"github.com/veljaos/liro-bridge/internal/trust/classify"
 	"github.com/veljaos/liro-bridge/internal/ui"
@@ -105,6 +105,13 @@ type mainWindow struct {
 	// is the whole of SPEC §6.5's "a request from a paired application
 	// is not more trusted than a person dropping files".
 	remote *remoteBatch
+
+	// waiting is the desktop notification posted alongside a window
+	// nobody in this room asked for (SPEC §6.5.2), held so that it can
+	// be taken down when the request it announced has been answered.
+	// Nil whenever none was posted, which is every local run and every
+	// desktop with no notification service.
+	waiting platform.Notification
 
 	// hashesOnly is a batch of bare digests (F7 §5): the caller built
 	// the PDF and the CMS itself, so there is no document here to draw
@@ -349,18 +356,45 @@ func runMainWindowWatching(ctx context.Context, cfg config.Config, locale string
 
 // open creates the window on first and runs the flow until the window
 // closes.
+// newUIWindow is the seam every window in this flow is created
+// behind, on the precedent of auditStore and interactiveGather (D-236).
+//
+// It exists for one test, and that test is the only thing enforcing a
+// clause of the specification. SPEC §6.5.2: **"A new window for every
+// request. Never a hidden window shown again, never one re-used
+// between requests."** That has always been true here — open creates a
+// window and closes it, and nothing holds one — but it was true by
+// accident of how the code was written rather than by anything that
+// would notice if it stopped being. It became a requirement when
+// §6.5.2 was written, and a requirement nothing enforces is a comment.
+var newUIWindow = ui.NewWindow
+
+// newNotifier is the seam SPEC §6.5.2's notification is posted behind,
+// for the same reason as newUIWindow above: the clauses about it — that
+// it is posted for a request the person did not make, that it is
+// withdrawn when the request is answered, and that failing to post one
+// stops nothing — are requirements, and a requirement nothing enforces
+// is a comment.
+var newNotifier = platform.NewNotifier
+
 func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep) int {
 	width, height := m.sizeOf(first)
-	win, err := ui.NewWindow(ui.Options{
+	win, err := newUIWindow(ui.Options{
 		Title:  m.c.T("main.title"),
 		Width:  width,
 		Height: height,
-		// A request that begins at the approval is a request the person
-		// did not initiate, and SPEC §6.5 requires that window to come
-		// to the front and stay there. A window the person opened
-		// themselves is one they are already looking at, and making it
-		// topmost would only put it over everything else they do with
-		// it — the file chooser included.
+		// A window that begins at the approval is one somebody is
+		// waiting on — a caller's request, or a `sign --in` batch whose
+		// documents were named on the command line — rather than one
+		// being browsed, and SPEC §6.5 wants it in front. A window the
+		// person opened themselves is one they are already looking at,
+		// and making it topmost would only put it over everything else
+		// they do with it, the file chooser included.
+		//
+		// **It is not a test for "the person did not initiate this",
+		// although it used to say it was.** `sign --in` starts here too
+		// and is as initiated as anything gets. m.remote is that test,
+		// and it is what the notification below uses.
 		AlwaysOnTop: first == stepCertificate,
 		Assets:      assetsFS,
 		VirtualHost: liroVirtualHost,
@@ -393,6 +427,25 @@ func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep
 	}
 	close(m.ready)
 
+	// SPEC §6.5.2's second clause: a notification alongside a window
+	// the person did not ask for, saying to go and look at it.
+	//
+	// **Only for a request that came from somewhere else.** A person
+	// who has just typed `liro-bridge sign` is looking at the screen
+	// they asked for, and telling them a window they opened is open is
+	// noise. The case this is for is the one where a request arrives
+	// while they are in a browser or a spreadsheet: measured, a new
+	// window does take focus on the desktop this was built on (D-337),
+	// and §6.5.2 exists because nothing may *depend* on that.
+	//
+	// It is posted after the first step, so it never announces a window
+	// that then fails to draw, and it is withdrawn however this run
+	// ends — approved, refused, closed or timed out.
+	if m.remote != nil {
+		m.announceWaiting()
+	}
+	defer m.withdrawWaiting()
+
 	if inbox != nil {
 		stop := make(chan struct{})
 		defer close(stop)
@@ -414,6 +467,44 @@ func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep
 	m.loop(ctx)
 	m.finishRemote()
 	return m.exit
+}
+
+// announceWaiting posts the "go and look" notification, and a failure
+// to post one is a log line rather than anything a person notices.
+//
+// SPEC §6.5.2: "best-effort, and its absence is never a refusal. On a
+// desktop with no notification service the agent logs plainly that it
+// could not post one and carries on. Refusing to sign because a
+// notification could not be shown would block a person for no security
+// gain: the window exists either way, and the timeout protects either
+// way."
+//
+// The application it names is the one bound at pairing, never one
+// supplied in the request — SPEC §6.6's rule about the consent screen,
+// and it matters more here: a notification is the one surface in this
+// program that appears without anybody opening it.
+func (m *mainWindow) announceWaiting() {
+	n, err := newNotifier().Notify(
+		m.c.T("notification.waiting_summary"),
+		fmt.Sprintf(m.c.T("notification.waiting_body"), m.applicationName()),
+	)
+	if err != nil {
+		slog.Info("signing window: no desktop notification was posted for a waiting request",
+			"jobId", m.remote.job.ID, "error", err)
+		return
+	}
+	m.waiting = n
+}
+
+// withdrawWaiting takes the notification down. A notification still
+// saying a signature is waiting, for a batch signed ten minutes ago, is
+// worse than never having posted one.
+func (m *mainWindow) withdrawWaiting() {
+	if m.waiting == nil {
+		return
+	}
+	m.waiting.Close()
+	m.waiting = nil
 }
 
 // finishRemote settles what a protocol request is told when its window
@@ -1572,15 +1663,17 @@ func (m *mainWindow) countsText(r jobs.Report) string {
 
 // openOutputFolder shows the output folder in Explorer.
 //
-// The path handed to explorer.exe is one this process computed from the
-// queue's own inputs and the configured folder — never a string the
-// page supplied — so there is nothing here for a page to steer.
+// The path handed to the file manager is one this process computed
+// from the queue's own inputs and the configured folder — never a
+// string the page supplied — so there is nothing here for a page to
+// steer. It is passed as an argument and never through a shell, which
+// is the difference between a folder called "Q3 results" and a folder
+// called anything at all.
 func (m *mainWindow) openOutputFolder() {
 	if m.report == nil || m.report.OutputDir == "" {
 		return
 	}
-	cmd := exec.Command("explorer.exe", m.report.OutputDir) //nolint:gosec // a path this process computed, never page input
-	if err := cmd.Start(); err != nil {
+	if err := openFolder(m.report.OutputDir); err != nil {
 		slog.Warn("signing window: opening the output folder failed", "error", err)
 	}
 }

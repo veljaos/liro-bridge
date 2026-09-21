@@ -3,6 +3,7 @@ module github.com/veljaos/liro-bridge
 go 1.26.5
 
 require (
+	github.com/godbus/dbus/v5 v5.2.2
 	golang.org/x/sys v0.47.0
 	software.sslmate.com/src/go-pkcs12 v0.7.3
 )
