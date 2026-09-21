@@ -47,10 +47,25 @@ promise a raise that D-339 measured does not happen — never expiring until
 the request is answered, withdrawn when it is, bounded at three seconds, and
 posted only for a request that came from a caller. Three guards cover it.
 
-**What §4 has left is not §4's**: nothing on linux can produce a request
-from a caller yet, because the protocol server is reached from `runTray`
-and the tray is §6's undecided question. The flow path is covered by tests
-and by hand; **the first thing §6 or §7 wires should re-run it.**
+**It was verified by hand, tonight, by the owner**, on all four things it
+changed: the method screen no longer scrolls; "Otvori fasciklu" opened
+Files; the audit log is at `$XDG_DATA_HOME/liro/audit` and nowhere else,
+with nothing named `Liro` back in the repository; and the notification
+posted in sr-Latn with no button, **stayed about five seconds as a banner
+— GNOME's choice and not this program's — then moved to the notification
+list, and was withdrawn from there when the request was answered.** That
+last one is the design working rather than a detail: `expire_timeout = 0`
+is what keeps it findable after the banner has gone, which is the whole
+point of a prompt for somebody who is not looking at this screen.
+
+**What §4 has left is not §4's, and it is the first thing to pick up.**
+Nothing on linux can produce a request from a caller yet: the protocol
+server is reached from `runTray`, and the tray is §6's undecided question.
+So the flow path — a request arriving, a window opening for it, a
+notification posted and then withdrawn — is covered by tests and by hand
+and **has never run end to end on this platform. Whichever of §6 or §7
+wires the agent mode should re-run it before doing anything else**, because
+it is the one part of §4 that nobody has watched work.
 
 **What comes after §4:** §5's PIN dialog (native, not in the page — SPEC §10;
 `pinscreen.ErrNoDialogOnThisPlatform` is what refuses today), then §6's tray
@@ -657,11 +672,13 @@ only one platform — the same as D-338's suffixes and D-335's `ci` job.
    is on this platform now; the second says what a person found in one run
    that no test saw, and how each of the three was diagnosed by measuring the
    thing rather than the guess.
-2. **§4's code, on the shape SPEC §6.5.2 now fixes.** It is the phase's next
-   box and the specification is written, so this is building rather than
-   deciding. Post the notification through `org.freedesktop.Notifications`
-   over D-Bus in pure Go — SPEC §1.1 prefers that to a declared dependency,
-   and the interface is on this bus.
+2. **§4 end to end, which is the one thing about it nobody has watched.**
+   It is built, guarded and verified by hand ([[D-341]]), and no request
+   from a caller has ever reached it here, because the protocol server is
+   reached from `runTray`. Wiring the agent mode is §6's and §7's; the
+   moment it is wired, send a request and watch a window open for it with a
+   notification beside it, and then watch the notification go when the
+   request is answered.
 3. **Watch the first `linux-gui` run after a cold cache.** D-335 predicted 2–4
    minutes warm against 27 cold; if it is still 27, the instrumented objects
    are not surviving in the cache and the `-race` probe stops running on every

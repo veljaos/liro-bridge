@@ -34442,6 +34442,27 @@ saying out loud that the cheapness is the timing rather than the decision.
 
 ## D-341 — F12 §4 built: a window per request that was already true and is now enforced, a notification over pure-Go D-Bus, and two `.exe` calls that had become reachable on a platform with no `.exe`
 
+> **Verified by hand the same night, by the owner, on all four things it
+> changed.** The method screen no longer scrolls; the report screen's
+> "Otvori fasciklu" opened Files; the audit log is at
+> `$XDG_DATA_HOME/liro/audit` and nowhere else, with nothing named `Liro`
+> back in the repository; and the notification posted in sr-Latn with no
+> button.
+>
+> **What the notification actually did is worth writing down, because it is
+> the clause working rather than a detail.** The banner stayed about five
+> seconds — the shell's own choice, not this program's, since
+> `expire_timeout = 0` asks for no expiry at all — then moved into GNOME's
+> notification list, and was withdrawn from there when the request was
+> answered. That is exactly what §6.5.2's second clause is for: the person
+> it is for is by assumption not looking at this screen, so what matters is
+> not the banner but that it stays **findable** until the request is over
+> and then stops being there.
+>
+> Still not end to end: no request from a caller has reached this on linux,
+> because the protocol server is reached from `runTray`. §6 or §7.
+
+
 **Date:** 2026-09-21
 **Phase:** F12 §4 — the code for the shape [[D-337]] measured and SPEC
 §6.5.2 fixed.
