@@ -12,19 +12,17 @@ package main
 import (
 	"fmt"
 	"log/slog"
-	"path/filepath"
 
 	"github.com/veljaos/liro-bridge/internal/audit"
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/pades"
-	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
 func runAuditLogWindow(locale string) error {
 	c := i18n.Load(locale)
 
-	dir := filepath.Join(platform.ConfigDir("windows", platform.OSEnv), "audit")
+	dir := auditDir()
 	store, err := audit.NewStore(dir)
 	if err != nil {
 		return err

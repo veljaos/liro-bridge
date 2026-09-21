@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -827,7 +828,33 @@ func nextFreeOutputPath(outPath string) string {
 // maxOutputSuffix bounds nextFreeOutputPath's search.
 const maxOutputSuffix = 1000
 
+// auditDir is where this machine's audit log lives.
+//
+// **The platform is runtime.GOOS and was the literal string "windows"
+// until D-339.** That was harmless while nothing here ran anywhere
+// else, and it stopped being harmless the moment F12 §3 made these
+// files compile on linux: platform.ConfigDir's windows branch is
+// filepath.Join(LOCALAPPDATA, "Liro"), LOCALAPPDATA is empty on linux,
+// and filepath.Join("", "Liro") is the *relative* path "Liro". So the
+// audit log went to ./Liro/audit — wherever the program happened to be
+// started from, which for the first two real signatures on this
+// platform was a git repository.
+//
+// It is recorded rather than quietly corrected because of what it is:
+// SPEC §6.7's chain is the record of every signature this program ever
+// made, and a record whose location depends on the caller's working
+// directory is several chains, each of which believes it is the only
+// one.
+//
+// **Where it goes on linux is still F12 §7's question**, and this does
+// not answer it: ConfigDir's default branch is $XDG_CONFIG_HOME/liro,
+// while §7 says the audit chain's directory belongs under
+// $XDG_STATE_HOME. Moving it there is a decision about a path a person
+// may already have files in, and it is made with §7's other three.
+func auditDir() string {
+	return filepath.Join(platform.ConfigDir(runtime.GOOS, platform.OSEnv), "audit")
+}
+
 func newAuditStore() (*audit.Store, error) {
-	dir := filepath.Join(platform.ConfigDir("windows", platform.OSEnv), "audit")
-	return audit.NewStore(dir)
+	return audit.NewStore(auditDir())
 }

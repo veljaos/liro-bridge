@@ -14,7 +14,6 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/audit"
 	"github.com/veljaos/liro-bridge/internal/i18n"
-	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
@@ -32,7 +31,7 @@ import (
 // readable years later without this program, and checkable against the
 // hash chain by anyone.
 func exportAuditLogNow(win ui.Window, c *i18n.Catalogue) {
-	dir := filepath.Join(platform.ConfigDir("windows", platform.OSEnv), "audit")
+	dir := auditDir()
 	store, err := audit.NewStore(dir)
 	if err != nil {
 		slog.Warn("settings: opening audit store for export failed", "error", err)
