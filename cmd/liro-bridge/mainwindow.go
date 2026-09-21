@@ -425,6 +425,14 @@ func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep
 			return 1
 		}
 	}
+
+	// The first step is fitted here and not in show, because open does
+	// not go through show to put it up — it posts the payload itself.
+	// **That gap was the whole of the first screen**, which is the one
+	// a person looks at longest: every later step was measured against
+	// its content and the one they arrive on was not.
+	m.fitToContent(width, height)
+
 	close(m.ready)
 
 	// SPEC §6.5.2's second clause: a notification alongside a window
