@@ -262,6 +262,54 @@ fewer assumption in the shape that goes to the owner.
 
 ---
 
+## 5. F12 §4's assumptions, measured — two of four, and the two that needed nobody
+
+**The instrument:** a plain GTK4 probe, no WebView, built outside the
+repository against the same pinned gotk4 (a GTK-dependent package inside the
+repository would fail §1's own boundary guard, which is the guard working).
+Focus is a property of the toplevel and the compositor rather than of what is
+painted inside it. **What that does not cover is mapping time** — a WebKitGTK
+window takes longer to appear and focus-stealing prevention is a rule about
+timestamps — so these are worth re-running against the real host once the
+profile is in. No synthetic input anywhere (D-094): every focus change is one
+this program asked the compositor for, and every reading is taken off the
+window itself.
+
+GTK 4.14.5, Wayland, GNOME 46, software rendering (`libEGL`/`MESA` errors on
+every start — §0.1).
+
+| what | result |
+|---|---|
+| a **new** window, opened 0.1 s after the person launched the process, while the terminal was active | **took focus**, 1.10 s after `present()` |
+| a **second** new window, opened 6 s later while our own first window was active | **took focus**, 0.14 s |
+| `present()` on an **existing** window, while another window **of our own process** was active | **raised it**, 0.12 s |
+| a new window from a process that had been **idle for 45 s** — the agent's own shape, since it starts at login and opens a window hours later because a request arrived | **took focus**, 0.52 s |
+
+**The fourth row is the one that matters** and it is why the mode exists: the
+first three could all be explained by GNOME granting focus to an application
+the person had just launched or was already attending to, which the agent
+never is.
+
+### What is still open, and neither can be taken without a person
+
+- **`present()` on an unfocused window while a *foreign* window is focused.**
+  Every raise measured so far was asked for by a process the compositor was
+  already attending to. The agent's case is a browser in front and no window
+  of its own in sight. The probe's `raise` mode waits until its window has
+  been inactive for three seconds and refuses to report anything if that
+  never happens.
+- **Whether a notification's activation token raises a window that
+  `present()` alone would not.** `org.freedesktop.Notifications` is on this
+  bus, `GetCapabilities` includes `actions`, and the interface carries
+  **`ActivationToken(u, s)`** alongside `ActionInvoked` — introspected, not
+  assumed. The probe subscribes to both, calls `gtk_window_set_startup_id`
+  with the token and then `present()`.
+
+**None of this is built into anything.** It is measurement before design, and
+the design goes to the owner first.
+
+---
+
 ## 5. What the next session should do first
 
 1. **Push and watch one run.** It is the first that could ever have proved
