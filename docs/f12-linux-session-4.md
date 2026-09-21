@@ -1,16 +1,73 @@
 # F12 Linux — session 4
 
-**What this is:** the fourth session on the Linux VM. It did one thing and
-found one thing. The thing it did is the CI boundary — `ci` now installs no
-GTK, and that absence is what it proves. The thing it found is that **the
-state this session was briefed on is not the state this repository is in**,
-and that is §0 because nothing else in this document matters if it is not read
-first.
+**What this is:** the fourth session on the Linux VM, and the handover to the
+next one, which is a new agent. **Read §A first** — it is the whole state in
+one page. Everything after it is the session's own record, kept because the
+measurements are in it.
 
 **Written:** 2026-09-21, Ubuntu 24.04.5 VM, kernel 7.0.0-31-generic.
-**Entries this session:** [[D-335]] (the CI boundary, in code and in the
-workflow).
-**Also changed:** SPEC §19's F13 deferral entry, on macOS runners.
+**Entries this session:** [[D-335]] (the CI boundary), [[D-336]] (the briefing
+that described another repository), [[D-337]] (F12 §4 measured), [[D-338]]
+(§3's last mile), [[D-339]] (what the first real signatures showed).
+**Also changed:** SPEC §6.5 and its new §6.5.2, SPEC §19's F13 deferral,
+F12 §0's second bullet, F12 §8's note, and `docs/f12-home-list.md` item 2b.
+
+---
+
+## A. The handover, in one page
+
+**F12 §3 is done.** The agent opens its own windows on Linux, on the GTK4 and
+WebKitGTK host, and a person has signed a PDF through the consent screen with
+the soft token — same pages, same CSS, same catalogue as Windows, nothing
+forked. `sign` and `open` are real commands here now ([[D-338]]); the only
+window command still refused is `tray`, and that is F12 §6's undecided
+question rather than a missing implementation.
+
+**The three defects the first real signatures found, and their shape.** None
+was what it looked like, and the shape is the same in all three and in D-338:
+*a claim about a platform, written where nothing could check it, harmless for
+exactly as long as there was only one platform.*
+
+| what it looked like | what it was | [[D-339]] |
+|---|---|---|
+| missing glyphs for `č ć đ š ž` | image URLs built as `https://`, WebView2's spelling; WebKitGTK's broken-image mark is a question mark in a box | `ui.HostURL` answers the scheme; round-trip test |
+| a Linux font needing more room | every window got **37 fewer points** than asked — the GTK4 header bar | the size request moved to the view; four sizes exact |
+| *nobody reported it* | the audit log written to **`./Liro/audit`**, relative, because `ConfigDir` was passed the literal `"windows"` | `runtime.GOOS`, plus two mutation-verified guards |
+
+**What §4 has left, now that SPEC §6.5.2 is written.** The specification is
+amended and the measurements are under it ([[D-337]]): a new window per
+request works on this compositor, re-showing an existing one does not, and a
+clicked notification raises nothing. **None of that is built yet.** What §4
+still needs is the code: a new window per request rather than a re-used one,
+a desktop notification posted alongside — best-effort, never a refusal,
+logged plainly when there is no service — and nothing in the consent path
+resting on the window having been seen. `org.freedesktop.Notifications` is on
+this session bus. The caller half and the `CONSENT_TIMEOUT` half are
+unchanged and already true.
+
+**What comes after §4:** §5's PIN dialog (native, not in the page — SPEC §10;
+`pinscreen.ErrNoDialogOnThisPlatform` is what refuses today), then §6's tray
+question, then §8's packaging. §7's remaining question is where the audit
+chain lives — `$XDG_CONFIG_HOME/liro/audit` today against §7's
+`$XDG_STATE_HOME`, a decision nobody has made.
+
+**What this machine needs you to know.** One process at a time, no load
+generators, no background jobs (session 3 §6 — three crashes in a day bought
+that rule). The AppArmor profile is installed and it names the **path**
+`/home/vboxuser/liro-f12probe`: a WebKitGTK window will not start anywhere
+else, so build the agent to that path to run it. Point `XDG_CONFIG_HOME`,
+`XDG_DATA_HOME` and `XDG_STATE_HOME` at a scratch directory when you do, so
+this machine's own profile stays clean — session 1 §0's baseline is still
+true and is worth keeping true. `~/go/bin` is not on `PATH`, so invoke
+`golangci-lint` by absolute path, and read exit codes rather than last lines
+([[D-316]]).
+
+**What is open, in the order it is likely to matter:** §4's code; drag and
+drop, which needs `gdk_file_list_get_files` that the binding does not
+generate ([[D-330]]'s shape, third instance) and whose absence the page still
+invites; the Settings window's two Windows-shaped rows on Linux; PKCS#11 here,
+compiled and never exercised; and `lowerLevel`, which is not a Linux question
+and is on the home list as item 2b.
 
 ---
 
@@ -197,7 +254,15 @@ so it is not cited in a document that governs every phase.
 
 ---
 
-## 3. What is still exactly where session 3 left it
+## 3. What was still exactly where session 3 left it — **superseded, and kept**
+
+> **Read §6 and §8 instead for the current state.** This section was true when
+> it was written, in the middle of the session: the profile was not installed,
+> the window had never opened, and `sudo` was the blocker. The owner installed
+> the profile, the window opened, and the agent now signs. It is kept rather
+> than corrected because the list of what a measurement here can silently
+> depend on is still accurate, and because a document that quietly rewrites
+> its own earlier state is a document nobody can date.
 
 - **The window has never opened here.** Session 3 §7's first instruction is
   still the first instruction, still one `sudo` command, still staged at
@@ -578,18 +643,31 @@ only one platform — the same as D-338's suffixes and D-335's `ci` job.
 
 ---
 
-## 5. What the next session should do first
+## 10. What the next session should do first
 
-1. **Push and watch one run.** It is the first that could ever have proved
-   anything about the boundary, and D-335 names what it may still find: the
-   `-race` probe over `internal/ui`, and whether `linux-gui`'s own cache key
-   behaves as reasoned.
-2. **Install the profile and open the window.** Unchanged from session 3 §7,
-   and it is one command of the owner's hands.
-3. **§4, consent — the shape first.** The owner has reserved it: it goes to
-   them before anything is built. A draft shape is in the session's closing
-   report rather than here, because it is a proposal and not a finding.
-4. **Not §6.** Unchanged: no `StatusNotifierWatcher` on this session bus.
+1. **Read §A, then [[D-338]] and [[D-339]].** The first says what the program
+   is on this platform now; the second says what a person found in one run
+   that no test saw, and how each of the three was diagnosed by measuring the
+   thing rather than the guess.
+2. **§4's code, on the shape SPEC §6.5.2 now fixes.** It is the phase's next
+   box and the specification is written, so this is building rather than
+   deciding. Post the notification through `org.freedesktop.Notifications`
+   over D-Bus in pure Go — SPEC §1.1 prefers that to a declared dependency,
+   and the interface is on this bus.
+3. **Watch the first `linux-gui` run after a cold cache.** D-335 predicted 2–4
+   minutes warm against 27 cold; if it is still 27, the instrumented objects
+   are not surviving in the cache and the `-race` probe stops running on every
+   push.
+4. **Read `fitToContent`'s numbers.** It logs `declared` against `measured`
+   for every step; the method step is the one that overflowed, and the header
+   bar fix gave it back 37 points. Whether it still needs more is a number in
+   the next run's log rather than an opinion.
+5. **Not §6.** The tray's first question is still unanswered — and note that
+   `org.kde.StatusNotifierWatcher` *is* on this bus today where session 1
+   found nothing watching (§4 above), so the premise that question rests on
+   needs re-taking before it is decided.
 
-**§0.1 applies to everything above**, and §0 of this document applies to
-everything the next session is told before it starts.
+**§0.1 applies to everything in this document**: a virtual machine with no
+working GPU driver, and a graphics driver that calls its own configuration
+broken on every boot. And §0 applies to whatever the next session is told
+before it starts.
