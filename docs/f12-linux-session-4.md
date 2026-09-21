@@ -290,6 +290,26 @@ first three could all be explained by GNOME granting focus to an application
 the person had just launched or was already attending to, which the agent
 never is.
 
+**And the fifth reading is the one that decides the section.** Taken by the
+owner, with the profile installed and a foreign window focused:
+
+```
+[ 21.01s] present() — the window has been inactive for 3s, and this
+          process has no focused window of its own. This is the agent's case.
+[ 24.02s] RESULT  present() on an unfocused window, no token: active=false
+```
+
+**`gtk_window_present` does not raise an existing unfocused window on this
+compositor.** Set against the fourth row above — a *new* window takes focus
+even from a process idle for 45 seconds — F12 §4's shape is now measured
+rather than predicted:
+
+> **A new window per request works. Re-showing an existing one does not.**
+
+Which is what F12 §4 already required for its own reasons — *"a new window
+for every request, not a hidden one shown again"* — arrived at from the other
+end, by measurement, on the platform it was written about.
+
 ### What is still open, and neither can be taken without a person
 
 - **`present()` on an unfocused window while a *foreign* window is focused.**
@@ -299,7 +319,22 @@ never is.
   been inactive for three seconds and refuses to report anything if that
   never happens.
 - **Whether a notification's activation token raises a window that
-  `present()` alone would not.** `org.freedesktop.Notifications` is on this
+  `present()` alone would not. The first attempt measured nothing and the
+  run is void**, which is worth recording rather than quietly re-running:
+  the probe sent the notification 0.33 s after opening its window, so the
+  window was still active when the person clicked, and "active afterwards"
+  was a reading with nothing behind it. **A probe that reports a result
+  when its own precondition never held is an instrument that cannot fail** —
+  the same family as [[D-336]] — so it now waits for the window to lose
+  focus the way `raise` does, and prints `INVALID` instead of a result if
+  the window is active when the click arrives.
+
+  Two things from the void run do stand: **no `ActivationToken` arrived**,
+  which is not yet interpretable either way, and the probe's own
+  `NotificationClosed` handler called `Variant.String()` — that is
+  `g_variant_get_string` — on a `(uu)` tuple, which the binding's own
+  documentation calls an error. It never fired, so the defect was found by
+  reading rather than by running. Both halves are fixed. `org.freedesktop.Notifications` is on this
   bus, `GetCapabilities` includes `actions`, and the interface carries
   **`ActivationToken(u, s)`** alongside `ActionInvoked` — introspected, not
   assumed. The probe subscribes to both, calls `gtk_window_set_startup_id`
