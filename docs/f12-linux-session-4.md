@@ -47,6 +47,13 @@ promise a raise that D-339 measured does not happen — never expiring until
 the request is answered, withdrawn when it is, bounded at three seconds, and
 posted only for a request that came from a caller. Three guards cover it.
 
+**§4 has now run end to end on this platform, from a caller** — paired with
+six digits, approved in the consent window, `doc-signed.pdf` at B-B, with the
+tray icon in the GNOME bar while it happened. **One clause of it is still
+unwatched and is recorded as unwatched**: GNOME's banner timed out before the
+approval, so nobody has seen the moment the notification is withdrawn when the
+request is answered. A test covers it; that is not the same thing.
+
 **It was verified by hand, tonight, by the owner**, on all four things it
 changed: the method screen no longer scrolls; "Otvori fasciklu" opened
 Files; the audit log is at `$XDG_DATA_HOME/liro/audit` and nowhere else,
@@ -67,7 +74,11 @@ and **has never run end to end on this platform. Whichever of §6 or §7
 wires the agent mode should re-run it before doing anything else**, because
 it is the one part of §4 that nobody has watched work.
 
-**§6 is decided and the agent runs here** ([[D-342]]). The premise was
+**§6 is decided and the agent runs here** ([[D-342]]), **with §7.1 decided
+with it** ([[D-344]]): one agent per user session, a second launch hands its
+request over and exits, a discovery file is dialled rather than believed, and
+Quit is on the agent's own window because a stock GNOME desktop has no tray to
+put it in. The premise was
 re-taken first, because §6 could not rest on a disagreement: the watcher is
 owned by `gnome-shell`, is **not** D-Bus-activatable, and the extension
 appears in every boot's journal including session 1's — which does not settle
@@ -109,9 +120,11 @@ true and is worth keeping true. `~/go/bin` is not on `PATH`, so invoke
 `golangci-lint` by absolute path, and read exit codes rather than last lines
 ([[D-316]]).
 
-**What is open, in the order it is likely to matter:** §4 watched end to end,
-which nothing now blocks; single instance and Quit-from-the-window, which are
-§6's last two; the Secret Service branch of §6.4; drag and drop, which needs `gdk_file_list_get_files` that the binding does not
+**What is open, in the order it is likely to matter:** the live handover and
+the notification's withdrawal, both built and neither watched; the Secret
+Service branch of §6.4, which every Linux agent falls back from today; five
+example clients that still only look where Windows keeps the discovery file
+([[D-345]]); drag and drop, which needs `gdk_file_list_get_files` that the binding does not
 generate ([[D-330]]'s shape, third instance) and whose absence the page still
 invites; the Settings window's two Windows-shaped rows on Linux; PKCS#11 here,
 compiled and never exercised; and `lowerLevel`, which is not a Linux question
@@ -704,13 +717,12 @@ only one platform — the same as D-338's suffixes and D-335's `ci` job.
    in one, the client in the other — and what to watch is a pairing window,
    then a consent window **with a notification beside it**, then the
    notification going when the request is answered.
-3. **§6's two remaining pieces**, both named in the owner's default and
-   neither built: single instance and handover — what a second
-   `liro-bridge open` does while an agent is running, who owns
-   `$XDG_RUNTIME_DIR/liro/bridge.json` ([[D-325]] settled removal only), and
-   how a stale discovery file is told from a live one; and **Quit reachable
-   from the main window**, so that a person on a desktop with no tray can
-   stop the agent.
+3. **Watch the live handover.** [[D-344]] built it — a second launch leaves
+   an open-request and exits, and the agent opens its window — and only the
+   *stale* path has been run end to end here, because watching the live one
+   needs two processes at once. Two terminals: `tray` in one, then
+   `liro-bridge open` in the other, which should print that Liro Bridge is
+   already running and make the first one's window appear.
 4. **The Secret Service branch of SPEC §6.4.** Every Linux agent takes the
    file fallback today and logs that it did.
 5. **Watch the first `linux-gui` run after a cold cache.** D-335 predicted 2–4
