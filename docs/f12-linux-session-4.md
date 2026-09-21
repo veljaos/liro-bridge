@@ -545,6 +545,39 @@ thirteen libraries compared unequal to the same thirteen libraries until
 
 ---
 
+## 9. What the first real signatures showed
+
+[[D-339]] is the entry. The signature itself worked, on the agent's own window,
+with no page, stylesheet, script or catalogue changed. Three defects came out
+of it and **not one was what it looked like**:
+
+| reported | looked like | actually |
+|---|---|---|
+| question marks in the placement picker | missing glyphs for `č ć đ š ž` or Cyrillic | image addresses built as `https://`, which is WebView2's spelling; both images failed and WebKitGTK drew its broken-image mark, which is a question mark in a box |
+| the method screen too short, needing a scroll | the Linux UI font being wider than Segoe UI | every window on this platform was handed **37 fewer points** than its caller asked for — the GTK4 header bar, measured constant at four sizes |
+| *(nobody reported this one)* | — | the audit log was written to **`./Liro/audit`**, relative to wherever the program was started, because `platform.ConfigDir` was passed the literal `"windows"` |
+
+**The signed PDF is correct** and was checked first, because it is the only one
+of the three that could have reached a document somebody relies on: the stamp
+decodes through the PDF's own ToUnicode map to four clean lines with no
+replacement character in them.
+
+**The stamp renderer was never the problem.** Rendered here with a Cyrillic
+label and `Čačak Đorđe Šimšić žžž`, every glyph draws; the committed substitute
+font carries all of them. Ten minutes of measurement against what would have
+been a day of font plumbing.
+
+Each fix carries a guard that fails against the old behaviour — verified by
+mutation, not by assertion: a round-trip test that an address this program
+hands a page is one its own resolver answers, and two guards on the audit
+directory, one of which reproduces `"Liro/audit"` exactly.
+
+**The third one is the shape of this whole session.** A claim about a platform,
+written where nothing could check it, harmless for exactly as long as there was
+only one platform — the same as D-338's suffixes and D-335's `ci` job.
+
+---
+
 ## 5. What the next session should do first
 
 1. **Push and watch one run.** It is the first that could ever have proved

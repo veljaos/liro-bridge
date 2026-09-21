@@ -99,6 +99,55 @@ readings. Item 1's answer is the input to it.
 
 ---
 
+## 2b. Does a mixed batch report a level it did not reach? — **no card, no PIN, ten minutes**
+
+**Added 2026-09-21 from the Linux machine, which is where it was found and is
+not where it can be answered.** It needs no card and spends nothing, so it can
+be done before or after the card work — but it has to be done on Windows,
+because the reporting path it is about only runs there today.
+
+**What was found.** `lowerLevel` and `levelRank` compute the weakest PAdES
+level a batch actually reached. **Nothing in the program calls them.** The
+only reference in the whole tree is `tsa_choice_windows_test.go`, a test. They
+are parked in `cmd/liro-bridge/batchlevel_windows.go` with this written on
+them ([[D-338]]).
+
+**Why it matters, and it is not a tidiness question.** SPEC §12.8 forbids a
+silent downgrade and §18.11 is the prohibition; `pades.Result` reports "the
+achieved level, never the requested one". A batch of ten where the TSA answers
+for eight and fails for two is **B-T for eight documents and B-B for two**, and
+what the report screen and the audit entry say about that batch is the thing
+to check. If they say B-T, a person has been told every document carries a
+timestamp when two do not.
+
+**What to do, in order:**
+
+1. **Read, do not run, first.** In `cmd/liro-bridge`, find where the batch's
+   level reaches the report and the audit entry — `recordInteractiveAudit`'s
+   `achievedLevel`, and whatever `buildReportInit` sends the report screen.
+   Establish **which document's level that is**: the last one signed, the
+   first, or a fold across all of them. If it is a fold, `lowerLevel` is dead
+   and the answer is to delete it and its test. If it is one document's, the
+   defect is real.
+2. **Then produce a mixed batch, with no hardware.** The soft token signs
+   without a card (`-tags softtoken`), and the TSA is what has to fail for
+   *some* documents: point `TSAURL` at an address that is reachable but
+   refuses, or unplug the network after the first document. Two documents is
+   enough. SPEC §12.8's three attempts with backoff mean this takes a minute
+   per failing document, so keep the batch small.
+3. **Read what it reports**, on the report screen and in
+   `%LOCALAPPDATA%\Liro\audit`: one entry per batch, and the field is
+   `achievedLevel`.
+4. **Record it either way.** "The fold is already there and these two
+   functions are dead" is as much an answer as a defect, and the entry should
+   say which — with the batch it was measured on.
+
+**What is already known and does not need re-measuring:** the two functions
+compile, are tested, and are correct in themselves. The question is only
+whether anything asks them.
+
+---
+
 ## 3. Afterwards
 
 Machine back as you found it: `Run` key value by value against `run.reg`,

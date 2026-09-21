@@ -34209,3 +34209,157 @@ was caught in `git show --stat` before the push and the commit was amended.
   real run. That is not the same as tested, and the next thing that goes
   wrong here will say so.
 
+---
+
+## D-339 — Two defects a person found in one run, and neither was what it looked like: the question marks are a scheme, the short window is a header bar, and a third one nobody was looking for was writing the audit log into whatever directory the program was started from
+
+**Date:** 2026-09-21
+**Phase:** F12 §3 — the first real signatures on this platform, and what they
+showed.
+
+**The first signature on Linux through the agent's own window worked**, with
+no change to any page, stylesheet, script or catalogue. The owner then
+reported two things no test had seen. Both were measured before either was
+touched, and both turned out to have a cause other than the obvious one.
+
+### First, the question that mattered: the signed PDF is correct
+
+**Asked first and answered first, because it is the only one of the three
+that could have reached a document somebody relies on.** The stamp in
+`doc-signed.pdf` embeds subsetted NotoSans and NotoSans-Bold as
+`CIDFontType2` with `Identity-H` and a `ToUnicode` map — SPEC §13.2's
+arrangement. Decoding the content stream through the PDF's own map:
+
+```
+'Elektronski potpisano'
+'LIRO BRIDGE SOFT TOKEN (TEST - NEVER A RE...'
+'SN E48B B073 8542 56B3 BA5E 92BB 0693 5890'
+'21.09.2026. 19:20:25'
+```
+
+**No replacement character anywhere**, so every CID resolves. The output is
+unaffected. **What this run did not exercise** is a name with Serbian letters
+in it: the soft token's certificate is ASCII, so the diacritic path is proven
+by the second measurement below rather than by this document.
+
+### The question marks are not a font
+
+Two measurements, neither of which needed the UI.
+
+**The stamp renders correctly here, in the characters in question.** Rendered
+on this machine through `pades.RenderStampPreview`, with a Cyrillic label and
+a line of `Čačak Đorđe Šimšić žžž`: every glyph draws. And the rasteriser's
+own substitute font — `internal/pades/render/preview-sans.ttf`, committed,
+579 characters — carries `č ć đ š ž`, their capitals, and all of Cyrillic.
+There was never a missing glyph to find.
+
+**The cause is the scheme.** `cmd/liro-bridge/placewindow.go` built the
+placement window's image addresses as `"https://" + placeScratchHost + "/"`,
+in two places. That is WebView2's virtual-host spelling and it is nothing at
+all on this platform, where a window's content is served over the `liro://`
+scheme (D-333, met there from the page side and here from the Go side). So
+the rendered page image and the stamp's own image both failed to load, and
+what a person saw was **WebKitGTK's broken-image mark, which is a question
+mark in a box.**
+
+**The remedy is that internal/ui answers the question instead of the caller
+guessing.** `ui.HostURL(host, path)` returns the address its own host will
+serve — `https://` under WebView2, `liro://` under WebKitGTK — and the two
+call sites ask for it.
+
+**The guard is a round trip rather than a string comparison**: an address
+this program hands a page must be one this program's own resolver answers, so
+the test builds a URL with `HostURL` and feeds it to `resolveAsset`. A test
+asserting the string would have been written to whatever the code did.
+Verified by mutation — with the old spelling it fails with `"https://…" is
+not a liro:// URI`.
+
+### The short window is not font metrics either
+
+The owner's guess was reasonable — a Linux UI font taking more room than
+Segoe UI — and it is wrong, which is why it was measured. Through the real
+host, asking the page itself:
+
+| asked | page got | difference |
+|---|---|---|
+| 440 × 380 | 440 × 343 | **−37** |
+| 440 × 600 | 440 × 563 | **−37** |
+| 460 × 760 | 460 × 723 | **−37** |
+| 700 × 300 | 700 × 263 | **−37** |
+
+**The width is exact every time and the height is short by exactly 37 every
+time.** A constant is not a font: it is the GTK4 client-side-decoration
+header bar. `Options.Width` and `Options.Height` are documented as the client
+area — the room the page gets — and WebView2 gives exactly that, while
+`gtk_window_set_default_size` counts the chrome. So every window on this
+platform had been handing its page 37 fewer points than its caller asked for,
+and a screen laid out to fill 380 overflowed and grew a scrollbar.
+
+**The fix puts the size request on the view rather than the window**, so GTK
+sizes the window around its child and adds the chrome instead of taking it
+out of the page. Re-measured at the same four sizes: exact, all four.
+
+### And the rule the owner asked for, on top of the fix
+
+Every height in `signflow.go` was chosen by looking at a Windows screen —
+which D-208 is the entry for, having objected to "arriving at a height by
+reasoning instead of by looking". A number measured on one platform is a fact
+about that platform, so the number becomes a **floor** and the page's own
+`scrollHeight` decides the rest: `fitToContent` grows the window, never
+shrinks it, caps at a bound that is explicitly not a design height, and logs
+declared and measured together so the next person has numbers rather than an
+impression.
+
+### The third defect, which nobody was looking for
+
+`git status` showed an untracked `Liro/` directory **inside the repository**,
+holding an audit log with the owner's two signatures in it.
+
+`newAuditStore` asked `platform.ConfigDir` for the **literal** `"windows"`.
+That branch is `filepath.Join(LOCALAPPDATA, "Liro")`; `LOCALAPPDATA` is empty
+on linux; `filepath.Join("", "Liro")` is the **relative** path `"Liro"`. So
+the agent wrote SPEC §6.7's hash chain into `./Liro/audit` — a different
+chain for every directory anybody ever starts it from, each believing it is
+the only one, and the first two real signatures on this platform put one in a
+git repository.
+
+**It is the same shape as the other two and as [[D-338]]'s whole finding**: a
+claim about a platform, written where nothing could check it, harmless for as
+long as there was only one platform. Three files named `"windows"` that way.
+
+**Two guards, both verified by mutation.** One asserts the property that
+matters — an audit directory that depends on the caller's working directory
+is not one log, so it must be absolute — and reproduces `"Liro/audit"`
+exactly when the literal comes back. The other walks every file in the
+package, including the ones this `GOOS` does not build, and refuses a string
+literal as the first argument to `platform.ConfigDir` or its siblings.
+
+### Decided
+
+- **`ui.HostURL` is how a caller names content at a virtual host**, and
+  hardcoding either scheme is now a test failure rather than a platform's
+  worth of broken images.
+- **`Options.Width`/`Options.Height` mean the client area on both hosts**, as
+  they always said they did.
+- **Declared step heights are floors, and the page decides the rest.**
+- **The audit directory comes from `runtime.GOOS`.** Where it belongs on
+  linux — `$XDG_CONFIG_HOME/liro/audit` today against F12 §7's
+  `$XDG_STATE_HOME` — is §7's decision and is deliberately not made here.
+- **Rejected: treating the question marks as a font problem.** The two
+  measurements that refuted it cost ten minutes and would have been a day of
+  font plumbing.
+
+### What this does not settle
+
+- **Whether the method step still needs more than 380 points on Linux.** The
+  header-bar fix gives it the 380 it was always asking for; whether this
+  desktop's font then needs more is what `fitToContent`'s log will say on the
+  owner's next run, in numbers.
+- **The stamp with a real card's name.** Cyrillic and the diacritics are
+  proven in the renderer; a MUP or Pošta certificate through the whole flow
+  is not, and that needs hardware.
+- **The two misplaced audit entries** are the owner's real records of two
+  test-key signatures. They were moved out of the repository rather than
+  deleted, to `/tmp/lt/stray-audit/`, because a hash chain is evidence even
+  when it is in the wrong place.
+
