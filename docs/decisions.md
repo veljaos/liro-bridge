@@ -34959,3 +34959,111 @@ the two documents that quote the Windows path.
   `XDG_RUNTIME_DIR` — is a test of a string rather than of behaviour.
   Worth someone's judgement rather than a reflex.
 
+
+---
+
+## D-346 — The generated-fragment guard caught what seven languages of guard could not: the examples drifted from the documentation that quotes them, and the check that noticed is a better find than the defect
+
+**Date:** 2026-09-22
+**Phase:** F12 — CI, before §7.
+
+**Two `not ok` lines out of 105**, on both `sdk-typescript` and `windows`,
+which run the same suite:
+
+```
+not ok 26 - the README's python fragment is what sign.py contains
+not ok 29 - the README's go fragment is what sign.go contains
+```
+
+[[D-345]] changed `sign.py` and `sign.go` and left `sdk/typescript/README.md`
+quoting the text they had before. The fix is to regenerate the two fenced
+blocks from the files' `--- README ---` marker regions, which is what the
+test's own failure message asks for.
+
+### The guard is the entry, not the drift
+
+[[D-345]] closed on *"nothing checks this. A guard would have to run seven
+languages, and the honest smaller version — a test that each example mentions
+`XDG_RUNTIME_DIR` — is a test of a string rather than of behaviour."* That is
+still true of the examples' **behaviour**, and it was wrong about there being
+nothing.
+
+`examples.test.mjs` does not run any example. It asserts that **the fragment a
+reader copies is the file beside it**, byte for byte, dedented from a marked
+region. That is a narrower property than "the example works" and it is the one
+that actually rots: an example and its documentation are two copies of the same
+thing kept in step by hand, and nobody keeps two copies in step by hand
+reliably. The file's own header says so and cites [[D-183]], the generated file
+that drifted from its generator.
+
+**So the thing worth recording is not that a fragment drifted — it is that a
+fragment drifting is a thing this repository can no longer do quietly.** The
+defect it caught was three hours old. The class it forecloses is permanent, and
+it is the class where a reader copies documentation, it does not work, and they
+have lost more than writing it themselves would have cost.
+
+**And it fails where the money is.** It runs in the two jobs that have nothing
+to do with Linux, on a tree where the Linux work was the thing that changed —
+which is [[D-221]]'s shape inverted, and welcome: a check that only runs where
+it was written is the failure mode, and this one runs where it was *not*.
+
+**What it still does not cover** is the other five clients, for [[D-345]]'s
+reason: `Sign.cs`, `Sign.java` and `sign.php` pass this suite today because
+their quoted regions have not changed, and both the file and the fragment
+still teach the Windows-only path. A guard that a fragment matches its file
+says nothing about whether the file is right.
+
+### The count had to be explained before the green could be believed
+
+Three numbers disagreed, and every one of them would have read as a defect:
+
+| | |
+|---|---|
+| CI reports **105** tests; this machine reports **103** | CI's `node --test` walks the whole directory and counts `fake-agent.mjs` and `helpers.mjs` — which register no tests — as two more passing files. A per-file loop over `*.test.mjs` does not see them. 103 + 2. |
+| `package.test.mjs` **fails to load** here | `npm-cli.js was not found`. Debian's `npm` lives at `/usr/share/nodejs/npm/bin/`, not the `<prefix>/lib/node_modules/` the resolver guesses. It passes with `npm_execpath` set — which `npm test` sets and a bare `node --test` does not, and CI runs `npm test`. |
+| the first local run took **22 minutes**; CI takes 2 | the section below. |
+
+None was a defect in the tree and all three were on the path between "I ran it"
+and "it passes". [[D-304]]'s fifth question — *was any discrepancy explained or
+absorbed* — is the only reason they were chased rather than rounded off.
+
+The resolver's own comment already carries this shape: it says assuming the
+Windows layout *"is what made this test pass on the windows runner and fail on
+ubuntu-latest ([[D-221]])"*. Debian's layout is the third one, and the honest
+general answer — resolve the `npm` on `PATH` through its symlink — is left
+undone deliberately, because the file is reached through `npm test` in every
+place that matters and a fourth guess is not better than three.
+
+### 22 minutes against 13 seconds, and the rule that bought it
+
+`node --test` runs test files concurrently. On this VM — 6 CPUs, 6 GB, no
+working GPU driver — the twelve files took **1 318 s**. The same twelve, run
+one at a time, take **13 s**. Same node, same tree, same tests, a hundredfold.
+
+**This machine's one-process rule was adopted to stop it dying** — session 3
+§6, three crashes in a day — and it is recorded here because that is not the
+only thing it buys. The rule reads like a tax on throughput and on this
+hardware it is the opposite: concurrency here is not parallelism, it is twelve
+node processes contending for six cores and 6 GB with software rendering
+underneath, and the contention costs two orders of magnitude more than the
+serialisation saves.
+
+**Written down for the next person who reintroduces parallelism here**, which
+is a reasonable thing to want and would look like an obvious win. It is not
+one. Measure the serial time first: on this machine the sequential run is not
+the slow path, it is the fast one.
+
+Nothing follows from this about the runners. CI's 2 minutes is a different
+machine with a different core count and no compositor, and its parallel run is
+fine. The finding is about **this** VM and it is the VM every Linux measurement
+in F12 is taken on.
+
+### Measured
+
+| | |
+|---|---|
+| `nodejs`, `npm` installed via apt | **v18.19.1**, matching CI's pinned `node-version: '18'` |
+| failure reproduced before the fix | `node --test test/examples.test.mjs` → exit 1, tests 2 and 5 of that file |
+| after the fix | 13 of 13 in that file; **103 of 103** across the suite, 0 failures |
+| `npm run check-build` | `dist/ matches src/`, exit 0 |
+| CI's 105 names against this machine's 103 | diffed by name; the only two absent are `fake-agent.mjs` and `helpers.mjs` |
