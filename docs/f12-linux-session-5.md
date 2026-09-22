@@ -10,7 +10,8 @@ Secret Service branch and why the transfer is plain), [[D-348]] (the XDG
 directories, and every path being relative when the environment is silent),
 [[D-349]] (the Linux PKCS#11 layer, run rather than compiled), [[D-350]] (the
 GTK PIN dialog), [[D-351]] (its conclusion withdrawn), [[D-352]] (the
-withdrawal withdrawn).
+withdrawal withdrawn), [[D-353]] (what the runners caught that this machine
+could not).
 **Also changed:** SPEC §6.4's Linux row, and the CI boundary guard.
 
 ---
@@ -66,6 +67,17 @@ evening and the arc is the point. **The state to carry forward is: the
 keystroke path has never been measured, and the finding is that nobody has
 looked at it, not that it is clean.**
 
+**CI went red on the three pushed commits and is fixed but not yet
+re-run.** Four causes, in [[D-353]], and not one of them a defect in what the
+code does: `libp11-kit-dev` is a development package this machine had and the
+runner never did; "needs GTK" and "needs a C toolchain" stopped being the same
+set of packages; a build constraint went missing in a substitution that
+silently did not match, where only the **darwin** cross-build could see it;
+and D-349's clamp swallowed an `ulMaxPinLen` of a million, which is evidence
+that a struct layout was misread rather than that a token is unusual. **The
+last one was caught by a Windows test written long before, and the test was
+right.**
+
 **§8 has not been started.** That is tomorrow.
 
 ---
@@ -76,18 +88,22 @@ looked at it, not that it is clean.**
    conclusion — for the shape. Two of the three overturnings came from a
    control rather than from anybody's reading, and the third came from the
    owner's hands.
-2. **§8, packaging**, which is the whole of what is left on the briefing and
+2. **Check that CI is green** before anything else. The fixes are in
+   `d619a82` and were verified here by running CI's own steps — the computed
+   `CGO_ENABLED=0` package list, and all three cross-builds — but the
+   `libp11-kit-dev` half cannot be verified anywhere but on a runner.
+3. **§8, packaging**, which is the whole of what is left on the briefing and
    has not been touched. Its list is in the briefing and in F12 §8.
-3. **The keystroke path**, when somebody has half an hour: the probe's
+4. **The keystroke path**, when somebody has half an hour: the probe's
    `baseline` mode is the control it needed, its interactive mode now demands
    sixteen unguessable characters, and the question is whether GdkEvent or an
    input method leaves anything. **Do not start from the assumption that it
    does** — that was D-351's error — and do not start from the assumption that
    it does not, which was D-350's.
-4. **Type a PIN into the dialog against SoftHSM.** The seam is wired, the
+5. **Type a PIN into the dialog against SoftHSM.** The seam is wired, the
    module signs, and the one thing that has not happened is a person putting
    characters into this window and a card answering.
-5. **Watch the live handover and the notification's withdrawal**, both still
+6. **Watch the live handover and the notification's withdrawal**, both still
    built and unwatched since session 4, and both still on that session's list.
 
 ---
@@ -105,6 +121,7 @@ by reading; every one was caught by a control.**
 | the memory scan, first version ([[D-350]]) | 2 copies **before anything was set** | it found its own global needle and its own scan buffer |
 | the memory scan, interactive mode ([[D-351]], [[D-352]]) | 8 copies after a person typed | the needle was a string a person chose; a window with **no input at all** contains 8 of them |
 | the relative-path guard ([[D-348]]) | every path absolute | only because the account database answered; the control removes it and requires the guard to fail |
+| three new path tests ([[D-353]]) | green here | they compared a platform-*parameterised* function against one platform's separators, so they asserted the runner's separator rather than the argument's |
 
 **The one that was not an instrument failure** is worth naming beside them:
 `pin_test.go` refused a refactor that would have passed the PIN to a second
@@ -194,6 +211,40 @@ All in the scratch directory, all built, none in the repository.
   `npm-cli.js` through `npm_execpath` or two guesses, and Debian's location is
   neither. It passes under `npm test` everywhere that matters, so a fourth
   guess was deliberately not added ([[D-346]]).
+
+---
+
+## F.1 Run these before pushing, because this session did not
+
+One command each, all cheap, and each of them would have caught something
+tonight:
+
+```
+for g in "linux amd64" "windows amd64" "darwin arm64"; do set -- $g
+  CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -o /tmp/x/ ./...
+done                                  # §3 of D-353: only darwin saw it
+GOOS=windows go vet ./...             # the platform whose tests this VM cannot run
+```
+
+and the two package lists CI computes, which are the only local way to know
+that the `CGO_ENABLED=0` sweep still builds:
+
+```
+go list ./... | grep -vxF "$(printf '%s\n%s\n%s' \
+  github.com/veljaos/liro-bridge/cmd/liro-bridge \
+  github.com/veljaos/liro-bridge/internal/pinscreen \
+  github.com/veljaos/liro-bridge/internal/ui)" > /tmp/gtkfree.txt
+p11=github.com/veljaos/liro-bridge/internal/keysource/pkcs11
+go list -f '{{.ImportPath}}{{range .Deps}}{{if eq . "'"$p11"'"}} needs{{end}}{{end}}' ./... |
+  awk -v p="$p11" '$1==p || $2=="needs" {print $1}' | sort > /tmp/needsp11.txt
+grep -vxF -f /tmp/needsp11.txt /tmp/gtkfree.txt > /tmp/cgofree.txt
+CGO_ENABLED=0 GOOS=linux go build -o /tmp/x/ $(cat /tmp/cgofree.txt)
+```
+
+**What none of this can check is an apt package the runner does not have.**
+That is §1 of [[D-353]] and it has now happened twice ([[D-335]]), both times
+for the same reason: the machine the code is written on has the package
+because writing the code required installing it.
 
 ---
 
