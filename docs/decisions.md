@@ -35148,6 +35148,24 @@ than none** — it is the thing a reader would point at when asking
 whether this is safe, and it would answer a question nobody should be
 reassured about.
 
+### SPEC §6.4 named a library this program is forbidden to link
+
+The table's Linux row read *"Secret Service (`libsecret`) where
+available"*. SPEC §1.1, written later, names this exact case as its
+example of a dependency that must be satisfied in Go: *"Secret Service
+(§6.4) is D-Bus over a unix socket, and a pure-Go D-Bus client compiled
+at `CGO_ENABLED=0` was measured to stay fully static … **A dependency
+that can be satisfied in Go is not a reason to declare one**."* So the
+two sections disagreed, and the implementation follows §1.1.
+
+**Amended, to `Secret Service (D-Bus, `org.freedesktop.secrets`)`.** It
+is recorded here rather than made as a typo fix because it is not one:
+**a specification that names a library the program is forbidden to link
+is a line somebody eventually follows.** The parenthetical looked like a
+gloss and would have read to the next person as a requirement — and the
+cost of following it is a C library and a glib stack in every package's
+`Depends:`, arrived at by doing what the specification said.
+
 **What would change the answer**, written down so the decision can be
 re-taken rather than inherited: a bus daemon that logged message bodies
 (measured — neither the user nor the system journal contains the probe's
@@ -35269,7 +35287,13 @@ Windows and macOS are untouched — `StateDir` and `CacheDir` return
 the Windows paths, so a Windows path that started consulting one would
 fail here rather than on somebody's machine.
 
-### The page images are the one that is not tidiness
+### The page images are the finding of this section
+
+**This was not on anybody's list**, and it is larger than the question
+that led to it. §7 asked about the secret store; this came out of moving
+a directory because XDG said it was in the wrong place, and nothing else
+would have found it. A defect that is only visible when you move the
+thing is a defect that stays until somebody moves the thing.
 
 A placement window renders the document somebody is about to sign into a
 scratch directory, one image per page. That directory was under
@@ -35306,9 +35330,18 @@ case and it is a real one: a service account, a scrubbed environment, a
 scheduler that exports nothing. The Linux branch had it too — no `HOME`
 gives `.config/liro`.
 
-**This was not on the list and is the same defect D-339 found**, which is
-the argument for writing the general guard rather than a test for the
-path that was reported.
+**[[D-339]] was fixed on the instance and not on the class, and the class
+was still live on every platform.** D-339 found one path — the audit
+log — written relative to the current directory, and fixed that path.
+The property *"no path this program writes to may be relative"* was
+never asserted, so the other six went on being relative in exactly the
+same circumstance, on Windows and macOS as well as here. **A fix that
+addresses the instance rather than the class is how a defect gets found
+twice**, and the second time is by somebody who is not looking for it.
+That is the argument for writing the general guard rather than a test
+for the path that was reported, and it is why this guard enumerates
+every path in one function: a new one is covered by being added there
+rather than by somebody remembering to write a test for it.
 
 **The remedy is `home()`**: the environment first, then the account
 database — `getpwuid` on Unix, the profile directory on Windows — which

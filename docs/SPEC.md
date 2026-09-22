@@ -327,7 +327,7 @@ The device secret is encrypted at rest using OS facilities, with **additional en
 |---|---|
 | Windows | DPAPI, `CryptProtectData` with `pOptionalEntropy` |
 | macOS | Keychain, item bound to the application |
-| Linux | Secret Service (`libsecret`) where available, otherwise an encrypted file with a key derived from machine-id + user, with a clear warning in the log |
+| Linux | Secret Service (D-Bus, `org.freedesktop.secrets`) where available, otherwise an encrypted file with a key derived from machine-id + user, with a clear warning in the log |
 
 This is behind an interface in `internal/platform`. The rest of the code calls `SecretStore.Get`/`Set` and knows nothing about DPAPI.
 
