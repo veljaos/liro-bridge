@@ -182,6 +182,21 @@ const (
 // allocation if a module ever reports many.
 const findBatch = 32
 
+// ckULong is what PKCS#11 calls CK_ULONG, which is the width every
+// handle, slot identifier and object handle in this API is.
+//
+// **Four bytes here and eight on Linux** — Windows x64 is LLP64 and
+// Linux is LP64 — and that difference is why the two module layers are
+// separate files rather than one with a flag. It is an *alias* rather
+// than a defined type so that the logic above these primitives can name
+// it once and compile for both without either platform's code being
+// rewritten to satisfy the other (D-349).
+type ckULong = uint32
+
+// ckULongBytes encodes a CK_ULONG as this platform lays one out, for a
+// template value. Four bytes here.
+func ckULongBytes(v ckULong) []byte { return u32Bytes(v) }
+
 // module is one loaded PKCS#11 module, initialised.
 //
 // Not safe for concurrent use. The card is a single serial device and its

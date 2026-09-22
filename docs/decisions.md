@@ -35372,3 +35372,283 @@ The agent run with all five XDG variables pointed at a scratch tree:
 and nothing beside the binary, in the repository, or in the working
 directory.
 
+---
+
+## D-349 — The Linux PKCS#11 layer, written in cgo against the platform's own header and run against a real module for the first time: a token's declared maximum is clamped rather than refused, and the PIN guard refused the refactor that would have shared the login body
+
+**Date:** 2026-09-22
+**Phase:** F12 §5.
+
+**What existed before today:** `module_other.go`, whose `openModule`
+returned *"not supported on this platform yet (see F12/F13)"*. The
+package compiled on Linux and could not reach a token. F12 §5's PIN
+dialog is useless without it, which is why this came first.
+
+### cgo against `/usr/include/p11-kit-1/p11-kit/pkcs11.h`
+
+F12 §1 asked for this in terms rather than as a preference, and the
+reason is F11's measurement: **three of four hand-written candidate
+`CK_ATTRIBUTE` layouts returned `CKR_OK` with a zero length**, so a
+wrong layout does not announce itself and the way to find out is not to
+try. Here `CK_ULONG` is eight bytes against Windows' four and the
+structures are natively aligned rather than packed to one, so every
+offset in `module_windows.go` is *wrong* here rather than merely
+unavailable. The compiler computes them instead.
+
+`RTLD_NOW | RTLD_LOCAL`: local because a vendor module brings its own
+OpenSSL and F12 §2 forbids making those symbols visible to the rest of
+the process; now rather than lazy so that a module wanting a symbol the
+distribution no longer ships fails at the load, with a reason, instead
+of at the first call into it — which F12 §10 names as the Linux failure
+mode Windows does not have.
+
+### The shared half, and the alias that made it possible
+
+`sign_windows.go` and `source_windows.go` were 750 lines of which almost
+everything was platform-*neutral* logic over a handful of primitives:
+which certificate, which key, what a failure means. Writing a second
+copy for Linux would have been **the exact defect this session has
+already written two entries about** — [[D-346]]'s drifting fragment and
+[[D-183]]'s generated file — in security code where the two copies would
+be `privateKeyFor` and `Open`.
+
+So `ckULong` is a **type alias**, `uint32` on Windows and `uint64` here.
+An alias rather than a defined type is the whole trick: `ckULong` *is*
+`uint32` on Windows, so `sign.go`, `source.go` and `login.go` name it
+once and neither platform's code had to be rewritten to satisfy the
+other. `sign_windows.go` kept `signRaw` and nothing else;
+`source_windows.go` became `source.go` unchanged but for one signature.
+
+`CertificateInfo.SlotID` is declared `uint64` rather than per platform,
+because **a field on an exported struct that changes width between
+builds is a field every caller has to know the platform of** — and
+widening is the only direction that cannot lose one.
+
+### Measured against SoftHSM, which is a real module with a real PIN
+
+```
+module: "SoftHSM" "Implementation of PKCS11" cryptoki 2.40 library 2.6
+token:  label="Liro F12 test" minPIN=4 maxPIN=255
+        protectedPath=false loginRequired=true
+certificate: CN=Liro F12 Test Signer,O=Liro,C=RS
+a 256-byte signature verified against the certificate's public key
+one wrong PIN, one attempt, C_Login: CKR_PIN_INCORRECT (0xA0)
+```
+
+**The verification is the result, not the signature.** SPEC §16.4 and
+F12's rules both forbid concluding from a call returning bytes, and on a
+new struct layout that is not historical advice: a wrong layout produces
+a signature that verifies against nothing while every layer reports
+success. The check is `crypto/rsa` against the public key in the
+certificate the token itself handed over.
+
+**And clause 1's flag is now measured on a third module and is still
+clear.** No module this project has met offers a protected
+authentication path — NetSeT on a MUP card ([[D-268]]), SafeSign on a
+Pošta card ([[D-273]]), SoftHSM today — so §6.5.1's whole body is live
+on every path this project has.
+
+### The first thing running it found: a declared maximum is not a reason to refuse a token
+
+`MaxPINLength` is 64, chosen because the two cards this project has
+measured declare 8 and 15. **SoftHSM declares `ulMaxPinLen` 255**, and
+the layer refused the token outright — *"this token declares a maximum
+PIN length of 255, which this layer will not allocate for"*.
+
+That is the rule being too strict rather than the token being wrong. 255
+is not absurd; it is a software token being permissive, and a
+conforming one. So the declared maximum is now **clamped** to what this
+layer will allocate, and the clamp is the effective maximum from there
+on — the buffer, the length check, and what the screen is told. No human
+PIN exceeds 64, so clamping cannot refuse a PIN somebody would type.
+
+A token whose *minimum* exceeds it is still refused, and that is the
+case the old check was really about: a token needing more than this
+layer will hold is one it cannot serve, and pretending otherwise would
+send a truncated PIN to a card and spend one of three attempts on it.
+
+**It took a real module to find this**, which is the argument for the
+whole exercise: the layer had compiled on this platform for two phases.
+
+### The PIN guard refused the sharing, and was right
+
+The first attempt at sharing the login sequence put `C_Login` behind a
+per-platform `callLogin(pin []byte, n int)` so that one `login` could
+serve both. `pin_test.go` failed it:
+
+```
+login_windows.go:41: field or parameter "pin" — SPEC §6.5.1 allows a PIN
+  only as a local variable in the one function that passes it to C_Login
+  and overwrites it; it may not be held here
+module_linux.go:472: field or parameter "pin" — …
+```
+
+The guard's own doc says why: *"a function parameter … is a way for the
+PIN to be held, or to travel to a second function, and §6.5.1 forbids
+both."* It was written before the backend it constrains ([[D-269]]) and
+this is the first thing that ever tried to widen it.
+
+**So the structure changed rather than the guard.** `login.go` now holds
+the *arithmetic* — the token's limits, the clamp, the length check — and
+**the PIN does not appear in that file at all**. The twenty lines that
+hold the characters are per platform, because the call at the end of
+them is, and both are covered by the same AST guard. What is duplicated
+is the clause itself, which has to be readable in one function anyway;
+what is shared is everything that is only numbers.
+
+This is the third time in one session that a guard written earlier
+caught something a refactor was about to do quietly, and the only one
+where the right answer was to change the code rather than the guard.
+
+### Two more things this now has that it did not
+
+- **Discovery reads p11-kit's registry** — `/usr/share/p11-kit/modules/*.module`
+  and its per-user counterpart — which Windows has no equivalent of.
+  A `.module` file is written by the package that installed the module,
+  which is better evidence than a path this project guessed, and it is
+  the only way a vendor nobody here has heard of is found at all.
+  Multiarch directories are searched because there is no one library
+  directory: `/usr/lib/x86_64-linux-gnu` on Debian, `/usr/lib64` on
+  Fedora.
+- **A crash sentinel with a body.** `crash_other_test.go` said this
+  would grow one *"at the point where there is a dlopen binding for a
+  module to crash inside"*. There is now, so `crash_linux_test.go`
+  raises `SIGABRT` — what a C library's `abort()` raises, which is how a
+  vendor module fails an assertion — and F12 §2's exit condition, *"a
+  module that kills its worker becomes a Failure and the agent
+  survives"*, is demonstrated on this platform rather than deferred.
+  Not `os.Exit`: an exit status is a process choosing to stop, and the
+  thing being reproduced is a process being stopped.
+
+---
+
+## D-350 — F12 §5's PIN dialog is a native GTK window, and clause 2's first exception carries here unchanged: GTK's password buffer is mlocked, holds exactly one copy, and is overwritten through the widget's own interface
+
+**Date:** 2026-09-22
+**Phase:** F12 §5.
+
+**The question was not which dialog to build.** SPEC §10 says one window
+in this program is native rather than HTML and §6.5.1 clause 2 says why:
+the PIN must exist only for the length of one `C_Login` and be
+overwritten, and a page rendered in a browser view is not this program's
+memory. WebKitGTK runs the page out of process exactly as WebView2 does,
+so [[D-277]]'s reasoning carries unchanged.
+
+The question was **whether clause 2 still holds when the control is
+GTK's rather than Win32's**, because the clause counts its own
+exceptions and says a third *"should be suspected of being a pattern
+rather than a case — at which point this clause has stopped describing
+what the program does, and the honest move is to rewrite it rather than
+to add to it again."* So the answer had to be measured the way [[D-290]]
+measured the Windows edit control, not read out of GTK's documentation.
+
+### Measured: a random needle, a scan of the process's own writable mappings
+
+Predictions written first. The one that failed is marked.
+
+| | predicted | measured |
+|---|---|---|
+| the default buffer | `GtkPasswordEntryBuffer` | **confirmed** |
+| non-pageable | `VmLck` non-zero | **`VmLck` 0 → 16 kB with text in it, back to 0 when the window goes** |
+| copies in the process | **more than one** — a Pango layout as well as the buffer | **failed: exactly one.** A password entry renders the invisible character, so the layout never holds the text |
+| after overwriting | gone everywhere | **0 copies**, both via `set_text` and via the keystroke path |
+
+**The instrument had to be fixed before any of that could be believed.**
+The first version found **two copies before anything had been set** — its
+own global needle, and the buffer it had just read a mapping into. An
+instrument that finds itself cannot say whether what it found afterwards
+was new. The needle and the scan buffer now live in `mmap`'d pages the
+scan excludes, the scan buffer is zeroed after each mapping, and the
+baseline is 0.
+
+**And the undo question needed a different instrument entirely.** The
+inner `GtkText` reports `enable-undo` as **true**, and an undo history
+holding thirty-two single characters would never match a thirty-two-byte
+needle — so the memory scan **cannot see that absence**, which is
+[[D-304]]'s second question exactly. Asked behaviourally instead: after
+typing and clearing, does undo bring it back? *"undo restored nothing"*
+— **and the control failed**, because the same sequence on an ordinary
+visible `GtkEntry` also restored nothing, which meant the answer was
+about the probe rather than about GTK.
+
+The cause was that `gtk_editable_insert_text` does not feed GTK's undo
+history at all; the history is built from `GtkText`'s own
+`insert-at-cursor` binding, which is the path a keystroke takes inside
+the widget. Driven through that, the control holds — one undo empties
+the plain entry — and **the password entry is unchanged by the same
+undo.** Only then does "GTK builds no undo history for a password
+entry" mean anything.
+
+*(Emitting a widget's own key-binding signal is not the synthetic input
+[[D-094]] forbids: nothing is forged at the compositor, no human
+decision is simulated, and what is under test is where bytes go rather
+than whether somebody approved something. What it does **not** reach is
+GdkEvent's own copy of the key and an input method's preedit buffer, and
+that is stated rather than glossed — it needs a person to type, and the
+probe has a mode that waits for one.)*
+
+### So the clause does not need a third exception
+
+Exception 1 reads: *"the native dialog's own edit control, whose copy of
+the PIN is the operating system's memory: it cannot be wiped, only
+overwritten through the control's own interface, and it is, before the
+window is destroyed rather than by destroying it."*
+
+Every word of that is true of `GtkPasswordEntry`, **and one thing is
+better**: the Windows edit control's buffer is ordinary pageable memory,
+and GTK's is `mlock`ed. The clause is unchanged, the count of exceptions
+is unchanged at two, and the honest rewrite it threatens is not needed.
+
+### What was built
+
+`internal/ui/pindialog_linux.go`, whose signature is the Windows one
+byte for byte — **a callback filling a caller-owned buffer rather than a
+function returning a `[]byte`**, which F12 §5 asked to survive the port
+and which is the reason there is exactly one copy of the PIN in this
+program.
+
+**The PIN never becomes a Go string**, and three C helpers are how:
+`liro_pin_len` returns a length and no bytes, `liro_pin_copy` copies
+into the caller's own buffer, `liro_pin_clear` overwrites through the
+widget's interface. The binding's own `Text()` accessor would have been
+the obvious thing to reach for, returns a `string`, and would quietly
+undo the reason the file exists — so **the AST guard names it**,
+alongside `C.GoString` and `C.GoStringN`, with a control that points the
+matcher at source containing all three. Both it and the
+overwrite-before-destroy guard were mutation-verified against the real
+file.
+
+`owner` is accepted and ignored: on Windows it is the HWND disabled
+while the dialog is up, and on Wayland a client cannot parent itself
+onto an arbitrary toplevel ([[D-337]]), so the dialog is modal to the
+application instead. The parameter stays so that one caller compiles for
+both.
+
+### The CI boundary moved to three, and the count is not the point
+
+`internal/pinscreen` now reaches `internal/ui`, so the packages needing
+a GTK stack on linux are the agent, the window host, **and pinscreen**.
+
+[[D-335]] removed exactly this coupling, and it is back on purpose. What
+D-335 removed was a reference from a function whose whole body is a
+refusal — one symbol putting a GTK stack behind fifty packages. What is
+here now is a window. The guard's comment says so, and its rule is
+restated as an argument rather than a number: **every name in the list
+has to be a package whose job is to put something on a screen**, and a
+fourth that is not is a reason to find out why rather than to widen the
+list.
+
+`internal/pinscreen`'s own guard counts its files and refused the new
+one — *"checked 4 non-test Go files, want 3"* — which is that tripwire
+working: it is the reason anybody looked at `pinscreen_linux.go` against
+the PIN rule at all.
+
+### What is still owed
+
+**Nobody has typed a PIN into it.** The dialog opens, the seam is wired,
+the module signs, and the one thing that has not happened is a person
+putting six digits into this window and a card answering. That needs
+hands and it is written down as unwatched rather than implied to be
+done, which is [[D-341]]'s notification-withdrawal lesson applied before
+somebody has to learn it twice.
+

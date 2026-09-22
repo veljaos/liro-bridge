@@ -69,10 +69,16 @@ var ErrCertificateNotFound = errors.New("pkcs11: no certificate with that thumbp
 // Thumbprint is what collapses them; the rest is what says which sighting a
 // row came from (F11 §4).
 type CertificateInfo struct {
-	Thumbprint   string
-	DER          []byte
-	Label        string
-	SlotID       uint32
+	Thumbprint string
+	DER        []byte
+	Label      string
+	// SlotID is a CK_ULONG, which is four bytes on Windows and eight on
+	// Linux (D-349). It is declared at the wider of the two here rather
+	// than per platform, because a field on an exported struct that
+	// changes width between builds is a field every caller has to know
+	// the platform of — and widening is the only direction that cannot
+	// lose one.
+	SlotID       uint64
 	TokenLabel   string
 	TokenSerial  string
 	ModulePath   string

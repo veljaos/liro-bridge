@@ -38,25 +38,31 @@ jobs:
       # that surprised: cmd/liro-bridge pulled the whole GTK stack
       # through internal/pinscreen under `-tags softtoken` and through
       # nothing at all without it.
-      # **Two packages now, and the second one arriving is F12 §3 landing
-      # rather than a regression.** internal/ui is the window host;
-      # cmd/liro-bridge is the agent, which since D-338 opens those
-      # windows on linux and therefore links what they link. SPEC §1.1
-      # says so in as many words — "on Linux the binary is dynamically
-      # linked against the system's WebKitGTK, its GTK stack and libc" —
-      # so the list below is the specification's own shape, and what
-      # this guard protects is that it stops there.
+      # **Three packages now, and each arrival was a section of F12
+      # landing rather than a regression.** internal/ui is the window
+      # host; cmd/liro-bridge is the agent, which since D-338 opens those
+      # windows on linux and therefore links what they link; and
+      # internal/pinscreen joined with D-350, because F12 §5's PIN dialog
+      # is a native GTK window and this is the package that opens it.
+      # SPEC §1.1 says the first two in as many words — "on Linux the
+      # binary is dynamically linked against the system's WebKitGTK, its
+      # GTK stack and libc" — and SPEC §10 says the third: one window in
+      # this program is native rather than HTML, and a package that opens
+      # a window links what a window links.
       #
-      # A third entry is the thing to look at. It means some package
-      # that is not a window and is not the agent has acquired a window
-      # dependency, which is how a GTK stack ends up behind code that
-      # ships without one.
-      - name: only the window host and the agent need GTK on linux
+      # **The list is the argument, not the count.** Every name in it has
+      # to be a package whose job is to put something on a screen. A
+      # fourth entry that is not is how a GTK stack ends up behind code
+      # that ships without one — and the answer then is not to widen this
+      # list but to find out why something that is not a window grew a
+      # window dependency (D-335's own case was one symbol in one file).
+      - name: only the window packages and the agent need GTK on linux
         run: |
           set -eu
           ui=github.com/veljaos/liro-bridge/internal/ui
-          expected="$(printf '%s\n%s' \
+          expected="$(printf '%s\n%s\n%s' \
             github.com/veljaos/liro-bridge/cmd/liro-bridge \
+            github.com/veljaos/liro-bridge/internal/pinscreen \
             github.com/veljaos/liro-bridge/internal/ui)"
 
           needs_ui() {
@@ -72,10 +78,10 @@ jobs:
               echo "Expected exactly:"
               echo "$expected"
               echo
-              echo "A package that is neither the window host nor the agent has"
+              echo "A package whose job is not to put something on a screen has"
               echo "acquired a window dependency. That is not a CI problem to widen"
               echo "this list for: it puts a GTK stack behind code that ships"
-              echo "without one (SPEC §1.1). See D-335 and D-338."
+              echo "without one (SPEC §1.1). See D-335, D-338 and D-350."
               exit 1
             fi
             echo "OK: $view — exactly the window host and the agent"
@@ -169,6 +175,13 @@ jobs:
       # internal/pinscreen, so the GTK requirement appeared here and
       # nowhere else. A dependency that exists in one build view is the
       # hardest kind to notice.
+      #
+      # **That coupling is back as of D-350, and this time it is meant.**
+      # internal/pinscreen reaches internal/ui in both views now, because
+      # F12 §5's PIN dialog is a native GTK window and pinscreen is what
+      # opens it. What D-335 removed was a reference from a function
+      # whose whole body is a refusal; what is here now is a window. The
+      # guard checking both views is what tells those two apart.
       - name: test (softtoken tag)
         run: go test -tags softtoken $(cat "$RUNNER_TEMP/gtk-free-packages.txt") -race -count=1
         env:
@@ -213,13 +226,11 @@ jobs:
       # alike in a log (D-334).
       #
       # What this step proves: every package this project ships on linux
-      # compiles with no C toolchain and no GTK, which is F0 §10's rule
-      # and the binary half of SPEC §1.1. cmd/liro-bridge imports neither
-      # internal/ui nor internal/pinscreen on linux — measured, not
-      # assumed — and built this way it still reports DT_NEEDED 0 and no
-      # PT_INTERP at ~10.2 MB, F12 §1's table unchanged. (The exact byte
-      # count moves by a few dozen bytes with the output path, so it is
-      # not quoted here as a constant.)
+      # that can compile without a C toolchain still does, which is F0
+      # §10's rule and the binary half of SPEC §1.1. The excluded list is
+      # computed by the guard step above rather than written here, so it
+      # follows the boundary instead of having to be remembered — which
+      # matters now that the boundary has moved twice (D-338, D-350).
       #
       # **D-334 narrowed this to ./cmd/... and gave up the cgo-free check
       # for every other package on linux; D-335 gives it back**, because
@@ -298,7 +309,7 @@ jobs:
       # module, since it loads every package it is pointed at and cannot
       # be told to skip one.
       - name: go vet (the two packages that link GTK)
-        run: go vet -unsafeptr=false ./internal/ui/... ./cmd/liro-bridge/...
+        run: go vet -unsafeptr=false ./internal/ui/... ./internal/pinscreen/... ./cmd/liro-bridge/...
 
       - name: golangci-lint (GOOS=linux)
         uses: golangci/golangci-lint-action@v9
@@ -308,7 +319,7 @@ jobs:
       # No -race here, and the step below says why rather than leaving it
       # to be rediscovered. This is the run that gates: it must pass.
       - name: test (the two packages that link GTK)
-        run: go test ./internal/ui/... ./cmd/liro-bridge/... -count=1
+        run: go test ./internal/ui/... ./internal/pinscreen/... ./cmd/liro-bridge/... -count=1
 
       # Two things must be impossible to enable in a release build, and
       # this checks the binary rather than trusting either build tag.
@@ -594,7 +605,7 @@ jobs:
         # it passed; a probe does.
         run: |
           set +e
-          go test ./internal/ui/... ./cmd/liro-bridge/... -race -count=1 -v
+          go test ./internal/ui/... ./internal/pinscreen/... ./cmd/liro-bridge/... -race -count=1 -v
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then

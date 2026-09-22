@@ -94,3 +94,32 @@ func encodePINInto(dst []byte, runes []rune) int {
 	}
 	return at
 }
+
+// PINPrompt is the text the dialog shows, already localised by the caller.
+//
+// This package has no i18n dependency — SPEC §4.2 rule 4 keeps internal/ui,
+// internal/api and internal/cli independent of each other, and pickFolder and
+// ShowRuntimeMissingMessage already take their strings the same way. The three
+// locales are the caller's, which is where the catalogue is.
+type PINPrompt struct {
+	// Title is the window's caption.
+	Title string
+
+	// Heading names this program, and it is the whole of §6.5.1's sixth
+	// clause. It is drawn first, in the heavier face, above everything else.
+	Heading string
+
+	// Subject says which card and which certificate is being asked about.
+	Subject string
+
+	// Label is the edit control's own label.
+	Label string
+
+	// Hint says how many characters this token accepts, so a person is told
+	// the rule rather than discovering it by being refused.
+	Hint string
+
+	// OK and Cancel are the two buttons.
+	OK     string
+	Cancel string
+}

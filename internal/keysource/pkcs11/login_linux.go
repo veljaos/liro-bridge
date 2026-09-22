@@ -1,35 +1,17 @@
-//go:build windows
+//go:build linux
 
 package pkcs11
+
+/*
+#cgo pkg-config: p11-kit-1
+#include "pkcs11_linux.h"
+*/
+import "C"
 
 import (
 	"runtime"
 	"unsafe"
 )
-
-// ckuUser is CKU_USER, the only user type this layer ever logs in as. CKU_SO
-// is the security officer and belongs to card administration, which this
-// program does not do.
-const ckuUser = 1
-
-// The two sentinels below are declared `var x error = …` rather than letting
-// the type be inferred, and the explicit type is load-bearing rather than a
-// style choice.
-//
-// Both are named after a PIN and neither holds one, which is the case D-270
-// measured across this whole tree: every PIN-named declaration in it is *about*
-// a PIN without *being* one. pin_test.go asks what a declaration can carry
-// rather than what it is called, precisely so that such names can stay — but a
-// var with no type expression and a function call for an initialiser is one
-// the checker cannot see through, and it is right to be conservative there.
-// Naming the type answers its question truthfully: an `error` cannot hold a
-// PIN's characters.
-//
-// The alternative was renaming them to something that dodges the matcher, and
-// D-270 rejected exactly that: renaming correct code to satisfy a
-// name-matching test is the tail wagging the dog, and it is how a guard
-// becomes something people work around rather than something that protects
-// anything.
 
 // login authenticates this session as the user.
 //
@@ -56,7 +38,7 @@ const ckuUser = 1
 // national identity card the third means a visit to a police station.
 func (s *session) login(ti tokenInfo, entry PINEntry, req PINRequest) error {
 	if ti.HasProtectedAuthenticationPath() {
-		if rv := ckr(s.m.call(iLogin, uintptr(s.handle), ckuUser, 0, 0)); rv != ckrOK {
+		if rv := ckr(C.liro_login(s.m.list, s.handle, nil, 0)); rv != ckrOK {
 			return &ckrError{"C_Login", rv}
 		}
 		return nil
@@ -69,12 +51,11 @@ func (s *session) login(ti tokenInfo, entry PINEntry, req PINRequest) error {
 		return err
 	}
 
-	// The one place SPEC §6.5.1 permits a PIN to be. It is pinned
-	// because its address crosses into a foreign module, and
-	// runtime.Pinner rather than runtime.KeepAlive for D-101's measured
-	// reason: KeepAlive stops memory being collected and says nothing
-	// about it being *copied*, and a stack that grows moves the frame it
-	// was on.
+	// The one place SPEC §6.5.1 permits a PIN to be. Pinned because its
+	// address crosses into a foreign module — and on this platform that
+	// is not a formality: cgo will not pass a Go pointer into C unless
+	// the memory stays put, and D-101's reason holds either way, since
+	// a stack that grows moves the frame it was on.
 	pin := make([]byte, bounds.max)
 	var p runtime.Pinner
 	p.Pin(&pin[0])
@@ -92,8 +73,8 @@ func (s *session) login(ti tokenInfo, entry PINEntry, req PINRequest) error {
 		return err
 	}
 
-	if rv := ckr(s.m.call(iLogin, uintptr(s.handle), ckuUser,
-		uintptr(unsafe.Pointer(&pin[0])), uintptr(n))); rv != ckrOK {
+	if rv := ckr(C.liro_login(s.m.list, s.handle,
+		(*C.CK_UTF8CHAR)(unsafe.Pointer(&pin[0])), C.CK_ULONG(n))); rv != ckrOK {
 		return &ckrError{"C_Login", rv}
 	}
 	return nil
@@ -103,7 +84,7 @@ func (s *session) login(ti tokenInfo, entry PINEntry, req PINRequest) error {
 // returning: the session is being closed either way, and closing it
 // logs out regardless.
 func (s *session) logout() {
-	if s.handle != 0 {
-		_ = s.m.call(iLogout, uintptr(s.handle))
+	if s.m != nil && s.m.list != nil {
+		C.liro_logout(s.m.list, s.handle)
 	}
 }

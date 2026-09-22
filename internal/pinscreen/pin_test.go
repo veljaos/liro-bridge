@@ -130,11 +130,15 @@ func TestNoPINIsHeldWhereItCouldOutliveTheCall(t *testing.T) {
 				"(SPEC §6.5.1 clause 2)", name, f.line, f.kind, f.name)
 		}
 	}
-	// Three: pinscreen.go, pinscreen_windows.go, pinscreen_other.go. Named
-	// rather than "more than nothing", so that a file added to this package
-	// without being thought about is a failure rather than a silent widening.
-	if checked != 3 {
-		t.Fatalf("checked %d non-test Go files, want 3 — a file has been added to or "+
+	// Four: pinscreen.go, pinscreen_windows.go, pinscreen_linux.go,
+	// pinscreen_other.go. Named rather than "more than nothing", so that a
+	// file added to this package without being thought about is a failure
+	// rather than a silent widening — **which is what happened when
+	// pinscreen_linux.go arrived (D-350)**, and the count is why anybody
+	// looked at the new file against this rule at all. It was three until
+	// F12 §5 gave this platform a dialog to open.
+	if checked != 4 {
+		t.Fatalf("checked %d non-test Go files, want 4 — a file has been added to or "+
 			"removed from this package, and this guard is about all of them", checked)
 	}
 }

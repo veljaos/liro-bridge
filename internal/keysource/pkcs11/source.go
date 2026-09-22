@@ -241,7 +241,7 @@ func (s Source) enumerate(ctx context.Context, m *module) ([]CertificateInfo, er
 			return nil, err
 		}
 		for _, c := range found {
-			c.SlotID = slot
+			c.SlotID = uint64(slot)
 			c.TokenLabel = ti.Label
 			c.TokenSerial = ti.SerialNumber
 			c.ModulePath = s.modulePath
@@ -252,7 +252,7 @@ func (s Source) enumerate(ctx context.Context, m *module) ([]CertificateInfo, er
 	return out, nil
 }
 
-func certificatesInSlot(m *module, slot uint32) ([]CertificateInfo, error) {
+func certificatesInSlot(m *module, slot ckULong) ([]CertificateInfo, error) {
 	sess, err := m.openSession(slot)
 	if err != nil {
 		return nil, err
