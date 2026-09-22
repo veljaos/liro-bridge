@@ -35524,6 +35524,18 @@ where the right answer was to change the code rather than the guard.
 
 ## D-350 — F12 §5's PIN dialog is a native GTK window, and clause 2's first exception carries here unchanged: GTK's password buffer is mlocked, holds exactly one copy, and is overwritten through the widget's own interface
 
+> **The title's claim is withdrawn by [[D-351]].** "Holds exactly one
+> copy" is true of the buffer and false of the process: this entry's
+> instruments drove `set_text` and `GtkText`'s own insert binding, and
+> both bypass GdkEvent and the input method. A person typing into the
+> same window leaves **eight** copies, seven of them not the buffer, and
+> overwriting through the widget's interface removes one. Everything
+> measured below stands; what does not stand is the conclusion drawn
+> from it about clause 2, which is D-351's subject. Kept unedited
+> because an entry that quietly rewrites its own claim is one nobody can
+> date.
+
+
 **Date:** 2026-09-22
 **Phase:** F12 §5.
 
@@ -35651,4 +35663,273 @@ putting six digits into this window and a card answering. That needs
 hands and it is written down as unwatched rather than implied to be
 done, which is [[D-341]]'s notification-withdrawal lesson applied before
 somebody has to learn it twice.
+
+---
+
+## D-351 — A person typed six characters and found seven copies of them that no instrument here could see: [[D-350]]'s conclusion is withdrawn, the measurement that produced it was of the wrong path, and what the seven are is not yet established
+
+> **The seven are coincidences, and [[D-352]] names them.** The needle
+> was a string a person chose rather than a random one, and a window
+> that has had *no input at all* contains **eight** occurrences of it.
+> The libxml2 hit is that library's compiled-in `0123456789ABCDEF`
+> table. What stands from this entry is that D-350's instrument could
+> not see the keystroke path and should not have concluded about it;
+> what falls is the number, and with it the inference that the path
+> leaves copies. Kept unedited for the reason it gives itself.
+
+
+**Date:** 2026-09-22
+**Phase:** F12 §5 — found by the owner, by hand, minutes after the entry
+it corrects was written.
+
+**What was claimed.** [[D-350]] concluded that SPEC §6.5.1 clause 2's
+first exception carries to GTK unchanged and that the clause needs no
+third exception, on the strength of a memory scan that found **exactly
+one** copy of the typed characters, in `GtkPasswordEntryBuffer`'s
+`mlock`ed page, removed by overwriting through the widget's own
+interface.
+
+**What a person typing measured**, in the same probe, in its interactive
+mode:
+
+```
+after a person typed:   8 copies, VmLck=16 kB
+after clearing:         7 copies, VmLck=16 kB
+
+  found at 0x74ba783feca1  in /usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14
+  (and six in anonymous mappings)
+```
+
+One of the eight is the probe's own `g_strdup` — it has to copy what was
+typed in order to search for it, and that copy is named in its output
+rather than hidden. **That leaves seven, where the automated measurement
+found one, and overwriting the widget removes one of the seven and
+leaves six.**
+
+### The claim is withdrawn, and the reason it was wrong is the finding
+
+D-350's instruments drove two paths: `gtk_editable_set_text`, and
+`GtkText`'s own `insert-at-cursor` binding one character at a time. The
+second was chosen *because* it is "the path a keystroke takes inside the
+widget" — and that phrase is doing all the damage. It is the path a
+keystroke takes **once it is already text inside the widget**. It is not
+the path a keystroke takes.
+
+A real key on this desktop arrives over the Wayland socket as a
+*keycode*, is decoded by GDK into an event, passes through an input
+method, and only then becomes text the widget is asked to insert.
+**Every layer in front of the widget is a layer D-350's instrument could
+not see, and every one of them may copy.** The entry even said the
+instrument did not reach GdkEvent or an input method — and then drew a
+conclusion as though that did not matter. It mattered by a factor of
+seven.
+
+**This is [[D-304]]'s second question with a number attached**: could
+this instrument have seen the absence it reports? For the buffer, yes —
+it had a zero baseline and a control. For the delivery path, no, and
+nothing in the run said so.
+
+### Which of the two the specification's sentence is actually about
+
+The owner's question, and it has a clean answer.
+
+Clause 2's first exception reads: *"the native dialog's own edit
+control, whose copy of the PIN is the operating system's memory: it
+cannot be wiped, only overwritten through the control's own interface,
+and it is, before the window is destroyed rather than by destroying
+it."*
+
+**That sentence is about the destination.** The one copy D-350 measured
+*is* the copy that sentence names — the control's own — and everything
+the entry established about it is still true: it is `mlock`ed, it is
+overwritten through the widget's interface, and after that it is gone.
+The seven are not the control's copy. They are copies made by the layers
+that carried the characters **to** the control, and **the clause is
+silent about those.** It does not permit them and it does not forbid
+them; it never contemplated them.
+
+**And that gap is not Linux's.** The same path exists on Windows: a
+keystroke becomes `WM_CHAR` through a message queue this program does
+not own, and a Windows IME sits in the same place ibus does here.
+[[D-290]] measured the edit control and [[D-279]] §6 wrote the exception
+from it, and **neither measured what was in front of it either.** So
+what this finds is not a property of GTK. It is a sentence that was
+always about one object, written as though it were about a path.
+
+### What is **not** concluded
+
+**Clause 2 is not declared broken, and that is deliberate.** §6.5.1
+already concedes, in terms, that anything running as the same user can
+read this process's memory while the PIN is in it, and [[D-292]] settled
+that clause 3 is about *persistence and transmission* rather than
+readability. Seven readable copies inside one process, for the length of
+one login, may fall entirely inside what §6.5 already concedes — or may
+not, if any of them outlives the call, or leaves the process.
+
+**That judgement is the owner's and it is explicitly deferred until the
+seven can be read.** Recording the measurement without the verdict is
+the point: this entry is a finding, in [[D-291]]'s shape — a mechanism
+that works and may be worth nothing, found by measuring the thing rather
+than the call.
+
+### What is known about the seven so far, and it is not much
+
+Measured tonight, on this machine, after the finding:
+
+- **libxml2 is not in the probe's link closure.** It is `dlopen`ed at
+  runtime, through `libpixbufloader-svg.so` → `librsvg-2` → `libxml2`,
+  which is GTK's icon theme loading an SVG. Its writable segment is a
+  single page, and the hit is inside it. **Why a typed password is in
+  it is not established**, and it is the one of the seven most worth
+  naming: a benign coincidence of a shared allocator and a reused
+  static buffer is one answer, and it is not the only one.
+- **`libibus-1.0.so` is mapped into a plain GTK4 process**, `ibus-daemon`
+  is running with five helpers, and `libim-ibus.so` is the only GTK4
+  input-method module installed on this machine. Whether it is the
+  *active* context for this window is not yet measured. **If it is, the
+  question stops being about copies in this process**: an IPC input
+  method carries what is typed to another process over its own socket,
+  and clause 2 permits the PIN exactly one process boundary, which is
+  already spent on the pipe to the PKCS#11 worker.
+
+### What has to happen next, in this order
+
+1. **Name the seven.** For each hit: the mapping, and for a file-backed
+   one the ELF section and nearest symbol; for an anonymous one whether
+   it is the heap, a thread arena or a standalone `mmap`. Then allocate
+   and free in bulk and rescan — a copy that disappears was a *freed*
+   block the allocator had not zeroed, which is a different claim from a
+   live copy and a much smaller one.
+2. **Establish whether an input method is in the path at all**, by
+   asking the widget which `GtkIMContext` it has rather than by
+   inferring it from a mapping. If it is ibus, measure whether the
+   characters reach the daemon.
+3. **Then the owner decides** whether §6.5 already concedes this, or
+   whether the clause needs the rewrite it threatens rather than a third
+   exception.
+
+**None of that was reachable tonight**, because the only instrument that
+can produce the input is a person's hands, and D-094 forbids
+manufacturing them. It took the owner six characters. Better found
+tonight than by somebody else in a year.
+
+---
+
+## D-352 — The seven copies were the needle, not the PIN: a string a person chooses collides, a window with no input at all contains eight of them, and the libxml2 hit is that library's own hex table compiled into the file
+
+**Date:** 2026-09-22
+**Phase:** F12 §5. The third entry tonight on one question, and the arc
+is the record.
+
+**[[D-350]]** concluded from one copy that clause 2 held. **[[D-351]]**
+withdrew that, because a person typing produced eight where the
+instrument had found one. **This entry withdraws D-351's number**, and
+what is left is smaller than either and more useful than both.
+
+### The libxml2 hit, named
+
+The owner asked for this one specifically — *"a password reaching an XML
+library is either a benign coincidence of a shared allocator or
+something worth knowing"*. It is neither. It is not a copy at all.
+
+The hit was at `0x74ba783feca1`. libxml2's writable mapping begins at
+file offset `0x1df000`, which is `.data` at vaddr `0x1e0000`, so the hit
+is **vaddr `0x1e0ca1`** — and `.data` ends at `0x1e0cb0`, fifteen bytes
+later. Nothing thirty-two bytes long fits there, which is the first sign
+that the needle was not thirty-two bytes long.
+
+Read straight out of the file on disk:
+
+```
+$ dd if=libxml2.so.2.9.14 bs=1 skip=$((0x1dfca1)) count=15 | xxd
+00000000: 3132 3334 3536 3738 3941 4243 4445 46   123456789ABCDEF
+```
+
+**That is libxml2's static hexadecimal digit table**, `"0123456789ABCDEF"`,
+compiled into the shared library, present before this program started
+and identical on every machine that has the package. The needle began
+with the digits one to six, so it matched.
+
+### And the other six were the same thing
+
+The instrument now has the control it never had. A mode that opens the
+same window, **types nothing at all**, and scans for a string given on
+the command line:
+
+```
+  scanning for a string NOTHING HAS TYPED, in a window that has
+  had no input at all. Every hit below is a coincidence.
+    found at …e6ca1  in /usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14
+    found at …7b0a6  in [anonymous]      (and five more)
+    found at …70f9a  in [stack]
+  baseline coincidences:  8 copies, VmLck=0 kB
+```
+
+**Eight, with no input.** The owner's run reported eight after typing
+and seven after clearing. The one that went away is the buffer's own
+copy — `VmLck=16 kB` while it was there and the drop on clearing are
+both consistent with that, and with nothing else.
+
+### The defect was in the instrument's design, and it is specific
+
+D-350's automated mode used a **random 32-byte** needle and took a
+baseline scan that found **zero**. Both halves matter: random, so a
+coincidence is impossible; and a baseline, so the zero means something.
+
+The interactive mode inherited neither, and could not: **the needle does
+not exist until the person has typed it, so there is nothing to take a
+baseline of beforehand.** It asked for six characters, which a person
+will naturally make memorable, and memorable short strings are exactly
+the ones that appear in static tables. The mode was written to close
+[[D-304]]'s second question — could the instrument see what it could not
+reach — and it opened the opposite one: **the instrument reported
+presences that were not there.**
+
+Two fixes, both in:
+
+- **Sixteen characters minimum**, with the reason printed at the person
+  rather than kept in a comment: *"six digits found seven copies that
+  were coincidences — libxml2's static hex table contains
+  123456789ABCDEF"*.
+- **A `baseline` mode**, which is the control: the same window, no
+  input, a needle given on the command line. Its number is what must be
+  subtracted from the other mode's before anything is concluded.
+
+### What is established now, and what is still not
+
+**Established.** The libxml2 hit is a static table. A fresh window
+contains eight coincidental matches for the string that was used. The
+buffer's own copy behaves as D-350 measured: `mlock`ed, and gone when
+overwritten through the widget's interface.
+
+**Not established, and this is the part that survives from [[D-351]].**
+Whether a real keystroke leaves copies in front of the widget is *still
+unmeasured*. D-351 was wrong about the number and right about the
+reach: `set_text` and `insert-at-cursor` do not go through GdkEvent or
+an input method, and nothing here has yet watched that path with an
+instrument that could tell a copy from a coincidence. **The finding is
+not that the path is clean. It is that nobody has looked at it yet.**
+
+**And clause 2's exception is still a sentence about the destination.**
+That observation from D-351 does not depend on the number and stands
+unchanged, including its Windows half: `WM_CHAR` crosses a message queue
+this program does not own, and [[D-279]] §6 wrote the exception from
+[[D-290]]'s measurement of the control rather than of what fed it.
+
+### What this cost and what it bought
+
+Three entries and an evening on one question, ending roughly where the
+first one started but with the reasoning underneath it rather than
+assumed. **Every step was a measurement overturning the previous
+inference**, which is what the discipline is for — and two of the three
+overturnings came from a control rather than from anybody's reading:
+the zero-baseline that exposed the scan finding itself, and the
+no-input baseline that exposed the needle colliding.
+
+The one that could not have come from a control came from the owner's
+hands. An instrument cannot type, and the thing that most needed
+watching was the thing only a person could produce — which is [[D-094]]
+from the other side: the rule forbids manufacturing human input, and the
+cost of that rule is that some measurements wait for a human, and the
+benefit is that when one arrives it is real.
 

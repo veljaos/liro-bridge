@@ -45,9 +45,25 @@ static size_t liro_pin_copy(GtkWidget *entry, void *dst, size_t cap) {
 // GTK's memory rather than this program's, so this program cannot wipe
 // them — but it can overwrite them through the control's own interface,
 // and it does, before the window is destroyed rather than by destroying
-// it. Measured (D-350): after this call the bytes are in no writable
-// mapping of the process, and the page they were in is mlocked while
-// they are there.
+// it.
+//
+// Measured (D-350): after this call the buffer's own copy is gone from
+// every writable mapping of the process, and the page it was in is
+// mlocked while it is there.
+//
+// **That is a statement about the buffer and not about the process**
+// (D-351, D-352). What this call touches is the widget's own copy.
+// What it does not touch, and what nothing here has yet measured, is
+// whatever the layers in front of the widget do with a keystroke on the
+// way in — GdkEvent, and whatever input method is between the
+// compositor and this process. An attempt to measure that found seven
+// copies and they were all coincidences of a short needle (D-352), so
+// the honest state is that **the path has not been looked at**, not
+// that it is clean.
+//
+// Clause 2's first exception is a sentence about the destination and is
+// silent about the path, on this platform and on Windows alike. Do not
+// read this call as making the PIN unreadable.
 static void liro_pin_clear(GtkWidget *entry) {
 	gtk_editable_set_text(GTK_EDITABLE(entry), "");
 }
