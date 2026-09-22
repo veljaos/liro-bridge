@@ -583,9 +583,25 @@ private static string Hex(byte[] b) { return BitConverter.ToString(b).Replace("-
 Full version: [`sdk/examples/sign.py`](../examples/sign.py). Standard library only.
 
 ```python
-BASE = "http://127.0.0.1:%d" % json.load(
-    open(os.path.join(os.environ["LOCALAPPDATA"], "Liro", "bridge.json"))
-)["port"]                                     # read the file; never scan ports
+def bridge_file():
+    """Where the agent writes its port, per SPEC §14 — one path per platform.
+
+    This example knew only the Windows one until somebody ran the agent on
+    Linux and it could not be found. Never scan ports: the file is the only
+    way an SDK is allowed to find the agent.
+    """
+    if os.name == "nt":
+        return os.path.join(os.environ["LOCALAPPDATA"], "Liro", "bridge.json")
+    if sys.platform == "darwin":
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support",
+                            "Liro", "bridge.json")
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        return os.path.join(runtime, "liro", "bridge.json")
+    return os.path.join(os.path.expanduser("~"), ".local", "state", "liro", "bridge.json")
+
+
+BASE = "http://127.0.0.1:%d" % json.load(open(bridge_file()))["port"]
 
 
 def call(method, path, body=None, app_id=None, secret=None):
@@ -709,8 +725,25 @@ only; the agent itself is written in Go, so somebody always asks.
 ```go
 var base string // http://127.0.0.1:<port>, from the discovery file
 
+// bridgeFile is where the agent writes its port, per SPEC §14 — one path
+// per platform. This example knew only the Windows one until somebody ran
+// the agent on Linux and it could not be found.
+func bridgeFile() string {
+	switch runtime.GOOS {
+	case "windows":
+		return filepath.Join(os.Getenv("LOCALAPPDATA"), "Liro", "bridge.json")
+	case "darwin":
+		return filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "Liro", "bridge.json")
+	default:
+		if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+			return filepath.Join(dir, "liro", "bridge.json")
+		}
+		return filepath.Join(os.Getenv("HOME"), ".local", "state", "liro", "bridge.json")
+	}
+}
+
 func discover() error {
-	b, err := os.ReadFile(filepath.Join(os.Getenv("LOCALAPPDATA"), "Liro", "bridge.json"))
+	b, err := os.ReadFile(bridgeFile())
 	if err != nil {
 		return fmt.Errorf("Liro Bridge is not running: %w", err) // never scan ports
 	}
