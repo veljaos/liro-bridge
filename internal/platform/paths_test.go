@@ -150,10 +150,17 @@ func TestStateAndCacheOnLinuxAreTheirOwnXDGDirectories(t *testing.T) {
 		"XDG_DATA_HOME":   "/home/u/.local/share",
 		"HOME":            "/home/u",
 	})
+	// Built with filepath.Join rather than written as literals. These
+	// functions take the platform as an argument and the *test* runs on
+	// whichever one CI picked, so a hard-coded "/home/u/..." asserts the
+	// separator of the machine running the test rather than of the
+	// platform being asked about — and passes on linux while failing on
+	// the windows runner (D-353). The pre-existing DataDir tests in this
+	// file already did it this way; these did not.
 	cases := map[string][2]string{
-		"StateDir": {StateDir("linux", env), "/home/u/.local/state/liro"},
-		"CacheDir": {CacheDir("linux", env), "/home/u/.cache/liro"},
-		"LogDir":   {LogDir("linux", env), "/home/u/.local/state/liro/logs"},
+		"StateDir": {StateDir("linux", env), filepath.Join("/home/u", ".local", "state", "liro")},
+		"CacheDir": {CacheDir("linux", env), filepath.Join("/home/u", ".cache", "liro")},
+		"LogDir":   {LogDir("linux", env), filepath.Join("/home/u", ".local", "state", "liro", "logs")},
 	}
 	for name, c := range cases {
 		if c[0] != c[1] {
@@ -181,10 +188,10 @@ func TestStateAndCacheOnLinuxAreTheirOwnXDGDirectories(t *testing.T) {
 
 func TestStateAndCacheOnLinuxFallBackToTheSpecifiedDefaults(t *testing.T) {
 	env := fakeEnv(map[string]string{"HOME": "/home/u"})
-	if got, want := StateDir("linux", env), "/home/u/.local/state/liro"; got != want {
+	if got, want := StateDir("linux", env), filepath.Join("/home/u", ".local", "state", "liro"); got != want {
 		t.Errorf("StateDir with no XDG_STATE_HOME = %q, want %q", got, want)
 	}
-	if got, want := CacheDir("linux", env), "/home/u/.cache/liro"; got != want {
+	if got, want := CacheDir("linux", env), filepath.Join("/home/u", ".cache", "liro"); got != want {
 		t.Errorf("CacheDir with no XDG_CACHE_HOME = %q, want %q", got, want)
 	}
 }
@@ -281,7 +288,11 @@ func everyAgentPath(goos string, env Env) map[string]string {
 // every runner while checking nothing about half its cases.
 func isAbsoluteFor(goos, p string) bool {
 	if goos != "windows" {
-		return strings.HasPrefix(p, "/")
+		// Either separator: filepath.Join is the *host's*, so a linux
+		// path built on the windows runner comes back with backslashes.
+		// What is being asked is whether the path is rooted, and that
+		// is the first byte either way (D-353).
+		return strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\`)
 	}
 	if strings.HasPrefix(p, `\\`) {
 		return true // a UNC path

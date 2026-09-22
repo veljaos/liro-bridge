@@ -35,6 +35,24 @@ type pinBounds struct {
 	max int
 }
 
+// maxPlausiblePINDeclaration is the largest ulMaxPinLen this layer
+// treats as a *declaration* rather than as evidence that the structure
+// it was read out of was misread.
+//
+// **The distinction is F11's central finding pointed at a field
+// instead of at a layout** (D-353). Three of four hand-written
+// CK_ATTRIBUTE layouts returned CKR_OK and garbage, and a wrong layout
+// does not announce itself — except that some of the garbage is
+// absurd, and an absurd number is then the only warning anybody gets.
+// A token declaring a PIN of a million characters is not a permissive
+// token; it is a structure read at the wrong offset. Clamping it would
+// swallow the one signal.
+//
+// 255 because that is what a conforming software token declares
+// (SoftHSM), and it is already an order of magnitude above every card
+// this project has measured — MUP 8, Pošta 15.
+const maxPlausiblePINDeclaration = 255
+
 // pinBoundsFor applies clause 7 to a token's declaration.
 //
 // **A token may declare a maximum larger than this layer will allocate
@@ -44,7 +62,7 @@ type pinBounds struct {
 // software token being permissive — and refusing it outright made the
 // whole PIN seam unexercisable on a platform with no card in it.
 //
-// So the declared maximum is clamped, and the clamp is the effective
+// So a *plausible* declared maximum is clamped, and the clamp is the effective
 // maximum from there on: the buffer, the length check, and what the
 // screen is told. No human PIN exceeds MaxPINLength — the two cards
 // this project has measured declare 8 and 15 — so clamping cannot
@@ -62,6 +80,10 @@ func pinBoundsFor(ti tokenInfo) (pinBounds, error) {
 	}
 	if minLen < 0 || minLen > maxLen {
 		return pinBounds{}, fmt.Errorf("pkcs11: this token declares a minimum PIN length of %d against a maximum of %d", minLen, maxLen)
+	}
+	if maxLen > maxPlausiblePINDeclaration {
+		return pinBounds{}, fmt.Errorf("pkcs11: this token declares a maximum PIN length of %d, which is not a PIN length; "+
+			"the structure it was read from is more likely to be misread than the token to be unusual", maxLen)
 	}
 	if minLen > MaxPINLength {
 		return pinBounds{}, fmt.Errorf("pkcs11: this token requires a PIN of at least %d characters, which is more than this layer will hold (%d)", minLen, MaxPINLength)

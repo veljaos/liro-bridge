@@ -1,3 +1,5 @@
+//go:build windows || linux
+
 package pkcs11
 
 import (

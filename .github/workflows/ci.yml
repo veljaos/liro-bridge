@@ -90,6 +90,37 @@ jobs:
           go list ./... | grep -vxF "$expected" > "$RUNNER_TEMP/gtk-free-packages.txt"
           echo "$(wc -l < "$RUNNER_TEMP/gtk-free-packages.txt") packages sweep without GTK"
 
+          # **A second boundary, and it is not the same one.** "Needs
+          # GTK" and "needs a C toolchain" were one set until D-349:
+          # internal/keysource/pkcs11 is cgo on linux now and links no
+          # GTK at all. So the CGO_ENABLED=0 build below sweeps the
+          # packages that can be built that way, which is everything
+          # except the two roots and what depends on them — computed
+          # here rather than listed, so it follows the code instead of
+          # having to be remembered (D-353).
+          p11=github.com/veljaos/liro-bridge/internal/keysource/pkcs11
+          go list -f '{{.ImportPath}}{{range .Deps}}{{if eq . "'"$p11"'"}} needs-p11{{end}}{{end}}' ./... |
+            awk -v p="$p11" '$1 == p || $2 == "needs-p11" { print $1 }' | sort > "$RUNNER_TEMP/needs-p11.txt"
+          grep -vxF -f "$RUNNER_TEMP/needs-p11.txt" "$RUNNER_TEMP/gtk-free-packages.txt" \
+            > "$RUNNER_TEMP/cgo-free-packages.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/cgo-free-packages.txt") packages build with no C toolchain at all"
+          echo "packages needing the PKCS#11 loader's cgo on linux:"
+          cat "$RUNNER_TEMP/needs-p11.txt"
+
+      # **The one C header this job installs, and it is not a
+      # contradiction.** This job exists to prove that nothing shipped
+      # needs a GTK stack on linux (D-335), and libp11-kit is not one:
+      # SPEC §1.1 permits dynamic linkage "for the webview **and the
+      # PKCS#11 module loader**, and for nothing else", so the module
+      # loader having a C dependency is the specification's own shape
+      # rather than a widening of this job's claim. The build step at
+      # the end of this job still runs with CGO_ENABLED=0, over every
+      # package that can be built that way (D-353).
+      - name: the PKCS#11 header
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libp11-kit-dev
+
       - name: gofmt
         run: |
           fmt_out="$(gofmt -l .)"
@@ -239,7 +270,7 @@ jobs:
       # acquiring a C dependency fails here again, which is what F0 §10
       # is for.
       - name: build linux/amd64
-        run: go build -o dist/ $(cat "$RUNNER_TEMP/gtk-free-packages.txt")
+        run: go build -o dist/ $(cat "$RUNNER_TEMP/cgo-free-packages.txt")
         env:
           CGO_ENABLED: 0
           GOOS: linux
@@ -298,11 +329,19 @@ jobs:
       # On the development VM this dependency was satisfied by a
       # hand-unpacked prefix on PKG_CONFIG_PATH, which is precisely why
       # no measurement taken there could report it missing (D-335).
-      - name: GTK4, WebKitGTK and gobject-introspection development packages
+      # **libp11-kit-dev is the fourth and it is not a GTK package.**
+      # internal/keysource/pkcs11 is cgo on linux as of D-349 — F12 §1
+      # requires the platform's own pkcs11.h rather than a second
+      # hand-written layout, because F11 measured three of four
+      # candidate layouts returning CKR_OK with a zero length. The
+      # header comes from libp11-kit-dev and the runner had never
+      # needed one, which is D-334's shape a third time: a development
+      # package this machine has and the runner does not (D-353).
+      - name: GTK4, WebKitGTK, gobject-introspection and the PKCS#11 header
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev libwebkitgtk-6.0-dev gobject-introspection
+            libgtk-4-dev libwebkitgtk-6.0-dev gobject-introspection libp11-kit-dev
 
       # Both of these cover the GOOS=linux view that the `ci` job cannot:
       # vet for internal/ui itself, and golangci-lint for the whole

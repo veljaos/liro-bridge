@@ -35933,3 +35933,141 @@ from the other side: the rule forbids manufacturing human input, and the
 cost of that rule is that some measurements wait for a human, and the
 benefit is that when one arrives it is real.
 
+---
+
+## D-353 — What the runners caught that this machine could not: a development package the runner never had, a cgo boundary that is no longer the GTK boundary, a build tag that went missing where only macOS could see it, and an absurd `ulMaxPinLen` that is evidence of a misread structure rather than of an unusual token
+
+**Date:** 2026-09-22
+**Phase:** F12 §5, after the push.
+
+[[D-349]] and [[D-350]] were green on this VM against every check this
+project has — both test views, three lint views, `checkdeps`, `checkcss`,
+`gofmt`, and the GTK boundary guard run by hand. **CI failed three jobs.**
+Every one of the four causes below is a thing a single machine cannot
+see, which is the whole argument for the runners and is [[D-334]]'s
+lesson arriving a third time.
+
+### 1. `libp11-kit-dev`, which this machine had and the runner did not
+
+```
+# [pkg-config --cflags -- p11-kit-1 p11-kit-1]
+Package p11-kit-1 was not found in the pkg-config search path.
+```
+
+D-349 uses the platform's own `pkcs11.h`, and on Debian and Ubuntu that
+header belongs to `libp11-kit-dev`. It was installed here as part of
+doing the work and never added to either job. **This is exactly
+[[D-335]]'s `gobject-introspection` again**, down to the mechanism: a
+development package present on the machine where the code was written,
+absent where it is built, and invisible to every local check because
+every local check had it.
+
+It is installed on **both** jobs now, and on `ci` — the job whose whole
+purpose is to prove nothing shipped needs a GTK stack — that is not a
+contradiction and the workflow says why: SPEC §1.1 permits dynamic
+linkage *"for the webview **and the PKCS#11 module loader**, and for
+nothing else"*. The module loader having a C dependency is the
+specification's own shape.
+
+### 2. "Needs GTK" and "needs a C toolchain" stopped being the same set
+
+`internal/keysource/pkcs11` is cgo on linux now and links no GTK at all.
+So `CGO_ENABLED=0 go build` over the GTK-free package list — which
+[[D-335]] introduced and was right to — fails on a package that has
+nothing to do with windows:
+
+```
+sign.go:37:8: undefined: module
+sign.go:46:6: undefined: ckULong
+```
+
+**Two boundaries now, computed separately and both from the code rather
+than from a list somebody maintains.** The guard step still asserts the
+GTK set is exactly the three window packages; it additionally computes
+what depends on the PKCS#11 loader — `cmd/liro-bridge`,
+`internal/keysource/pkcs11`, its `worker`, and `internal/pinscreen` —
+and the `CGO_ENABLED=0` build sweeps what is left. **46 packages build
+with no C toolchain at all**, against 48 that need no GTK.
+
+The alternative was a `linux && !cgo` stub file reproducing the whole
+module surface so the package would compile without cgo and refuse at
+runtime. It was rejected: it is the entire API written twice to satisfy
+a build, which is the shape [[D-295]] deleted `info()`/`moduleInfo`
+for, and the honest statement is the one SPEC §1 already makes — on
+this platform, this package needs a C toolchain.
+
+### 3. A build tag that went missing where only macOS could see it
+
+`source_windows.go` became `source.go` with `//go:build windows ||
+linux`, except that the substitution silently did not match and the file
+was left **with no build constraint at all**.
+
+Linux and Windows both build: `source.go` and `source_other.go`
+(`!windows && !linux`) do not collide on either. **Only darwin sees it**:
+
+```
+source_other.go:19:6: Source redeclared in this block
+```
+
+Found by running the darwin cross-build locally, which CI does and this
+session had not — *"a check that only runs where it was written"*
+([[D-221]]) pointed at a platform rather than at a job. The three
+cross-builds are one command and are now part of what gets run before a
+push.
+
+### 4. The absurd `ulMaxPinLen`, and why clamping it was wrong
+
+[[D-349]] clamped a token's declared maximum instead of refusing it,
+because SoftHSM declares 255 and refusing made the PIN seam
+unexercisable. `TestLoginRefusesAnAbsurdMaximum` — a Windows test,
+written long before — failed and then panicked, because the clamp let
+`ulMaxPinLen = 1 << 20` through to a `C_Login` on a zero-valued session.
+
+**The test was right and the reasoning behind it is better than the
+reasoning that broke it.** F11's central finding is that a wrong struct
+layout returns `CKR_OK` and garbage, and does not announce itself —
+*except* that some of the garbage is absurd, and **an absurd field is
+then the only warning anybody gets**. A token declaring a PIN of a
+million characters is not a permissive token; it is a structure read at
+the wrong offset. Clamping swallows the one signal.
+
+So the line is drawn where the evidence is, not where the allocation
+is: `maxPlausiblePINDeclaration = 255` — what a conforming software
+token declares, already an order of magnitude above every card measured
+(MUP 8, Pošta 15). At or below it, the declaration is clamped to what
+this layer will allocate. Above it, the token is refused, and the error
+says which of the two explanations is more likely.
+
+One of the old test's three cases moved: `MaxPINLength + 1` is now a
+clamp rather than a refusal, covered by a new test that asserts the
+clamp *is* the effective maximum. The other two stay.
+
+### 5. And two tests of a platform-parameterised function, written in one platform's separators
+
+`TestStateAndCacheOnLinuxAreTheirOwnXDGDirectories` and its neighbours
+compared against literals like `"/home/u/.local/state/liro"`. These
+functions take the platform as an **argument**, and the test runs on
+whichever platform CI picked, so on the windows runner `filepath.Join`
+produced `\home\u\.local\state\liro` and three tests failed for a reason
+that had nothing to do with what they were about.
+
+The pre-existing `DataDir` tests in the same file already built their
+expectations with `filepath.Join`. The new ones did not, because they
+were written and run on the platform whose separator they assumed —
+**the same error as §3 and as [[D-348]]'s own finding, three times in
+one file.**
+
+`isAbsoluteFor` had it too: it asked whether a linux path starts with
+`/`, and on the windows runner a linux path built with `filepath.Join`
+starts with `\`. It accepts either now, because what it is actually
+asking is whether the path is rooted.
+
+### What this costs and what it says
+
+Four causes, four jobs' worth of red, and **not one of them was a defect
+in what the code does** — every one was a statement that was true on the
+machine where it was written. That is the same sentence [[D-339]] ends
+with, and [[D-338]], and [[D-335]]. The difference this time is that
+nothing reached a person: the runners are where it stopped, which is
+what they are for.
+

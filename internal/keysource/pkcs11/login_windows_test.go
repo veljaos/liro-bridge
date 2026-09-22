@@ -183,8 +183,21 @@ func TestLoginTellsTheScreenWhatItNeedsToSayWhoIsAsking(t *testing.T) {
 
 // TestLoginRefusesAnAbsurdMaximum keeps a token that reports nonsense from
 // deciding how much this layer allocates.
+//
+// **MaxPINLength+1 left this list in D-353** and is covered by
+// TestAPlausibleMaximumIsClampedRatherThanRefused below. It was here
+// because the layer refused anything above what it would allocate for;
+// it is there because a token declaring a little more than this layer
+// holds is a permissive token rather than a broken one — SoftHSM
+// declares 255 — and refusing it made the whole PIN seam unexercisable
+// on a platform with no card in it.
+//
+// What stays here is what is still nonsense: nothing at all, and a
+// number that is not a PIN length. The second is the important one and
+// the reason is F11's: an absurd field is the only warning a misread
+// structure gives.
 func TestLoginRefusesAnAbsurdMaximum(t *testing.T) {
-	for _, max := range []uint32{0, MaxPINLength + 1, 1 << 20} {
+	for _, max := range []uint32{0, maxPlausiblePINDeclaration + 1, 1 << 20} {
 		ti := fakeToken()
 		ti.MaxPINLen = max
 		ti.MinPINLen = 0
@@ -199,6 +212,33 @@ func TestLoginRefusesAnAbsurdMaximum(t *testing.T) {
 		}
 		if called {
 			t.Errorf("a token declaring ulMaxPinLen=%d still reached the PIN screen", max)
+		}
+	}
+}
+
+// TestAPlausibleMaximumIsClampedRatherThanRefused is the other side of
+// D-353's line: a token may declare more than this layer will allocate
+// for without being wrong, and the clamp — not the declaration — is
+// what sizes the buffer and what the screen is told.
+func TestAPlausibleMaximumIsClampedRatherThanRefused(t *testing.T) {
+	for _, max := range []uint32{MaxPINLength + 1, maxPlausiblePINDeclaration} {
+		ti := fakeToken()
+		ti.MaxPINLen = max
+		ti.MinPINLen = 4
+
+		bounds, err := pinBoundsFor(ti)
+		if err != nil {
+			t.Fatalf("a token declaring ulMaxPinLen=%d was refused: %v", max, err)
+		}
+		if bounds.max != MaxPINLength {
+			t.Errorf("a token declaring ulMaxPinLen=%d produced a maximum of %d, want %d — "+
+				"the token must not decide how much this layer allocates", max, bounds.max, MaxPINLength)
+		}
+		if bounds.min != 4 {
+			t.Errorf("the minimum became %d, want the token's 4", bounds.min)
+		}
+		if err := bounds.check(MaxPINLength + 1); err == nil {
+			t.Error("a length past the clamp was accepted, so the clamp is not the effective maximum")
 		}
 	}
 }
