@@ -56,10 +56,10 @@ type settingsFormState struct {
 // reproduce the reading half — which is how the version of this that
 // only ever checked the view model came to pass while the window on
 // screen showed the old values.
-func settingsOnOpening(fallback config.Config, pairings *api.Pairings) (*i18n.Catalogue, config.Config, map[string]any) {
+func settingsOnOpening(fallback config.Config, pairings *api.Pairings, secrets platform.SecretStoreDescription) (*i18n.Catalogue, config.Config, map[string]any) {
 	cfg := currentConfig(fallback)
 	c := i18n.Load(cfg.Locale)
-	return c, cfg, buildSettingsInit(c, cfg, listPairings(pairings))
+	return c, cfg, buildSettingsInit(c, cfg, listPairings(pairings), secrets)
 }
 
 // owner is the window Settings was opened from, or zero when it was
@@ -72,8 +72,8 @@ func settingsOnOpening(fallback config.Config, pairings *api.Pairings) (*i18n.Ca
 // life of a batch — and a Config handed down from one of them says what
 // was true when *that* started, which is how a language saved a moment
 // ago came back as the old one on reopening.
-func runSettingsWindow(fallback config.Config, owner uintptr, pairings *api.Pairings) error {
-	c, cfg, init := settingsOnOpening(fallback, pairings)
+func runSettingsWindow(fallback config.Config, owner uintptr, pairings *api.Pairings, secrets platform.SecretStoreDescription) error {
+	c, cfg, init := settingsOnOpening(fallback, pairings, secrets)
 	messages := make(chan ui.Message, 8)
 
 	win, err := ui.NewWindow(ui.Options{
@@ -245,7 +245,7 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		return false
 	}
 }
-func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pairing) map[string]any {
+func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pairing, secrets platform.SecretStoreDescription) map[string]any {
 	return map[string]any{
 		"type": "init",
 		"strings": map[string]string{
@@ -288,6 +288,7 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.pairings_label":                 c.T("settings.pairings_label"),
 			"settings.pairings_empty":                 c.T("settings.pairings_empty"),
 			"settings.pairings_revoke":                c.T("settings.pairings_revoke"),
+			"settings.secret_store_label":             c.T("settings.secret_store_label"),
 		},
 		"model": map[string]any{
 			"tsaPresets":            tsaPresets(),
@@ -306,6 +307,8 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"signatureLevel":        cfg.SignatureLevel,
 			"checkUpdatesDaily":     cfg.UpdateCheckEnabled,
 			"version":               version,
+			"secretStoreText":       secretStoreSentence(c, secrets),
+			"secretStoreFallback":   secrets.Mechanism == "" || secrets.Fallback,
 			"pairings":              jsPairings(c, pairings),
 		},
 	}
@@ -349,3 +352,35 @@ func tsaPresets() []map[string]string {
 // localeOf is the configured interface language, for a caller that has
 // a Config and needs the locale it implies.
 func localeOf(cfg config.Config) string { return cfg.Locale }
+
+// secretStoreSentence is the one line the settings window shows about
+// where this agent's device secrets are kept (SPEC §6.4).
+//
+// **It is built here rather than in the page** for the reason every
+// other caller-visible sentence in this program is: the mechanism and
+// the catalogue are both in Go, and a page that mapped an identifier to
+// a translated string would be a second place where "which store did I
+// get" is decided — which is how the two would come to disagree.
+//
+// A zero description means no store opened at all, which is neither of
+// §6.4's branches and is said as its own thing: on that machine nothing
+// can be paired, and reporting it as "an encrypted file" would describe
+// a file that does not exist.
+func secretStoreSentence(c *i18n.Catalogue, d platform.SecretStoreDescription) string {
+	switch d.Mechanism {
+	case platform.MechanismSecretService:
+		if d.Detail != "" {
+			return c.T("settings.secret_store_keyring") + " (" + d.Detail + ")"
+		}
+		return c.T("settings.secret_store_keyring")
+	case platform.MechanismDPAPI:
+		return c.T("settings.secret_store_dpapi")
+	case platform.MechanismEncryptedFile:
+		if d.Reason != "" {
+			return c.T("settings.secret_store_file") + ": " + d.Reason
+		}
+		return c.T("settings.secret_store_file")
+	default:
+		return c.T("settings.secret_store_unavailable")
+	}
+}

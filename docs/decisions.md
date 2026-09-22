@@ -35067,3 +35067,275 @@ in F12 is taken on.
 | after the fix | 13 of 13 in that file; **103 of 103** across the suite, 0 failures |
 | `npm run check-build` | `dist/ matches src/`, exit 0 |
 | CI's 105 names against this machine's 103 | diffed by name; the only two absent are `fake-agent.mjs` and `helpers.mjs` |
+
+---
+
+## D-347 — SPEC §6.4's Secret Service branch is built, and the transfer algorithm is "plain" because the keyring hands the same secret to anyone who asks: measured, with the encrypted transfer as the control
+
+**Date:** 2026-09-22
+**Phase:** F12 §7.
+
+**What exists now.** `internal/platform/secretservice_linux.go`: the
+desktop's own keyring — GNOME Keyring here, KDE's `ksecretd` elsewhere —
+spoken directly over the session bus, with §6.4's encrypted file as the
+fallback where none answers. Pure Go over `godbus/dbus/v5`, **no
+libsecret**, which is SPEC §1.1's rule rather than a preference: a
+library in every package's `Depends:` for six method calls is a
+dependency that can be satisfied in Go. It compiles at `CGO_ENABLED=0`,
+the same as the notifier ([[D-341]]).
+
+**Measured on the artefact, both branches:**
+
+```
+INFO  platform: secrets are kept in this desktop's Secret Service (SPEC §6.4)
+      mechanism=secret-service collection=Login
+WARN  platform: secrets are kept in an encrypted file rather than this
+      desktop's Secret Service (SPEC §6.4)   reason="there is no session bus"
+```
+
+and in the second case the agent went on to serve the protocol on 17580,
+which is F12 §7's requirement that a missing keyring fall back cleanly
+rather than stop the agent starting.
+
+### The transfer algorithm: plain, and the reason is a measurement
+
+The Secret Service offers "plain", which puts the secret in the D-Bus
+message, or `dh-ietf1024-sha256-aes128-cbc-pkcs7`, which encrypts it
+under a per-session AES key. F12 §7 asked for this to be decided with a
+reason rather than by taking whichever was easier, so both were built in
+a probe and pointed at this desktop.
+
+**First measurement — plain does leak, and DH does not.** One process
+held a `BecomeMonitor` connection and a client connection, stored a
+secret each way, and read each back:
+
+| | occurrences on the bus |
+|---|---|
+| the secret transferred **plain** | **2** — once in `CreateItem`, once in `GetSecret`'s reply |
+| the secret transferred **under DH** | **0** |
+| a string that was never sent (control) | **0** |
+
+The control is why the zero is worth anything. The first version of this
+probe reported **0 for all three**, including the plain case that must
+leak — `CAPTURE 0 messages` — because it walked only the top level of
+each message body and the secret is inside a `(oayays)` struct. **A
+probe that reports the same answer for a thing that is there and a thing
+that is not is an instrument that cannot fail**, which is [[D-336]]'s
+family, and it was caught by the control rather than by inspection.
+
+**Second measurement — and it is the one that decides.** A *different
+binary*, with a different parent, which never saw any of that bus
+traffic:
+
+```
+STORED  pid=11654  /org/freedesktop/secrets/collection/login/7
+SEARCH  pid=11660 ppid=11600  unlocked=1 locked=0
+GOT     /org/freedesktop/secrets/collection/login/7 -> "THE-DEVICE-SECRET-8f21c0"
+```
+
+**gnome-keyring applies no per-application access control to an unlocked
+collection.** Anything running as this user calls `SearchItems` and
+`GetSecret` and is handed the secret. So the adversary DH defends
+against — someone who can watch this program's bus traffic — is strictly
+weaker than the one the keyring already admits through the front door,
+and is in fact the same set of principals: the session bus socket is
+reachable only through `/run/user/1000`, mode `0700`.
+
+**Therefore plain, and the reason is not convenience.** Encrypting the
+wire between two parties who will both hand the plaintext to the same
+caller is ceremony, and **ceremony that looks like protection is worse
+than none** — it is the thing a reader would point at when asking
+whether this is safe, and it would answer a question nobody should be
+reassured about.
+
+**What would change the answer**, written down so the decision can be
+re-taken rather than inherited: a bus daemon that logged message bodies
+(measured — neither the user nor the system journal contains the probe's
+secret), a desktop that authorised `GetSecret` per application while
+still permitting monitoring, or a Secret Service reached over anything
+but a socket only this uid can open.
+
+**And it sharpens F12 §7's own sentence.** §7 argued that "an unlocked
+keyring does not protect against malware running as the same user
+either." That was an argument; it is now a measurement, with a pid.
+
+### A locked keyring: nothing this program does may raise a dialog
+
+The case is an agent started at login, asking before the person has
+unlocked anything. Measured against a deliberately locked collection —
+**the probe made its own collection with its own master password, so the
+person's login keyring was never locked and this machine was left as it
+was found**:
+
+| | predicted | measured |
+|---|---|---|
+| `Lock` → `Locked` | true | **true**, prompt `/` |
+| `SearchItems` | item in the `locked` list, no prompt | **exactly that** |
+| `GetSecret` on a locked item | error, no prompt | **`Cannot get secret of a locked object`** |
+| `CreateItem` on a locked collection | a prompt path | **failed — it errors:** `Cannot create an item in a locked collection` |
+| `Unlock` without calling `Prompt.Prompt()` | a prompt path, still locked | **exactly that**, `Locked=true` after |
+
+The fourth row is the prediction that failed, and it was written down as
+the least certain of the five before the run.
+
+A bus monitor in the same process reported every call to a prompt
+interface during the whole run, and the only one was the probe's own
+`Dismiss`. **That it saw that one is what says it could have seen a real
+one.**
+
+**So the design is one sentence: nothing shows a dialog until
+`Prompt.Prompt()` is called, and this program never calls it.** A locked
+collection gets one attempt at the unlock that needs nobody — a daemon
+already holding the password answers `Unlock` with a `/` prompt — and
+anything else is dismissed and falls back to the file.
+
+**That property is a property of the source, so it is guarded there**: an
+AST guard over `internal/platform` that finds every D-Bus method this
+package calls and fails on any ending in `.Prompt`. It has a control
+pointed at source that *does* contain the call, and it was
+mutation-verified against the real file.
+
+### Which store is in use, and where a person sees it
+
+Three places, because §6.4's log warning is not something a person reads:
+
+- **`SecretStore.Describe()` is on the interface**, not beside it, so a
+  new store cannot be written without answering the question. An
+  invisible fallback is precisely what §6.4's warning exists to prevent
+  ([[D-343]]).
+- **The log**, carrying the reason: *"there is no session bus"*, *"the
+  keyring is locked, and unlocking it would have asked this person for a
+  password before they asked for anything"*.
+- **The settings window**, under the connected applications, naming the
+  collection when there is one and rendering the fallback in the warning
+  colour rather than as another grey detail. The sentence is built in Go
+  where the mechanism and the catalogue both are, and is guarded to be
+  different for each of the four cases — a row that said the same thing
+  for a keyring and a file would pass every "is the row there" test and
+  none of the reason the row exists.
+
+### The cost of choosing once, stated rather than discovered
+
+One store per run, never mixed. **A pairing made while the keyring was
+locked lives in the file and a later run with it unlocked will not find
+it**, so that application has to be paired again — a supported flow with
+a consent screen in front of it (F7 §2.4), visible when it happens.
+Reading through from one store to the other to save a consent click
+would spread device secrets across two mechanisms, and is not taken.
+Migrating a file store into a keyring that appears later is somebody's
+judgement and is not made here.
+
+### What is tested, and what that is worth
+
+The live round trip against this machine's real GNOME Keyring runs, and
+**skips with a reason** where no Secret Service answers — which is every
+CI runner this project has. That is [[D-221]]'s shape, accepted with its
+eyes open: the alternative is a D-Bus client whose every assertion is
+about a fake, on a branch whose entire risk is what a real daemon does.
+It was mutation-verified (`replace=false` on `CreateItem` leaves two
+items under one name, and the test says so), and it deletes what it
+wrote — checked, 0 items left behind.
+
+---
+
+## D-348 — F12 §7's remaining paths: `$XDG_STATE_HOME` and `$XDG_CACHE_HOME` were empty and three things were in the config directory that are not configuration — and the guard written for it found that every path is relative when the environment is silent
+
+**Date:** 2026-09-22
+**Phase:** F12 §7.
+
+**What was where.** [[D-340]] moved the audit chain to `$XDG_DATA_HOME`
+and [[D-339]] fixed it being written relative to the current directory.
+That left `$XDG_CONFIG_HOME/liro` holding three things that XDG's own
+taxonomy puts elsewhere, and two XDG directories holding nothing:
+
+| | was | is | why |
+|---|---|---|---|
+| the rotated log | `$XDG_CONFIG_HOME/liro/logs` | **`$XDG_STATE_HOME/liro/logs`** | the specification names its contents in the same breath: "actions history (logs, history, recently used files)" |
+| `update-state.json` | `$XDG_CONFIG_HOME/liro` | **`$XDG_STATE_HOME/liro`** | when this agent last looked for an update is history, not a setting |
+| `tsl-cache.xml` | `$XDG_CONFIG_HOME/liro` | **`$XDG_CACHE_HOME/liro`** | a downloaded trust list that re-downloads |
+| `preview-*/` page images | `$XDG_CONFIG_HOME/liro` | **`$XDG_CACHE_HOME/liro`** | below |
+
+Each was the Windows shape carried across without anybody deciding it:
+on Windows all of these are `%LOCALAPPDATA%\Liro`, correctly, and the
+Linux branch inherited one directory because one is all Windows needs.
+That is [[D-338]]'s suffixes and [[D-339]]'s `"windows"` literal a third
+time — **a claim about a platform, written where nothing could check
+it.**
+
+**It is decided now for [[D-340]]'s reason**: nobody on this platform has
+a file in any of these directories yet, so moving them costs nothing.
+Windows and macOS are untouched — `StateDir` and `CacheDir` return
+`ConfigDir` there, and a guard sets every XDG variable while asking for
+the Windows paths, so a Windows path that started consulting one would
+fail here rather than on somebody's machine.
+
+### The page images are the one that is not tidiness
+
+A placement window renders the document somebody is about to sign into a
+scratch directory, one image per page. That directory was under
+`$XDG_CONFIG_HOME` — **the directory on a Linux desktop most likely to
+be pointed at by a backup or a sync tool.** Page images of a person's
+contract are not configuration and do not belong where a synchroniser
+will find them.
+
+`$XDG_CACHE_HOME` rather than `$XDG_RUNTIME_DIR`, which was the other
+candidate and is better on privacy: the runtime directory is a tmpfs, so
+a two-hundred-page document would be rendered into the machine's memory.
+The stale-preview sweep (F6b) is unchanged and simply sweeps the new
+directory; nothing in its reasoning depended on which one.
+
+### And then the guard found something that was not Linux's
+
+Writing *"no path this program writes to may be relative"* as a test —
+[[D-339]]'s defect generalised from the one path it was found on to all
+seven — produced this immediately:
+
+```
+CacheDir("windows")  with an empty environment is "Liro"
+LogDir("windows")    with an empty environment is "Liro/logs"
+ConfigFile("windows") with an empty environment is "Liro/config.json"
+BridgeFile("windows") with an empty environment is "Liro/bridge.json"
+ConfigDir, DataDir, StateDir — the same
+```
+
+**Every one of these functions returns a string and no error**, and
+`filepath.Join("", "Liro")` is `"Liro"` — a path relative to whatever
+directory the agent happened to be started in, which reads exactly like
+an absolute one in a log line. `%LOCALAPPDATA%` unset is not the normal
+case and it is a real one: a service account, a scrubbed environment, a
+scheduler that exports nothing. The Linux branch had it too — no `HOME`
+gives `.config/liro`.
+
+**This was not on the list and is the same defect D-339 found**, which is
+the argument for writing the general guard rather than a test for the
+path that was reported.
+
+**The remedy is `home()`**: the environment first, then the account
+database — `getpwuid` on Unix, the profile directory on Windows — which
+does not depend on a variable somebody forgot to pass on. `os/user` has
+a pure-Go implementation at `CGO_ENABLED=0`, so nothing about SPEC
+§1.1's static binary changes; measured, and `checkdeps` is still OK at 51
+packages.
+
+**The guard has a control**, because with the account database answering,
+every path is absolute for a reason that has nothing to do with the
+guard's ability to notice: a second test takes the fallback away and
+requires the guard to fail. And absoluteness is asked **for the named
+platform rather than for the host** — `filepath.IsAbs` asks about the
+running machine's separator, which is the wrong question for a Windows
+path evaluated on Linux and is how this guard would have passed on every
+runner while checking nothing about half its cases.
+
+### Measured on the artefact
+
+The agent run with all five XDG variables pointed at a scratch tree:
+
+```
+./run/liro/bridge.json
+./state/liro/logs/bridge.log
+./cache/liro/tsl-cache.xml
+```
+
+and nothing beside the binary, in the repository, or in the working
+directory.
+

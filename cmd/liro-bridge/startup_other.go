@@ -66,5 +66,5 @@ func applyStartupRegistrations(cfg config.Config) {
 	if cfg.StartWithWindows {
 		slog.Debug("startup: start-at-login is set, and this platform has no autostart entry yet (F12 §8)")
 	}
-	sweepStalePreviews(platform.ConfigDir(runtime.GOOS, platform.OSEnv), time.Now())
+	sweepStalePreviews(platform.CacheDir(runtime.GOOS, platform.OSEnv), time.Now())
 }

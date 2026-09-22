@@ -93,7 +93,7 @@ func runTray(cfg config.Config, version string) int {
 	// One pairing store for the life of the process (see openPairings):
 	// the settings window revokes through it, and the protocol
 	// authenticates against it, and F7 2.4 makes revoking immediate.
-	pairings := openPairingsOrNil()
+	pairings, secretStore := openPairingsOrNil()
 	quit := make(chan struct{})
 	// Closed from two places — the tray's Quit item and the update
 	// check, when it has just launched an installer that is about to
@@ -147,7 +147,7 @@ func runTray(cfg config.Config, version string) int {
 		},
 		OnSettings: func() {
 			openedAWindow = true
-			if err := runSettingsWindow(cfg, 0, pairings); err != nil {
+			if err := runSettingsWindow(cfg, 0, pairings, secretStore); err != nil {
 				slog.Warn("tray: settings window failed", "error", err)
 			}
 		},

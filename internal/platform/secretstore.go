@@ -33,6 +33,60 @@ type SecretStore interface {
 	// that is not there is not an error — the caller's intent (there is
 	// no such secret afterwards) is satisfied either way.
 	Delete(name string) error
+
+	// Describe says which of SPEC §6.4's mechanisms this store actually
+	// used, and why, in terms a person can be shown.
+	//
+	// **It is on the interface rather than beside it** so that a new
+	// store cannot be written without answering the question. §6.4
+	// requires "a clear warning in the log" when Linux takes its weaker
+	// branch, and F12 §7 asks additionally that a person be able to see
+	// which branch they got. A store that can be opened without saying
+	// which one it is is a store whose weaker branch is invisible, and
+	// an invisible fallback is the thing the warning exists to prevent
+	// (D-343).
+	Describe() SecretStoreDescription
+}
+
+// SecretStoreMechanism names one of SPEC §6.4's rows. It is a string
+// rather than an integer so that a log line, a JSON payload and a test
+// failure all read the same.
+type SecretStoreMechanism string
+
+const (
+	// MechanismDPAPI is SPEC §6.4's Windows row.
+	MechanismDPAPI SecretStoreMechanism = "dpapi"
+
+	// MechanismSecretService is §6.4's preferred Linux row: the
+	// desktop's own Secret Service, over D-Bus.
+	MechanismSecretService SecretStoreMechanism = "secret-service"
+
+	// MechanismEncryptedFile is §6.4's Linux fallback: an encrypted
+	// file with a key derived from machine-id and user.
+	MechanismEncryptedFile SecretStoreMechanism = "encrypted-file"
+)
+
+// SecretStoreDescription is what a store answers about itself.
+type SecretStoreDescription struct {
+	// Mechanism is which row of SPEC §6.4 is actually in use.
+	Mechanism SecretStoreMechanism
+
+	// Fallback is true when this is not the strongest mechanism the
+	// platform offers — which today means only §6.4's Linux file
+	// branch, taken because the Secret Service could not be used.
+	Fallback bool
+
+	// Reason is why the fallback was taken, empty when Fallback is
+	// false. It is one clause, in English, aimed at whoever reads the
+	// log: "this desktop has no Secret Service", "the keyring is
+	// locked". It is not shown to a person untranslated — the settings
+	// window has its own strings — it is what the log line carries.
+	Reason string
+
+	// Detail names the thing that answered, when there was one: the
+	// bus name's owner, the collection's label. Empty when there is
+	// nothing to name.
+	Detail string
 }
 
 // ErrSecretNotFound is returned by SecretStore.Get when name has no
@@ -90,6 +144,11 @@ type protector interface {
 	// Unprotect reverses Protect. It fails if the blob was produced by
 	// another user, on another machine, or with different entropy.
 	Unprotect(ciphertext, entropy []byte) ([]byte, error)
+
+	// describe says which of SPEC §6.4's mechanisms this protector is,
+	// and why, which is the only part of a file-backed store's identity
+	// that differs between platforms.
+	describe() SecretStoreDescription
 }
 
 // secretsFile is the on-disk shape of secrets.json: a version, so a
@@ -263,6 +322,13 @@ func (s *fileSecretStore) Set(name string, value []byte) error {
 	}
 	f.Secrets[name] = base64.StdEncoding.EncodeToString(blob)
 	return s.writeFile(f)
+}
+
+// Describe implements SecretStore by asking the protector, which is
+// the only part of a file-backed store that knows which platform
+// mechanism it is.
+func (s *fileSecretStore) Describe() SecretStoreDescription {
+	return s.protect.describe()
 }
 
 // Delete implements SecretStore.

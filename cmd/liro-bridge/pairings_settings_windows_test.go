@@ -39,7 +39,7 @@ func newTestPairings(t *testing.T) *api.Pairings {
 func settingsWithPairings(t *testing.T, c *i18n.Catalogue, list []api.Pairing) (ui.Window, chan ui.Message) {
 	t.Helper()
 	win, messages := sharedSettingsWindow(t, c, config.Default())
-	if err := win.PostJSON(buildSettingsInit(c, config.Default(), list)); err != nil {
+	if err := win.PostJSON(buildSettingsInit(c, config.Default(), list, platform.SecretStoreDescription{Mechanism: platform.MechanismDPAPI})); err != nil {
 		t.Fatalf("PostJSON(settings init): %v", err)
 	}
 	return win, messages

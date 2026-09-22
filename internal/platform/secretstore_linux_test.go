@@ -9,11 +9,26 @@ import (
 	"testing"
 )
 
-func TestASecretRoundTripsThroughTheFileStore(t *testing.T) {
-	store, err := NewSecretStore(t.TempDir())
+// newFileStoreForTest builds SPEC §6.4's file branch directly.
+//
+// **Not NewSecretStore**, and that is the point rather than a detail:
+// since D-347 that function prefers this desktop's Secret Service, so
+// on any machine with a running keyring it would write these tests'
+// secrets into the person's own keyring and assert nothing about the
+// file at all. A test that silently stops testing what it names is the
+// shape this project keeps finding (D-336), and here it would also
+// leave rubbish in somebody's login keyring.
+func newFileStoreForTest(t *testing.T, dir string) SecretStore {
+	t.Helper()
+	store, err := newFileSecretStore(dir, machineBoundProtector{reason: "a test asked for the file branch"})
 	if err != nil {
-		t.Fatalf("NewSecretStore: %v", err)
+		t.Fatalf("newFileSecretStore: %v", err)
 	}
+	return store
+}
+
+func TestASecretRoundTripsThroughTheFileStore(t *testing.T) {
+	store := newFileStoreForTest(t, t.TempDir())
 	want := []byte("a device secret, 32 bytes of it!")
 	if err := store.Set("device", want); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -33,10 +48,7 @@ func TestASecretRoundTripsThroughTheFileStore(t *testing.T) {
 // every round-trip test ever written.
 func TestTheSecretIsNotInTheFile(t *testing.T) {
 	dir := t.TempDir()
-	store, err := NewSecretStore(dir)
-	if err != nil {
-		t.Fatalf("NewSecretStore: %v", err)
-	}
+	store := newFileStoreForTest(t, dir)
 	secret := []byte("correct-horse-battery-staple-0001")
 	if err := store.Set("device", secret); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -62,7 +74,7 @@ func TestTheSecretIsNotInTheFile(t *testing.T) {
 // one a test can move, so it is the one that is checked. The other two
 // are the same derivation with different inputs.
 func TestAnotherInstallationsEntropyDoesNotOpenIt(t *testing.T) {
-	p := machineBoundProtector{}
+	p := machineBoundProtector{reason: "a test"}
 	secret := []byte("a device secret")
 
 	mine := bytes.Repeat([]byte{0xA5}, entropyLength)
@@ -89,7 +101,7 @@ func TestAnotherInstallationsEntropyDoesNotOpenIt(t *testing.T) {
 // secret that decrypts to something an attacker chose would be worse
 // than one that fails to decrypt at all.
 func TestTamperingWithTheStoredBlobIsRefused(t *testing.T) {
-	p := machineBoundProtector{}
+	p := machineBoundProtector{reason: "a test"}
 	entropy := bytes.Repeat([]byte{0xC3}, entropyLength)
 	blob, err := p.Protect([]byte("a device secret"), entropy)
 	if err != nil {

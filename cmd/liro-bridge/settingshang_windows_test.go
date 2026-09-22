@@ -36,6 +36,7 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
@@ -89,7 +90,7 @@ func newProductionSettingsWindow(t *testing.T, c *i18n.Catalogue, cfg config.Con
 	if err != nil {
 		t.Fatalf("NewWindow(settings): %v", err)
 	}
-	if err := win.PostJSON(buildSettingsInit(c, cfg, nil)); err != nil {
+	if err := win.PostJSON(buildSettingsInit(c, cfg, nil, platform.SecretStoreDescription{Mechanism: platform.MechanismDPAPI})); err != nil {
 		t.Fatalf("PostJSON(settings init): %v", err)
 	}
 	return win, messages

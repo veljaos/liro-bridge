@@ -20,6 +20,7 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
@@ -119,7 +120,9 @@ func TestNoWindowLetsTheBrowserHandleADroppedFile(t *testing.T) {
 				Title: c.T("settings.window_title"), Width: 520, Height: 880,
 				StartPage: "/pages/settings.html",
 			},
-			init: func() any { return buildSettingsInit(c, cfg, nil) }},
+			init: func() any {
+				return buildSettingsInit(c, cfg, nil, platform.SecretStoreDescription{Mechanism: platform.MechanismDPAPI})
+			}},
 		{name: "certificates",
 			opts: ui.Options{
 				Title: c.T("certswindow.title"), Width: 460, Height: 640,

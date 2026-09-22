@@ -243,7 +243,7 @@ func run(args []string, out io.Writer) int {
 func runCerts(args []string, out io.Writer, locale string) int {
 	svc := platform.NewSmartCardService()
 	cngSource := windowscng.NewSource()
-	cachePath := filepath.Join(filepath.Dir(platform.DefaultConfigFile()), "tsl-cache.xml")
+	cachePath := filepath.Join(platform.DefaultCacheDir(), "tsl-cache.xml")
 	store, err := tsl.NewFileStore(cachePath, tsl.DefaultURL, tsl.HTTPFetcher)
 	if err != nil {
 		_, _ = fmt.Fprintln(out, "liro-bridge: certs:", err)

@@ -26,26 +26,37 @@ const pairingsFileName = "pairings.json"
 // their own idea of what is paired, and a revoked application would go
 // on working until whichever of them served it happened to be
 // restarted.
-func openPairings() (*api.Pairings, error) {
+// It returns the secret store's own description alongside, because
+// **which of SPEC §6.4's mechanisms a person got has to be visible to
+// them** (F12 §7, D-347) and this is the one place in the process that
+// knows. It is returned rather than kept in a package variable so that
+// a window cannot be handed a description of a store nobody opened.
+func openPairings() (*api.Pairings, platform.SecretStoreDescription, error) {
 	dir := filepath.Dir(platform.DefaultConfigFile())
 	secrets, err := platform.NewSecretStore(dir)
 	if err != nil {
-		return nil, fmt.Errorf("opening the secret store: %w", err)
+		return nil, platform.SecretStoreDescription{}, fmt.Errorf("opening the secret store: %w", err)
 	}
-	return api.OpenPairings(filepath.Join(dir, pairingsFileName), secrets, nil)
+	p, err := api.OpenPairings(filepath.Join(dir, pairingsFileName), secrets, nil)
+	return p, secrets.Describe(), err
 }
 
 // openPairingsOrNil is openPairings for the callers that must open a
 // window whether or not it worked. A nil store renders the settings
 // window's list as empty, which is what it truthfully is: nothing can
 // be authenticated against a store that would not open.
-func openPairingsOrNil() *api.Pairings {
-	p, err := openPairings()
+//
+// On the platform where the weaker branch exists, a window handed a
+// description of a store nobody opened would render as "your keyring is
+// in use" on a machine where it is not, so the zero description says
+// its own thing instead.
+func openPairingsOrNil() (*api.Pairings, platform.SecretStoreDescription) {
+	p, desc, err := openPairings()
 	if err != nil {
 		slog.Error("pairings: could not open the pairing store", "error", err)
-		return nil
+		return nil, platform.SecretStoreDescription{}
 	}
-	return p
+	return p, desc
 }
 
 // listPairings returns what the settings window should show, or nothing

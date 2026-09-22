@@ -40,7 +40,7 @@ type State struct {
 // per-user directory as everything else this agent keeps (SPEC §14.1 —
 // one agent per user session, and nothing shared between them).
 func StateFile() string {
-	return filepath.Join(platform.ConfigDir(runtime.GOOS, platform.OSEnv), "update-state.json")
+	return filepath.Join(platform.StateDir(runtime.GOOS, platform.OSEnv), "update-state.json")
 }
 
 // LoadState reads the state file. A missing file is not an error: it

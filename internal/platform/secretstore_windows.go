@@ -51,6 +51,13 @@ func copyOutBlob(out windows.DataBlob) []byte {
 // it to a panic in a signing agent.
 var errEmptyBlob = errors.New("platform: DPAPI was given an empty buffer")
 
+// describe implements protector. DPAPI is the strongest mechanism SPEC
+// §6.4 names for this platform and there is no weaker branch to fall
+// back to, so this is never a fallback and never carries a reason.
+func (dpapiProtector) describe() SecretStoreDescription {
+	return SecretStoreDescription{Mechanism: MechanismDPAPI}
+}
+
 // Protect implements protector.
 func (dpapiProtector) Protect(plaintext, entropy []byte) ([]byte, error) {
 	if len(plaintext) == 0 || len(entropy) == 0 {

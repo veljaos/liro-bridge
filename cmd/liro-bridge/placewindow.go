@@ -138,7 +138,14 @@ func openPlacement(cfg config.Config, locale, docPath string, cert *x509.Certifi
 		return nil, fmt.Errorf("the document has no pages")
 	}
 
-	scratch, err := os.MkdirTemp(platform.ConfigDir(runtime.GOOS, platform.OSEnv), "preview-")
+	// The page images of the document about to be signed. CacheDir
+	// rather than ConfigDir: on Linux those are two different
+	// directories, and the one a backup or a sync tool is pointed at
+	// is not where a person's contract should be rendered (D-348).
+	if err := os.MkdirAll(platform.CacheDir(runtime.GOOS, platform.OSEnv), 0o700); err != nil {
+		return nil, fmt.Errorf("making the cache directory for the page images: %w", err)
+	}
+	scratch, err := os.MkdirTemp(platform.CacheDir(runtime.GOOS, platform.OSEnv), "preview-")
 	if err != nil {
 		return nil, fmt.Errorf("making a directory for the page images: %w", err)
 	}

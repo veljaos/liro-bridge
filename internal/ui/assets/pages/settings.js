@@ -105,6 +105,15 @@
     document.getElementById("certificate-listing").checked = !!m.certificateListing;
     document.getElementById("check-updates-daily").checked = !!m.checkUpdatesDaily;
     window.liroSetText(document.getElementById("version"), m.version);
+    // Which of SPEC 6.4's mechanisms the device secrets landed in. The
+    // sentence is built in Go, where the mechanism and the catalogue
+    // both are; the page's job is to say it and to make the weaker
+    // branch look like the warning it is rather than like a detail.
+    var store = document.getElementById("secret-store");
+    window.liroSetText(store, m.secretStoreText || "");
+    store.className = m.secretStoreFallback
+      ? "liro-text-small liro-outcome-warning"
+      : "liro-text-small liro-text-secondary";
     renderPairings(m.pairings);
     // Task 3 (F5 fourth-real-run review): three levels, B-B included.
     // An unrecognised saved value falls back to the project's default

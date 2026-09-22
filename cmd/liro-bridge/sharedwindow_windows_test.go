@@ -32,6 +32,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/api"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
@@ -110,7 +111,7 @@ func sharedSettingsWindow(t *testing.T, c *i18n.Catalogue, cfg config.Config) (u
 		t.Fatalf("NewWindow(settings): %v", settingsShared.err)
 	}
 	drain(settingsShared.messages)
-	if err := settingsShared.win.PostJSON(buildSettingsInit(c, cfg, nil)); err != nil {
+	if err := settingsShared.win.PostJSON(buildSettingsInit(c, cfg, nil, platform.SecretStoreDescription{Mechanism: platform.MechanismDPAPI})); err != nil {
 		t.Fatalf("PostJSON(settings init): %v", err)
 	}
 	return settingsShared.win, settingsShared.messages

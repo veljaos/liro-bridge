@@ -243,7 +243,8 @@ func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue
 			// Its own pairing store: this is a `sign` process, not
 			// the tray, so nothing else in it holds one
 			// and there is no second copy to disagree with.
-			if err := runSettingsWindow(cfg, win.Handle(), openPairingsOrNil()); err != nil {
+			pairings, secretStore := openPairingsOrNil()
+			if err := runSettingsWindow(cfg, win.Handle(), pairings, secretStore); err != nil {
 				slog.Warn("consent: settings window failed", "error", err)
 			}
 			newCfg, cfgErr := config.Load(platform.DefaultConfigFile())
@@ -424,7 +425,7 @@ var interactiveGather = gatherInteractiveCertificates
 func gatherInteractiveCertificates(ctx context.Context) (cli.Report, error) {
 	svc := platform.NewSmartCardService()
 	cngSource := windowscng.NewSource()
-	cachePath := filepath.Join(filepath.Dir(platform.DefaultConfigFile()), "tsl-cache.xml")
+	cachePath := filepath.Join(platform.DefaultCacheDir(), "tsl-cache.xml")
 	store, err := tsl.NewFileStore(cachePath, tsl.DefaultURL, tsl.HTTPFetcher)
 	if err != nil {
 		return cli.Report{}, err
@@ -481,7 +482,7 @@ func buildTSAClient(cfg config.Config) (*tsa.Client, error) {
 }
 
 func interactiveTrustStore(ctx context.Context) []*x509.Certificate {
-	cachePath := filepath.Join(filepath.Dir(platform.DefaultConfigFile()), "tsl-cache.xml")
+	cachePath := filepath.Join(platform.DefaultCacheDir(), "tsl-cache.xml")
 	store, err := tsl.NewFileStore(cachePath, tsl.DefaultURL, tsl.HTTPFetcher)
 	if err != nil {
 		return nil

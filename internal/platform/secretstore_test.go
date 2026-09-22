@@ -19,6 +19,14 @@ import (
 // is the only property the store itself depends on.
 type xorProtector struct{}
 
+// describe implements protector. The fake reports the file mechanism
+// because that is what a file-backed store is; nothing in the shared
+// tests turns on the value, and a fake that claimed to be DPAPI on
+// Linux would be a lie a reader has to unpick.
+func (xorProtector) describe() SecretStoreDescription {
+	return SecretStoreDescription{Mechanism: MechanismEncryptedFile}
+}
+
 func (xorProtector) transform(b, entropy []byte) []byte {
 	out := make([]byte, len(b))
 	for i := range b {

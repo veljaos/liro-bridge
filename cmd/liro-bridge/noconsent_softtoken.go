@@ -85,7 +85,7 @@ func runSignDigest(ctx context.Context, args []string, stdout, stderr io.Writer,
 func runSignWithoutConsent(ctx context.Context, args []string, stdout, stderr io.Writer, cfg config.Config) int {
 	open := dropOrigin(openCardOrSoftToken(0, cfg))
 
-	cachePath := filepath.Join(filepath.Dir(platform.DefaultConfigFile()), "tsl-cache.xml")
+	cachePath := filepath.Join(platform.DefaultCacheDir(), "tsl-cache.xml")
 	store, err := tsl.NewFileStore(cachePath, tsl.DefaultURL, tsl.HTTPFetcher)
 	var trustStore []*x509.Certificate
 	if err == nil {

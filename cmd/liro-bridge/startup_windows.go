@@ -44,7 +44,7 @@ func applyStartupRegistrations(cfg config.Config) {
 	// commands that mean "the agent is being used as an agent" already
 	// go through. What it collects is pictures of somebody's documents
 	// that a crash left behind — see sweepStalePreviews.
-	sweepStalePreviews(platform.ConfigDir(runtime.GOOS, platform.OSEnv), time.Now())
+	sweepStalePreviews(platform.CacheDir(runtime.GOOS, platform.OSEnv), time.Now())
 }
 
 // applyAutostart makes HKCU\...\Run agree with cfg.StartWithWindows.

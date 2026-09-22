@@ -42,6 +42,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
 	"github.com/veljaos/liro-bridge/internal/i18n"
+	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
@@ -320,7 +321,7 @@ func TestEverySettingsFieldSurvivesSaveCloseAndReopen(t *testing.T) {
 
 	probes := settingsProbes()
 
-	c, opened, _ := settingsOnOpening(stale, nil)
+	c, opened, _ := settingsOnOpening(stale, nil, platform.SecretStoreDescription{Mechanism: platform.MechanismDPAPI})
 	win, messages := newProductionSettingsWindow(t, c, opened)
 	for _, p := range probes {
 		if _, err := win.Eval(p.set); err != nil {
@@ -356,7 +357,7 @@ func TestEverySettingsFieldSurvivesSaveCloseAndReopen(t *testing.T) {
 
 	// Closed, and opened again by a caller still holding the Config it
 	// read before any of this happened.
-	reopenC, reopened, _ := settingsOnOpening(stale, nil)
+	reopenC, reopened, _ := settingsOnOpening(stale, nil, platform.SecretStoreDescription{Mechanism: platform.MechanismDPAPI})
 	if reopened.Locale != "sr-Cyrl" {
 		t.Errorf("the reopened window reads locale %q, want the saved sr-Cyrl", reopened.Locale)
 	}
@@ -418,7 +419,9 @@ func TestSettingsWindowOpensInTheLanguageOnDisk(t *testing.T) {
 	}
 
 	returned := make(chan error, 1)
-	go func() { returned <- runSettingsWindow(stale, 0, nil) }()
+	go func() {
+		returned <- runSettingsWindow(stale, 0, nil, platform.SecretStoreDescription{Mechanism: platform.MechanismDPAPI})
+	}()
 
 	hwnd := waitForWindowTitled(t, cyrl, 40*time.Second)
 

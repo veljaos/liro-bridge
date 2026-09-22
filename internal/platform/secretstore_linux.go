@@ -16,27 +16,31 @@ import (
 	"strings"
 )
 
-// The Linux secret store: the file branch of SPEC §6.4.
+// The Linux secret store: SPEC §6.4's two branches, and the choice
+// between them.
 //
 // §6.4 names two mechanisms for this platform and prefers the first:
 // "Secret Service (libsecret) where available, otherwise an encrypted
 // file with a key derived from machine-id + user, with a clear warning
-// in the log". **Only the second is built**, so the selection below
-// takes it every time and says so — the warning is §6.4's own
-// requirement rather than decoration, and it is the thing that stops a
-// staged implementation from looking like a finished one (D-343).
+// in the log". **Both are built now** (D-347); until then only the
+// second was, and the warning was what stopped a staged implementation
+// from looking like a finished one (D-343).
 //
 // # Why a file is defensible at all, since it looks weaker than a keyring
 //
 // F12 §7 asks for the reasoning rather than the choice: **an unlocked
 // keyring does not protect against malware running as the same user
-// either.** Both mechanisms protect the same thing — another user of
-// the machine, and a copy of the file taken elsewhere — and neither
+// either.** That was written as an argument and is now a measurement —
+// an unrelated process running as this user asked this desktop's
+// keyring for an item and was handed it, with no per-application check
+// of any kind (D-347). Both mechanisms protect the same thing: another
+// user of the machine, and a copy of the file taken elsewhere. Neither
 // protects against code already running as the person whose secret it
 // is. That is the same boundary SPEC §6.5 draws for the PIN, and it is
 // why the consent screen rather than storage is this product's gate.
 //
-// What the key binds to, and what each one costs an attacker:
+// What the file branch's key binds to, and what each one costs an
+// attacker:
 //
 //   - **the machine**, through /etc/machine-id: the blob does not
 //     decrypt on another computer;
@@ -45,15 +49,59 @@ import (
 //   - **this installation**, through the entropy file beside it, which
 //     is SPEC §6.4's "additional entropy stored alongside" and is what
 //     makes a copy of secrets.json on its own worth nothing.
+//
+// # Which branch, and what a person is told
+//
+// The Secret Service where one answers and is unlocked; the file
+// otherwise. The choice is made once per run and never mixed: a store
+// that read from one and wrote to the other would put half a person's
+// pairings somewhere they would never be looked for again.
+//
+// **The cost of that, stated rather than discovered later:** a pairing
+// made while the keyring was locked lives in the file, and a run with
+// the keyring unlocked will not find it. The application has to be
+// paired again — which is a supported flow with a consent screen in
+// front of it (F7 §2.4), is visible at the moment it happens, and is
+// the honest outcome of the person's own keyring having been shut. The
+// alternative, reading through from one store into the other, spreads
+// device secrets across two mechanisms to save one consent click. It is
+// not taken, and migrating a file store into a keyring that appears
+// later is written down as somebody's judgement rather than done here.
 func newSecretStore(dir string) (SecretStore, error) {
-	slog.Warn("platform: storing secrets in an encrypted file rather than the desktop's secret service, " +
-		"which is not implemented yet (SPEC §6.4)")
-	return newFileSecretStore(dir, machineBoundProtector{})
+	store, err := newSecretServiceStore()
+	if err == nil {
+		d := store.Describe()
+		slog.Info("platform: secrets are kept in this desktop's Secret Service (SPEC §6.4)",
+			"mechanism", d.Mechanism, "collection", d.Detail)
+		return store, nil
+	}
+
+	// SPEC §6.4's "clear warning in the log", carrying the reason the
+	// weaker branch was taken. A warning that only said "using a file"
+	// would leave a person with a keyring they believed was in use and
+	// no way to find out it was not.
+	reason := err.Error()
+	slog.Warn("platform: secrets are kept in an encrypted file rather than this desktop's Secret Service (SPEC §6.4)",
+		"reason", reason)
+	return newFileSecretStore(dir, machineBoundProtector{reason: reason})
 }
 
 // machineBoundProtector is AES-256-GCM under a key derived from the
 // machine, the user and the entropy file.
-type machineBoundProtector struct{}
+//
+// It carries the reason the Secret Service was not used, because it is
+// what Describe reaches and because a fallback that cannot say what it
+// fell back from is one nobody can act on.
+type machineBoundProtector struct{ reason string }
+
+// describe implements protector.
+func (p machineBoundProtector) describe() SecretStoreDescription {
+	return SecretStoreDescription{
+		Mechanism: MechanismEncryptedFile,
+		Fallback:  true,
+		Reason:    p.reason,
+	}
+}
 
 // secretStoreKeyInfo is HKDF's info string: it names the program, the
 // purpose and the version of this scheme, so that a future change to
