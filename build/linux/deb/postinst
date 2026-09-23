@@ -1,0 +1,25 @@
+#!/bin/sh
+# liro-bridge postinst — loads the AppArmor profile the package ships
+# (build/linux/apparmor/liro-bridge, D-324).
+#
+# This is debhelper's own dh_apparmor snippet, reproduced rather than
+# reinvented: nFPM does not run debhelper, and the distribution's
+# convention for a profile shipped by a package is the one an
+# administrator will expect to find.
+set -e
+
+if [ "$1" = "configure" ]; then
+    APP_PROFILE="/etc/apparmor.d/liro-bridge"
+    if [ -f "$APP_PROFILE" ]; then
+        LOCAL_APP_PROFILE="/etc/apparmor.d/local/liro-bridge"
+        test -e "$LOCAL_APP_PROFILE" || {
+            mkdir -p "$(dirname "$LOCAL_APP_PROFILE")"
+            install --mode 644 /dev/null "$LOCAL_APP_PROFILE"
+        }
+        if aa-enabled --quiet 2>/dev/null; then
+            apparmor_parser -r -T -W "$APP_PROFILE" || true
+        fi
+    fi
+fi
+
+exit 0

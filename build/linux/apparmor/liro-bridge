@@ -1,0 +1,24 @@
+# Liro Bridge — shipped by the liro-bridge package, F12 §8.
+#
+# This profile confines nothing. It exists so that the agent is not
+# moved into the `unprivileged_userns` profile when WebKitGTK's sandbox
+# creates a user namespace: on Ubuntu 24.04 that transition strips the
+# capability bubblewrap needs to write its child's uid map, and the web
+# process dies before any window appears (D-324). Ubuntu ships a profile
+# of exactly this shape for each browser engine in its own archive —
+# /etc/apparmor.d/epiphany is the model — and a package from outside the
+# archive has to ship its own.
+#
+# It names the agent's installed binary and not bwrap: everything the
+# agent spawns inherits the label, and bwrap run from an unprofiled
+# parent fails even with a profile of its own (D-324, measured).
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile liro-bridge /usr/bin/liro-bridge flags=(unconfined) {
+  userns,
+
+  # Site-specific additions and overrides. See local/README for details.
+  include if exists <local/liro-bridge>
+}

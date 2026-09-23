@@ -18,6 +18,10 @@ import (
 	"github.com/veljaos/liro-bridge/internal/update"
 )
 
+// installsItself is true: Windows has no package manager in this path,
+// so the agent downloads, verifies and runs the MSI itself (SPEC §15.2).
+const installsItself = true
+
 // installRelease is the in-app updater on the platform that has one: an
 // MSI this program downloads, checks and hands to the installer (SPEC
 // §15.2).

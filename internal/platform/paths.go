@@ -227,6 +227,26 @@ func BridgeFile(goos string, env Env) string {
 	}
 }
 
+// AutostartFile returns the XDG autostart entry the agent writes on
+// Linux (F12 §8): $XDG_CONFIG_HOME/autostart/liro-bridge.desktop, or
+// ~/.config/autostart when the variable is not set — the XDG Base
+// Directory specification's default, and the directory every session
+// manager reads.
+//
+// The name is the same as the package's own desktop entry. That is
+// deliberate rather than a collision: the two live in different
+// directories and describe the same program, and GNOME matches an
+// autostarted process to its application entry by that name.
+//
+// It exists only for Linux. Windows registers autostart in the
+// registry and macOS is F13.
+func AutostartFile(env Env) string {
+	if xdg := env("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "autostart", "liro-bridge.desktop")
+	}
+	return filepath.Join(home(env, "HOME"), ".config", "autostart", "liro-bridge.desktop")
+}
+
 // DefaultBridgeFile returns the discovery file path for the running
 // platform and environment.
 func DefaultBridgeFile() string {

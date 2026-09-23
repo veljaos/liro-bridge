@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Liro Bridge
+Comment=Sign these PDF documents with Liro Bridge
+Comment[sr@latin]=Potpiši ove PDF dokumente u programu Liro Bridge
+Comment[sr]=Потпиши ове PDF документе у програму Liro Bridge
+Exec=liro-bridge --shell-verb %F
+TryExec=liro-bridge
+Icon=liro-bridge
+Terminal=false
+NoDisplay=true
+MimeType=application/pdf;
+StartupNotify=true

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Liro Bridge
+Comment=Sign PDF documents with a qualified certificate on a smart card
+Comment[sr@latin]=Potpisivanje PDF dokumenata kvalifikovanim sertifikatom sa kartice
+Comment[sr]=Потписивање PDF докумената квалификованим сертификатом са картице
+Keywords=PDF;signature;sign;smart card;potpis;potpisivanje;
+Keywords[sr]=PDF;потпис;потписивање;картица;
+Exec=liro-bridge open
+TryExec=liro-bridge
+Icon=liro-bridge
+Terminal=false
+Categories=Office;
+StartupNotify=true

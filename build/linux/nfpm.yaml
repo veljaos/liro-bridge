@@ -1,0 +1,139 @@
+# F12 §8: the .deb and the .rpm, from this one file.
+#
+# build/linux/build.sh stages the binary and the icons under
+# dist/linux/stage and then runs nFPM twice, once per packager. Every
+# path below is relative to the repository root, which is where
+# build.sh runs it from.
+#
+# **Flatpak and Snap are refused**, and for a reason rather than a
+# preference: a sandboxed package cannot load a vendor PKCS#11 module
+# the person installed system-wide, and loading exactly that module is
+# what F11 exists for. See D-354.
+
+name: liro-bridge
+arch: amd64
+platform: linux
+version: ${LIRO_VERSION}
+version_schema: semver
+section: utils
+priority: optional
+maintainer: Liro
+vendor: Liro
+homepage: https://github.com/veljaos/liro-bridge
+license: Apache-2.0
+description: |-
+  Sign PDF documents with a qualified certificate on a smart card.
+  Liro Bridge signs PDFs locally with a certificate on a card or token,
+  and lets other programs on the same machine ask it to sign. Every
+  signature is approved by a person in the agent's own window.
+
+contents:
+  - src: dist/linux/stage/liro-bridge
+    dst: /usr/bin/liro-bridge
+    file_info:
+      mode: 0755
+
+  - src: build/linux/liro-bridge.desktop
+    dst: /usr/share/applications/liro-bridge.desktop
+    file_info:
+      mode: 0644
+  - src: build/linux/liro-bridge-open-pdf.desktop
+    dst: /usr/share/applications/liro-bridge-open-pdf.desktop
+    file_info:
+      mode: 0644
+
+  - src: dist/linux/stage/icons/16x16/apps/liro-bridge.png
+    dst: /usr/share/icons/hicolor/16x16/apps/liro-bridge.png
+    file_info: {mode: 0644}
+  - src: dist/linux/stage/icons/24x24/apps/liro-bridge.png
+    dst: /usr/share/icons/hicolor/24x24/apps/liro-bridge.png
+    file_info: {mode: 0644}
+  - src: dist/linux/stage/icons/32x32/apps/liro-bridge.png
+    dst: /usr/share/icons/hicolor/32x32/apps/liro-bridge.png
+    file_info: {mode: 0644}
+  - src: dist/linux/stage/icons/48x48/apps/liro-bridge.png
+    dst: /usr/share/icons/hicolor/48x48/apps/liro-bridge.png
+    file_info: {mode: 0644}
+  - src: dist/linux/stage/icons/64x64/apps/liro-bridge.png
+    dst: /usr/share/icons/hicolor/64x64/apps/liro-bridge.png
+    file_info: {mode: 0644}
+  - src: dist/linux/stage/icons/256x256/apps/liro-bridge.png
+    dst: /usr/share/icons/hicolor/256x256/apps/liro-bridge.png
+    file_info: {mode: 0644}
+
+  # Debian and Ubuntu only. Fedora confines with SELinux and has no
+  # equivalent of Ubuntu's apparmor_restrict_unprivileged_userns, which
+  # is the only thing this profile answers (D-324). A conffile, so an
+  # administrator's edit survives an upgrade and `apt purge` removes it.
+  - src: build/linux/apparmor/liro-bridge
+    dst: /etc/apparmor.d/liro-bridge
+    type: config
+    packager: deb
+    file_info:
+      mode: 0644
+
+overrides:
+  deb:
+    # **Generated, not written.** The library half is exactly what
+    # dpkg-shlibdeps reads out of the shipped binary's DT_NEEDED (D-326,
+    # D-327), and CI regenerates it from the binary it just built and
+    # fails if the two differ — so this list cannot drift from what the
+    # binary needs, in either direction (SPEC §1.1: a library the binary
+    # does not name is a defect too).
+    #
+    # The last two are not libraries and never appear in a DT_NEEDED
+    # (F12 §9). pcscd is the service a vendor PKCS#11 module talks to a
+    # reader through; libccid is the generic USB reader driver, named
+    # explicitly because pcscd's own dependency on it is an alternative
+    # (`libccid | pcsc-ifd-handler`) that another driver satisfies.
+    # **libpcsclite1 is deliberately absent**: this binary does not
+    # link it, a vendor module does, and pcscd already depends on it —
+    # measured with apt-cache on Ubuntu 24.04 (D-354).
+    depends:
+      - libc6 (>= 2.34)
+      - libcairo-gobject2 (>= 1.10.0)
+      - libcairo2 (>= 1.15.12)
+      - libgdk-pixbuf-2.0-0 (>= 2.39.2)
+      - libglib2.0-0t64 (>= 2.79.2)
+      - libgraphene-1.0-0 (>= 1.10.0)
+      - libgtk-4-1 (>= 4.14.1)
+      - libjavascriptcoregtk-6.0-1
+      - libpango-1.0-0 (>= 1.52.0)
+      - libsoup-3.0-0 (>= 3.3.1)
+      - libwebkitgtk-6.0-4 (>= 2.41.90)
+      - pcscd
+      - libccid
+    scripts:
+      postinstall: build/linux/deb/postinst
+      postremove: build/linux/deb/postrm
+
+  rpm:
+    # **Sonames, not package names**, for every library: this is the
+    # vocabulary rpmbuild's own automatic Requires uses, generated from
+    # the same DT_NEEDED, and it is what makes the Fedora list
+    # something other than a guess made on an Ubuntu machine — dnf
+    # resolves each soname to whichever Fedora package provides it.
+    # The thirteen are the binary's DT_NEEDED entries, which CI
+    # checks; libc carries the highest symbol version the binary
+    # requires, measured with objdump -T.
+    #
+    # The two that are not libraries have Fedora names and nothing to
+    # generate them from: pcsc-lite is the daemon, pcsc-lite-ccid the
+    # generic reader driver. Both are checked by installing the package
+    # on Fedora in CI rather than by reading a package index.
+    depends:
+      - libc.so.6(GLIBC_2.34)(64bit)
+      - libcairo-gobject.so.2()(64bit)
+      - libcairo.so.2()(64bit)
+      - libgdk_pixbuf-2.0.so.0()(64bit)
+      - libgio-2.0.so.0()(64bit)
+      - libglib-2.0.so.0()(64bit)
+      - libgobject-2.0.so.0()(64bit)
+      - libgraphene-1.0.so.0()(64bit)
+      - libgtk-4.so.1()(64bit)
+      - libjavascriptcoregtk-6.0.so.1()(64bit)
+      - libpango-1.0.so.0()(64bit)
+      - libsoup-3.0.so.0()(64bit)
+      - libwebkitgtk-6.0.so.4()(64bit)
+      - pcsc-lite
+      - pcsc-lite-ccid

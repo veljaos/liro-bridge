@@ -1,0 +1,22 @@
+#!/bin/sh
+# liro-bridge postrm — debhelper's dh_apparmor purge snippet, for the
+# reason postinst gives.
+#
+# Nothing here touches a home directory, and nothing can: a package is
+# removed by root, for every account on the machine, including accounts
+# that are not logged in. The audit log under each person's
+# $XDG_DATA_HOME stays where it is (SPEC §6.7, D-244), and so does
+# everything else the agent wrote for a person — see D-354.
+set -e
+
+if [ "$1" = "purge" ] && ! [ -e "/etc/apparmor.d/liro-bridge" ]; then
+    rm -f "/etc/apparmor.d/disable/liro-bridge" || true
+    rm -f "/etc/apparmor.d/force-complain/liro-bridge" || true
+    rm -f "/etc/apparmor.d/local/liro-bridge" || true
+    rm -f /var/cache/apparmor/*/"liro-bridge" || true
+    rmdir /etc/apparmor.d/disable 2>/dev/null || true
+    rmdir /etc/apparmor.d/local   2>/dev/null || true
+    rmdir /etc/apparmor.d         2>/dev/null || true
+fi
+
+exit 0

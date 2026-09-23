@@ -841,6 +841,177 @@ jobs:
               if (-not $template) { throw "$($msi.Name) has no platform/language template" }
           }
 
+  # F12 §8: the .deb and the .rpm, built the way a release builds them.
+  #
+  # **Inside ubuntu:24.04, and the container is the point.** A cgo binary
+  # takes its glibc symbol versions from the machine that linked it, and
+  # the runner is whatever `ubuntu-latest` is this month. 24.04 is the
+  # oldest distribution this program supports (F12 §3.1), so a binary
+  # linked there starts everywhere newer. build.sh checks the property
+  # rather than trusting the container: it refuses a binary that needs a
+  # glibc newer than 2.39.
+  #
+  # The container is not a test distribution. What the package needs is
+  # measured by the next job, on images that have none of the -dev
+  # packages installed here.
+  linux-packages:
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      # git before checkout, so the checkout is a repository and
+      # build.sh can stamp the commit; the rest is D-353's list plus
+      # dpkg-dev for dpkg-shlibdeps and binutils for objdump.
+      - name: the build container's toolchain
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git gcc libc6-dev pkg-config binutils dpkg-dev \
+            libgtk-4-dev libwebkitgtk-6.0-dev gobject-introspection libp11-kit-dev
+
+      - uses: actions/checkout@v4
+
+      - name: the checkout belongs to another uid
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Its own key, for linux-gui's reason: gotk4's cold build is
+      # fifteen minutes, and a cache saved by a job that never built it
+      # would be restored here holding none of it.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: linux-packages-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: linux-packages-go-
+
+      - name: nFPM, pinned
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+
+      - name: build the packages
+        run: NFPM="$(go env GOPATH)/bin/nfpm" build/linux/build.sh 0.0.0-ci dist/linux
+
+      # SPEC §1.1, on the artefact: "the packaging declare every library
+      # found there" — and nothing it does not find, since a library the
+      # binary does not name is a defect too. dpkg-shlibdeps is the
+      # archive's own tool for reading DT_NEEDED into package names
+      # (D-326); the two F12 §9 services are the only things the .deb
+      # may add to it.
+      - name: the .deb declares exactly what the binary links, plus pcscd and libccid
+        run: |
+          set -eu
+          mkdir -p /tmp/shl/debian
+          printf 'Source: x\n\nPackage: x\nArchitecture: amd64\n' > /tmp/shl/debian/control
+          generated=$(cd /tmp/shl && dpkg-shlibdeps -O "$GITHUB_WORKSPACE/dist/linux/stage/liro-bridge" 2>/dev/null | sed 's/^shlibs:Depends=//')
+          want="$generated, pcscd, libccid"
+          got=$(dpkg-deb -f dist/linux/liro-bridge_0.0.0-ci_amd64.deb Depends)
+          echo "generated: $want"
+          echo "declared:  $got"
+          if [ "$got" != "$want" ]; then
+            echo "::error::build/linux/nfpm.yaml's deb depends are not what dpkg-shlibdeps reads from the binary"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            dist/linux/*.deb
+            dist/linux/*.rpm
+
+  # Install, run, remove — on clean images, which is the only way to learn
+  # what a package needs rather than what the machine that built it
+  # happened to have (D-334, D-335, D-353: three times, the same way).
+  #
+  # **Fedora is measured here and nowhere else.** There is no Fedora
+  # machine in this project; the .rpm's library Requires are sonames,
+  # which dnf resolves to Fedora's own package names, and the two F12 §9
+  # names are the only guess in it. An install that resolves proves both.
+  #
+  # What a container cannot show: a window, a sandbox, a card. `--version`
+  # and the loader's view of the binary are what it can, and they are the
+  # dependency question exactly.
+  linux-install:
+    needs: linux-packages
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:24.04", "debian:trixie", "fedora:44"]
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+
+      - name: install the package with the distribution's own tool
+        run: |
+          set -eu
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            apt-get install -y ./liro-bridge_0.0.0-ci_amd64.deb
+          else
+            dnf install -y ./liro-bridge-0.0.0-ci.x86_64.rpm
+          fi
+
+      - name: every library the binary names resolves, and it runs
+        run: |
+          set -eu
+          if ldd /usr/bin/liro-bridge | grep 'not found'; then
+            echo "::error::the package installed and the binary still cannot be loaded"
+            exit 1
+          fi
+          /usr/bin/liro-bridge --version
+          command -v pcscd >/dev/null || { echo "::error::no pcscd after install"; exit 1; }
+
+      - name: the desktop entries and the icon are where a desktop looks
+        run: |
+          set -eu
+          for f in /usr/share/applications/liro-bridge.desktop \
+                   /usr/share/applications/liro-bridge-open-pdf.desktop \
+                   /usr/share/icons/hicolor/48x48/apps/liro-bridge.png \
+                   /usr/share/icons/hicolor/256x256/apps/liro-bridge.png; do
+            test -s "$f" || { echo "::error::$f is missing"; exit 1; }
+          done
+          grep -qx 'MimeType=application/pdf;' /usr/share/applications/liro-bridge-open-pdf.desktop
+
+      # The profile on Debian and Ubuntu, and not on Fedora. Its syntax is
+      # checked with the distribution's own parser, without loading it:
+      # a container has no kernel of its own to load it into.
+      - name: the AppArmor profile ships where it belongs, and parses
+        run: |
+          set -eu
+          if command -v apt-get >/dev/null; then
+            test -s /etc/apparmor.d/liro-bridge
+            apt-get install -y --no-install-recommends apparmor
+            apparmor_parser --skip-kernel-load --skip-cache /etc/apparmor.d/liro-bridge
+          else
+            test ! -e /etc/apparmor.d/liro-bridge
+          fi
+
+      # What uninstall keeps is decided in D-354 and it is mostly outside
+      # the package's reach — every per-person file is in a home
+      # directory. What the package owns has to go, and the AppArmor
+      # profile is a conffile: kept on remove, gone on purge.
+      - name: remove, then purge
+        run: |
+          set -eu
+          if command -v apt-get >/dev/null; then
+            apt-get remove -y liro-bridge
+            test ! -e /usr/bin/liro-bridge
+            test -e /etc/apparmor.d/liro-bridge
+            apt-get purge -y liro-bridge
+            test ! -e /etc/apparmor.d/liro-bridge
+          else
+            dnf remove -y liro-bridge
+            test ! -e /usr/bin/liro-bridge
+          fi
+          test ! -e /usr/share/applications/liro-bridge.desktop
+
   # The TypeScript SDK. Its own job rather than steps on the ubuntu one,
   # because it needs Node rather than Go and because a red SDK should
   # say "SDK" rather than sending somebody to read a Go job's log.

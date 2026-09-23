@@ -270,7 +270,7 @@ func TestTheRelativePathGuardWouldFire(t *testing.T) {
 // new one is covered by being added here rather than by somebody
 // remembering to write a test for it.
 func everyAgentPath(goos string, env Env) map[string]string {
-	return map[string]string{
+	paths := map[string]string{
 		"ConfigDir":  ConfigDir(goos, env),
 		"DataDir":    DataDir(goos, env),
 		"StateDir":   StateDir(goos, env),
@@ -279,6 +279,10 @@ func everyAgentPath(goos string, env Env) map[string]string {
 		"ConfigFile": ConfigFile(goos, env),
 		"BridgeFile": BridgeFile(goos, env),
 	}
+	if goos == "linux" {
+		paths["AutostartFile"] = AutostartFile(env)
+	}
+	return paths
 }
 
 // isAbsoluteFor answers for the named platform rather than for the one

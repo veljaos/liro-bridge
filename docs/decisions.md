@@ -36071,3 +36071,340 @@ with, and [[D-338]], and [[D-335]]. The difference this time is that
 nothing reached a person: the runners are where it stopped, which is
 what they are for.
 
+
+---
+
+## D-354 — F12 §8 built: one nFPM file, a `Depends` line read out of the binary and a `Requires` list written in sonames, an AppArmor profile the package loads, autostart that will not undo the desktop's own switch, and an updater that on Linux only says a version exists
+
+**Date:** 2026-09-23
+**Phase:** F12 §8 — built and checked on the build side. Installing it is
+[[D-355]]'s, because it needs the owner's password and this entry does not
+wait for it.
+
+### Decided
+
+- **`.deb` and `.rpm` from `build/linux/nfpm.yaml`**, nFPM v2.47.0 pinned,
+  driven by `build/linux/build.sh <version> <out>`. The binary is
+  `/usr/bin/liro-bridge`; two desktop entries, six hicolor icons, and on
+  Debian and Ubuntu only an AppArmor profile at `/etc/apparmor.d/liro-bridge`.
+- **Flatpak and Snap are refused**, for the reason F12 §8 gives and which is
+  worth keeping in words: a sandboxed package cannot load a vendor PKCS#11
+  module the person installed system-wide, and loading exactly that module is
+  the whole of F11. A package format that cannot reach the card is not a
+  package format for this program.
+- **Built inside `ubuntu:24.04`**, in CI (`linux-packages`) and in the release
+  (`build-linux`). The container is chosen by what it produces, and
+  `build.sh` **checks the property rather than trusting the container**: it
+  refuses a binary that needs a `GLIBC_` symbol version newer than 2.39.
+- **Autostart is an XDG desktop entry**, `$XDG_CONFIG_HOME/autostart/liro-bridge.desktop`,
+  written and removed by the program. Not a systemd user unit, for F12 §8's
+  reason.
+- **On Linux the updater says a version exists and offers nothing to press.**
+- **What an uninstall keeps is everything in a home directory**, because a
+  package cannot reach one — and SPEC §6.7 wants the audit log kept anyway.
+
+### The `Depends` line is generated, and CI proves it still is
+
+[[D-326]] and [[D-327]] established the method: `dpkg-shlibdeps` reads
+`DT_NEEDED` and answers in Debian's own package names. Predicted before
+running it (**P1, high**): the same eleven packages as D-327. **Held** —
+`libc6 (>= 2.34)` through `libwebkitgtk-6.0-4 (>= 2.41.90)`, unchanged,
+from today's binary. The premise was measured rather than inherited: CI
+asserts the thirteen `DT_NEEDED` entries on every push, and they were read
+again here.
+
+The list is written into `nfpm.yaml`, because nFPM takes a static list, and
+**CI regenerates it from the binary it has just built and compares it with
+the `Depends:` field of the `.deb` it has just built**. A library added to
+the binary, or one left in the file after the binary stopped naming it,
+fails the job — SPEC §1.1 makes both directions a defect. The comparison has
+a control: the same check with one entry dropped reports a mismatch.
+
+### Two packages that are not libraries, and one the briefing named that is not declared
+
+`pcscd` and `libccid` never appear in a `DT_NEEDED`, so nothing generates
+them (F12 §9, [[D-326]]'s own caveat). Measured with `apt-cache` on 24.04:
+
+| package | depends on |
+|---|---|
+| `pcscd` | `libpcsclite1`, and **`libccid \| pcsc-ifd-handler`** |
+| `libccid` | `libc6`, `libusb-1.0-0` |
+| `libwebkitgtk-6.0-4` | … `bubblewrap`, `xdg-dbus-proxy` … |
+
+- **`pcscd`** is declared: it is the service a vendor module talks to a
+  reader through.
+- **`libccid`** is declared even though `pcscd` depends on it, because that
+  dependency is an *alternative*: any other reader driver satisfies it, and
+  the generic CCID driver is the one a person with an ordinary USB reader
+  needs.
+- **`libpcsclite1` is not declared, and the briefing listed it.** This binary
+  does not link it — a vendor module does — and `pcscd` already depends on
+  it. SPEC §1.1 calls "a library added to the package that the binary does
+  not actually name" a defect, and this would be one. It arrives on every
+  machine that gets `pcscd`, which is every machine that gets this package.
+- **`bubblewrap` and `xdg-dbus-proxy` are not declared either**: WebKitGTK's
+  own package depends on both, so the sandbox's tools arrive with the
+  library that uses them.
+
+### The Fedora list is written in sonames, and Fedora is measured on a runner
+
+F12 §8 says the Fedora names differ and the two lists are written
+separately. **For every library, the `.rpm` does not use names at all.** It
+declares `libgtk-4.so.1()(64bit)` and its twelve siblings — the vocabulary
+`rpmbuild`'s own automatic `Requires` uses, generated from the same
+`DT_NEEDED` — and `dnf` resolves each to whichever Fedora package provides
+it. `libc.so.6(GLIBC_2.34)(64bit)` carries the symbol version measured below.
+That turns a list that would otherwise be a guess made on an Ubuntu machine
+into one read off the binary.
+
+**The two that are not libraries are the only guess left**: `pcsc-lite` and
+`pcsc-lite-ccid`. There is no Fedora machine in this project, so **CI's
+`linux-install` job installs the `.rpm` on a clean `fedora:44` image with
+`dnf`**, and the `.deb` on clean `ubuntu:24.04` and `debian:trixie`, then
+asks the loader whether every library resolves and runs `--version`.
+Nothing is in those images but what the package pulled in, which is the only
+way to learn what it needs rather than what the builder had — [[D-334]],
+[[D-335]] and [[D-353]] all failed the other way. **Not yet run**: it runs
+on the first push of this entry.
+
+### The container, and the property it is for
+
+Predicted (**P2, medium**): the binary needs at most `GLIBC_2.34`. **Held**:
+`objdump -T` reports 2.14, 2.32 and 2.34 as its highest three, against 2.38
+for `libgtk-4.so.1` itself. So the binary built on 24.04 is not close to the
+edge today, and the container's job is to keep it that way when the runner
+image moves on. The guard's comparison has a control: the same `sort -V`
+test refuses at a floor of 2.30 and accepts at 2.34 and 2.39.
+
+### The AppArmor profile, and the scripts that load it
+
+[[D-324]] measured that WebKitGTK 6.0 cannot start on a stock 24.04 without
+one, and that the profile must name the binary that starts the process tree
+rather than `bwrap`. The shipped profile is Ubuntu's own `epiphany` profile
+with the name and path changed — `flags=(unconfined)`, `userns,`, and the
+`local/` include — and it is a **conffile**, so an administrator's edit
+survives an upgrade and `purge` removes it. The maintainer scripts are
+debhelper's `dh_apparmor` snippets reproduced, because nFPM does not run
+debhelper and an administrator should find the distribution's convention.
+
+**Checked with the distribution's parser without loading it**:
+`apparmor_parser --skip-kernel-load` accepts it, and a control with one comma
+removed is refused with a line number. Whether it *loads* and whether the
+installed window then starts is [[D-355]]'s.
+
+**Not in the `.rpm`.** Fedora confines with SELinux and has no
+`apparmor_restrict_unprivileged_userns`, which is the only thing the profile
+answers.
+
+### Two desktop entries, because `open` takes no arguments on purpose
+
+`liro-bridge open` is argument-free by F9b §3b's decision, and "Open with"
+has to pass files. So:
+
+- **`liro-bridge.desktop`** — the menu entry, `Exec=liro-bridge open`, the
+  icon, no MIME type. Its name is not a choice: the agent sets no
+  `GtkApplication` id and no program name, so GTK takes the Wayland `app_id`
+  from `argv[0]`, which is `liro-bridge`, and GNOME matches a window to the
+  entry whose file name equals it.
+- **`liro-bridge-open-pdf.desktop`** — `NoDisplay=true`,
+  `MimeType=application/pdf;`, `Exec=liro-bridge --shell-verb %F`. The same
+  verb Explorer's context menu uses, which already coalesces a selection
+  into one window.
+
+**Whether a hidden entry is offered under "Open With" was measured at user
+level, not assumed**: with a scratch `XDG_DATA_HOME`, GIO lists it among
+`application/pdf`'s *recommended* handlers with `should_show() = False`,
+exactly as it lists a visible control entry. And the distribution relies on
+this shape itself — `gnome-disk-image-mounter.desktop` is hidden, carries
+ISO MIME types, and is what Nautilus offers for an ISO. What Nautilus's own
+chooser shows is a person's eyes after install.
+
+**No context-menu verb** on any file manager, per F12 §8.
+
+### The icons are the `.ico`'s own frames
+
+`scripts/genlinuxicons` copies the 16, 24, 32, 48, 64 and 256 px frames out
+of `internal/ui/assets/icon.ico` into the hicolor layout — every frame there
+is already a complete PNG, drawn at its own size by `genicon`. **Copied, not
+drawn again**, so the mark exists in one generated file ([[D-285]],
+[[D-286]]). The 20 and 40 px frames are Windows DPI steps with no hicolor
+directory, and a size the theme does not list is never looked up. The test
+checks every file is the frame byte for byte and decodes to its size, and
+its control refuses a missing size.
+
+### Autostart, and the switch that lives in the same file
+
+`platform.NewAutostart` on Linux writes the entry whole or removes it. That
+is what Settings calls, and it is the person's explicit choice.
+
+**At startup the agent calls something weaker, and the reason is a
+difference between the platforms.** Windows keeps "disabled at startup" in
+`StartupApproved`, a different key from the `Run` value this program
+rewrites at every start, so the rewrite cannot undo it. **Linux keeps both in
+one file**: Ubuntu's "Startup Applications" (`gnome-session-properties`,
+installed here by default) switches an entry off by writing
+`X-GNOME-Autostart-enabled=false` into it, and KDE writes `Hidden=true`. An
+agent that rewrote the file at every start would switch itself back on
+behind the person's back. So `platform.EnsureAutostart`:
+
+- creates the entry if it is missing — a fresh install starts at login, which
+  is F10's own finding on Windows;
+- when the entry names another binary, points it at this one **and carries
+  the off switch over exactly as written** — a development build run once
+  registers its own path, which is F9b's trap;
+- when it already names this binary, leaves the file byte for byte alone.
+
+The switch is carried verbatim rather than normalised because a `Hidden=true`
+turned into `X-GNOME-Autostart-enabled=false` could no longer be switched
+back on by the tool that wrote it.
+
+**Quoting was checked against GLib itself**, because the entry's `Exec` has
+two layers (key-file escapes, then a quoted command line with `%` reserved)
+and a person's home directory is named after them. Nine paths — spaces,
+Cyrillic, `"`, `$`, backtick, backslash, `%`, and `%f %U` — written by the
+real function, read back with `GKeyFile` and split with
+`g_shell_parse_argv`: **9 of 9** came back as the path and `tray`. The
+control, an unquoted path with a space through the same pipeline, splits in
+two.
+
+**The unit test's own reader is weaker than that, and it is said here**: a
+mutation removing the backslash escape turned the test red, but one removing
+the `$` and backtick escapes did not, because the test's reader — written
+from the specification — treats both literally inside quotes, and so does
+GLib. The escapes are there because the specification reserves those
+characters; nothing in this program's reach currently distinguishes an entry
+that has them from one that does not.
+
+`TryExec` names the binary, so an entry left behind by a removed package
+should be skipped silently; whether GNOME honours that is **P5**, measured
+in [[D-355]]. The path the entry lives at is covered by D-348's
+relative-path guard, which gains it.
+
+The Settings row on Linux said "Starts with Windows". It says "Starts when
+you sign in" now, in three catalogues, chosen by platform in Go; the page
+still asks for one key.
+
+### The updater only says a version exists, and the manifest is why the packages are not in it
+
+F12 §8 left open whether the in-app updater offers to download on Linux.
+**It does not.** Installing a `.deb` needs root; the agent never holds or
+asks for it, and a downloaded package the person must then install by hand
+with `sudo` is the package manager's job done worse. The update window now
+opens directly on the notice that already existed — "Updates come from your
+package manager" — with the version line on it, and shows no Install button.
+
+**And the manifest could not have described the Linux packages anyway,
+without breaking every Windows agent already installed.**
+`internal/update/manifest.go` refuses a manifest containing any artefact
+whose kind is not `msi` or `exe`, so a release listing a `deb` would make
+every agent in the field stop seeing releases — the failure that file's own
+comment calls the worst an update channel has. `signrelease` describes only
+`.msi` and `.exe`, and `verifyrelease` walks only what the manifest lists, so
+the release job puts the `.deb` and `.rpm` beside the manifest and publishes
+them without touching it. The Linux agent reads the same manifest for its
+version.
+
+**What that leaves open, stated rather than implied: the Linux packages are
+published with no signature a person can check.** The Windows three are
+covered by the signed manifest; these are not, and nothing in this phase
+signs a `.deb` or an `.rpm`. That is a release-integrity gap, not a
+packaging detail, and it is the owner's.
+
+### The desktop launcher, provisionally not created
+
+D-283 is the owner's ruling for Windows: every install creates a desktop
+shortcut, because a stranger could not find the program. **On Linux this
+entry does not create one, and it is provisional until the owner rules.**
+
+- A package is installed by root, for every account, including ones that do
+  not exist yet; it has no business in anybody's `~/Desktop`, and on Fedora
+  a stock GNOME shows no desktop icons at all.
+- The agent could write one for itself on first run. It would then outlive
+  an uninstall as a dead icon on every person's desktop, because the package
+  cannot remove it — the MSI removes its shortcut, and this cannot.
+- And GNOME's trusted-launcher question exists to stop a launcher that
+  arrived from somewhere from running a command. A program that marks its
+  own launcher trusted is answering that question on the person's behalf.
+
+**What D-283 was for is findability, and the menu entry answers it**: the
+application grid and search find "Liro Bridge", with the real icon. Whether
+dragging it from the grid onto Ubuntu's desktop produces a trusted launcher
+without any code of ours is a measurement for a person's hands, in [[D-355]].
+
+### What uninstall keeps
+
+Everything under a home directory — configuration, pairings, the audit log
+under `$XDG_DATA_HOME` ([[D-340]]), the state and cache directories, the
+autostart entry — because the package is removed by root for every account
+and cannot reach any of them. **For the audit log that is also the rule**:
+SPEC §6.7 and [[D-244]]. What the package owns goes: the binary, the entries,
+the icons; the AppArmor profile is a conffile, kept on `remove` and removed
+on `purge`, which the `linux-install` job checks on both Debian images.
+
+The one thing left behind that could *do* something is the autostart entry,
+and `TryExec` is what should make it do nothing (P5).
+
+### Predictions
+
+Written before any measurement (`scratchpad/predictions-s8.md`):
+
+| | predicted | outcome |
+|---|---|---|
+| P1 | `dpkg-shlibdeps` gives D-327's eleven | **held**, premise re-measured |
+| P2 | the binary needs at most `GLIBC_2.34` | **held** |
+| P3 | installed, the window opens with no environment variables | [[D-355]] |
+| P4 | *least certain* — a clicked notification with the hint still brings no token | [[D-355]] |
+| P5 | GNOME honours `TryExec` for a left-behind autostart entry | [[D-355]] |
+| P6 | `remove` keeps home and the conffile; `purge` removes the profile | [[D-355]]; CI checks the package half |
+| P7 | Nautilus offers the hidden entry under "Open With" | GIO half **held**; Nautilus in [[D-355]] |
+
+**P4 was re-framed before it was run, and the reframing is itself a
+finding about [[D-337]].** The notification specification emits
+`ActivationToken` only together with `ActionInvoked` — only when an *action*
+is invoked. D-337's probe carried no desktop-entry hint, which it recorded,
+and this program's notification carries **no actions at all**, which nobody
+recorded as a variable. So D-337's "no token" has two unmeasured causes, not
+one, and the measurement in D-355 varies both.
+
+### The instruments that failed on this entry's way
+
+- **A build reported success because its output went through `| tail`.** The
+  pipe's exit status was `tail`'s; the build had failed. Caught by reading the
+  output, not the code.
+- **The build failed because I edited sources while it compiled them.** A cold
+  gotk4 build takes seventeen minutes here and I wrote the autostart code
+  during it; the compiler saw half of it. Nothing is edited during a build
+  from now on.
+- **`/sys/kernel/security/apparmor/profiles` is unreadable without root**, so
+  "no liro profile loaded" in the pre-install snapshot said nothing. The
+  instrument that can see it is a running process's own
+  `/proc/<pid>/attr/current`.
+- **The handover's pre-push commands are wrong in two places.** The
+  `CGO_ENABLED=0 GOOS=linux go build ./...` line cannot pass since [[D-338]]
+  — the agent links GTK — and the computed list below it is the linux check.
+  And `GOOS=windows go vet ./...` fails on thirty-two `unsafeptr` findings in
+  files nobody touched, because CI runs vet with `-unsafeptr=false`; with
+  CI's flags it is clean.
+
+**Rejected.**
+
+- **Flatpak and Snap.** Above.
+- **A systemd user unit for autostart.** F12 §8.
+- **One desktop entry with `Exec=liro-bridge --shell-verb %F`**, so that the
+  menu launch would be a shell verb with no files. It would bypass `open`'s
+  handover to a running agent ([[D-344]]).
+- **Teaching `open` to take files again.** F9b §3b removed that surface for a
+  reason that has not changed.
+- **Declaring `libpcsclite1`, `bubblewrap` or `xdg-dbus-proxy`.** Measured as
+  arriving through what is declared, and SPEC §1.1 calls a library the binary
+  does not name a defect.
+- **Fedora package names for the libraries.** Sonames say the same thing, are
+  read off the binary, and cannot be misspelt on an Ubuntu machine.
+- **Adding `deb` and `rpm` kinds to the release manifest.** It would stop
+  every installed Windows agent from reading any future release.
+- **An in-app download of the `.deb`.** It needs root to install, and root is
+  not this program's to ask for.
+- **Rewriting the autostart entry at every start.** It would undo the
+  desktop's own switch.
+- **Drawing the Linux icons again from the geometry.** Two generated copies
+  of one mark drift; copying the frames cannot.

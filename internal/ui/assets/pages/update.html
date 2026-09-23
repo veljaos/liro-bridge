@@ -59,12 +59,14 @@
 <!-- A state that is neither success nor failure: this platform installs
      its software through a package manager, so there is no installer for
      this window to run and nothing has gone wrong (SPEC §6.5.2's sibling
-     case — the route is different, not broken). F12 §8 decides whether
-     the offer should appear here at all; until it does, pressing Install
-     lands here rather than on an error. -->
+     case — the route is different, not broken). F12 §8 decided the offer
+     does not appear there at all (D-354): on Linux this is the window's
+     first and only screen, and it carries the version line because it
+     is the only screen the person sees. -->
 <main id="state-notice" hidden>
   <p class="liro-display" data-i18n="update.package_route_title"></p>
   <div class="lines liro-scroll-region">
+    <p class="field-value" id="notice-version-line"></p>
     <p class="field-value" id="notice-body"></p>
   </div>
   <div class="actions">

@@ -15,6 +15,16 @@
       window.liroApplyStaticStrings();
       window.liroSetText(document.getElementById("version-line"), payload.model.versionLine);
       window.liroSetText(document.getElementById("released-line"), payload.model.releasedLine);
+      // A platform whose package manager installs updates (D-354) is
+      // told a version exists and is never shown an Install button:
+      // the notice is the first screen, not one reached by pressing it.
+      if (payload.model.packageRoute) {
+        window.liroSetText(document.getElementById("notice-version-line"), payload.model.versionLine);
+        window.liroSetText(document.getElementById("notice-body"), payload.model.noticeBody);
+        show("notice");
+        document.getElementById("notice-close-btn").focus();
+        return;
+      }
       show("available");
       // Nothing that changes the machine is the initially focused
       // control (F5 §5.6, applied here for the same reason it applies

@@ -10,6 +10,11 @@ import (
 	"github.com/veljaos/liro-bridge/internal/update"
 )
 
+// installsItself is false: on this platform a package manager installs
+// updates, and the update window opens on the notice rather than on an
+// offer (D-354).
+const installsItself = false
+
 // installRelease says where updates come from on a platform that has a
 // package manager, and installs nothing.
 //
@@ -22,11 +27,12 @@ import (
 // route", leaving open only whether the agent should offer to download
 // at all or merely say a version exists.
 //
-// Until §8 answers that, the offer is still on the screen and pressing
-// it lands here, where a person is told the route rather than shown an
-// error. The check itself is untouched: knowing a new version exists is
-// useful on any platform, and it is the installing that belongs to
-// apt and dnf.
+// §8 answered it (D-354): the agent only says a version exists. The
+// window opens on the notice and shows no Install button, so this is
+// reached only by a page that sent approve anyway — and what it does
+// then is the same notice, not an error. The check itself is
+// untouched: knowing a new version exists is useful on any platform,
+// and it is the installing that belongs to apt and dnf.
 func installRelease(c *i18n.Catalogue, win ui.Window, res update.Result) bool {
 	slog.Info("update: a newer version exists and this platform installs through its package manager",
 		"version", res.Manifest.Version)

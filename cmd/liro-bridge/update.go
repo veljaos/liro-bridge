@@ -107,6 +107,10 @@ func updateInitPayload(c *i18n.Catalogue, res update.Result) map[string]any {
 		"model": map[string]any{
 			"versionLine":  fmt.Sprintf(c.T("update.version_line"), version, res.Manifest.Version),
 			"releasedLine": released,
+			// Where a package manager installs updates, the window says a
+			// version exists and offers nothing to press (D-354).
+			"packageRoute": !installsItself,
+			"noticeBody":   c.T("update.package_route_body"),
 		},
 	}
 }

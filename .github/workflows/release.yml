@@ -1,7 +1,8 @@
 name: Release
 
 # A release is a tag and nothing else. Pushing v1.2.3 builds the three
-# artefacts, signs the manifest with the release key, verifies it the
+# Windows artefacts and the two Linux packages, signs the manifest (which
+# describes the Windows three) with the release key, verifies it the
 # way the agent will, and publishes them to GitHub Releases (SPEC §15).
 #
 # workflow_dispatch does everything the release key is not needed for,
@@ -152,8 +153,73 @@ jobs:
           path: dist/release
           retention-days: 7
 
-  release:
+  # F12 §8: the Linux packages, built the way CI's linux-packages job
+  # builds them — inside ubuntu:24.04, the oldest distribution this
+  # program supports, because a cgo binary takes its glibc symbol
+  # versions from wherever it was linked (build.sh checks that property
+  # rather than trusting the container).
+  #
+  # It takes the version from `build` rather than working it out again,
+  # so the tag is read in one place.
+  #
+  # **The .deb and the .rpm are published beside the manifest and are not
+  # described in it.** Every installed agent refuses a manifest with an
+  # artefact kind other than "msi" or "exe" (internal/update/manifest.go),
+  # so listing them would make every Windows agent in the field stop
+  # seeing releases. signrelease describes only .msi and .exe for that
+  # reason and verifyrelease walks only what the manifest lists. The Linux
+  # agent reads the same manifest for its version and installs nothing
+  # (D-354).
+  build-linux:
     needs: build
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    if: github.repository == 'veljaos/liro-bridge'
+    steps:
+      - name: the build container's toolchain
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git gcc libc6-dev pkg-config binutils dpkg-dev \
+            libgtk-4-dev libwebkitgtk-6.0-dev gobject-introspection libp11-kit-dev
+
+      - uses: actions/checkout@v4
+
+      - name: the checkout belongs to another uid
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: nFPM, pinned
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+
+      - name: build the packages
+        run: NFPM="$(go env GOPATH)/bin/nfpm" build/linux/build.sh "${{ needs.build.outputs.version }}" dist/linux
+
+      - name: the binary reports the tag
+        run: |
+          set -eu
+          v="${{ needs.build.outputs.version }}"
+          got="$(dist/linux/stage/liro-bridge --version)"
+          echo "$got"
+          case "$got" in
+            "liro-bridge $v "*) echo "OK" ;;
+            *) echo "::error::the binary reports '$got', which does not begin with 'liro-bridge $v'"; exit 1 ;;
+          esac
+
+      - name: hand the packages on
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-bridge-linux-${{ needs.build.outputs.version }}
+          path: |
+            dist/linux/*.deb
+            dist/linux/*.rpm
+          retention-days: 7
+
+  release:
+    needs: [build, build-linux]
     if: github.event_name == 'push' && github.repository == 'veljaos/liro-bridge'
     runs-on: windows-latest
     permissions:
@@ -177,6 +243,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: liro-bridge-${{ needs.build.outputs.version }}
+          path: dist/release
+
+      # Into the same directory, because `publish` uploads what is there.
+      # signrelease skips them and verifyrelease never looks for them;
+      # see build-linux for why that is deliberate.
+      - name: take the Linux packages
+        uses: actions/download-artifact@v4
+        with:
+          name: liro-bridge-linux-${{ needs.build.outputs.version }}
           path: dist/release
 
       # SPEC §15.2: the agent embeds a public key and every release is

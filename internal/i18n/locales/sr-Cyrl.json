@@ -273,6 +273,7 @@
   "settings.secret_store_unavailable": "Ниједно складиште тајни није отворено, па ниједна апликација не може да се повеже",
   "settings.signature_level_label": "Ниво потписа",
   "settings.stamp_settings": "Видљиви печат...",
+  "settings.start_at_login": "Покреће се при пријави на рачунар",
   "settings.start_with_windows": "Покреће се са Windows-ом",
   "settings.tsa_client_cert_label": "Клијентски сертификат за сервис за временске жигове (PKCS#12)",
   "settings.tsa_client_cert_password_label": "Лозинка клијентског сертификата за сервис за временске жигове",

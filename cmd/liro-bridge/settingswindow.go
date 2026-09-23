@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"runtime"
 	"strings"
 
 	"github.com/veljaos/liro-bridge/internal/api"
@@ -245,13 +246,25 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		return false
 	}
 }
+
+// startAtLoginKey is the catalogue key for the autostart row's label.
+// The page asks for one key whatever the platform; on Linux, where the
+// row is an XDG autostart entry (F12 §8), the text must not say
+// "Windows".
+func startAtLoginKey(goos string) string {
+	if goos == "windows" {
+		return "settings.start_with_windows"
+	}
+	return "settings.start_at_login"
+}
+
 func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pairing, secrets platform.SecretStoreDescription) map[string]any {
 	return map[string]any{
 		"type": "init",
 		"strings": map[string]string{
 			"settings.window_title":                   c.T("settings.window_title"),
 			"settings.language_label":                 c.T("settings.language_label"),
-			"settings.start_with_windows":             c.T("settings.start_with_windows"),
+			"settings.start_with_windows":             c.T(startAtLoginKey(runtime.GOOS)),
 			"settings.tsa_label":                      c.T("settings.tsa_label"),
 			"settings.tsa_custom_url_placeholder":     c.T("settings.tsa_custom_url_placeholder"),
 			"settings.tsa_preset_freetsa":             c.T("settings.tsa_preset_freetsa"),

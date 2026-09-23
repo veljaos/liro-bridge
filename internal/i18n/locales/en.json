@@ -273,6 +273,7 @@
   "settings.secret_store_unavailable": "No secret store could be opened, so no application can connect",
   "settings.signature_level_label": "Signature level",
   "settings.stamp_settings": "Visible stamp...",
+  "settings.start_at_login": "Starts when you sign in",
   "settings.start_with_windows": "Starts with Windows",
   "settings.tsa_client_cert_label": "TSA client certificate (PKCS#12)",
   "settings.tsa_client_cert_password_label": "TSA client certificate password",
