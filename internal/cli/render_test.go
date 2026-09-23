@@ -326,3 +326,30 @@ func TestCertificateFieldsLineUpInEveryLocale(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderTextNamesAModuleThatCouldNotBeAsked is D-355's: SoftHSM refused
+// every slot and the text report said "Certificates: 0" and nothing else,
+// while the JSON beside it carried the module and the reason.
+func TestRenderTextNamesAModuleThatCouldNotBeAsked(t *testing.T) {
+	report := sampleReport()
+	report.ModuleFailures = []ModuleFailure{{
+		Path:   "/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so",
+		Origin: "known path",
+		Reason: "C_OpenSession: CKR_TOKEN_NOT_RECOGNIZED (0xE1)",
+	}}
+	var buf bytes.Buffer
+	RenderText(&buf, report, i18n.Load("en"), referenceTime, false)
+	out := buf.String()
+	for _, want := range []string{"could not be asked: 1", "libsofthsm2.so", "CKR_TOKEN_NOT_RECOGNIZED"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the text report does not contain %q:\n%s", want, out)
+		}
+	}
+
+	// The control: with every module answering, the section is absent.
+	buf.Reset()
+	RenderText(&buf, sampleReport(), i18n.Load("en"), referenceTime, false)
+	if strings.Contains(buf.String(), "could not be asked") {
+		t.Error("a report with no module failures still printed the section")
+	}
+}

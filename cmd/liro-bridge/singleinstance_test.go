@@ -124,3 +124,32 @@ func TestAHandoverRequestSurvivesToTheAgent(t *testing.T) {
 		t.Errorf("the request was still there after being taken: taken=%v err=%v", again, err)
 	}
 }
+
+// TestDocumentsAloneDoNotOpenTheAgentsWindow is D-355's two windows: the
+// running agent opened a window because a document was in the inbox, while
+// the "Open with" launch that put it there was still gathering it into a
+// window of its own. A document is not a request; only an open-request is.
+func TestDocumentsAloneDoNotOpenTheAgentsWindow(t *testing.T) {
+	box := jobs.NewInbox(t.TempDir())
+	if err := box.Append("/home/u/ugovor.pdf"); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := box.Count(); err != nil || n != 1 {
+		t.Fatalf("precondition: the inbox holds %d documents (err %v), want 1", n, err)
+	}
+	if wanted, err := agentWindowWanted(box); err != nil || wanted {
+		t.Fatalf("a document with no open-request asked for the agent's window: wanted=%v err=%v", wanted, err)
+	}
+
+	// The control: the same inbox with a request in it does ask, and the
+	// document is still there for the window to take.
+	if err := box.RequestOpen(); err != nil {
+		t.Fatal(err)
+	}
+	if wanted, err := agentWindowWanted(box); err != nil || !wanted {
+		t.Fatalf("an open-request was not seen: wanted=%v err=%v", wanted, err)
+	}
+	if n, _ := box.Count(); n != 1 {
+		t.Errorf("taking the request took the documents too: %d left, want 1", n)
+	}
+}

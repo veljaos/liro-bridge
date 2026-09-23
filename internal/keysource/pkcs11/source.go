@@ -233,13 +233,16 @@ func (s Source) enumerate(ctx context.Context, m *module) ([]CertificateInfo, er
 		}
 		ti, err := m.tokenInfo(slot)
 		if err != nil {
-			if rv, ok := asCKR(err); ok && (rv == ckrTokenNotRecognized || rv == ckrTokenNotPresent) {
+			if isNotThisModulesToken(err) {
 				continue // not this module's card
 			}
 			return nil, err
 		}
 		found, err := certificatesInSlot(m, slot)
 		if err != nil {
+			if isNotThisModulesToken(err) {
+				continue // answered for its token, then refused a session on it
+			}
 			return nil, err
 		}
 		for _, c := range found {

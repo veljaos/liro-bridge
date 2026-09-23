@@ -201,12 +201,18 @@ func openAgentWindow(cfg config.Config, paths []string, quitAgent func()) {
 
 // watchForHandovers opens the window when another launch asks for it.
 //
-// Two things arrive the same way and mean the same thing — show the
-// person the window — so they are polled together: an open-request from
-// a second launch (F12 §7.1), and documents dropped in the inbox by the
-// shell integration. The window this opens watches the inbox itself
-// while it is up, so documents arriving after it opens reach the window
-// already on screen rather than a second one.
+// **Only an open-request asks.** It used to be two things — an open-request
+// from a second launch (F12 §7.1), or any document sitting in the inbox — and
+// the second was a race with a collector that was never meant to share the
+// inbox with it: an "Open with" launch appends its document and then spends
+// jobs.CoalesceWindow gathering the rest of the selection, and this loop,
+// polling every inboxPollInterval, saw the document first and opened an empty
+// window beside the one the launch then opened with it. Two windows for one
+// PDF, seen by the owner and reproduced by exact PID (D-355). A launch that
+// wants this agent to show documents now says so with an open-request of its
+// own (runShellVerb), and the window this opens takes the documents from the
+// inbox while it is up, so they reach the window already on screen rather
+// than a second one.
 func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct{}, opened *bool, quitAgent func()) {
 	box := jobs.NewInbox(shellInboxDir())
 	ticker := time.NewTicker(inboxPollInterval)
@@ -217,14 +223,12 @@ func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct
 		case <-quit:
 			return
 		case <-ticker.C:
-			asked, err := box.TakeOpenRequest()
+			asked, err := agentWindowWanted(box)
 			if err != nil {
 				slog.Warn("tray: reading the handover request failed", "error", err)
 			}
 			if !asked {
-				if n, err := box.Count(); err != nil || n == 0 {
-					continue
-				}
+				continue
 			}
 			*opened = true
 			if !windows.run(func() { openAgentWindow(cfg, nil, quitAgent) }) {
@@ -232,4 +236,11 @@ func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct
 			}
 		}
 	}
+}
+
+// agentWindowWanted reports whether a launch has asked the running agent for
+// its window, and consumes the request. Documents in the inbox are not a
+// request; see watchForHandovers.
+func agentWindowWanted(box *jobs.Inbox) (bool, error) {
+	return box.TakeOpenRequest()
 }

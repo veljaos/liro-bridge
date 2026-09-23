@@ -14,6 +14,7 @@
   "certs.card_absent": "no card",
   "certs.card_present": "card present",
   "certs.certificates_heading": "Certificates: %d",
+  "certs.module_failures_heading": "PKCS#11 modules that could not be asked: %d",
   "certs.issuer_label": "Issuer",
   "certs.not_usable": "not usable",
   "certs.purpose_authentication": "authentication",

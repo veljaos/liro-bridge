@@ -59,7 +59,28 @@ func RenderText(w io.Writer, report Report, c *i18n.Catalogue, now time.Time, al
 		fprintln(w)
 	}
 
+	renderModuleFailures(w, report.ModuleFailures, c)
 	renderTSL(w, report.TSL, c, now)
+}
+
+// renderModuleFailures says which PKCS#11 modules could not be asked, and
+// why. Report.ModuleFailures exists for the person looking at a list that
+// does not contain their certificate (F11 §3); until D-355 only the JSON
+// renderer printed it, so that person saw "Certificates: 0" and nothing
+// else — measured, with SoftHSM refusing every slot on this machine.
+//
+// The reason is the module's own error, passed through as data (SPEC
+// §9.3): it names a PKCS#11 return code that a person can search for or
+// quote, and translating it would lose exactly that.
+func renderModuleFailures(w io.Writer, failures []ModuleFailure, c *i18n.Catalogue) {
+	if len(failures) == 0 {
+		return
+	}
+	fprintf(w, c.T("certs.module_failures_heading")+"\n", len(failures))
+	for _, f := range failures {
+		fprintf(w, "  %s\n    %s\n", f.Path, f.Reason)
+	}
+	fprintln(w)
 }
 
 func visibleRows(rows []CertRow, all bool) []CertRow {

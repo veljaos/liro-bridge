@@ -116,6 +116,21 @@ func runShellVerb(ctx context.Context, args []string, cfg config.Config) int {
 		slog.Warn("shell verb: discarded a stale inbox left by an earlier run", "documents", n)
 	}
 
+	// An agent is already running: its window is where these documents go,
+	// and this launch only has to say so (F12 §7.1's handover, applied to the
+	// launch that carries documents — D-355). Gathering them into a window of
+	// its own here is what put two windows on the screen for one "Open with".
+	// If the request cannot be left, this launch still opens its own window:
+	// a second window is a worse outcome than one and a better one than none.
+	if _, live := liveAgent(); live {
+		if err := box.RequestOpen(); err != nil {
+			slog.Warn("shell verb: an agent is running and this launch could not reach it; opening a window of its own", "error", err)
+		} else {
+			slog.Info("shell verb: handed the selection to the running agent", "documents", len(paths))
+			return 0
+		}
+	}
+
 	leader := platform.NewLeader(platform.ShellBatchLeaderName)
 	isLeader, err := leader.Acquire()
 	if err != nil {

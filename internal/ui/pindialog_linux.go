@@ -78,6 +78,36 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
+// entryWidget is the GtkWidget * behind entry, for the C helpers above.
+//
+// **It is not entry.Widget.Native(), and that expression is the defect
+// this function exists to replace** (D-355). gotk4 generates
+// Widget.Native() as the binding for gtk_widget_get_native(): it returns
+// the widget's toplevel, as a Go wrapper (*NativeSurface), and shadows the
+// Object.Native() that returns the object's own C pointer. Converted with
+// unsafe.Pointer it compiles, and go vet says nothing because the
+// conversion is pointer-to-pointer. Outside a window the wrapper is nil
+// and C is handed NULL; inside the dialog it is a Go allocation full of Go
+// pointers, and the runtime's cgo check panicked on the first call —
+// which killed the agent the first time a person pressed OK in this
+// dialog, and would have on Cancel too. The embedded *coreglib.Object is
+// the one field whose Native() means what it says.
+func entryWidget(entry *gtk.PasswordEntry) *C.GtkWidget {
+	return (*C.GtkWidget)(unsafe.Pointer(entry.Object.Native()))
+}
+
+// pinLen, pinCopy and pinClear are the three C calls the dialog makes,
+// taken out of its closures so that a test can make them on a real entry
+// in a real window without anybody pressing anything. Until D-355 they had
+// only ever been read by the AST guards, never executed.
+func pinLen(entry *gtk.PasswordEntry) int { return int(C.liro_pin_len(entryWidget(entry))) }
+
+func pinCopy(entry *gtk.PasswordEntry, dst []byte, maxLen int) int {
+	return int(C.liro_pin_copy(entryWidget(entry), unsafe.Pointer(&dst[0]), C.size_t(maxLen)))
+}
+
+func pinClear(entry *gtk.PasswordEntry) { C.liro_pin_clear(entryWidget(entry)) }
+
 // CollectPIN shows the native PIN dialog and writes what was typed into
 // dst (SPEC §10).
 //
@@ -188,19 +218,18 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 			// The entry is overwritten before the window is destroyed
 			// rather than by destroying it — exception 1's remedy, in
 			// GTK's spelling.
-			C.liro_pin_clear((*C.GtkWidget)(unsafe.Pointer(entry.Widget.Native())))
+			pinClear(entry)
 			done <- r
 			win.Destroy()
 		}
 
 		take := func() {
-			w := (*C.GtkWidget)(unsafe.Pointer(entry.Widget.Native()))
 			// The length is asked for first and nothing is copied
 			// unless all of it fits — the same rule, and the same
 			// reason, as encodePINInto's: a prefix of somebody's PIN
 			// left in the caller's buffer on a path the caller is being
 			// told produced nothing.
-			if int(C.liro_pin_len(w)) > maxLen {
+			if pinLen(entry) > maxLen {
 				finish(result{0, false, ErrPINTooLong})
 				return
 			}
@@ -211,8 +240,8 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 			// cancellation would report something the person did not
 			// do (D-145's converse, which pin.go's own sentinel is
 			// about). Nothing empty reaches the card either way.
-			got := C.liro_pin_copy(w, unsafe.Pointer(&dst[0]), C.size_t(maxLen))
-			finish(result{int(got), true, nil})
+			got := pinCopy(entry, dst, maxLen)
+			finish(result{got, true, nil})
 		}
 
 		accept.ConnectClicked(take)

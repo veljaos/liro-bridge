@@ -14,6 +14,7 @@
   "certs.card_absent": "nema kartice",
   "certs.card_present": "kartica prisutna",
   "certs.certificates_heading": "Sertifikati: %d",
+  "certs.module_failures_heading": "PKCS#11 moduli koji nisu mogli da odgovore: %d",
   "certs.issuer_label": "Izdavalac",
   "certs.not_usable": "neupotrebljiv",
   "certs.purpose_authentication": "autentifikacija",

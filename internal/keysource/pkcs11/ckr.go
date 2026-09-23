@@ -160,3 +160,14 @@ func asCKR(err error) (ckr, bool) {
 	}
 	return 0, false
 }
+
+// isNotThisModulesToken reports whether a call about one slot failed because
+// the token in it is not one this module handles — SafeSign's answer for a MUP
+// card (F11 §4), or a slot with no token in it. It means "skip this slot", not
+// "something is wrong", and it can arrive from C_OpenSession as well as from
+// C_GetTokenInfo: SoftHSM's uninitialised slot answers the second and refuses
+// the first (D-355).
+func isNotThisModulesToken(err error) bool {
+	rv, ok := asCKR(err)
+	return ok && (rv == ckrTokenNotRecognized || rv == ckrTokenNotPresent)
+}

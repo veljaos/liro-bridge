@@ -204,7 +204,7 @@ func (s Source) openOn(ctx context.Context, m *module, want keysource.Thumbprint
 		}
 		ti, err := m.tokenInfo(slot)
 		if err != nil {
-			if rv, cok := asCKR(err); cok && (rv == ckrTokenNotRecognized || rv == ckrTokenNotPresent) {
+			if isNotThisModulesToken(err) {
 				continue // not this module's card
 			}
 			return nil, err
@@ -212,6 +212,9 @@ func (s Source) openOn(ctx context.Context, m *module, want keysource.Thumbprint
 
 		sess, err := m.openSession(slot)
 		if err != nil {
+			if isNotThisModulesToken(err) {
+				continue // answered for its token, then refused a session on it
+			}
 			return nil, err
 		}
 

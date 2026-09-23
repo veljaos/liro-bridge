@@ -145,7 +145,15 @@ func TestTheDialogOverwritesTheEntryBeforeTheWindowGoes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clear := strings.Index(src, "C.liro_pin_clear(")
+	// The call inside CollectPIN, not the helper's definition: before D-355
+	// this looked for "C.liro_pin_clear(" anywhere, which a helper defined
+	// above the function would satisfy whatever the function did.
+	body := strings.Index(src, "func CollectPIN(")
+	if body < 0 {
+		t.Fatal("CollectPIN is not in the file")
+	}
+	src = src[body:]
+	clear := strings.Index(src, "pinClear(entry)")
 	if clear < 0 {
 		t.Fatal("the dialog never overwrites the entry through the widget's own interface")
 	}

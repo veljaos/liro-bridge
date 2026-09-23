@@ -279,3 +279,64 @@ func TestTheLayoutIsTheCompilers(t *testing.T) {
 		t.Errorf("a CK_ULONG did not survive its own encoding: got %#x", back)
 	}
 }
+
+// TestAnUnrecognisedSlotBesideTheTokenDoesNotHideIt is the listing the agent
+// actually does, through Source rather than through the module directly.
+//
+// SoftHSM always presents one uninitialised slot after the ones that hold
+// tokens, and on it C_GetTokenInfo answers while C_OpenSession returns
+// CKR_TOKEN_NOT_RECOGNIZED. The installed agent listed **no certificates at
+// all** from a token sitting in the slot beside it (D-355): one slot that was
+// not this module's card failed the whole module. A reader holding a card
+// another vendor's module does not know is the same shape on hardware.
+//
+// The precondition is asserted rather than assumed, so that the day SoftHSM
+// stops doing this the test says so instead of passing for no reason.
+func TestAnUnrecognisedSlotBesideTheTokenDoesNotHideIt(t *testing.T) {
+	path, _ := softhsmModule(t)
+
+	m, err := openModule(path)
+	if err != nil {
+		t.Fatalf("openModule: %v", err)
+	}
+	slots, err := m.slots(true)
+	if err != nil {
+		_ = m.close()
+		t.Fatalf("C_GetSlotList: %v", err)
+	}
+	unrecognised := 0
+	for _, slot := range slots {
+		sess, err := m.openSession(slot)
+		if err != nil {
+			if isNotThisModulesToken(err) {
+				unrecognised++
+			}
+			continue
+		}
+		_ = sess.close()
+	}
+	_ = m.close()
+	if unrecognised == 0 {
+		t.Skip("this SoftHSM presents no slot whose session is refused as not recognised, so the case is not here to test")
+	}
+
+	certs, err := NewSource(path).Enumerate(t.Context())
+	if err != nil {
+		t.Fatalf("Enumerate failed with %d unrecognised slot(s) beside the token: %v", unrecognised, err)
+	}
+	if len(certs) == 0 {
+		t.Fatal("Enumerate returned no certificates although the token carries one")
+	}
+
+	// And the sign path finds its way past the same slot to the key.
+	want := keysource.Thumbprint(certs[0].Thumbprint)
+	sess, err := NewSource(path).WithPINEntry(func(_ []byte, _ PINRequest) (int, error) {
+		return 0, ErrPINCancelled
+	}).Open(t.Context(), want)
+	if sess != nil {
+		_ = sess.Close()
+	}
+	if err != nil && !errors.Is(err, ErrPINCancelled) {
+		t.Fatalf("Open stopped before reaching the token's PIN: %v", err)
+	}
+}

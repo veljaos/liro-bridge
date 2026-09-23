@@ -36408,3 +36408,326 @@ one, and the measurement in D-355 varies both.
   desktop's own switch.
 - **Drawing the Linux icons again from the geometry.** Two generated copies
   of one mark drift; copying the frames cannot.
+
+---
+
+## D-355 — F12 §8 installed and run: the first signature on Linux through a package, and on the way four defects no test could see — the PIN dialog had never worked, "Open with" opened two windows, every window leaked its web process, and one empty SoftHSM slot hid the token beside it
+
+**Date:** 2026-09-23
+**Phase:** F12 §8, after the owner installed [[D-354]]'s package.
+
+### The result
+
+`/home/vboxuser/liro-s8-test/ugovor-signed.pdf`, B-B, signed by the
+**installed** `/usr/bin/liro-bridge` (`0.9.9-dev.3`) through its PKCS#11
+worker against a SoftHSM token, **the PIN typed by the owner into the native
+GTK dialog**, approved in the consent window, requested by
+`sdk/examples/sign.py`. The agent was alive afterwards.
+
+- **This project's independent verifier (SPEC §16.4):** `/ByteRange` digest,
+  RSA over the signed attributes and `signingCertificateV2` all true; signer
+  serial `5001D983…`, the token's certificate. Chain untrusted, as a
+  self-signed test certificate must be.
+- **OpenSSL, sharing no code with this project:** `CMS Verification
+  successful`. Two controls: an unrelated certificate is `signer certificate
+  not found`, and one byte appended to the signed span is `content verify
+  error`.
+
+And CI was green on all nine jobs, **including `linux-install` on
+`fedora:44`, `debian:trixie` and `ubuntu:24.04`** — so the `.rpm`'s soname
+`Requires` and the two Fedora names D-354 could only guess resolved on a
+clean Fedora image, and the `.deb` installed, ran and purged on both
+Debian-family images.
+
+### The predictions D-354 left open
+
+| | outcome |
+|---|---|
+| **P3** installed, the window opens with no environment | **held.** `/proc/<pid>/attr/current` of the installed agent reads `liro-bridge (unconfined)` — the package's own profile, loaded by `postinst` — and bwrap, the web process and the network process all carry the same label. `aa-status` lists it. |
+| **P4** a clicked notification brings no token | **half held, half reversed** — below |
+| **P5** a left-behind autostart entry is skipped silently | **held on one path, unwatched on the one that matters here** — below |
+| **P6** what remove and purge keep | the package half held on CI; the home half was not run here, deliberately (below) |
+| **P7** "Open with" offers the hidden entry | **held**: the owner found "Liro Bridge" under Recommended Applications, and installing it did not change the default (`gio mime`: still Evince) |
+
+The owner also found the app-grid entry by searching "Liro", with the
+turquoise icon, and the running window grouped under it in the dash: GTK's
+`app_id` is `liro-bridge`, the entry's file name, as D-354 said it would be.
+
+### 1. The PIN dialog had never worked on Linux, and every way out of it killed the agent
+
+**The first time anybody pressed a button in it, the agent died.** The owner
+approved, chose a certificate and a method, the dialog appeared, and the
+caller's next poll got `Connection refused`. The agent's stderr:
+
+```
+panic: runtime error: argument of cgo function has Go pointer to unpinned Go pointer
+  … internal/ui.CollectPIN.func1.2.1  pindialog_linux.go:203
+  … gtk/v4._gotk4_gtk4_Button_ConnectClicked
+```
+
+**The mechanism, measured by a throwaway program rather than read.** The
+dialog handed its C helpers `(*C.GtkWidget)(unsafe.Pointer(entry.Widget.Native()))`.
+**gotk4 generates `Widget.Native()` as the binding for
+`gtk_widget_get_native()`**: it returns the widget's *toplevel*, as a Go
+wrapper (`*NativeSurface`), and it shadows the `Object.Native()` that
+returns the object's own C pointer. Every other path to the pointer gave
+`0xe7c5ba0`; `entry.Widget.Native()` gave `0x0` outside a window, and inside
+the dialog a Go allocation full of Go pointers, which the runtime's cgo
+check refuses. It compiles, and `go vet` says nothing: the conversion is
+pointer-to-pointer, not `uintptr`.
+
+- **OK and Enter** reach `liro_pin_len` — the owner's crash.
+- **Cancel and the close box** reach `liro_pin_clear` with the same pointer.
+  So there was no exit from the dialog that did not end the process.
+
+**Died, not killed, and by its own code.** A Go panic on the agent's UI
+thread, exit status 2. The PKCS#11 worker was waiting on its pipe for a PIN
+that never came and went with its parent. **D-275's remedy was not what
+failed**: the worker did not take the agent down; the agent took the worker
+down. F12 §2 is intact.
+
+**The PIN.** Line 203 is the length query; the copy into the caller's
+buffer is line 214 and never ran. Nothing reached this program's memory, the
+pipe or the worker. What the owner had typed, if anything, was only in GTK's
+entry buffer.
+
+**What this says about tests that pass without a person, which is the part
+worth keeping.** `internal/ui` was **42 of 42 green**. The dialog's guards
+parsed its source — the `Text()` accessor absent, `C.liro_pin_clear(`
+textually before `win.Destroy()` — and were mutation-verified against the
+real file, and every one of them was right about the text. **None of them
+ever executed the handlers**, because only a person can press the buttons
+(D-094), and nothing in the suite exercised the C calls any other way. A
+guard over source is a statement about source. The check that would have
+caught this is now there: **`TestTheDialogsCCallsWorkOnAnEntryInsideAWindow`
+makes the dialog's three C calls on a real entry in a real window**, sets its
+content through GTK's API, and presses nothing. It asserts the precondition
+the defect needed — inside a window, `Widget.Native()` is a live wrapper —
+and with the old expression restored it fails with the owner's exact
+message. And `TestNothingInThisPackageCallsWidgetNative` forbids the
+expression, with a control.
+
+**And D-350's conclusion is narrower than it read.** D-350 measured that
+GTK's password buffer is mlocked, holds one copy, and is emptied through the
+widget's own interface — with the `pinmem` probe, **a separate program that
+called GTK correctly**. The production helpers were only ever parsed. So
+those findings are true **of GTK**; none of them was ever true of this
+program's dialog, whose own calls could not run until tonight. That is the
+fourth entry on one question ([[D-350]], [[D-351]], [[D-352]]), and it is the
+same shape as the first three: the instrument measured something adjacent to
+the thing named.
+
+### 2. What a crash does with a secret on Linux, which nobody had looked at
+
+Measured with a throwaway cgo program that writes a marker string and then
+faults in C:
+
+| conditions | exit | core |
+|---|---|---|
+| default `ulimit`, default `GOTRACEBACK` | 2 | **none** — Go catches SIGSEGV, prints, exits |
+| `ulimit -c unlimited` | 2 | **none** |
+| `unlimited` and `GOTRACEBACK=crash` | 134, SIGABRT | **apport wrote the full image to `/var/lib/apport/coredump/`**, 84 MB, owner the user, mode 0400 — **and the marker was in it** |
+
+`/var/crash` stayed empty, which is where the first look went and why it
+nearly reported "no core". GNOME starts everything with a **soft core limit
+of 0** (hard unlimited; the systemd user default is `infinity`), so an agent
+from the app grid or from autostart produces no core by default — **but that
+is the desktop's configuration, not this program's**, and a process may
+raise its own soft limit. The agent's own crash tonight produced no core and
+its stack trace carried only pointer words; had it been started by
+autostart, **that trace would have gone to the journal**, which is a place
+this program's crash output reaches that nobody had considered. Ruling a
+core out from inside the program — `prctl(PR_SET_DUMPABLE, 0)`, or a zero
+`RLIMIT_CORE` set by the agent itself — is a hardening decision for SPEC
+§6.5.1 clause 3 and is left open, not taken. The probe's core was deleted.
+
+### 3. "Open with" opened two windows, since D-344, on both platforms
+
+With the agent running, the owner chose Open With → Liro Bridge and got two
+windows: one with the PDF, one empty. Reproduced by running exactly the
+entry's `Exec` and reading the process tree by exact PID: the `--shell-verb`
+process held one window and the agent grew one of its own.
+
+**The mechanism.** The shell verb appends its document to the inbox and then
+spends `CoalesceWindow` (600 ms) gathering the rest of the selection. The
+agent's `watchForHandovers`, polling every 250 ms, opened its window for
+*any* document in the inbox — not only for an open-request — and that window
+then competed for the inbox. Whoever took it first got the PDF; the log shows
+both outcomes in one evening. **The trigger arrived with the handover itself
+(`b123df7`, D-344) in the platform-neutral `tray.go`**, so the Explorer verb
+beside a running tray agent has had it on Windows too.
+
+**Fixed as D-344's own rule, applied to the launch that carries documents.**
+With an agent live, the shell verb leaves its document and an open-request
+and exits; the agent opens its window only for an open-request, and that
+window takes the documents. With no agent, nothing changed. The test puts a
+document in an inbox with no request and requires the agent's trigger to
+stay quiet, with the request as its control; reintroducing the count makes
+it fail. **The owner confirmed one window, with the PDF in it**, on the
+installed build.
+
+### 4. Every window left its web process running
+
+The agent run behind the Open With test had **six WebKit web processes with
+no window open** — one per window it had ever shown — each about **31 MB of
+proportional memory**. An agent opens a window per request (SPEC §6.5.2) and
+runs all day.
+
+A test that opens and closes one window found its web process alive
+**after `Close()` and after two forced garbage collections**, so it is not a
+finaliser waiting to run. Fixed without finding the holder:
+`webkit_web_view_terminate_web_process` when the window ends, by `Close()`
+and by the close box; nothing listens for `web-process-terminated`, so it is
+not read as a crash. The test asserts the process ends within five seconds of
+`Close` with no collection; with the call removed it fails. **Not yet watched
+on the installed agent across a day of requests.**
+
+**And the window tests had never run on this machine.** `internal/ui`'s
+window tests skip where bwrap cannot start — every `go test` binary here,
+because no AppArmor profile names it, and every CI runner, which has no
+display. **Tonight's 39, then 42, ran by building the test binary to
+`/home/vboxuser/liro-f12probe`**, the path a profile names. The ordinary
+suite's green for `internal/ui` says nothing about windows.
+
+### 5. One empty slot hid the token beside it
+
+The installed agent listed **no certificates** from a freshly made SoftHSM
+token, and the text report said only "Sertifikati: 0". Two defects:
+
+- **SoftHSM always presents an uninitialised slot** beside its tokens.
+  `C_GetTokenInfo` answers for it and `C_OpenSession` refuses it with
+  `CKR_TOKEN_NOT_RECOGNIZED`, and the enumeration skipped that code only at
+  the first call — so one slot that was not this module's card failed the
+  module. A reader holding a card another vendor's module does not know is
+  the same shape on hardware. Both slot loops — listing and signing — now
+  skip it at either call. The real-token test asserts the empty slot exists
+  and failed exactly as the agent did before the fix.
+- **The text report never showed module failures.** `Report.ModuleFailures`
+  says it exists "for the person looking at a list that does not contain
+  their certificate", and only the JSON renderer printed it. It is printed
+  now, in three catalogues, with a control.
+
+Session 5's SoftHSM tests passed because they only ever looked at slot 0.
+
+### 6. The notification, measured on the second variable D-337 did not vary
+
+With the package installed, four notifications from a GTK window whose
+`app_id` is `liro-bridge`, clicked by the owner, the window unfocused first:
+
+| | `desktop-entry` | default action | token | window |
+|---|---|---|---|---|
+| A | no | no | none | **raised**, 0.53 s after the click |
+| B | yes | no | none | **raised**, 0.53 s |
+| C | no | yes | **yes** | stayed unfocused; `present()` **with the token** raised it |
+| D | yes | yes | **yes** | the same |
+
+- **A token arrives exactly when an action is invoked**, with or without the
+  hint, and it works. D-354's reframing of D-337 was right on that half.
+- **A notification with no action raised the window by itself.** A control
+  from a window whose `app_id` matches no installed entry was raised the same
+  way. **So D-337's "clicking it raised nothing" is contradicted, and why is
+  not established** — not the desktop entry, by the control. D-337's window
+  was a WebKit view posted from Go, and possibly from another process; which
+  of those differences matters was not measured. It is recorded as
+  unexplained, not as resolved: the second result this week to reverse with
+  its mechanism unknown, and in both the honest entry is the untidy one.
+- **On the real agent, the owner clicked its own notification and the
+  consent window came forward.**
+
+**SPEC §6.5.2 now states something measured false.** Its table's third row
+and the line "Measured: clicking it raised nothing" say the opposite of
+tonight's reading. None of its requirements rests on the notification
+*failing* to raise the window — the security argument is that nothing may
+depend on the window having been seen — so no clause is unsafe, but the
+measured facts in it are wrong and the amendment is the owner's.
+
+The probe needed two fixes before any of that could be believed: its first
+two runs posted case A before its own window had appeared, so "not in front"
+was true of a window that did not exist; and its signal subscription delivered
+every signal twice.
+
+### 7. The notification outlives the approval, and that is the code's fault, not the clause's
+
+The owner watched the notification stay in the list through the certificate
+screen, the method screen and the PIN, and leave only when the window
+closed. **SPEC §6.5.2 does not say when it is withdrawn** — it is silent.
+[[D-341]] says "withdrawn when the request is answered, however the run
+ended", and the code's own comments say the same; the code withdraws in a
+`defer` at the end of the whole run. **The code is wrong against its own
+decision.** The request is answered at approval, and a notification saying a
+signature is waiting should not outlive it. Not fixed tonight.
+
+### 8. Autostart after removal, and a premise of D-354 that holds only on GNOME
+
+GNOME here does **not** start autostart entries through
+`systemd-xdg-autostart-generator`: every generated `app-…@autostart.service`
+is `inactive (dead)`, and every autostarted program runs in an
+`app-gnome-…scope` "launched by gnome-session-binary". So:
+
+- **The generator path** (KDE and other systemd-managed sessions), run by
+  hand on a scratch directory: an entry whose `TryExec` names a missing
+  binary produces **no unit** and a debug line only — silent, as P5 wanted.
+  `Hidden=true` is honoured. **`X-GNOME-Autostart-enabled=false` is not**: the
+  generator makes the unit anyway. So D-354's reasoning that the desktop's
+  switch lives in the same file is true of GNOME's tool and GNOME's session,
+  and on the generator path only `Hidden` switches an entry off — which
+  `EnsureAutostart` carries over as well, so the code is right on both.
+- **The GNOME path**: GIO's `GDesktopAppInfo`, the loader gnome-session uses,
+  refuses the entry whose binary is gone. **The session itself was not
+  watched** doing so: that needs a logout, which ends the session doing the
+  measuring.
+
+My first measurement used the generator for GNOME, an instrument that is not
+in GNOME's path; the dead units are what showed it.
+
+### 9. The corrections the owner asked for, and the decisions ruled
+
+- **`libpcsclite1` is not declared because a declared dependency nothing
+  links is a claim nobody checks.** That is the reason; that `pcscd` pulls it
+  in is true today and is not the reason.
+- **The build that reported success through `| tail` is [[D-322]]'s unread
+  exit code again, in my own shell — the second time this week.** A note that
+  has failed twice is not doing a guard's work. What replaces it is a form
+  rather than an intention: every build and test run since writes to a file
+  and prints `exit $?` on its own, with no pipe between the command and the
+  status.
+- **The desktop launcher: not created on Linux, ruled by the owner.** The
+  same product decision goes the other way on the two platforms because the
+  platforms' rules differ: on Windows an installer may write into a user's
+  profile and removes what it wrote, so D-283's "always" costs nothing; here
+  the package may not touch a home directory, so the agent would write the
+  launcher itself, it would survive an uninstall as a dead icon, and marking
+  it trusted would answer GNOME's security question on somebody's behalf.
+  That is the shape SPEC §1.1 and §6.5.1 already have — one rule, conditioned
+  on the platform.
+- **Maintainer: Veljko Stanojević**, no address; the contact belongs in the
+  README.
+- **Package signing: to be built now rather than carried** — the plan, and
+  what a person does to check a signature, are in the session 6 handover and
+  wait only for the key the owner generates.
+
+### Smaller things, recorded so they are not lost
+
+- `liro-bridge tray` exits with status **144** on SIGTERM, twice. Not
+  explained.
+- Two `pkcs11-worker` processes stayed alive for minutes after a job that
+  ended in `CERT_NOT_FOUND`. Probably D-299's held module; not checked.
+- `build.sh` stamps `HEAD` into `--version` and does not mark a dirty tree:
+  `0.9.9-dev.3` says `d7e4276` and carries uncommitted fixes.
+- A `pgrep -f` for WebKit found my own shell, whose command line contained
+  the pattern. An instrument that matches itself — D-350's needle, again.
+
+**Rejected.**
+
+- **Retrying the PIN path with `GODEBUG=cgocheck=0` to get past the panic.**
+  The check is what stopped C from being handed a Go struct as a
+  `GtkWidget *`; switching it off would have turned a clean panic into
+  undefined behaviour in the one window that holds a secret.
+- **Fixing the web-process leak by finding who holds the view.** Worth
+  knowing, and not required: terminating the process when the window ends
+  does not depend on the answer.
+- **Letting the running agent absorb documents it was never asked for.**
+  That was the two-window race.
+- **Using the Pošta card for tonight's signature.** Without SafeSign for
+  Linux the card has no module this agent can use, and the run would have
+  measured OpenSC's support for the card rather than this program.

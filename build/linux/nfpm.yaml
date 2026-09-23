@@ -17,7 +17,7 @@ version: ${LIRO_VERSION}
 version_schema: semver
 section: utils
 priority: optional
-maintainer: Liro
+maintainer: Veljko Stanojević
 vendor: Liro
 homepage: https://github.com/veljaos/liro-bridge
 license: Apache-2.0

@@ -183,6 +183,7 @@ func NewWindow(opts Options) (Window, error) {
 			// everything else.
 			w.emit(opts.OnClosed)
 			w.markClosed()
+			w.endWebProcess()
 			return false // false: let GTK destroy the window.
 		})
 
@@ -497,12 +498,33 @@ func (w *linuxWindow) Close() error {
 	default:
 	}
 	err := theUIThread.do(func() {
+		w.endWebProcess()
 		if w.win != nil {
 			w.win.Destroy()
 		}
 	})
 	w.markClosed()
 	return err
+}
+
+// endWebProcess ends the web process behind this window's view. On the UI
+// thread only.
+//
+// **Destroying the window does not end it, and neither does the garbage
+// collector.** Measured (D-355): the installed agent kept one WebKit web
+// process — about 31 MB of proportional memory — for every window it had ever
+// opened, and a test that opened and closed one window found its process
+// still running after Close and after two forced collections. The agent opens
+// a window per request (SPEC §6.5.2) and runs all day, so that is a cost per
+// request for the life of the session. Whatever still holds the view, this
+// does not depend on finding it: the process is ended when the window is.
+//
+// Nothing here listens for web-process-terminated, so ending it on purpose
+// is not read anywhere as a crash.
+func (w *linuxWindow) endWebProcess() {
+	if w.view != nil {
+		w.view.TerminateWebProcess()
+	}
 }
 
 // Handle returns this window's GtkWindow address.
