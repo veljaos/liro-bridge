@@ -132,3 +132,10 @@ Two further things worth knowing before relying on this backend:
   That is a statement about the trust anchor — Adobe does not carry the Serbian
   CAs in its own store — and not about the signature. Any program signing with
   these cards produces the same verdict.
+
+## Contact
+
+Maintained by Veljko Stanojević. Questions, defects and reports go to the
+repository's issue tracker: <https://github.com/veljaos/liro-bridge/issues>.
+The Linux packages name the same maintainer and carry no address of their own
+(D-355).
