@@ -133,6 +133,53 @@ Two further things worth knowing before relying on this backend:
   CAs in its own store — and not about the signature. Any program signing with
   these cards produces the same verdict.
 
+## Installing on Linux, and checking the package first (F12 §8)
+
+The release page carries a `.deb` for Ubuntu 24.04 and Debian and an `.rpm`
+for Fedora, and beside them `SHA256SUMS`, its signature `SHA256SUMS.asc`, and
+the public key `liro-bridge-packages.asc`. The key is an OpenPGP ed25519 key,
+used only for these packages:
+
+```
+Liro Bridge Linux packages
+39DE 792A 503C 4F4E 26DF  1E45 86FA 14F6 00AA 59B3
+```
+
+That is `39DE792A503C4F4E26DF1E4586FA14F600AA59B3` in one piece. It expires on
+2029-09-25. It is not the key that signs the update manifest (SPEC §15.2) and
+cannot be derived from it.
+
+*Debian and Ubuntu*
+
+```
+gpg --import liro-bridge-packages.asc          # compare the fingerprint it prints with the one above
+gpg --verify SHA256SUMS.asc SHA256SUMS         # "Good signature from Liro Bridge Linux packages"
+sha256sum --check --ignore-missing SHA256SUMS  # "liro-bridge_<v>_amd64.deb: OK"
+sudo apt install ./liro-bridge_<v>_amd64.deb
+```
+
+The `.deb` carries no embedded signature: `apt install ./file.deb` would not
+check one. The signed checksum file is the check, so run it before installing.
+
+*Fedora*
+
+```
+sudo rpm --import liro-bridge-packages.asc
+rpm -K liro-bridge-<v>.x86_64.rpm              # "digests signatures OK"
+sudo dnf install ./liro-bridge-<v>.x86_64.rpm
+```
+
+`dnf` does not check the signature of a package installed from a file
+(`localpkg_gpgcheck` is off by default), so `rpm -K` is the check. "digests OK"
+with no "signatures" means the package is not signed, and should not be
+installed.
+
+**What this does and does not protect against.** It catches a file swapped or
+altered on its way to you, from a mirror or anyone between. It does not catch
+a compromise of this repository itself, because the key and the fingerprint
+above come from the same place as the packages. Comparing the fingerprint with
+one published somewhere else would close that gap; no such place exists yet.
+
 ## Contact
 
 Maintained by Veljko Stanojević. Questions, defects and reports go to the

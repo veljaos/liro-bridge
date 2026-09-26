@@ -36731,3 +36731,142 @@ in GNOME's path; the dead units are what showed it.
 - **Using the Pošta card for tonight's signature.** Without SafeSign for
   Linux the card has no module this agent can use, and the run would have
   measured OpenSC's support for the card rather than this program.
+
+## D-356 — F12 §8's signing half: the packages are signed with the owner's OpenPGP key and checked against the committed public half before anything is handed on — and a test of the signing script opened a passphrase window on the owner's desktop, and the owner typed the real passphrase into it
+
+**Date:** 2026-09-26
+**Phase:** F12 §8, session 6 §E's plan.
+
+### The key
+
+The owner generated it on their own Windows machine by session 6 §E's
+commands, put the secret half and its passphrase into the `release`
+environment (`LIRO_PACKAGE_SIGNING_KEY`, `LIRO_PACKAGE_SIGNING_PASSPHRASE`),
+deleted the exported secret file, and pasted the public half into the
+session. **The paste was checked rather than believed**, in a keyring holding
+nothing else:
+
+| the owner's claim | measured |
+|---|---|
+| fingerprint `39DE792A503C4F4E26DF1E4586FA14F600AA59B3` | the same |
+| ed25519 | `pub ed25519` |
+| sign-only | `[SC]` — certify and sign, no encryption. A primary key always certifies; this is what `gpg`'s `sign` usage gives |
+| expires 2029-09-25 | `[expires: 2029-09-25]`, self-signature `sig!` good |
+| (not claimed) no secret material | `--list-packets`: one public-key packet, one user ID, one self-signature; `--list-secret-keys` empty |
+
+Committed as `build/linux/liro-bridge-packages.asc`. The private half has
+never been on this VM.
+
+### What was built
+
+- **`build/linux/sign.sh <dir>`**: refuses with no key and writes nothing;
+  imports the secret key into a temporary `GNUPGHOME`; **refuses a key whose
+  fingerprint is not the committed public key's, before signing anything**;
+  hands the passphrase to `gpg-agent` by `PRESET_PASSPHRASE` through a pipe
+  (a shell builtin, so it is in no process's argv); `rpmsign --addsign`s the
+  `.rpm`; writes `SHA256SUMS` over the `.deb` and the signed `.rpm` and signs
+  it detached and armoured; then runs `verify.sh`.
+- **`build/linux/verify.sh <dir>`**: the committed public key alone in an
+  empty keyring and an empty rpm database; `SHA256SUMS.asc` must be a good
+  signature whose `VALIDSIG` primary fingerprint is the committed one;
+  `SHA256SUMS` must name exactly the one `.deb` and one `.rpm` present and
+  both must match; `rpmkeys --checksig` must say `digests signatures OK` —
+  "digests OK" alone is an unsigned package and is refused.
+- **`release.yml` `sign-linux`**: tag pushes only, environment `release`,
+  `ubuntu:24.04`; the release job now publishes its output, and the unsigned
+  `build-linux` artefact never reaches the page. The public key is published
+  beside the packages.
+- **`ci.yml`**: every push signs through the same `sign.sh` with a throwaway
+  key made in the job, and **requires the committed key to refuse it**; a
+  step checks the README states the committed fingerprint; `linux-install`
+  runs the README's own commands on each image before installing — `gpg
+  --verify` and `sha256sum --check` on Ubuntu and Debian, `rpm -K` on
+  Fedora. **Whether Fedora's rpm accepts an ed25519 signature made by
+  Ubuntu's `rpmsign` is measured there and nowhere else**; it has not run yet.
+- **README**: "Installing on Linux, and checking the package first", with the
+  fingerprint, the two procedures, `dnf`'s `localpkg_gpgcheck`, and the
+  limit. The release-notes template names the three new files (Serbian text,
+  for the owner's review).
+
+**One fact that would have failed the first release:** Ubuntu 24.04's `rpm`
+sets `%__gpg` to `/usr/bin/gpg2`, which 24.04 does not ship. `sign.sh`
+defines it to `command -v gpg`.
+
+### Measured here, with a throwaway ed25519 key
+
+`rpm` 4.18.2 unpacked into a scratch prefix (no sudo here; nothing installed),
+a two-file `.deb` and `.rpm` from nFPM:
+
+| case | result |
+|---|---|
+| throwaway key, throwaway public key named | signed; `digests signatures OK`; verified |
+| no key | `LIRO_PACKAGE_SIGNING_KEY is not set`, exit 1, nothing written |
+| throwaway signature, verified against the committed key | refused at `SHA256SUMS.asc` |
+| throwaway secret, committed public key | refused **before signing**, packages untouched |
+| wrong passphrase | `rpmsign` fails, exit 1, `.rpm` still `digests OK` (unsigned) |
+| not base64; a public key as the secret | each refused with its own message |
+| one byte appended to the `.deb` | `sha256sum` mismatch, refused |
+| unsigned `.rpm` behind a correctly signed `SHA256SUMS` | refused: "carries no signature rpm accepts" |
+| a second `.deb` in the directory | refused |
+
+**Not run**: the job with the real key. It runs for the first time on the
+first `v*` tag, and the only thing that differs from the throwaway run is the
+key. An instrument failed once: the first wrong-passphrase run reported exit
+0 — `grep`'s, at the end of my pipe (session 6 §F, the third time).
+
+### The defect: our own tooling put a password window on the owner's desktop, and the owner typed the real passphrase into it
+
+**What happened.** The wrong-passphrase case above gave `gpg-agent` a preset
+passphrase that did not fit the throwaway key. The agent did not fail; it did
+what it does on a desktop — it asked for the passphrase through pinentry, which on this desktop is
+a window on the VM's screen. I did not see the window and have only the
+owner's account of it and my log. **The owner, who had generated the signing
+key earlier that day and was working on package signing with me, typed the
+real package-signing passphrase into it.** It could not work: the window was
+asking for the throwaway key's passphrase. My log shows gpg's "signing
+failed: Operation cancelled" and the script failing as the test expected.
+The owner told me "I did enter password but it is not working", then "I did
+enter correct password".
+
+**Why this is a defect and not a footnote.** In the owner's words: a script
+that can open a password prompt on the desktop is a script that can be
+mistaken for the real thing, and the owner typed into it because it looked
+like it belonged to what we were doing. **That is the shape of a phishing
+window, arriving by accident from our own tooling** — unrequested, plausible,
+well-timed, and asking for exactly the secret most on the person's mind. No
+attacker was needed for a real secret to be typed into a place it did not
+belong; the timing and the context were enough. A person cannot tell a
+prompt they caused from a prompt they did not, and it is not their job to.
+
+**What it reached.** A `gpg-agent` in a scratch `GNUPGHOME` on this VM, which
+has never held the private key; that agent was stopped by the script's trap.
+"Save in password manager" was not ticked (the owner). The passphrase was not
+written anywhere by the scripts and did not leave the VM. **It unlocks
+nothing without the secret key, which is only in the `release` environment
+and the owner's offline backup.** The owner judged the exposure and did not
+rotate it; that is the owner's call, recorded.
+
+**The fix.** Every `gpg` in `sign.sh`, including the one `rpmsign` spawns
+(`_gpg_sign_cmd_extra_args`), runs with `--batch --pinentry-mode error`. A
+missing or wrong passphrase now fails with "No pinentry" and exit 1, on a
+desktop as on a runner; measured both ways after the change. `verify.sh`
+touches no secret key and cannot prompt.
+
+**The rule it leaves**: tooling in this project that handles a secret
+never asks a person for one it was not given — it fails. And a test that
+feeds a secret path a wrong input is run with the prompt made impossible
+first, not discovered by the person at the screen. I ran a negative case
+against an agent on the owner's own display without asking what that agent
+would do with a failure; the answer was on screen before it was in my log.
+
+### What this leaves open
+
+- **The real-key run** — the first `v*` tag (open-items C).
+- **The CI steps have not run** — the next push.
+- **`sign-linux` shares the `release` environment with the release key.**
+  An environment's secrets are open to every job bound to it, so
+  `sign-linux` could name `LIRO_RELEASE_SIGNING_KEY` and does not; only
+  review keeps it so. A second environment would make it a setting. The
+  owner's decision (open-items A).
+- **The fingerprint published somewhere other than this repository** —
+  unchanged, open-items A15.

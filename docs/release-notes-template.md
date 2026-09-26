@@ -11,6 +11,9 @@ verzije ovog izdanja.
 | `.msi` — onaj **bez** `-per-machine` u imenu | **Većina korisnika.** Instalira se bez administratorskih prava. |
 | `.msi` — onaj **sa** `-per-machine` u imenu | Za administratore koji instaliraju preko Group Policy. Traži administratorska prava. |
 | `.exe` | Sam program, bez instalacije. |
+| `.deb` | Linux: Ubuntu 24.04 i Debian. |
+| `.rpm` | Linux: Fedora. |
+| `SHA256SUMS`, `SHA256SUMS.asc`, `liro-bridge-packages.asc` | Potpisan spisak otisaka Linux paketa i javni ključ kojim se potpis proverava. Postupak je u README-u, u odeljku *Installing on Linux*. |
 | `release.json`, `release.json.sig` | Potpisani opis izdanja. Program ih koristi kada proverava ima li novije verzije; nije potrebno da ih preuzimate. |
 
 **Pri prvom pokretanju Windows će prikazati upozorenje** ("Windows

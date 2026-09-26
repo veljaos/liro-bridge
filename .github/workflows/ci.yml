@@ -916,12 +916,50 @@ jobs:
             exit 1
           fi
 
+      # Package signing (D-356) runs for real only on a tag, in release.yml,
+      # and would otherwise be code that has never run when the first
+      # release needs it. So every push signs through the same sign.sh with
+      # a key made here and thrown away — and the one thing that key must
+      # never do is pass as the committed one.
+      - name: sign with a throwaway key; the committed key refuses it
+        run: |
+          set -eu
+          apt-get install -y --no-install-recommends gnupg rpm
+          export GNUPGHOME="$(mktemp -d)"
+          pass="throwaway-$(od -An -N8 -tx1 /dev/urandom | tr -d ' ')"
+          gpg --batch --pinentry-mode loopback --passphrase "$pass" \
+            --quick-generate-key "Liro CI throwaway" ed25519 sign 1d
+          gpg --armor --export "Liro CI throwaway" > dist/linux/throwaway.asc
+          key="$(gpg --batch --pinentry-mode loopback --passphrase "$pass" \
+            --armor --export-secret-keys "Liro CI throwaway" | base64 -w0)"
+          gpgconf --kill gpg-agent
+          LIRO_PACKAGE_PUBLIC_KEY=dist/linux/throwaway.asc \
+            LIRO_PACKAGE_SIGNING_KEY="$key" LIRO_PACKAGE_SIGNING_PASSPHRASE="$pass" \
+            build/linux/sign.sh dist/linux
+          if build/linux/verify.sh dist/linux; then
+            echo "::error::packages signed with a throwaway key verify against the committed key"
+            exit 1
+          fi
+          echo "the committed key refuses the throwaway signature, as it must"
+
+      # The README tells a person which fingerprint to compare. It has to be
+      # the committed key's, and nothing else would notice if it drifted.
+      - name: the README states the committed key's fingerprint
+        run: |
+          set -eu
+          fpr="$(gpg --batch --with-colons --show-keys build/linux/liro-bridge-packages.asc | awk -F: '/^fpr/{print $10; exit}')"
+          echo "committed key: $fpr"
+          grep -q "$fpr" README.md || { echo "::error::README.md does not state $fpr"; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-packages
           path: |
             dist/linux/*.deb
             dist/linux/*.rpm
+            dist/linux/SHA256SUMS
+            dist/linux/SHA256SUMS.asc
+            dist/linux/throwaway.asc
 
   # Install, run, remove — on clean images, which is the only way to learn
   # what a package needs rather than what the machine that built it
@@ -947,6 +985,29 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: linux-packages
+
+      # The README's own commands, with each distribution's own tools, over
+      # packages linux-packages signed with its throwaway key. Whether
+      # Fedora's rpm accepts an ed25519 signature Ubuntu's rpmsign made is
+      # measured here and nowhere else.
+      - name: the README's check passes before install
+        run: |
+          set -eu
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            apt-get install -y --no-install-recommends gnupg
+            gpg --batch --import throwaway.asc
+            gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+            sha256sum --check --ignore-missing SHA256SUMS
+          else
+            rpm --import throwaway.asc
+            out="$(rpm -K liro-bridge-0.0.0-ci.x86_64.rpm)"
+            echo "$out"
+            case "$out" in
+              *": digests signatures OK") ;;
+              *) echo "::error::rpm does not accept the package's signature"; exit 1 ;;
+            esac
+          fi
 
       - name: install the package with the distribution's own tool
         run: |

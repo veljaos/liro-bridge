@@ -26,7 +26,14 @@ on:
 #   build    runs for a tag and for a dispatch, and never holds the
 #            release signing key.
 #   release  runs only for a tag, is bound to the `release`
-#            environment, and is the only place that key exists.
+#            environment, and is the only job that uses that key.
+#
+# sign-linux (D-356) is bound to the same environment, because that is
+# where the package signing key is kept. An environment's secrets are
+# open to every job bound to it, so sign-linux *could* name the release
+# key; it does not, and nothing but review of this file keeps it that
+# way. A second environment for the package key would make that a
+# setting rather than a convention — the owner's choice (D-356).
 #
 # Four things make the signing job unreachable from a fork's pull
 # request, and only the last three are this file:
@@ -218,15 +225,79 @@ jobs:
             dist/linux/*.rpm
           retention-days: 7
 
-  release:
+  # Package signing (session 6 §E, D-356). A job of its own, tag pushes
+  # only, bound to the `release` environment where the package key is
+  # kept, in the build's own ubuntu:24.04 so gpg and rpmsign are the
+  # versions CI runs on every push with a throwaway key.
+  #
+  # sign.sh signs the .rpm in place, writes SHA256SUMS and
+  # SHA256SUMS.asc, and runs verify.sh against the committed public key
+  # in an empty keyring; nothing is handed on unless that passes. The
+  # public key goes on the release page beside them, because the README's
+  # check begins by importing it.
+  #
+  # If the environment requires a reviewer, this job and `release` each
+  # ask for one.
+  sign-linux:
     needs: [build, build-linux]
+    if: github.event_name == 'push' && github.repository == 'veljaos/liro-bridge'
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    environment: release
+    steps:
+      - name: gpg and rpmsign
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates gnupg rpm
+
+      - uses: actions/checkout@v4
+
+      - name: take the packages the build made
+        uses: actions/download-artifact@v4
+        with:
+          name: liro-bridge-linux-${{ needs.build.outputs.version }}
+          path: dist/linux
+
+      # Annotated for the reason the manifest step below is: the line
+      # that says which check refused is the whole content of a failure.
+      - name: sign them, and verify against the committed key
+        env:
+          LIRO_PACKAGE_SIGNING_KEY: ${{ secrets.LIRO_PACKAGE_SIGNING_KEY }}
+          LIRO_PACKAGE_SIGNING_PASSPHRASE: ${{ secrets.LIRO_PACKAGE_SIGNING_PASSPHRASE }}
+        run: |
+          set -eu
+          if ! out="$(build/linux/sign.sh dist/linux 2>&1)"; then
+            printf '%s\n' "$out"
+            msg="$(printf '%s' "$out" | grep -E '^(sign|verify): ' | tail -n 1 | sed 's/%/%25/g')"
+            [ -n "$msg" ] || msg="see this step's log"
+            echo "::error::signing the Linux packages failed: $msg"
+            exit 1
+          fi
+          printf '%s\n' "$out"
+          cp build/linux/liro-bridge-packages.asc dist/linux/
+
+      - name: hand the signed packages on
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-bridge-linux-signed-${{ needs.build.outputs.version }}
+          path: |
+            dist/linux/*.deb
+            dist/linux/*.rpm
+            dist/linux/SHA256SUMS
+            dist/linux/SHA256SUMS.asc
+            dist/linux/liro-bridge-packages.asc
+          retention-days: 7
+
+  release:
+    needs: [build, build-linux, sign-linux]
     if: github.event_name == 'push' && github.repository == 'veljaos/liro-bridge'
     runs-on: windows-latest
     permissions:
       contents: write
-    # Everything in this job can reach the release signing key, and
-    # nothing outside it can. The environment's deployment rule is what
-    # restricts that to a release tag; see the note at the top.
+    # Everything in this job can reach the release signing key, and so
+    # can sign-linux, which shares the environment and does not use it.
+    # The environment's deployment rule is what restricts both to a
+    # release tag; see the note at the top.
     environment: release
     steps:
       - uses: actions/checkout@v4
@@ -247,11 +318,12 @@ jobs:
 
       # Into the same directory, because `publish` uploads what is there.
       # signrelease skips them and verifyrelease never looks for them;
-      # see build-linux for why that is deliberate.
-      - name: take the Linux packages
+      # see build-linux for why that is deliberate. They are sign-linux's:
+      # the unsigned build-linux artefact never reaches the page.
+      - name: take the signed Linux packages
         uses: actions/download-artifact@v4
         with:
-          name: liro-bridge-linux-${{ needs.build.outputs.version }}
+          name: liro-bridge-linux-signed-${{ needs.build.outputs.version }}
           path: dist/release
 
       # SPEC §15.2: the agent embeds a public key and every release is

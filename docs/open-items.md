@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-355, 2026-09-23.** One list, to be read in one sitting and acted
+**As of D-356, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -35,7 +35,8 @@ prose of an entry before D-280, outside those words, may be missing.
 12. **The method screen saves a protocol run's corner as the person's default.** — handover-next-session §2; `signflow.go` `saveConfig()`. *Needs:* owner's decision, then code.
 13. **A deadline on `uiThread.do`'s wait (Windows).** — D-207, D-099. *Needs:* owner's decision, then code.
 14. **Should the audit log travel with ordinary backups?** Decided by implication. — D-340. *Needs:* owner's decision.
-15. **Publishing the package-signing fingerprint somewhere other than the repository's own host.** — session 6 §E. *Needs:* owner's decision.
+15. **Publishing the package-signing fingerprint somewhere other than the repository's own host.** — session 6 §E; D-356. *Needs:* owner's decision.
+16. **A second environment for the package-signing key.** `sign-linux` shares `release` with the release key and could name it; only review keeps it from doing so. — D-356. *Needs:* owner's decision.
 
 ## B. Claims not measured
 
@@ -78,6 +79,7 @@ prose of an entry before D-280, outside those words, may be missing.
 13. **`Sign.java` and `sign.php` never executed.** — sdk/examples README. *Needs:* a JDK and PHP.
 14. **The stamp with a real card's name through the Linux flow.** — D-339. *Needs:* hardware.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
+16. **Package signing with the real key has never run**, and neither have its CI steps (throwaway signing, the README's check on three images, Fedora's `rpm -K` over an ed25519 signature). Measured only here, with a throwaway key. — D-356. *Close:* the next push, then the first `v*` tag. *Needs:* CI.
 
 ## D. Known defects, not fixed
 
@@ -100,7 +102,7 @@ prose of an entry before D-280, outside those words, may be missing.
 
 ## E. Promises in documents that nothing does yet
 
-1. **Linux packages are published with no signature a person can check.** — D-354; D-355 §9; plan and commands in session 6 §E. *Needs:* owner's hands (the key), then code.
+1. *Package signing: built in D-356; its first real run is C16. Numbering kept, because F1 cites E3 and E4.*
 2. **SPEC §12.6's B-LT default** — see A2.
 3. **MUP on Linux needs a direct PC/SC route.** — F11 "Deferred"; SPEC §6.5.1. *Needs:* code, hardware.
 4. **No Linux module for the Pošta card** without SafeSign for Linux. — D-355. *Needs:* hardware.
@@ -121,4 +123,4 @@ the checklist wants updating against D-354 and D-355.
 6. **The sandbox on stock 24.04** — B7.
 7. **The "desktop entry … marked trusted" box contradicts the owner's ruling** of D-355 §9. *Needs:* owner's decision (reword or strike).
 8. **What a stock GNOME user sees** — only an empty bus so far (D-342). *Needs:* Fedora machine.
-9. **Package signing** — E1.
+9. **Package signing** — built (D-356); the real-key run is C16.
