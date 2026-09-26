@@ -37309,3 +37309,47 @@ from the library's cached item list, and was the instrument) and
 deliberately:** SafeSign installed, `liro-bridge 0.9.9~dev.5` installed,
 `pcscd.socket` running; `~/.config/liro/config.json`, which the run wrote at
 13:15 — open item A12's behaviour, not examined here.
+
+## D-362 — A module that will not load is told in the person's language, with the loader's own words beside it
+
+**Date:** 2026-09-26
+**Phase:** F12 §10; closes open-items A17.
+
+**The owner's ruling on [[D-359]]'s limit:** "Every other string a person
+sees is in their language, and the moment something has gone wrong is the
+worst place to switch." D-359's sentences were English inside a Serbian
+report, because module reasons travel as one string (SPEC §9.3), and a
+sentence for a person is not the same thing as a PKCS#11 code.
+
+**What changed.** The load failure is a typed `pkcs11.LoadError` — a kind
+(missing library, missing function, missing symbol version, not a library,
+no file, 32-bit, loader stopped), the name it concerns, whether it is an old
+OpenSSL, and dlerror's text verbatim. **It crosses from the probe child as
+data** (`probeResult.Load`), because the reason is found in the child and the
+child only reports facts; the parent rebuilds it (`loadFailed`, `probeDied`,
+both still `errors.Is(errWorkerDied)` where they were). `certs`' text report
+renders it through the catalogue — nine keys under `certs.module_load.*`, in
+all three catalogues — **with the loader's words appended untranslated**,
+because they are what a vendor's support desk asks for. `certs --json` keeps
+the English sentence: it is data (D-092), and its contract did not change
+(the conversion from `ModuleFailure` is written out now that the shapes
+differ, as its old comment said it would have to be). The window shows no
+module failures, so the text report is the one place a person reads these.
+
+**Measured through the program**, Serbian by default, with D-359's
+`libcrypto.so.1.1` module configured: "Potrebna mu je biblioteka
+libcrypto.so.1.1, koja nije instalirana na ovom sistemu. To je starija
+verzija OpenSSL-a od one koju ova distribucija isporučuje: modul je napravljen
+za stariji sistem, i potrebna je verzija proizvođača za ovaj. (Sistemski
+učitavač je javio: libcrypto.so.1.1: cannot open shared object file: No such
+file or directory)".
+
+**Tests.** The fixture test now also requires each compiled module's kind
+to survive the child; the loader-stopped test requires its kind. A test in
+`cmd/liro-bridge` renders **every** `LoadFailureKind` in `sr-Latn` and
+`sr-Cyrl` through the real `asModuleFailure` and fails on any English
+phrase, any raw key, or the loader's words lost — so a kind added later
+without a sentence fails there. Mutation-checked: without the mapping in
+`asModuleFailure`, "the LoadError did not reach the report".
+
+**The Serbian is mine and is for the owner's review**, like D-358's.

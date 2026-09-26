@@ -139,6 +139,9 @@ type probeResult struct {
 	Manufacturer       string `json:"manufacturer,omitempty"`
 	LibraryDescription string `json:"libraryDescription,omitempty"`
 	Err                string `json:"error,omitempty"`
+	// Load is why the module would not load, when the child could say
+	// (D-362). Facts only, like everything else here.
+	Load *LoadError `json:"load,omitempty"`
 }
 
 // errWorkerDied is what a candidate becomes when the child did not survive
@@ -214,7 +217,12 @@ func probeOutOfProcess(ctx context.Context, path string, stderr io.Writer) (prob
 		// number.
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
-			return probeResult{}, fmt.Errorf("%w (exit 0x%X)%s", errWorkerDied, uint32(exitErr.ExitCode()), exitHint(path, exitErr.ExitCode()))
+			msg := fmt.Sprintf("%v (exit 0x%X)", errWorkerDied, uint32(exitErr.ExitCode()))
+			le := exitHint(path, exitErr.ExitCode())
+			if le != nil {
+				msg += "; " + le.Error()
+			}
+			return probeResult{}, probeDied{msg: msg, load: le}
 		}
 		return probeResult{}, fmt.Errorf("running the probe: %w", runErr)
 	}
@@ -224,6 +232,9 @@ func probeOutOfProcess(ctx context.Context, path string, stderr io.Writer) (prob
 		return probeResult{}, fmt.Errorf("the probe answered something that is not a result: %w", err)
 	}
 	if !res.OK {
+		if res.Load != nil {
+			return res, loadFailed{msg: res.Err, load: res.Load}
+		}
 		return res, errors.New(res.Err)
 	}
 	return res, nil

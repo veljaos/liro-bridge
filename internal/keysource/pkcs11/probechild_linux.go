@@ -2,6 +2,8 @@
 
 package pkcs11
 
+import "errors"
+
 // describeModule loads the module in this child process and reads
 // CK_INFO, which is the check discovery actually relies on: a file with
 // "pkcs11" in its name is not a module, and the only thing that settles
@@ -18,7 +20,12 @@ package pkcs11
 func describeModule(path string) probeResult {
 	m, err := openModule(path)
 	if err != nil {
-		return probeResult{Err: err.Error()}
+		res := probeResult{Err: err.Error()}
+		var le *LoadError
+		if errors.As(err, &le) {
+			res.Load = le
+		}
+		return res
 	}
 	defer func() { _ = m.close() }()
 

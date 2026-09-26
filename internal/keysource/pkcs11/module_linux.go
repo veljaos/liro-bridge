@@ -92,7 +92,11 @@ func openModuleWith(path string, osLocking bool) (*module, error) {
 	// Windows does not have.
 	handle := C.dlopen(cpath, C.RTLD_NOW|C.RTLD_LOCAL)
 	if handle == nil {
-		return nil, fmt.Errorf("pkcs11: %s could not be loaded: %s", path, explainLoadFailure(path, C.GoString(C.dlerror())))
+		dlerr := C.GoString(C.dlerror())
+		if le := classifyLoadFailure(path, dlerr); le != nil {
+			return nil, fmt.Errorf("pkcs11: %s could not be loaded: %w", path, le)
+		}
+		return nil, fmt.Errorf("pkcs11: %s could not be loaded: %s", path, dlerr)
 	}
 
 	var list C.CK_FUNCTION_LIST_PTR

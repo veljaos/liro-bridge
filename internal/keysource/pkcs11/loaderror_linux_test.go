@@ -72,6 +72,7 @@ func TestAModuleThatWillNotLoadIsAFailureThatSaysWhy(t *testing.T) {
 		// loader itself said, which must still be there.
 		want   []string
 		loader string
+		kind   LoadFailureKind
 	}{
 		{
 			name: "it needs an OpenSSL this system does not ship",
@@ -87,6 +88,7 @@ func TestAModuleThatWillNotLoadIsAFailureThatSaysWhy(t *testing.T) {
 			},
 			want:   []string{"it needs libcrypto.so.1.1, which is not installed on this system", "older OpenSSL", "vendor's build"},
 			loader: "libcrypto.so.1.1: cannot open shared object file",
+			kind:   LoadMissingLibrary,
 		},
 		{
 			name: "it needs a function nothing provides",
@@ -95,6 +97,7 @@ func TestAModuleThatWillNotLoadIsAFailureThatSaysWhy(t *testing.T) {
 			},
 			want:   []string{"it needs the function liro_fixture_nobody_provides_this"},
 			loader: "undefined symbol: liro_fixture_nobody_provides_this",
+			kind:   LoadMissingFunction,
 		},
 		{
 			name: "it was built against a symbol version its library no longer has",
@@ -120,6 +123,7 @@ func TestAModuleThatWillNotLoadIsAFailureThatSaysWhy(t *testing.T) {
 			},
 			want:   []string{"it was built against LIRO_OLD_1.0 of libliroold.so.1"},
 			loader: "version `LIRO_OLD_1.0' not found",
+			kind:   LoadMissingVersion,
 		},
 		{
 			name: "it is not a shared library",
@@ -132,6 +136,7 @@ func TestAModuleThatWillNotLoadIsAFailureThatSaysWhy(t *testing.T) {
 			},
 			want:   []string{"it is not a shared library"},
 			loader: "",
+			kind:   LoadNotALibrary,
 		},
 		{
 			name: "there is no file at the configured path",
@@ -140,6 +145,7 @@ func TestAModuleThatWillNotLoadIsAFailureThatSaysWhy(t *testing.T) {
 			},
 			want:   []string{"there is no file at this path"},
 			loader: "cannot open shared object file",
+			kind:   LoadNoFile,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,6 +171,12 @@ func TestAModuleThatWillNotLoadIsAFailureThatSaysWhy(t *testing.T) {
 			}
 			msg := f.Err.Error()
 			t.Logf("reason: %s", msg)
+			// The kind has to survive the child: it is what the person's
+			// language is chosen from (D-362).
+			var le *LoadError
+			if !errors.As(f.Err, &le) || le.Kind != tc.kind {
+				t.Errorf("the Failure does not carry a %s LoadError across the probe: %#v", tc.kind, le)
+			}
 			for _, w := range tc.want {
 				if !strings.Contains(msg, w) {
 					t.Errorf("the reason does not say %q:\n%s", w, msg)
@@ -235,6 +247,10 @@ func TestTheLoaderKillingTheProbeIsStillAFailureThatSaysWhereToLook(t *testing.T
 			// A newer glibc may report this instead of asserting; then the
 			// case above covers it, and this one has nothing to show.
 			t.Skipf("this glibc did not end the process: %s", msg)
+		}
+		var le *LoadError
+		if !errors.As(f.Err, &le) || le.Kind != LoadLoaderStopped {
+			t.Errorf("the dead probe carries no loader_stopped LoadError: %#v", le)
 		}
 		if !strings.Contains(msg, "ldd "+path) {
 			t.Errorf("the Failure gives a bare exit and no place to look:\n%s", msg)

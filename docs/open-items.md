@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-361, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-362, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -42,7 +42,7 @@ prose of an entry before D-280, outside those words, may be missing.
     3. In `package-signing`, add `LIRO_PACKAGE_SIGNING_KEY` (the contents of `secret.b64`) and `LIRO_PACKAGE_SIGNING_PASSPHRASE`. GitHub cannot move a secret or show one, so both are entered again.
     4. Delete `secret.asc` and `secret.b64`.
     5. In `release`, delete `LIRO_PACKAGE_SIGNING_KEY` and `LIRO_PACKAGE_SIGNING_PASSPHRASE`.
-17. **A module's load-failure sentence is English in every locale.** Module reasons are data under SPEC §9.3; D-359's sentences are for a person. — D-359. *Close:* translate by category, or accept. *Needs:* owner's decision.
+17. *A module's load-failure sentence: translated (D-362). Numbering kept.*
 18. **Nothing records what a person was shown when nothing could be signed.** SPEC §6.7 records what was signed and refused; the reason on the empty screen reaches no log and no audit entry, so the only record is whoever was looking. — D-360. *Needs:* owner's decision (what SPEC §6.7 should cover), then code.
 
 ## B. Claims not measured

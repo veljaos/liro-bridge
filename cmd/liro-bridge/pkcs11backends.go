@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -209,9 +210,22 @@ func moduleCertificates(ctx context.Context) ([]cli.ModuleCertificate, []cli.Mod
 }
 
 func asModuleFailure(f pkcs11.Failure) cli.ModuleFailure {
-	return cli.ModuleFailure{
+	out := cli.ModuleFailure{
 		Path:   f.Candidate.Path,
 		Origin: f.Candidate.Origin.String(),
 		Reason: f.Err.Error(),
 	}
+	// A module that would not load carries why, for the text report to say
+	// in the person's language (D-362).
+	var le *pkcs11.LoadError
+	if errors.As(f.Err, &le) {
+		out.Load = &cli.ModuleLoadFailure{
+			Kind:       string(le.Kind),
+			Name:       le.Name,
+			Library:    le.Library,
+			OldOpenSSL: le.OldOpenSSL,
+			Loader:     le.Loader,
+		}
+	}
+	return out
 }

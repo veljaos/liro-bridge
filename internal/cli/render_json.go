@@ -126,14 +126,10 @@ func RenderJSON(w io.Writer, report Report, now time.Time) error {
 		})
 	}
 	for _, f := range report.ModuleFailures {
-		// A conversion, not a field-by-field copy, because the two shapes are
-		// identical today and staticcheck is right that spelling them out adds
-		// nothing. They stay separate types deliberately — this file decides
-		// what the JSON contract is and must not inherit a field merely because
-		// the internal shape grew one — and the conversion is what enforces
-		// that: the day they diverge, this line stops compiling and the mapping
-		// has to be written out on purpose.
-		out.ModuleFailures = append(out.ModuleFailures, jsonModuleFailure(f))
+		// Written out, because the shapes diverged (D-362): ModuleFailure grew
+		// Load, for the text report's translation, and the JSON contract did
+		// not. Reason is the English sentence, which is data here (D-092).
+		out.ModuleFailures = append(out.ModuleFailures, jsonModuleFailure{Path: f.Path, Origin: f.Origin, Reason: f.Reason})
 	}
 	out.CardServiceDown = report.CardServiceDown
 	age := now.Sub(report.TSL.IssuedAt)

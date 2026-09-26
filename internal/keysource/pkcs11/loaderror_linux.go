@@ -20,55 +20,50 @@ var (
 	reVersion = regexp.MustCompile("^(.+?): version `([^']+)' not found")
 )
 
-// explainLoadFailure turns dlerror's text into what a person can act on,
-// and keeps dlerror's own words beside it (F12 §10: "a Failure with a
-// readable reason, not a crash").
+// classifyLoadFailure reads dlerror's text into a LoadError, or nil for
+// words it does not recognise — which are then passed on as they are (F12
+// §10: "a Failure with a readable reason, not a crash").
 //
-// The reason matters more here than on Windows because of the failure
-// mode Windows does not have: an older vendor module can want an OpenSSL
-// the distribution no longer ships, and the loader says so in its own
-// vocabulary — a soname or a version node — which reads as noise to the
-// person whose card it is. The loader's words are still carried, as data
-// (SPEC §9.3): they are what a vendor's support desk will ask for.
-func explainLoadFailure(module, dlerr string) string {
-	sentence := ""
+// The reason matters more here than on Windows because of the failure mode
+// Windows does not have: an older vendor module can want an OpenSSL the
+// distribution no longer ships, and the loader says so in its own vocabulary
+// — a soname or a version node — which reads as noise to the person whose
+// card it is. The sentence they read is the catalogue's (D-362); the loader's
+// words travel with it.
+func classifyLoadFailure(module, dlerr string) *LoadError {
+	e := &LoadError{Module: module, Loader: dlerr}
 	switch {
 	case reVersion.MatchString(dlerr):
 		m := reVersion.FindStringSubmatch(dlerr)
-		lib, node := filepath.Base(m[1]), m[2]
-		sentence = "it was built against " + node + " of " + lib +
-			", and the copy on this system does not provide it"
-		if isOpenSSL(lib) || strings.HasPrefix(node, "OPENSSL_") {
-			sentence += openSSLHint
-		}
+		e.Kind, e.Name, e.Library = LoadMissingVersion, m[2], filepath.Base(m[1])
+		e.OldOpenSSL = isOpenSSL(e.Library) || strings.HasPrefix(e.Name, "OPENSSL_")
 	case reUndefined.MatchString(dlerr):
-		sym := reUndefined.FindStringSubmatch(dlerr)[1]
-		sentence = "it needs the function " + sym +
-			", which no library on this system provides; it was probably built for a different system"
+		e.Kind, e.Name = LoadMissingFunction, reUndefined.FindStringSubmatch(dlerr)[1]
 	case reCannotOpen.MatchString(dlerr):
 		file := reCannotOpen.FindStringSubmatch(dlerr)[1]
 		if filepath.Clean(file) == filepath.Clean(module) {
-			sentence = "there is no file at this path"
+			e.Kind = LoadNoFile
 		} else {
-			sentence = "it needs " + filepath.Base(file) + ", which is not installed on this system"
-			if isOpenSSL(file) {
-				sentence += openSSLHint
-			}
+			e.Kind, e.Name, e.OldOpenSSL = LoadMissingLibrary, filepath.Base(file), isOpenSSL(file)
 		}
 	case strings.Contains(dlerr, "wrong ELF class: ELFCLASS32"):
-		sentence = "it is a 32-bit library, and this program is 64-bit"
+		e.Kind = LoadWrongClass
 	case strings.Contains(dlerr, "invalid ELF header"), strings.Contains(dlerr, "file too short"):
-		sentence = "it is not a shared library"
+		e.Kind = LoadNotALibrary
+	default:
+		return nil
 	}
-	if sentence == "" {
-		return dlerr
-	}
-	return sentence + " (the system loader said: " + dlerr + ")"
+	return e
 }
 
-// openSSLHint is the one piece of advice the loader's words cannot give:
-// what an old OpenSSL soname means for the person holding the card.
-const openSSLHint = ". That is an older OpenSSL than this distribution ships: the module was built for an older system, and its vendor's build for this one is needed"
+// explainLoadFailure is the English form of the same, for a caller that
+// wants a string.
+func explainLoadFailure(module, dlerr string) string {
+	if e := classifyLoadFailure(module, dlerr); e != nil {
+		return e.Error()
+	}
+	return dlerr
+}
 
 // isOpenSSL reports whether a soname is one of OpenSSL's two libraries,
 // at a version this distribution does not ship. libssl.so.3 and
@@ -93,12 +88,13 @@ func isOpenSSL(file string) bool {
 // to look instead of giving a bare number.
 const loaderExit = 127
 
-// exitHint is appended to a probe child's death. Only the loader's status
-// has a hint: anything else is the module's own crash, and guessing at it
-// would be worse than the number.
-func exitHint(module string, code int) string {
+// exitHint is the LoadError for a probe child's death, when the status
+// says the loader was the reason. Only the loader's status has one: anything
+// else is the module's own crash, and guessing at it would be worse than the
+// number.
+func exitHint(module string, code int) *LoadError {
 	if code != loaderExit {
-		return ""
+		return nil
 	}
-	return "; exit 127 is the system loader stopping the process while loading this module or a library it needs — `ldd " + module + "` shows which"
+	return &LoadError{Kind: LoadLoaderStopped, Module: module}
 }

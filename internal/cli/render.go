@@ -83,7 +83,7 @@ func renderModuleFailures(w io.Writer, failures []ModuleFailure, c *i18n.Catalog
 	}
 	fprintf(w, c.T("certs.module_failures_heading")+"\n", len(failures))
 	for _, f := range failures {
-		fprintf(w, "  %s\n    %s\n", f.Path, f.Reason)
+		fprintf(w, "  %s\n    %s\n", f.Path, moduleFailureReason(f, c))
 	}
 	fprintln(w)
 }
@@ -275,4 +275,38 @@ func tslWarningKey(prov tsl.Provenance, now time.Time) string {
 		return "certs.tsl_stale_warning"
 	}
 	return ""
+}
+
+// moduleFailureReason is the reason a person reads for one module. A module
+// that would not load is told in their language, with the loader's own words
+// beside it untranslated (D-362): the moment something has gone wrong is the
+// worst place to switch language, and the loader's words are what a vendor
+// will ask for. Every other failure's reason is a PKCS#11 code and is shown as
+// it is (SPEC §9.3).
+func moduleFailureReason(f ModuleFailure, c *i18n.Catalogue) string {
+	l := f.Load
+	if l == nil {
+		return f.Reason
+	}
+	key := "certs.module_load." + l.Kind
+	var s string
+	switch l.Kind {
+	case "missing_version":
+		s = fmt.Sprintf(c.T(key), l.Name, l.Library)
+	case "missing_library", "missing_function":
+		s = fmt.Sprintf(c.T(key), l.Name)
+	case "loader_stopped":
+		s = fmt.Sprintf(c.T(key), f.Path)
+	case "not_a_library", "no_file", "wrong_class":
+		s = c.T(key)
+	default:
+		return f.Reason
+	}
+	if l.OldOpenSSL {
+		s += " " + c.T("certs.module_load.old_openssl")
+	}
+	if l.Loader != "" {
+		s += " " + fmt.Sprintf(c.T("certs.module_load.loader_said"), l.Loader)
+	}
+	return s
 }

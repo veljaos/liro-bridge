@@ -112,6 +112,23 @@ type ModuleFailure struct {
 	Path   string
 	Origin string
 	Reason string
+
+	// Load is why the module would not load, when that is known, in terms
+	// the text report can put in the person's language (D-362). Nil for
+	// every other failure, whose Reason is shown as it is. Declared in
+	// neutral terms for Report's reason: this package does not import a
+	// backend to describe what the backend found.
+	Load *ModuleLoadFailure
+}
+
+// ModuleLoadFailure mirrors pkcs11.LoadError: a kind, the library, function
+// or version it concerns, and the loader's own words, verbatim.
+type ModuleLoadFailure struct {
+	Kind       string
+	Name       string
+	Library    string
+	OldOpenSSL bool
+	Loader     string
 }
 
 // ExtraCertificate is a certificate from a source other than the
