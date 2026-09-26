@@ -171,7 +171,7 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		newCfg.TSAClientCertPassword = state.TSAClientCertPassword
 		newCfg.OutputSuffix = state.OutputSuffix
 		newCfg.OutputFolder = strings.TrimSpace(state.OutputFolder)
-		newCfg.ExplorerMenuEnabled = state.ExplorerMenu
+		newCfg.ExplorerMenuEnabled = explorerMenuSetting(runtime.GOOS, cfg.ExplorerMenuEnabled, state.ExplorerMenu)
 		newCfg.DocumentSigningEnabled = state.DocumentSigning
 		newCfg.CertificateListingEnabled = state.CertificateListing
 		newCfg.SignatureLevel = state.SignatureLevel
@@ -258,6 +258,24 @@ func startAtLoginKey(goos string) string {
 	return "settings.start_at_login"
 }
 
+// explorerMenuOffered is whether Settings shows the Explorer-menu row.
+// Only on Windows: F12 §8 refuses a context-menu verb on Linux ("there is
+// no universal context menu"), applyExplorerMenu is a no-op there, and a
+// switch that controls nothing tells a person something false about their
+// machine (open item D5).
+func explorerMenuOffered(goos string) bool { return goos == "windows" }
+
+// explorerMenuSetting is the value Save writes. Where the row is not
+// offered the saved value stands: a hidden checkbox is not a person's
+// answer, and a configuration file carried between machines keeps what
+// was chosen on the one that has an Explorer.
+func explorerMenuSetting(goos string, saved, form bool) bool {
+	if !explorerMenuOffered(goos) {
+		return saved
+	}
+	return form
+}
+
 func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pairing, secrets platform.SecretStoreDescription) map[string]any {
 	return map[string]any{
 		"type": "init",
@@ -315,6 +333,7 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"outputSuffix":          cfg.OutputSuffix,
 			"outputFolder":          cfg.OutputFolder,
 			"explorerMenu":          cfg.ExplorerMenuEnabled,
+			"explorerMenuOffered":   explorerMenuOffered(runtime.GOOS),
 			"documentSigning":       cfg.DocumentSigningEnabled,
 			"certificateListing":    cfg.CertificateListingEnabled,
 			"signatureLevel":        cfg.SignatureLevel,

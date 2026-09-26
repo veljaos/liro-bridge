@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-365, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-366, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -91,7 +91,7 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
-18. **§11.11's Linux sentences, beyond the one state measured.** The MUP card in a reader is measured through `certs` (D-365). Not watched: the window with the new sentence (needs the package installed); a reader with no card, and no reader with SafeSign installed (both predicted `CARD_NOT_PRESENT`; OpenSC's slots with no reader unknown); a stock desktop with no card program (`NO_READER`, a unit test only). — D-365. *Needs:* owner's hands; a clean machine for the last.
+18. **§11.11's Linux sentences, beyond the one state measured.** The MUP card in a reader is measured through `certs` (D-365). Not watched: the window with the new sentence (needs the package installed); a reader with no card, and no reader with SafeSign installed (both predicted `CARD_NOT_PRESENT`; OpenSC's slots with no reader unknown); a stock desktop with no card program (`NO_READER`, a unit test only); and Settings without the Explorer-menu row (D-366). — D-365, D-366. *Needs:* owner's hands; a clean machine for the last.
 
 ## D. Known defects, not fixed
 
@@ -101,7 +101,7 @@ prose of an entry before D-280, outside those words, may be missing.
 2. **No file or folder chooser, no message box, no drag and drop on Linux.** `ChooseFiles`/`ChooseFolder` return `ErrUnsupportedPlatform` and are called from the main window, audit export and the stamp window. — D-330, D-331, D-338. *Needs:* code.
 3. **`lowerLevel` has no caller**: a mixed batch may report a level it did not reach. — session 4 §8; `batchlevel_windows.go`. *Needs:* code, measurement.
 4. **`CERT_REVOKED` has no producer**; the parsed CRL is thrown away. — D-310, D-312. *Needs:* code (and A8).
-5. **The Explorer-menu row in Settings on Linux** controls nothing. — D-338; D-354. *Needs:* code.
+5. *The Explorer-menu row: shown on Windows only; on Linux Save keeps the saved value (D-366). Watching it is C18. Numbering kept.*
 6. **Five of seven example clients use only the Windows discovery path**, and two documents teach it. No guard can see it. — D-345, D-346. *Needs:* code.
 7. **`liro-bridge tray` exits 144 on SIGTERM.** — D-355. *Needs:* measurement.
 8. **`pkcs11-worker` processes linger after a `CERT_NOT_FOUND` job.** Probably D-299's held module. — D-355. *Needs:* measurement.

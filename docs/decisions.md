@@ -37686,3 +37686,34 @@ returned were plainly not about Liro Bridge; counting them then gave all
 The owner's own words: "it was my reading, not yours … nothing reaches the
 person, and the journal records the refusal. Those are different claims and
 I collapsed them into one."
+
+## D-366 — The Explorer-menu row is shown only where there is an Explorer
+
+**Date:** 2026-09-26
+**Phase:** F12; closes open-items D5.
+
+**The defect.** Settings showed "Explorer context menu" on Linux, where it
+controlled nothing: F12 §8 refuses a context-menu verb on Linux, and
+`applyExplorerMenu` is a no-op there ([[D-338]], [[D-354]]). A switch that
+does nothing tells a person something false about their machine — the same
+class of fault as A20, smaller.
+
+**The change.** The settings payload carries `explorerMenuOffered`, true
+only on Windows, and the page hides the row on it (the `[hidden]` rule in
+`intents.css` is `!important`, so `.liro-check`'s `display: flex` cannot
+undo it). **On Save, where the row is not offered, the saved value stands**
+rather than the hidden checkbox's: a control nobody could see is not an
+answer, and a configuration file carried to a Windows machine keeps what
+was chosen there. The row is hidden, not removed from the page — Windows'
+page is unchanged.
+
+**Rejected.** Relabelling the row for Linux ("Open with" is already given by
+the desktop entry's `MimeType`, D-355): it would be a switch for something
+the package does, not the program, and nothing would be left for it to do.
+
+**Test.** `TestTheExplorerMenuRowIsOfferedOnlyWhereThereIsAnExplorer`: the
+row is offered on Windows only, the payload says so on the platform the test
+runs on, and Save keeps the saved value off Windows. Mutation-checked
+(offered everywhere: three failures). **The page's half is not watched**:
+window tests do not run on Linux here or in CI (C5), so the hidden row waits
+for the owner's eyes with the next package — C18.

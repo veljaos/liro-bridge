@@ -101,6 +101,7 @@
     document.getElementById("output-suffix").value = m.outputSuffix || "";
     document.getElementById("output-folder").value = m.outputFolder || "";
     document.getElementById("explorer-menu").checked = !!m.explorerMenu;
+    document.getElementById("explorer-menu-row").hidden = !m.explorerMenuOffered;
     document.getElementById("document-signing").checked = !!m.documentSigning;
     document.getElementById("certificate-listing").checked = !!m.certificateListing;
     document.getElementById("check-updates-daily").checked = !!m.checkUpdatesDaily;
