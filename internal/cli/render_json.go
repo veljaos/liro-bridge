@@ -23,6 +23,11 @@ type jsonReport struct {
 	// Empty on every machine where all of them answered and on every build
 	// with no PKCS#11 path, so the JSON is unchanged where nothing went wrong.
 	ModuleFailures []jsonModuleFailure `json:"moduleFailures,omitempty"`
+
+	// CardServiceDown is true where the smart card service was asked and
+	// did not answer (Linux: pcscd; D-358). Absent otherwise, so the JSON
+	// is unchanged wherever nothing went wrong.
+	CardServiceDown bool `json:"cardServiceDown,omitempty"`
 }
 
 // jsonModuleFailure is one module that could not be read, and why. It is data
@@ -130,6 +135,7 @@ func RenderJSON(w io.Writer, report Report, now time.Time) error {
 		// has to be written out on purpose.
 		out.ModuleFailures = append(out.ModuleFailures, jsonModuleFailure(f))
 	}
+	out.CardServiceDown = report.CardServiceDown
 	age := now.Sub(report.TSL.IssuedAt)
 	out.TrustedList = jsonTSL{
 		Source:   sourceString(report.TSL.Source),

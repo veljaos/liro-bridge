@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-357, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-358, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -61,6 +61,8 @@ prose of an entry before D-280, outside those words, may be missing.
 19. **Stale discovery files under linger, with `XDG_RUNTIME_DIR` unset, and across two users.** — D-325. *Needs:* measurement, owner's hands.
 20. **Is gotk4 v0.3.1 missing an API the remaining UI needs?** — D-327, D-330. *Needs:* code.
 21. **CI fuzz flake rate.** — D-328. *Needs:* CI.
+22. **Is `pcscd.socket` enabled after install on clean Ubuntu, Debian and Fedora?** Predicted yes on all three, Fedora with low confidence. — D-358. *Close:* read `linux-install`'s notices. *Needs:* CI.
+23. **A really stopped `pcscd`, and the window's empty screen saying so.** Measured only with `PCSCLITE_CSOCK_NAME` at a missing socket. — D-358. *Needs:* owner's hands (root).
 
 ## C. Built, and never watched or never run end to end
 
@@ -107,7 +109,7 @@ prose of an entry before D-280, outside those words, may be missing.
 2. **SPEC §12.6's B-LT default** — see A2.
 3. **MUP on Linux needs a direct PC/SC route.** — F11 "Deferred"; SPEC §6.5.1. *Needs:* code, hardware.
 4. **No Linux module for the Pošta card** without SafeSign for Linux. — D-355. *Needs:* hardware.
-5. **`pcscd.socket` left disabled after install** (F12 §9). *Needs:* code or Fedora machine — §9 is next.
+5. *`pcscd.socket` left disabled: the agent now says so with the command (D-358); whether it is left disabled is reported by CI (B22). Numbering kept.*
 6. **An old module failing `dlopen` on a missing OpenSSL symbol becomes a readable `Failure`** (F12 §10). *Needs:* code, measurement — §10.
 7. **The audit record says which backend signed but perhaps not why.** Status uncertain — check D-313's `signerOrigin`. — D-311. *Needs:* code.
 

@@ -437,6 +437,7 @@ func gatherInteractiveCertificates(ctx context.Context) (cli.Report, error) {
 		Store:              store,
 		ExtraCertificates:  softTokenExtraCertificates,
 		ModuleCertificates: pkcs11CertificateProvider(),
+		CardService:        platform.CardServiceCheck(),
 	}
 	return cli.Gather(ctx, deps, time.Now())
 }

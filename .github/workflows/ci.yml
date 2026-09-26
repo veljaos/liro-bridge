@@ -1029,6 +1029,22 @@ jobs:
           /usr/bin/liro-bridge --version
           command -v pcscd >/dev/null || { echo "::error::no pcscd after install"; exit 1; }
 
+      # F12 §9: "pcscd is socket-activated and has historically been left
+      # disabled after install." Whether it is, on a clean image after this
+      # package pulled it in, is read here from the enablement symlink
+      # itself — what systemd reads at boot, and present whether or not a
+      # container runs systemd. Reported, not asserted: D-358 wrote its
+      # predictions down first, and the agent tells a person what to type
+      # either way.
+      - name: is pcscd.socket enabled after install (reported)
+        run: |
+          link=/etc/systemd/system/sockets.target.wants/pcscd.socket
+          if [ -L "$link" ]; then
+            echo "::notice::${{ matrix.image }}: pcscd.socket is enabled after install ($(readlink "$link"))"
+          else
+            echo "::notice::${{ matrix.image }}: pcscd.socket is NOT enabled after install"
+          fi
+
       - name: the desktop entries and the icon are where a desktop looks
         run: |
           set -eu

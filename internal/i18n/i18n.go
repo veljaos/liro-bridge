@@ -76,6 +76,12 @@ func Load(locale string) *Catalogue {
 // the key itself — visible in the UI, which is the point: it must be
 // noticed, not hidden.
 func (c *Catalogue) T(key string) string {
+	// A sentence that is false on this platform is read from the
+	// platform's own key instead (platformKeys, D-358). Here rather than
+	// at each caller, so that no caller can show the other one.
+	if alt, ok := platformKeys[key]; ok {
+		key = alt
+	}
 	if v, ok := c.data[key]; ok {
 		return v
 	}

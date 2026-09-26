@@ -69,6 +69,18 @@ type Deps struct {
 	// The failures are returned rather than logged because F11 §3 asks for a
 	// module that could not be read to be a row in the report, not a silence.
 	ModuleCertificates func(ctx context.Context) ([]ModuleCertificate, []ModuleFailure, error)
+
+	// CardService says whether the service a card reader is reached
+	// through answers, where Readers cannot say so itself: Linux, where
+	// this program does not talk PC/SC and Readers lists nothing (F12 §9,
+	// D-358). Nil where Readers already answers it — on Windows,
+	// SCardEstablishContext is that question.
+	//
+	// Its answer explains an empty list and never empties one. A soft
+	// token or SoftHSM needs no pcscd, and a listing that failed because
+	// pcscd was off would hide certificates that can sign — which is why
+	// it is not folded into Readers, whose failure aborts Gather.
+	CardService func(ctx context.Context) error
 }
 
 // The backend names a row reports, which are keysource.Source.Name()'s values.
@@ -156,6 +168,10 @@ type Report struct {
 	// certificate, and the reason it does not is that a module would not load
 	// (F11 §3).
 	ModuleFailures []ModuleFailure
+
+	// CardServiceDown is Deps.CardService reporting that the smart card
+	// service does not answer. Always false where CardService is nil.
+	CardServiceDown bool
 }
 
 // Hidden reports whether row is hidden from the default (non --all)
@@ -314,7 +330,16 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 		}
 	}
 
-	return Report{Readers: readers, Certificates: rows, TSL: provenance, ModuleFailures: failures}, nil
+	report := Report{Readers: readers, Certificates: rows, TSL: provenance, ModuleFailures: failures}
+	if deps.CardService != nil {
+		if err := deps.CardService(ctx); err != nil {
+			report.CardServiceDown = errors.Is(err, platform.ErrSmartCardServiceDown)
+			if !report.CardServiceDown {
+				slog.Warn("certs: could not tell whether the smart card service is running", "error", err)
+			}
+		}
+	}
+	return report, nil
 }
 
 // readerListingError gives a failed reader listing the code SPEC §7
@@ -342,6 +367,8 @@ func readerListingError(err error) error {
 // least one offered certificate can sign right now, and otherwise the
 // SPEC §7 code for the reason, in the order a person can act on:
 //
+//	SMART_CARD_SERVICE_DOWN  the service every reader is reached
+//	                   through does not answer (Linux: pcscd, D-358)
 //	NO_READER          nothing to put a card into
 //	CARD_NOT_PRESENT   a reader, and no card in it
 //	CERT_NOT_FOUND     a card, and nothing on it this agent can offer
@@ -381,6 +408,11 @@ func (r Report) NothingUsableReason() errs.Code {
 		return reason
 	}
 
+	// Before NO_READER, because it is the reason there is no reader to
+	// see: every module reaches its reader through this service (D-358).
+	if r.CardServiceDown {
+		return errs.CodeSmartCardServiceDown
+	}
 	if len(r.Readers) == 0 {
 		return errs.CodeNoReader
 	}

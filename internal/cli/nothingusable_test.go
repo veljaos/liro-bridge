@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
+	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/classify"
 )
@@ -155,5 +157,52 @@ func TestAStoppedSmartCardServiceIsItsOwnCode(t *testing.T) {
 	_, err = Gather(context.Background(), deps(errors.New("winscard is on fire")), time.Now())
 	if !errors.As(err, &e) || e.Code != errs.CodeInternal {
 		t.Fatalf("an unclassified reader failure produced %v, want code %s", err, errs.CodeInternal)
+	}
+}
+
+// TestAStoppedPCSCDExplainsAnEmptyListAndHidesNothing is F12 §9 on Linux
+// (D-358). pcscd off is the reason no card gives a certificate, and it is
+// never a reason to list nothing: a soft token or SoftHSM needs no pcscd,
+// so the listing goes on and the report carries the reason beside it.
+func TestAStoppedPCSCDExplainsAnEmptyListAndHidesNothing(t *testing.T) {
+	deps := func(serviceErr error) Deps {
+		return Deps{
+			Readers:     func(context.Context) ([]platform.ReaderState, error) { return []platform.ReaderState{}, nil },
+			Enumerate:   func(context.Context) ([]windowscng.Certificate, error) { return nil, nil },
+			Store:       &fakeStore{},
+			CardService: func(context.Context) error { return serviceErr },
+		}
+	}
+
+	report, err := Gather(context.Background(), deps(fmt.Errorf("%w: pcscd does not answer", platform.ErrSmartCardServiceDown)), time.Now())
+	if err != nil {
+		t.Fatalf("a stopped pcscd failed the whole listing: %v", err)
+	}
+	if !report.CardServiceDown {
+		t.Fatal("a stopped pcscd is not in the report")
+	}
+	if got := report.NothingUsableReason(); got != errs.CodeSmartCardServiceDown {
+		t.Errorf("with nothing listed and pcscd stopped, the reason is %s, want %s", got, errs.CodeSmartCardServiceDown)
+	}
+
+	// A usable certificate from somewhere that needs no pcscd is still
+	// something to sign with.
+	report.Certificates = []CertRow{hardwareRow(true, "")}
+	if got := report.NothingUsableReason(); got != "" {
+		t.Errorf("a usable certificate was hidden behind a stopped pcscd: reason %s", got)
+	}
+
+	report, err = Gather(context.Background(), deps(nil), time.Now())
+	if err != nil || report.CardServiceDown {
+		t.Errorf("pcscd answering gave err %v, down %v", err, report.CardServiceDown)
+	}
+	if got := report.NothingUsableReason(); got != errs.CodeNoReader {
+		t.Errorf("pcscd answering and nothing listed gave %s, want %s", got, errs.CodeNoReader)
+	}
+
+	// A check that failed for some other reason is not a stopped service.
+	report, err = Gather(context.Background(), deps(errors.New("something else")), time.Now())
+	if err != nil || report.CardServiceDown {
+		t.Errorf("an unrelated check failure gave err %v, down %v; it must not claim pcscd is off", err, report.CardServiceDown)
 	}
 }

@@ -49,6 +49,11 @@ func fprintln(w io.Writer, a ...any)               { _, _ = fmt.Fprintln(w, a...
 // includes rows that are hidden by default (CertRow.Hidden).
 func RenderText(w io.Writer, report Report, c *i18n.Catalogue, now time.Time, all bool) {
 	renderReaders(w, report.Readers, c)
+	if report.CardServiceDown {
+		// Under the readers line, because it is why that line says what it
+		// says (D-358).
+		fprintln(w, c.T(i18n.CodeKey(errs.CodeSmartCardServiceDown)))
+	}
 	fprintln(w)
 
 	visible := visibleRows(report.Certificates, all)

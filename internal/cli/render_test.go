@@ -101,9 +101,12 @@ func TestRenderTextNoReaderIsCalmNotAnError(t *testing.T) {
 	report := sampleReport()
 	report.Readers = nil
 	var buf bytes.Buffer
-	RenderText(&buf, report, i18n.Load("en"), referenceTime, false)
+	c := i18n.Load("en")
+	RenderText(&buf, report, c, referenceTime, false)
 	out := buf.String()
-	if !strings.Contains(out, "Readers: none attached") {
+	// The catalogue's own sentence rather than a literal: on Linux it is a
+	// different one, because nothing there lists readers (D-358).
+	if !strings.Contains(out, c.T("certs.readers_none")) {
 		t.Fatalf("expected the calm no-reader message, got: %s", out)
 	}
 	if strings.Contains(strings.ToLower(out), "error") {

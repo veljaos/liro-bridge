@@ -257,6 +257,7 @@ func runCerts(args []string, out io.Writer, locale string) int {
 		Store:              store,
 		ExtraCertificates:  softTokenExtraCertificates,
 		ModuleCertificates: pkcs11CertificateProvider(),
+		CardService:        platform.CardServiceCheck(),
 	}
 	return cli.RunCerts(context.Background(), args, out, locale, deps)
 }

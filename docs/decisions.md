@@ -36908,3 +36908,131 @@ rebuilt and installed, which is the owner's hands (no sudo here), and it
 belongs with the real-card run. SPEC §6.5.2 is still silent on when the
 notification is withdrawn; D-341 is the rule the code now keeps, and
 whether SPEC should say it is the owner's.
+
+## D-358 — F12 §9: a stopped pcscd is told to the person with the command that starts it, and Linux stops saying things about readers it never looked at
+
+**Date:** 2026-09-26
+**Phase:** F12 §9.
+
+### What §9 asked, and what was already true
+
+F12 §9: `pcscd` declared as a dependency (done in [[D-354]]); two support
+questions built in — `pcscd` "socket-activated and historically left
+disabled after install", and "readers that need a driver outside the generic
+CCID one"; and whether this program talks PC/SC directly — "probably not".
+
+**This VM cannot show the absent-or-disabled case, and never could this
+week.** `pcscd`, `libccid` and `opensc` have been installed since session 5,
+and `pcscd.socket` is enabled (the symlink dates from 2026-09-22) and
+listening. I told the owner this morning that installing SafeSign would end
+that case; it had already ended. Stopping the socket needs root — the
+owner's hands, below.
+
+### The decision: no PC/SC in this program, and one question it can ask without it
+
+**Linking pcsc-lite was the obvious build and is ruled out by SPEC §1.1**,
+which allows dynamic linkage "for the webview and the PKCS#11 module loader,
+and for nothing else" — and `internal/platform` is one of the packages CI
+proves builds with `CGO_ENABLED=0`. I had started writing it before reading
+that; nothing was committed.
+
+**What the program can ask without PC/SC is the question pcsc-lite itself
+asks first**: does `pcscd` answer on its socket. `platform.CardServiceCheck`
+connects to `$PCSCLITE_CSOCK_NAME`, else `/run/pcscd/pcscd.comm` — both read
+out of `libpcsclite.so.1` — and closes the connection without a word. Pure
+Go, no cgo.
+
+**Measured against the real library**, with a ten-line C client printing
+`SCardEstablishContext`'s own return code (scratch only):
+
+| state | pcsc-lite | `CardServiceCheck` |
+|---|---|---|
+| pcscd listening (variable unset) | `0x00000000`, then `SCardListReaders` `0x8010002E` (no reader) | up |
+| no socket file | `0x8010001D` Service not available | down |
+| a socket file nothing listens on | `0x8010001D` | down |
+| **`PCSCLITE_CSOCK_NAME` set and empty** | **`0x8010001D`** | **up, at first — fixed** |
+
+The last row is a measurement that changed the code: pcsc-lite takes an
+empty variable as an empty path, not as its default. My first version fell
+back to the default and would have said "running" to a person whose module
+was being told otherwise. It now follows `os.LookupEnv`, and the test has
+the case. **The instrument that failed first**: `opensc-tool -l` prints "No
+smart card readers found" in all three states, hiding the error; and my own
+loop set the variable to empty for the "real pcscd" row, which is how the
+fourth row was found.
+
+Connecting activates `pcscd` (it exits ~60 s later), which is what the
+module does a moment after anyway; `pcscd` logs nothing about the empty
+client.
+
+### It explains an empty list; it never empties one
+
+**Not folded into `Readers`**, whose failure aborts `Gather` — that is the
+Windows semantics, where `SCardEstablishContext` is the reader listing. On
+Linux a SoftHSM token or the soft token needs no `pcscd`, and a listing that
+failed because `pcscd` was off would hide certificates that can sign; every
+CI container is in that state. So `cli.Deps.CardService` is separate and
+optional (nil off Linux), `Report.CardServiceDown` carries the answer, and
+`NothingUsableReason` returns `SMART_CARD_SERVICE_DOWN` **only when nothing
+offered is usable**, before `NO_READER`. `certs` prints the sentence under
+the readers line; `--json` gains `cardServiceDown`, absent unless true.
+
+### Three sentences that were false on Linux
+
+Linux's `SmartCardService` is a stub that always lists no readers, so on
+Linux:
+
+- `NO_READER` said **"No card reader detected"** whenever no certificate
+  was usable, reader plugged in or not — nothing had looked;
+- `certs` said **"Readers: none attached"**, likewise;
+- `SMART_CARD_SERVICE_DOWN`, now reachable, said **"The Windows Smart Card
+  service is not running … restart the computer."**
+
+`Catalogue.T` now reads a platform's own key where one exists
+(`platformkeys_linux.go`, three entries). Error codes are unchanged — no
+protocol change — only the sentence a person reads. The Linux `NO_READER`
+sentence carries §9's second support question: *some readers need their
+manufacturer's driver for Linux; the generic one covers most USB readers.*
+**The Serbian texts are mine and are for the owner's review.** One test
+(`TestRenderTextNoReaderIsCalmNotAnError`) held the English Windows sentence
+as a literal and ran on Linux in CI; it now compares against the
+catalogue's own sentence and keeps both its properties.
+
+### Measured on the program
+
+`liro-bridge certs`, built from this tree: pcscd answering → no service
+line, no `cardServiceDown`; `PCSCLITE_CSOCK_NAME` at a missing socket → the
+Linux sentence with `sudo systemctl enable --now pcscd.socket`, and
+`"cardServiceDown": true`. Tests: four real-socket states in
+`internal/platform`; `Gather` with the service down lists on, a usable row
+is not hidden, an unrelated check failure does not claim pcscd is off —
+mutation-checked (without the branch, "reason is NO_READER, want
+SMART_CARD_SERVICE_DOWN").
+
+### Is pcscd.socket left disabled after install? Predictions, before CI answers
+
+`linux-install` now reports the enablement symlink on each clean image
+after the package pulls `pcscd` in (a `::notice::`, not a gate).
+
+- **ubuntu:24.04, debian:trixie: enabled.** Here the symlink exists, no
+  systemd preset file mentions pcscd, so the package's own maintainer
+  script made it.
+- **fedora:44: enabled**, from Fedora's presets through `%systemd_post` —
+  low confidence; I have not read Fedora's preset file.
+
+If any is wrong, the question becomes whether this package's `postinst`
+should enable the socket — which Debian policy discourages for another
+package's unit — and the owner's.
+
+### Not done, or not watched
+
+- **A real stopped `pcscd`** (`sudo systemctl stop pcscd.socket
+  pcscd.service`), and the window's "nothing to sign with" screen showing
+  it — owner's hands; a socket path in an environment variable is what the
+  library reads, not what systemd does.
+- **Reader listing on Linux does not exist** and is not built: SPEC §1.1.
+  The window's `NO_READER`/`CARD_NOT_PRESENT` distinction is therefore
+  unavailable on Linux; only "no certificate from a card" is known.
+- **§9's driver question is a sentence, not a detector.** A USB interface's
+  class could be read from sysfs (CCID is `0x0b`) without PC/SC; not built,
+  because a vendor-class reader is not thereby a reader.
