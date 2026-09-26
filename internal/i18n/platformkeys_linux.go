@@ -8,12 +8,15 @@ package i18n
 //
 //   - SMART_CARD_SERVICE_DOWN is pcscd, and the remedy is a command, not
 //     a restart of Windows' service.
-//   - NO_READER cannot say "no card reader detected", and `certs` cannot
-//     say "none attached", because nothing on Linux lists readers: this
-//     program does not talk PC/SC (F12 §9, SPEC §1.1), so the list is
-//     always empty. What is known is that no card gave a certificate, and
-//     F12 §9's second support question — a reader that needs its maker's
-//     driver — belongs in the same sentence.
+//   - NO_READER's Linux sentence begins with the reader, by the owner's
+//     ruling (D-361): a sentence about a certificate on a card says
+//     something about a card that may not be in the machine. **Its limit,
+//     recorded rather than hidden:** nothing on Linux lists readers — this
+//     program does not talk PC/SC (F12 §9, SPEC §1.1) — so "no reader was
+//     found" is reached whenever pcscd answers and no card gave a usable
+//     certificate, reader attached or not. It carries F12 §9's second
+//     support question, a reader that needs its maker's driver.
+//   - `certs` cannot say "none attached", for the same reason.
 var platformKeys = map[string]string{
 	"error.smart_card_service_down": "error.smart_card_service_down_linux",
 	"error.no_reader":               "error.no_reader_linux",

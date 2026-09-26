@@ -37221,3 +37221,91 @@ refusal it was built to make.
 
 The four commits before this entry were pushed from this machine at about
 12:46; I did not run that push, and noted it rather than assumed it.
+
+## D-361 — The first signature on Linux with a real card in a real reader: the Pošta card through SafeSign, approved and PIN-typed in this program's own windows, verified twice; and the notification watched coming down at approval
+
+**Date:** 2026-09-26
+**Phase:** F12 exit condition, Ubuntu half.
+
+### What ran
+
+- **Machine:** this VM (Ubuntu 24.04, kernel 7.0), with the owner's **real
+  reader passed through by VirtualBox's USB** — `0bda:0165 Realtek Smart
+  Card Reader Interface`, on the **generic CCID driver**: no vendor driver
+  needed. The Pošta card in it, ATR
+  `3b:db:18:ff:81:91:fe:1f:c3:06:09:2b:06:01:04:01:e9:10:05:04:d0`. **The OS
+  is a VM, the reader and card are hardware** (F12 §0.1) — no GPU, no stock
+  kernel.
+- **Agent:** the installed `0.9.9-dev.5` (commit `7f7c078`), `liro-bridge
+  tray`. **Module:** SafeSign 4.6 at `/usr/lib/libaetpkss.so`, discovered
+  once ([[D-360]]'s fix, measured before the card went in).
+- **`certs`**, 6.2 s: one certificate offered — signing, qualified on QSCD,
+  Pošta Srbije CA 1, 2025-10-08 to 2030-10-08, usable, thumbprint
+  `…5BA2AA54` — and a second, hidden (the card's other certificate). Both
+  only through SafeSign; OpenSC sees neither.
+- **Request:** `sdk/examples/sign.py ugovor.pdf` (a copy of
+  `testdata/pdfs/blank.pdf`). The first pairing expired: `PairingCodeTTL` is
+  five minutes and the digits did not reach me in time; the window closed
+  by design, and a second request paired. Job accepted 13:14:51; the client
+  saw `awaiting_consent` → `awaiting_pin` (about 30 s) → `signing 1/1` →
+  `saved ugovor-signed.pdf at B-B`; the job finished 13:15:27, `signed 1,
+  failed 0`. The agent lived.
+
+### Verified twice, each with controls that fail
+
+| | the signed file | control |
+|---|---|---|
+| `scripts/verifypdf` (SPEC §16.4) | `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`, **`SignerChainTrusted`** all true — signer Savka Odžić, Pošta Srbije CA 1, serial `54849CDCD4415E3BCA` | one byte flipped at offset 100: `ByteRangeDigestOK false`, exit 1 |
+| OpenSSL `cms -verify` over the `/ByteRange` span | `CMS Verification successful` | one byte of the content changed: `content verify error`; a certificate that did not sign: `signer certificate not found` |
+
+The chain is trusted against the embedded Trusted List (sequence 36). The
+signature is B-B: the issuer certificate's AIA is `ldap://`, the fetch
+failed as it must with no LDAP client — open item A2's B-LT question,
+unchanged.
+
+**The stamp**: a widget at `[393 782 583 830]` — top right, 190 × 48 pt —
+with the logo and three lines drawn in an embedded font subset. The second
+line's glyph pattern (eleven glyphs, a space, the same glyph second and
+fifth) is consistent with "SAVKA ODŽIĆ"; I read the pattern, not the name,
+and the owner can confirm it by opening the file.
+
+### What the owner watched
+
+- **The notification came down when the owner approved** — [[D-357]]'s fix,
+  seen on a desktop with a real card. It was built-but-unseen.
+- **The PIN went into this program's GTK dialog, and no SafeSign window
+  appeared at any point.** SafeSign ships a dialog library
+  (`libaetdlglib`), and a vendor PIN window this program did not open is
+  exactly what §6.5.1 exists to prevent; the owner had asked that one be
+  treated as a finding and stopped on. None appeared — on this path, with
+  this module, with `C_Login` given the PIN.
+- **The method screen had no "place by dragging" option.** That is
+  [[D-267]] on Linux: a protocol batch's inputs are built with no path
+  (`protocolserver.go:128`), the shared predicate `canPlaceByLooking` is
+  false, and `methodsOffered` returns corners and none only — absent, not
+  disabled. **Confirmed in the code, and watched for the first time on
+  Linux; its test (`stampmethodoffer_windows_test.go`) runs only on
+  Windows** — open item C11's shape.
+
+### The no-reader sentence
+
+The owner ruled on [[D-358]]'s Linux `NO_READER` wording: it begins with
+the reader — "Nijedan čitač kartica nije pronađen. Proverite da li je čitač
+priključen i kartica ubačena." — because a sentence about a certificate on a
+card says something about a card that may not be in the machine. I had
+pointed out the other edge: nothing on Linux lists readers, so this
+sentence is reached whenever pcscd answers and no card gave a usable
+certificate, reader attached or not. **The owner weighed both and chose;
+the limit is recorded in `platformkeys_linux.go`.** English follows the
+same shape.
+
+### Left behind, and removed
+
+Removed: today's test pairing — the keyring item (a fresh search for
+`application=liro-bridge` finds 0; the first count after deletion said 1,
+from the library's cached item list, and was the instrument) and
+`pairings.json`; the client's log, which held the pairing's secret
+(`sign.py` prints it), shredded. The agent is stopped. **Left
+deliberately:** SafeSign installed, `liro-bridge 0.9.9~dev.5` installed,
+`pcscd.socket` running; `~/.config/liro/config.json`, which the run wrote at
+13:15 — open item A12's behaviour, not examined here.

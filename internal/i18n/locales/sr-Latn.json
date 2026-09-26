@@ -110,7 +110,7 @@
   "error.job_in_progress": "Ova aplikacija već ima posao potpisivanja u toku. Sačekajte da se završi.",
   "error.job_not_found": "Taj posao potpisivanja više nije dostupan. Njegov rezultat je već preuzet ili je istekao.",
   "error.no_reader": "Čitač kartica nije pronađen. Priključite čitač i pokušajte ponovo.",
-  "error.no_reader_linux": "Na kartici nije pronađen nijedan sertifikat. Proverite da li je čitač priključen i kartica ubačena. Neki čitači na Linux-u traže upravljački program proizvođača; opšti pokriva većinu USB čitača.",
+  "error.no_reader_linux": "Nijedan čitač kartica nije pronađen. Proverite da li je čitač priključen i kartica ubačena. Neki čitači na Linux-u traže upravljački program proizvođača; opšti pokriva većinu USB čitača.",
   "error.not_paired": "Ova aplikacija nije uparena sa Liro Bridge-om.",
   "error.output_exists": "Datoteka sa tim imenom već postoji, pa ništa nije prepisano.",
   "error.output_in_use": "Potpisani dokument nije mogao da zameni postojeću datoteku jer je ta datoteka otvorena u drugom programu. Zatvorite je i pokušajte ponovo.",

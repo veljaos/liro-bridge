@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-360, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-361, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -36,7 +36,12 @@ prose of an entry before D-280, outside those words, may be missing.
 13. **A deadline on `uiThread.do`'s wait (Windows).** — D-207, D-099. *Needs:* owner's decision, then code.
 14. **Should the audit log travel with ordinary backups?** Decided by implication. — D-340. *Needs:* owner's decision.
 15. **Publishing the package-signing fingerprint somewhere other than the repository's own host.** — session 6 §E; D-356. *Needs:* owner's decision.
-16. **The `package-signing` environment exists only in `release.yml`.** Ruled and wired (D-360); the owner creates it, with the `v*` rule, puts the two package secrets there and deletes them from `release`. *Needs:* owner's hands.
+16. **The `package-signing` environment exists only in `release.yml`.** Ruled and wired (D-360); until it exists a tag's `sign-linux` refuses with "LIRO_PACKAGE_SIGNING_KEY is not set", which is the right failure. The owner does it in one sitting on Windows. *Needs:* owner's hands. The steps:
+    1. GitHub → Settings → Environments → **New environment** `package-signing`. Deployment branches and tags → **Selected** → add the tag rule `v*` (the same rule as `release`).
+    2. On Windows, from the offline backup: `gpg --armor --export-secret-keys 39DE792A503C4F4E26DF1E4586FA14F600AA59B3 > secret.asc`, then base64 it on one line (`certutil -encodehex -f secret.asc secret.b64 0x40000001`, or PowerShell `[Convert]::ToBase64String([IO.File]::ReadAllBytes("secret.asc")) > secret.b64`).
+    3. In `package-signing`, add `LIRO_PACKAGE_SIGNING_KEY` (the contents of `secret.b64`) and `LIRO_PACKAGE_SIGNING_PASSPHRASE`. GitHub cannot move a secret or show one, so both are entered again.
+    4. Delete `secret.asc` and `secret.b64`.
+    5. In `release`, delete `LIRO_PACKAGE_SIGNING_KEY` and `LIRO_PACKAGE_SIGNING_PASSPHRASE`.
 17. **A module's load-failure sentence is English in every locale.** Module reasons are data under SPEC §9.3; D-359's sentences are for a person. — D-359. *Close:* translate by category, or accept. *Needs:* owner's decision.
 18. **Nothing records what a person was shown when nothing could be signed.** SPEC §6.7 records what was signed and refused; the reason on the empty screen reaches no log and no audit entry, so the only record is whoever was looking. — D-360. *Needs:* owner's decision (what SPEC §6.7 should cover), then code.
 
@@ -79,10 +84,10 @@ prose of an entry before D-280, outside those words, may be missing.
 11. **The ported sign flow has only `*_windows_test.go` tests.** — D-338. *Needs:* code.
 12. **Demo A to a written PDF; demo B to the end**, and the README table. — handover-next-session §2; D-265. *Needs:* owner's hands.
 13. **`Sign.java` and `sign.php` never executed.** — sdk/examples README. *Needs:* a JDK and PHP.
-14. **The stamp with a real card's name through the Linux flow.** — D-339. *Needs:* hardware.
+14. **The stamp with a real card's name through the Linux flow.** A stamp is on D-361's signed file and its glyph pattern fits the holder's name; nobody has looked at it. — D-339, D-361. *Close:* the owner opens the file. *Needs:* owner's eyes.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
-17. **The notification coming down at approval, on a desktop.** Tested through the answering paths, never seen. — D-357. *Close:* with the rebuilt package, at the real-card run. *Needs:* owner's hands.
+17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
 
 ## D. Known defects, not fixed
 
@@ -108,7 +113,7 @@ prose of an entry before D-280, outside those words, may be missing.
 1. *Package signing: built in D-356; its first real run is C16. Numbering kept, because F1 cites E3 and E4.*
 2. **SPEC §12.6's B-LT default** — see A2.
 3. **MUP on Linux needs a direct PC/SC route.** — F11 "Deferred"; SPEC §6.5.1. *Needs:* code, hardware.
-4. **The Pošta card through SafeSign on Linux**: SafeSign installed and discovered (D-360); the card has not been read. — D-355. *Needs:* hardware.
+4. *The Pošta card through SafeSign on Linux: signed and verified (D-361). Numbering kept.*
 5. *`pcscd.socket` left disabled: the agent now says so with the command (D-358); whether it is left disabled is reported by CI (B22). Numbering kept.*
 6. *Load failures as readable `Failure`s: built and measured with compiled fixtures (D-359). Numbering kept.*
 7. **The audit record says which backend signed but perhaps not why.** Status uncertain — check D-313's `signerOrigin`. — D-311. *Needs:* code.
@@ -118,7 +123,7 @@ prose of an entry before D-280, outside those words, may be missing.
 The boxes in `docs/phases/F12.md` are all unticked, including the done ones;
 the checklist wants updating against D-354 and D-355.
 
-1. **A real card on Ubuntu 24.04 and on Fedora 44**: install, approve, sign, verified twice. D-355 signed with SoftHSM on the VM only. *Needs:* hardware, Fedora machine (and E3, E4).
+1. **A real card on Fedora 44.** The Ubuntu half is done on this VM with the real reader passed through (D-361) — the OS a VM, the reader and card hardware. *Needs:* Fedora machine (and E3 for a MUP card).
 2. **The soft token signs on both distributions in CI.** `linux-install` checks loading, `--version`, entries and remove/purge — not a signature. *Needs:* CI.
 3. **Which findings came from a VM, stated — the F12 report.** No `docs/f12-report.md` yet. *Needs:* a document.
 4. **A module that kills its worker becomes a `Failure`, with the real module** — C9.

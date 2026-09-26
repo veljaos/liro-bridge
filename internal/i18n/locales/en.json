@@ -110,7 +110,7 @@
   "error.job_in_progress": "This application already has a signing job running. Wait for it to finish.",
   "error.job_not_found": "That signing job is no longer available. Its result has already been collected, or it expired.",
   "error.no_reader": "No card reader detected. Connect the reader and try again.",
-  "error.no_reader_linux": "No certificate was found on a card. Check that the reader is connected and the card is inserted. Some readers need their manufacturer's driver for Linux; the generic one covers most USB readers.",
+  "error.no_reader_linux": "No card reader was found. Check that the reader is connected and the card is inserted. Some readers need their manufacturer's driver for Linux; the generic one covers most USB readers.",
   "error.not_paired": "This application is not paired with Liro Bridge.",
   "error.output_exists": "A file with that name already exists, so nothing was overwritten.",
   "error.output_in_use": "The signed document could not replace the existing file because that file is open in another program. Close it and try again.",
