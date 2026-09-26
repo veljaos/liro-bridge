@@ -37717,3 +37717,47 @@ runs on, and Save keeps the saved value off Windows. Mutation-checked
 (offered everywhere: three failures). **The page's half is not watched**:
 window tests do not run on Linux here or in CI (C5), so the hidden row waits
 for the owner's eyes with the next package — C18.
+
+## D-367 — The audit lock excludes across two processes on Linux, at the real directory and in a test that now runs there
+
+**Date:** 2026-09-26
+**Phase:** F12 §7; closes open-items B18.
+
+**What was open.** F12 §7 corrected itself: the `flock` path had run in CI
+since F9b. What was new was the directory — `$XDG_DATA_HOME/liro/audit`
+([[D-340]]) — and "confirming the lock still excludes across two processes
+once it has". **Reading the tests before measuring found the premise
+thinner than stated**: `internal/platform`'s flock tests contend two file
+descriptors *inside one process*, and the only cross-process audit tests
+were `crossprocess_windows_test.go`. On Linux the lock had never crossed a
+process boundary under test.
+
+**Tests.** The two properties that hold on every platform move to
+`crossprocess_test.go`, with the re-executed helper process they share: a
+second process holding the log stops this one extending it (the append opens
+a new chain with `BreakUnguarded`, the held chain untouched), and a holder
+**killed** while holding does not strand the log — flock goes with the
+dying process's file description, and the next append continues the same
+chain. The forked-chain test stays Windows-only: it rests on
+`WAIT_ABANDONED`, which flock does not have. Both pass on Linux, the first
+time either has run there. Mutation: `Lock` without the `flock` call — "the
+entry went into the chain the other process was holding".
+
+**At the real directory** (ext4, `/dev/sda2`; the agent not running;
+predictions written first). The contender was this program's own
+`platform.DirLock`, in a throwaway binary built from inside the module and
+deleted; the holder was an independent implementation, util-linux
+`flock(1)`:
+
+| | predicted | measured |
+|---|---|---|
+| M1 `flock(1)` holds `.lock`; `DirLock.Lock(300 ms)` in a child | times out | `ErrDirLockTimeout` |
+| M2 nothing holds | taken at once | taken |
+| M3 `DirLock` holds; `flock -n` | exit 1 | exit 1 |
+| M4 the audit log, the lock file | unchanged | sha256 `bebb3f79…` before and after; `.lock` 0 bytes, same inode |
+
+**Nothing was appended to the owner's audit log**; the measurement touched
+only the zero-byte `.lock` beside it. **One instrument note:** the line I
+printed as the holder's PID was the shell's, and the shell had exec'd the
+probe — the holder was `flock(1)`, its parent. M2 is what shows M1's
+timeout was the hold and not something else.

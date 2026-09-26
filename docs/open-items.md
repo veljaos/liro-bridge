@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-366, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-367, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -67,7 +67,7 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **`dnf install ./file.rpm` on a Fedora desktop needs nothing else typed** (SPEC §1.1). The Ubuntu half is closed by the owner's own install. — D-287. *Needs:* Fedora machine.
 16. **WebKit's SIGUSR1 against the Go runtime under load.** — D-326, D-327; session 4 §7. *Needs:* another machine.
 17. **CI's cache behaviour is reasoned, not measured.** — D-335; session 4 §10.5. *Close:* read step timings. *Needs:* CI.
-18. **The audit `flock` across two processes at `$XDG_DATA_HOME`.** — F12 §7; D-340. *Needs:* measurement.
+18. *The audit `flock` across two processes: excludes at the real directory, and a cross-process test now runs on Linux (D-367). Numbering kept.*
 19. **Stale discovery files under linger, with `XDG_RUNTIME_DIR` unset, and across two users.** — D-325. *Needs:* measurement, owner's hands.
 20. **Is gotk4 v0.3.1 missing an API the remaining UI needs?** — D-327, D-330. *Needs:* code.
 21. **CI fuzz flake rate.** — D-328. *Needs:* CI.
