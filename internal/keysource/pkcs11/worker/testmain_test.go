@@ -29,6 +29,8 @@ const cannedPrefix = "liro-worker-test-canned://"
 // cannedAnswers is what a test tells its own child to answer with.
 type cannedAnswers struct {
 	Label string `json:"label"`
+	// Slots is what the canned module says about its readers and cards.
+	Slots *SlotCounts `json:"slots,omitempty"`
 	// DieOnRequest, when positive, makes the child exit instead of answering
 	// that request, counting from one. Zero means it never dies.
 	//
@@ -210,9 +212,9 @@ func (c *cannedHandler) Enumerate(context.Context) ([]CertificatePayload, error)
 	return []CertificatePayload{{DER: []byte{0x30, 0x01}, Label: c.answers.Label}}, nil
 }
 
-func (c *cannedHandler) List(context.Context) ([]CertificatePayload, error) {
+func (c *cannedHandler) List(context.Context) ([]CertificatePayload, *SlotCounts, error) {
 	c.count()
-	return []CertificatePayload{{DER: []byte{0x30, 0x02}}}, nil
+	return []CertificatePayload{{DER: []byte{0x30, 0x02}}}, c.answers.Slots, nil
 }
 
 func (c *cannedHandler) ChainFor(_ context.Context, tp string) ([][]byte, error) {

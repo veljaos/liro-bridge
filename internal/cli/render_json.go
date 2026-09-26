@@ -28,6 +28,18 @@ type jsonReport struct {
 	// did not answer (Linux: pcscd; D-358). Absent otherwise, so the JSON
 	// is unchanged wherever nothing went wrong.
 	CardServiceDown bool `json:"cardServiceDown,omitempty"`
+
+	// Cards is what the PKCS#11 modules said about card readers and the cards
+	// in them, summed (CardSlots; open item A20). Absent where no module
+	// described its slots, which is every platform but Linux. Counts, never
+	// names: summed across modules, they mean "none" or "some".
+	Cards *jsonCards `json:"cards,omitempty"`
+}
+
+type jsonCards struct {
+	ReaderSlots       int `json:"readerSlots"`
+	CardsPresent      int `json:"cardsPresent"`
+	CardsUnrecognised int `json:"cardsUnrecognised"`
 }
 
 // jsonModuleFailure is one module that could not be read, and why. It is data
@@ -132,6 +144,9 @@ func RenderJSON(w io.Writer, report Report, now time.Time) error {
 		out.ModuleFailures = append(out.ModuleFailures, jsonModuleFailure{Path: f.Path, Origin: f.Origin, Reason: f.Reason})
 	}
 	out.CardServiceDown = report.CardServiceDown
+	if c := report.Cards; c != nil {
+		out.Cards = &jsonCards{ReaderSlots: c.ReaderSlots, CardsPresent: c.CardsPresent, CardsUnrecognised: c.CardsUnrecognised}
+	}
 	age := now.Sub(report.TSL.IssuedAt)
 	out.TrustedList = jsonTSL{
 		Source:   sourceString(report.TSL.Source),

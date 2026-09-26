@@ -49,8 +49,8 @@ func collapseDeps(t *testing.T, cngCerts []windowscng.Certificate, moduleCerts [
 		},
 		Enumerate: func(context.Context) ([]windowscng.Certificate, error) { return cngCerts, nil },
 		Store:     store,
-		ModuleCertificates: func(context.Context) ([]ModuleCertificate, []ModuleFailure, error) {
-			return moduleCerts, moduleFailures, nil
+		ModuleCertificates: func(context.Context) (ModuleListing, error) {
+			return ModuleListing{Certificates: moduleCerts, Failures: moduleFailures}, nil
 		},
 	}
 }

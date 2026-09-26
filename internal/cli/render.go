@@ -58,6 +58,11 @@ func RenderText(w io.Writer, report Report, c *i18n.Catalogue, now time.Time, al
 
 	visible := visibleRows(report.Certificates, all)
 	fprintf(w, c.T("certs.certificates_heading")+"\n", len(visible))
+	if explainsEmptyList && len(visibleRows(report.Certificates, false)) == 0 {
+		if reason := report.NothingUsableReason(); reason != "" {
+			fprintln(w, c.T(NothingUsableKey(reason)))
+		}
+	}
 	fprintln(w)
 	for i, row := range visible {
 		renderRow(w, i+1, row, c)

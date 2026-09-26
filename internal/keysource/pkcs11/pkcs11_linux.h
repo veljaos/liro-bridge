@@ -22,6 +22,7 @@ CK_RV liro_initialize(CK_FUNCTION_LIST_PTR l, CK_BBOOL os_locking);
 CK_RV liro_finalize(CK_FUNCTION_LIST_PTR l);
 CK_RV liro_get_info(CK_FUNCTION_LIST_PTR l, CK_INFO *i);
 CK_RV liro_get_slot_list(CK_FUNCTION_LIST_PTR l, CK_BBOOL present, CK_SLOT_ID *ids, CK_ULONG *n);
+CK_RV liro_get_slot_flags(CK_FUNCTION_LIST_PTR l, CK_SLOT_ID s, CK_FLAGS *flags);
 CK_RV liro_get_token_info(CK_FUNCTION_LIST_PTR l, CK_SLOT_ID s, CK_TOKEN_INFO *t);
 CK_RV liro_get_mechanism_list(CK_FUNCTION_LIST_PTR l, CK_SLOT_ID s, CK_MECHANISM_TYPE *m, CK_ULONG *n);
 CK_RV liro_open_session(CK_FUNCTION_LIST_PTR l, CK_SLOT_ID s, CK_SESSION_HANDLE *h);

@@ -203,6 +203,13 @@ type Response struct {
 	Certificates []CertificatePayload `json:"certificates,omitempty"`
 	Chain        [][]byte             `json:"chain,omitempty"`
 
+	// Slots is the module's count of card readers and cards, on the answer to
+	// OpList, where the platform has one (Linux; see pkcs11.SlotSurvey). It
+	// rides on the listing rather than on an Op of its own because every Op
+	// widens what a release binary can be asked to do, and this is the same
+	// reading at the same moment.
+	Slots *SlotCounts `json:"slots,omitempty"`
+
 	// Login is present only on the mid-exchange answer to OpLogin, and its
 	// presence is the child saying it has a session open and is waiting to read
 	// a PIN. See LoginNeeds.
@@ -215,6 +222,14 @@ type Response struct {
 
 	// Signature is what C_Sign produced, for OpSignDigest.
 	Signature []byte `json:"signature,omitempty"`
+}
+
+// SlotCounts is pkcs11.SlotSurvey on the wire: three numbers, and no reader's
+// name or token's label.
+type SlotCounts struct {
+	ReaderSlots       int `json:"readerSlots"`
+	CardsPresent      int `json:"cardsPresent"`
+	CardsUnrecognised int `json:"cardsUnrecognised"`
 }
 
 // maxFrame bounds what a single frame may claim to be.

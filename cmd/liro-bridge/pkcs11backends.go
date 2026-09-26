@@ -180,12 +180,21 @@ func (w *logWriter) Write(p []byte) (int, error) {
 // keeps the error because cli.Deps' other providers have one and a provider
 // that could never fail is worth saying so about rather than being the odd one
 // out silently.
-func moduleCertificates(ctx context.Context) ([]cli.ModuleCertificate, []cli.ModuleFailure, error) {
+func moduleCertificates(ctx context.Context) (cli.ModuleListing, error) {
 	sources, discovery := modules.ensure(slog.Default())
 	listings, listing := worker.ListAll(ctx, sources)
 
 	var out []cli.ModuleCertificate
+	var cards *cli.CardSlots
 	for _, l := range listings {
+		if l.Slots != nil {
+			if cards == nil {
+				cards = &cli.CardSlots{}
+			}
+			cards.ReaderSlots += l.Slots.ReaderSlots
+			cards.CardsPresent += l.Slots.CardsPresent
+			cards.CardsUnrecognised += l.Slots.CardsUnrecognised
+		}
 		for _, c := range l.Certificates {
 			out = append(out, cli.ModuleCertificate{
 				Thumbprint: string(c.Thumbprint),
@@ -206,7 +215,7 @@ func moduleCertificates(ctx context.Context) ([]cli.ModuleCertificate, []cli.Mod
 	for _, f := range listing {
 		failures = append(failures, asModuleFailure(f))
 	}
-	return out, failures, nil
+	return cli.ModuleListing{Certificates: out, Failures: failures, Cards: cards}, nil
 }
 
 func asModuleFailure(f pkcs11.Failure) cli.ModuleFailure {

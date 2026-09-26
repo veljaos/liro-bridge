@@ -126,12 +126,12 @@ func ListAll(ctx context.Context, sources []Source) ([]Listing, []pkcs11.Failure
 		if err := ctx.Err(); err != nil {
 			return listings, failures
 		}
-		found, err := s.List(ctx)
+		found, slots, err := s.ListWithSlots(ctx)
 		if err != nil {
 			failures = append(failures, s.Failure(err))
 			continue
 		}
-		listings = append(listings, Listing{Source: s, Certificates: found})
+		listings = append(listings, Listing{Source: s, Certificates: found, Slots: slots})
 	}
 	return listings, failures
 }
@@ -151,6 +151,9 @@ func ListAll(ctx context.Context, sources []Source) ([]Listing, []pkcs11.Failure
 type Listing struct {
 	Source       Source
 	Certificates []keysource.Certificate
+	// Slots is the module's count of readers and cards, nil where it gave
+	// none (every platform but Linux).
+	Slots *SlotCounts
 }
 
 // CloseAll shuts every worker down and returns the first error, having tried

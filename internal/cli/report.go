@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource"
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
@@ -68,7 +69,7 @@ type Deps struct {
 	//
 	// The failures are returned rather than logged because F11 §3 asks for a
 	// module that could not be read to be a row in the report, not a silence.
-	ModuleCertificates func(ctx context.Context) ([]ModuleCertificate, []ModuleFailure, error)
+	ModuleCertificates func(ctx context.Context) (ModuleListing, error)
 
 	// CardService says whether the service a card reader is reached
 	// through answers, where Readers cannot say so itself: Linux, where
@@ -105,6 +106,40 @@ type ModuleCertificate struct {
 	// be installed at once and see the same card identically (D-271), so this
 	// is the only thing that tells two sightings of one certificate apart.
 	ModulePath string
+}
+
+// ModuleListing is what every PKCS#11 module answered, together.
+type ModuleListing struct {
+	Certificates []ModuleCertificate
+	Failures     []ModuleFailure
+
+	// Cards is the modules' own account of card readers and cards, summed
+	// over every module that gave one; nil where none did, which is every
+	// platform but Linux (see CardSlots).
+	Cards *CardSlots
+}
+
+// CardSlots is what the PKCS#11 modules on a machine say about the card
+// readers they reach and the cards in them — the only witness Linux has,
+// because this program does not talk PC/SC there (F12 §9, SPEC §1.1).
+//
+// Summed across modules, so two modules seeing one reader count it twice:
+// read each field as "none" or "some", never as a number of devices.
+//
+// Measured with a MUP card in a passed-through reader (open item A20):
+// SafeSign and OpenSC each reported one reader slot with a card present that
+// it did not recognise, while the window, which had no such evidence, said
+// that no reader had been found.
+type CardSlots struct {
+	// ReaderSlots are slots a card goes into. **Evidence that a card program
+	// is installed, not that a reader is attached**: SafeSign always offers
+	// four empty placeholder slots. The modules every Ubuntu desktop
+	// registers — gnome-keyring and p11-kit-trust — offer none.
+	ReaderSlots int
+	// CardsPresent are reader slots with a card in them.
+	CardsPresent int
+	// CardsUnrecognised are cards a module saw and could not read.
+	CardsUnrecognised int
 }
 
 // ModuleFailure is one module that could not be asked, and why.
@@ -189,6 +224,9 @@ type Report struct {
 	// CardServiceDown is Deps.CardService reporting that the smart card
 	// service does not answer. Always false where CardService is nil.
 	CardServiceDown bool
+
+	// Cards is ModuleListing.Cards: nil unless a module described its slots.
+	Cards *CardSlots
 }
 
 // Hidden reports whether row is hidden from the default (non --all)
@@ -245,6 +283,7 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 	// Modules that could not be asked. F11 §3: a module that will not load is
 	// a row to show and carry past, never a reason for a listing to fail.
 	var failures []ModuleFailure
+	var cards *CardSlots
 
 	rows := make([]CertRow, 0, len(certs))
 	for _, c := range certs {
@@ -270,11 +309,13 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 	// and not the other, which is harder to reason about than not
 	// deduplicating at all.
 	if deps.ModuleCertificates != nil {
-		moduleCerts, moduleFailures, err := deps.ModuleCertificates(ctx)
+		listing, err := deps.ModuleCertificates(ctx)
 		if err != nil {
 			return Report{}, fmt.Errorf("enumerating certificates through PKCS#11 modules: %w", err)
 		}
-		failures = moduleFailures
+		moduleCerts := listing.Certificates
+		failures = listing.Failures
+		cards = listing.Cards
 		byThumbprint := make(map[string]int, len(rows))
 		for i, r := range rows {
 			byThumbprint[r.Info.Thumbprint] = i
@@ -347,7 +388,7 @@ func Gather(ctx context.Context, deps Deps, now time.Time) (Report, error) {
 		}
 	}
 
-	report := Report{Readers: readers, Certificates: rows, TSL: provenance, ModuleFailures: failures}
+	report := Report{Readers: readers, Certificates: rows, TSL: provenance, ModuleFailures: failures, Cards: cards}
 	if deps.CardService != nil {
 		if err := deps.CardService(ctx); err != nil {
 			report.CardServiceDown = errors.Is(err, platform.ErrSmartCardServiceDown)
@@ -389,6 +430,16 @@ func readerListingError(err error) error {
 //	NO_READER          nothing to put a card into
 //	CARD_NOT_PRESENT   a reader, and no card in it
 //	CERT_NOT_FOUND     a card, and nothing on it this agent can offer
+//
+// Where the reader listing cannot answer — Linux, where it is always empty —
+// the last three are decided from the modules' own slots (Report.Cards)
+// instead, and mean something narrower, which each platform's sentence
+// says: NO_READER is "no installed card program sees a reader", because a
+// reader nobody's program reaches and no reader at all look the same from
+// here; CARD_NOT_PRESENT is "no card"; CERT_NOT_FOUND is "a card, and
+// nothing on it this agent can offer", which is where a card no module
+// recognises lands — the MUP card on Linux (open item A20).
+//
 //	<the row's own>     certificates offered, none of them usable, all
 //	                    for the same reason — CERT_EXPIRED, say
 //	CERT_NOT_USABLE    offered, unusable, and not all for one reason
@@ -430,6 +481,16 @@ func (r Report) NothingUsableReason() errs.Code {
 	if r.CardServiceDown {
 		return errs.CodeSmartCardServiceDown
 	}
+	if len(r.Readers) == 0 && r.Cards != nil {
+		switch {
+		case r.Cards.ReaderSlots == 0:
+			return errs.CodeNoReader
+		case r.Cards.CardsPresent == 0:
+			return errs.CodeCardNotPresent
+		default:
+			return errs.CodeCertNotFound
+		}
+	}
 	if len(r.Readers) == 0 {
 		return errs.CodeNoReader
 	}
@@ -439,6 +500,27 @@ func (r Report) NothingUsableReason() errs.Code {
 		}
 	}
 	return errs.CodeCardNotPresent
+}
+
+// NothingUsableKey is the catalogue key for the sentence that explains an
+// empty certificate list, given NothingUsableReason's code: the one mapping
+// both the window and `certs` use.
+//
+// It exists because the two drifted. The window learned to say why its list
+// was empty (D-236) and the terminal never did, so `certs` on Linux printed
+// "Certificates: 0" to a person with a MUP card in the reader — the exact
+// "no certificates found" SPEC §11.11 forbids — while the window was being
+// corrected around it. Only one of the two surfaces had a person looking at
+// it (open item A20).
+//
+// CERT_NOT_FOUND has a key of its own here because its code sentence is
+// about a thumbprint a caller asked for, which is not what an empty list
+// means.
+func NothingUsableKey(code errs.Code) string {
+	if code == errs.CodeCertNotFound {
+		return "consent.no_certificate_found"
+	}
+	return i18n.CodeKey(code)
 }
 
 // presenceMemo is one listing's answers to the presence question, keyed

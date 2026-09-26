@@ -305,10 +305,11 @@ func (w *Worker) Enumerate(ctx context.Context) ([]CertificatePayload, error) {
 	return resp.Certificates, err
 }
 
-// List is the same reading, deduplicated for the agent's listing.
-func (w *Worker) List(ctx context.Context) ([]CertificatePayload, error) {
+// List is the same reading, deduplicated for the agent's listing, with the
+// module's count of readers and cards where it gave one.
+func (w *Worker) List(ctx context.Context) ([]CertificatePayload, *SlotCounts, error) {
 	resp, err := w.do(ctx, Request{Op: OpList})
-	return resp.Certificates, err
+	return resp.Certificates, resp.Slots, err
 }
 
 // ChainFor returns the issuer chain the token itself carries for one

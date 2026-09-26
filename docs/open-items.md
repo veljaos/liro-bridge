@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-364, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-365, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -45,7 +45,8 @@ prose of an entry before D-280, outside those words, may be missing.
 17. *A module's load-failure sentence: translated (D-362). Numbering kept.*
 18. **Nothing records what a person was shown when nothing could be signed.** SPEC §6.7 records what was signed and refused; the reason on the empty screen reaches no log and no audit entry, so the only record is whoever was looking. — D-360. *Needs:* owner's decision (what SPEC §6.7 should cover), then code.
 19. **Credentials outlive an uninstall, on both platforms.** A pairing's secret is in the login keyring on Linux (in DPAPI-protected storage on Windows), and nothing in an uninstall path can see it: the package cannot reach a home directory, and the MSI runs as whoever installs. Nobody has looked at Windows. — D-363. *Close:* decide whether uninstall tells the person, or the agent offers to forget pairings, or it is accepted. *Needs:* owner's decision.
-20. **SPEC §11.11 on Linux is not implemented.** "The agent must tell the user which issuers are actually supported rather than reporting 'no certificates found'." Today a MUP or Halcom holder on Linux is told no reader was found, with the reader plugged in — a false statement about their own hardware. Wording drafted with the owner; the MUP claim waits on a measurement with the owner's MUP card, and Halcom is unverified and must be said so. — D-363. *Needs:* owner's MUP card, then code. **Before any other item on this list: it is the only one that tells a person something untrue about their own machine** (the owner).
+20. *SPEC §11.11 on Linux: built and measured with the owner's MUP card (D-365). What was not watched is C18. Numbering kept.*
+21. **`certs` on Windows still says "Certificates: 0" with no reason.** Linux now prints the window's sentence under the count (D-365); Windows was left unchanged by F12's rule, not by decision. *Needs:* owner's decision.
 
 ## B. Claims not measured
 
@@ -90,6 +91,7 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
+18. **§11.11's Linux sentences, beyond the one state measured.** The MUP card in a reader is measured through `certs` (D-365). Not watched: the window with the new sentence (needs the package installed); a reader with no card, and no reader with SafeSign installed (both predicted `CARD_NOT_PRESENT`; OpenSC's slots with no reader unknown); a stock desktop with no card program (`NO_READER`, a unit test only). — D-365. *Needs:* owner's hands; a clean machine for the last.
 
 ## D. Known defects, not fixed
 
@@ -116,7 +118,7 @@ prose of an entry before D-280, outside those words, may be missing.
 
 1. *Package signing: built in D-356; its first real run is C16. Numbering kept, because F1 cites E3 and E4.*
 2. **SPEC §12.6's B-LT default** — see A2.
-3. **MUP on Linux needs a direct PC/SC route.** — F11 "Deferred"; SPEC §6.5.1. *Needs:* code, hardware.
+3. **MUP on Linux needs a direct PC/SC route** — or a module that already is one. MUP ships nothing for Linux (its page, D-365), but an independent open-source module exists, `ubavic/srb-id-pkcs11`, which discovery would find if registered with p11-kit. Untried: trying it loads third-party code against the owner's national identity card. — F11 "Deferred"; SPEC §6.5.1; D-365. *Needs:* owner's decision, then hardware.
 4. *The Pošta card through SafeSign on Linux: signed and verified (D-361). Numbering kept.*
 5. *`pcscd.socket` left disabled: the agent says so with the command (D-358), and CI found it enabled after install on all three clean images (D-360). Numbering kept.*
 6. *Load failures as readable `Failure`s: built and measured with compiled fixtures (D-359). Numbering kept.*

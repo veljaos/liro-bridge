@@ -30,6 +30,15 @@ CK_RV liro_get_info(CK_FUNCTION_LIST_PTR l, CK_INFO *i){ return l->C_GetInfo(i);
 CK_RV liro_get_slot_list(CK_FUNCTION_LIST_PTR l, CK_BBOOL present, CK_SLOT_ID *ids, CK_ULONG *n) {
 	return l->C_GetSlotList(present, ids, n);
 }
+// Only the flags leave C: the two strings in CK_SLOT_INFO are a reader's
+// name, which nothing above this layer needs and the report must not carry.
+CK_RV liro_get_slot_flags(CK_FUNCTION_LIST_PTR l, CK_SLOT_ID s, CK_FLAGS *flags) {
+	CK_SLOT_INFO si;
+	memset(&si, 0, sizeof si);
+	CK_RV rv = l->C_GetSlotInfo(s, &si);
+	*flags = si.flags;
+	return rv;
+}
 CK_RV liro_get_token_info(CK_FUNCTION_LIST_PTR l, CK_SLOT_ID s, CK_TOKEN_INFO *t) {
 	return l->C_GetTokenInfo(s, t);
 }

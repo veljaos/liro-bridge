@@ -37494,3 +37494,195 @@ uninstall, which it is not (D-363: apt cannot reach a home directory).
 
 **Reinstalled** by the owner at 14:21:36, `0.9.9~dev.6`. The entry is live
 again, and the agent will start at the next login.
+
+## D-365 — SPEC §11.11 on Linux: an empty list is explained from the modules' own slots, the MUP holder is no longer told the reader is missing, and `certs` says what the window says
+
+**Date:** 2026-09-26
+**Phase:** F12; closes open-items A20.
+
+### What a MUP holder saw, measured rather than reasoned
+
+The owner's MUP card, in the same passed-through reader as [[D-361]]
+(`0bda:0165`; VirtualBox lists one device under two names, and after the
+reboot the "Realtek" entry was refused as busy while "Generic Smart Card
+Reader Interface" attached). ATR
+`3b:9e:96:80:31:fe:45:53:43:45:20:38:2e:30:2d:43:32:56:30:0d:0a:6c`, historical
+bytes `SCE 8.0-C2V0`. The installed `0.9.9~dev.6`. Predictions written
+before each run.
+
+| | predicted | measured |
+|---|---|---|
+| P1 the reader, the card | seen, generic CCID | `0bda:0165`, class `0b`; pcscd: card present |
+| P2 SafeSign | a slot, no token it reads | slot 0 **`token not recognized`**, plus four `UNAVAILABLE 1–4` slots |
+| P3 OpenSC — **least certain** | does not read it | slot 0 **`token not recognized`** |
+| P4 what the person is told | "no reader was found" | window: the NO_READER sentence, from the code (`Readers` is always empty on Linux), not watched; **`certs`: `Sertifikati: 0` and nothing else** |
+| P5 a failure row from the card | none | none |
+
+Two baseline predictions, taken with no reader attached, failed and are
+findings: **`certs` printed no reason at all** — `Sertifikati: 0` is SPEC
+§11.11's "no certificates found" to the letter — and SoftHSM is a failure
+row (`CKR_GENERAL_ERROR`), explained: its token directory is
+`root:softhsm 2770` and this user is not in the group.
+
+**The terminal and the window drifted because only one of them had a person
+looking at it.** D-236 taught the window to say why its list was empty; the
+owner and every session since watched the window, and nobody looked at what
+`certs` said about the same empty list. The owner found the Linux sentence
+false in the window and did not think to look at the terminal; neither had
+I.
+
+### The evidence was already there, and was thrown away
+
+Both modules said "a card is here and I cannot read it"
+(`CKR_TOKEN_NOT_RECOGNIZED`, with `CKF_TOKEN_PRESENT` on the slot).
+`enumerate` skipped it as "not mine" — right for one module's listing, and
+the only witness this program has on Linux that a card is in a reader.
+
+**And the draft's first variant could never be reached.** Discovery takes
+every p11-kit registration, and every Ubuntu desktop registers
+gnome-keyring's and p11-kit-trust's modules: "no module was found" is never
+true on a stock desktop, so a sentence resting on it is a sentence nobody
+will ever read. What separates them is measured, not guessed:
+
+| module | its slots' flags |
+|---|---|
+| SafeSign, OpenSC | reader slot: `token present, removable device, hardware slot` |
+| SafeSign's placeholders | `removable device, hardware slot`, vendor bit `0x80000000`, empty — **always there** |
+| gnome-keyring, p11-kit-trust | `token present` only |
+
+### The definition
+
+Each module's worker reports, beside its listing, three counts from
+`C_GetSlotList(FALSE)`, `C_GetSlotInfo` and — for a slot with a card —
+`C_GetTokenInfo`: slots flagged `CKF_REMOVABLE_DEVICE`, those with a card, and
+those whose card it did not recognise. Summed over modules, read as "none"
+or "some". **Linux only**: off Linux the survey is nil and
+`NothingUsableReason` answers from `SCardListReaders` exactly as before.
+Where there are no listed readers and a survey exists, and nothing is
+offered:
+
+| the modules' slots | code | Linux sentence |
+|---|---|---|
+| no slot a card goes into | `NO_READER` | "Nijedan instalirani program za kartice ne vidi čitač. Proverite da li je čitač priključen; neki čitači …" + the support paragraph |
+| reader slots, no card in any | `CARD_NOT_PRESENT` | "Nijedna kartica nije pronađena. Proverite da li je čitač priključen i kartica ubačena." |
+| a card — read with nothing to sign, or not recognised | `CERT_NOT_FOUND` | "Ni na jednoj kartici nije pronađen sertifikat za potpisivanje." + the support paragraph |
+
+The first row is worded to be true in both of its cases: no card program
+installed, and one installed with no reader attached — SafeSign's
+placeholders mean a reader slot is evidence of a program, not of a reader.
+No new error code and no protocol change: the codes are SPEC §7's, and only
+the Linux sentences differ, through `platformKeys`.
+
+**Where the counts travel.** On the existing `list` answer
+(`Response.Slots`), not a new op: every op widens what a release binary can
+be asked to do (F12 §2), and this is the same reading at the same moment.
+Three integers, no reader name, no token label. A module that lists
+certificates and will not describe its slots still answers — the survey
+never costs the listing. `certs --json` gains `cards`, absent unless a
+module described its slots.
+
+**One mapping for both surfaces.** `cli.NothingUsableKey` is the
+code-to-sentence mapping the window used privately; `certs` now prints it
+under the count on Linux. Off Linux `certs` is unchanged (F12's rule); that
+it says nothing there either is open, not decided (A21).
+
+### The support paragraph, and what each clause rests on
+
+> Na Linuxu Liro Bridge podržava kartice Pošte Srbije, uz program SafeSign,
+> koji se preuzima sa sajta Pošte. Kartice MUP-a na Linuxu za sada nisu
+> podržane. Za kartice Halcoma podrška na Linuxu još nije proverena.
+
+The owner's wording, with four corrections the owner accepted ("uz program
+SafeSign", "nisu podržane", no comma before "jer", **Линуксу** in Cyrillic —
+and "Linuxu", not "Linux-u", in every Linux sentence). The MUP reason
+("jer MUP ne isporučuje program…") is removed by the owner's ruling: *say
+what we measure about this program, not what we believe about their
+product; the reason belongs in the guide.*
+
+| clause | rests on |
+|---|---|
+| Pošta cards are supported, with SafeSign | **measurement**: D-361 |
+| SafeSign is downloaded from Pošta's site | **Pošta's page**: its Linux guide v1.31 names `ca.posta.rs/preuzimanje_softvera.htm` — and lists RedHat 8.10 and 9.4 and Ubuntu 22.04 and 24.04, **not Fedora** (F1's risk) |
+| MUP cards are not supported on Linux | **measurement**: SafeSign and OpenSC, this card, above — a statement about this program |
+| Halcom is not yet checked | **absence**: no Halcom card has met this program on Linux |
+
+**SPEC §11.11's claim, checked against the vendors' own pages** (read-only,
+by the owner's leave), both through the fetch tool's summary and then raw,
+by `grep` with a control that could match:
+- **MUP** (`crl.mup.gov.rs/softver-lat.html`): seven downloads, every one
+  `.msi` or `.zip` for Windows — Čelik 1.4.2.1, TrustEdgeID 2.2.9.4, CelikApi
+  1.4.2, a VC++ runtime; 0 matches for linux, ubuntu, macos, `.deb`, `.rpm`.
+- **Halcom** (Nexus Personal's page): one Windows download, "not supported
+  on Windows 7, Windows 8 and Windows 8.1"; 0 matches for linux or macOS,
+  3 for windows.
+
+So §11.11's "SafeSign is the only one shipping Linux builds" **holds as of
+these pages**, and needs no amendment; what changes is that it now rests on
+a reading rather than a briefing.
+
+**One finding the pages did not contain.** An independent guide points to
+**`ubavic/srb-id-pkcs11`**, an open-source PKCS#11 module for the Serbian
+ID card on Linux (Unlicense; "Gemalto-produced" cards; RSA signing; its own
+warning: "it may potentially damage your token"). Not MUP's, not tried.
+Discovery would find it if it were registered with p11-kit, so a MUP holder
+may be able to sign through this program without anything written here.
+**Trying it means loading third-party code against the owner's national
+identity card**, and that is the owner's decision, not a measurement to take
+on my own (open-items E3).
+
+### Measured through the program
+
+This tree's build, same reader, same card, predictions written first:
+`Sertifikati: 0`, then the `CERT_NOT_FOUND` sentence with the support
+paragraph; no sentence about a missing reader; `cards` =
+`readerSlots 6, cardsPresent 2, cardsUnrecognised 2` — SafeSign's five and
+OpenSC's one. **The least certain prediction** was that SafeSign answers
+exactly `CKR_TOKEN_NOT_RECOGNIZED` through this layer (if not, its counts
+would have been dropped and the totals would read 1/1/1). It held. Same card,
+same reader as run 1: the opposite output. The run was a fresh binary, not a
+replay.
+
+### Tests, each mutation-checked
+
+- `cli`: the four slot states, a listed reader overruling a survey (Windows'
+  path), a usable row not hidden, and `certs` saying the window's sentence on
+  Linux and not changing elsewhere. Without the slots branch, three states
+  answer `NO_READER`; with `explainsEmptyList` false, the render test fails.
+- `worker`: the counts cross a real child's pipe, and a module that said
+  nothing arrives as nil, not as zero readers. Removing `Slots` from the
+  served answer fails it (my first mutation of it did not compile, which
+  proves nothing, and was replaced by one that did).
+- `pkcs11`: against a real SoftHSM token in scratch, the slot flags are read
+  (`CKF_TOKEN_PRESENT`) and the survey counts no reader. With the C wrapper
+  writing zero flags: "C_GetSlotInfo was not read". **Skips on every CI runner**,
+  like the rest of that file — group-1 item 11.
+
+`go test -count=1 -p 1 ./...` green in 3 min; `golangci-lint` 0 issues on
+both GOOS — the Windows run found two constants used only on Linux, moved.
+`go vet` reports `possible misuse of unsafe.Pointer` in
+`module_windows.go:363` (GOOS=windows) and `pindialog_linux.go:96`; both
+predate this change (the first shown on the untouched tree) and CI's gate
+is golangci-lint.
+
+### Not measured
+
+- **The window**, with the new sentence: needs the package built and
+  installed (owner's hands).
+- **Reader, no card**, and **no reader with SafeSign installed**: both should
+  give `CARD_NOT_PRESENT`; OpenSC's slots with no reader are unknown. The
+  owner pulls the card, then detaches the reader.
+- **A stock desktop with no card program**: `NO_READER`, from a unit test
+  only. This VM has SafeSign and OpenSC; measuring it means removing them, or
+  a clean machine.
+
+### Addendum to [[D-364]], at the owner's request
+
+The C3 finding came from **checking a grep that had already agreed with a
+prediction**. The owner's `grep -i liro` returned lines, the prediction was
+silence, and no line in the output looked like Liro Bridge — so the reading
+was "silence, as predicted". It was re-run only because the lines it
+returned were plainly not about Liro Bridge; counting them then gave all
+479, every one carrying the hostname.
+The owner's own words: "it was my reading, not yours … nothing reaches the
+person, and the journal records the refusal. Those are different claims and
+I collapsed them into one."

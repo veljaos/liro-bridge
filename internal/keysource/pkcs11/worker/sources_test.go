@@ -326,3 +326,29 @@ func TestASourceFromDiscoveryCanActuallyCollectAPIN(t *testing.T) {
 			"to sign.", asked)
 	}
 }
+
+// TestTheSlotCountsCrossThePipe is open item A20's evidence arriving where the
+// report can use it: what a module said about its readers and cards travels
+// from a real child, through the listing, to the Listing ListAll returns — and
+// a module that said nothing arrives as nil, not as zero readers, because
+// "this module did not say" and "this module sees no reader" explain an empty
+// list differently.
+func TestTheSlotCountsCrossThePipe(t *testing.T) {
+	said := &SlotCounts{ReaderSlots: 5, CardsPresent: 1, CardsUnrecognised: 1}
+	surveyed := canned(t, cannedAnswers{Slots: said}, "Surveyed Vendor")
+	silent := canned(t, cannedAnswers{}, "Silent Vendor")
+
+	listings, failures := ListAll(context.Background(), []Source{surveyed, silent})
+	if len(failures) != 0 || len(listings) != 2 {
+		t.Fatalf("got %d listings and %v, want 2 and no failures", len(listings), failures)
+	}
+	if got := listings[0].Slots; got == nil || *got != *said {
+		t.Errorf("the surveyed module's counts arrived as %+v, want %+v", got, said)
+	}
+	if got := listings[1].Slots; got != nil {
+		t.Errorf("a module that described no slots arrived as %+v, want nil", got)
+	}
+	if len(listings[0].Certificates) != 1 {
+		t.Errorf("the counts cost the listing its certificate: %+v", listings[0].Certificates)
+	}
+}

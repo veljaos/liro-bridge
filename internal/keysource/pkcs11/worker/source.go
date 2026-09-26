@@ -146,14 +146,22 @@ func (s Source) Origin() pkcs11.Origin {
 // windowscng does for the same bytes — measured on a real card in D-310, and
 // the premise F11 §4 step 3 rests on.
 func (s Source) List(ctx context.Context) ([]keysource.Certificate, error) {
+	certs, _, err := s.ListWithSlots(ctx)
+	return certs, err
+}
+
+// ListWithSlots is List with the module's count of readers and cards beside
+// it, nil where the module gave none. It is what ListAll asks, because the
+// report explains an empty list from the counts (open item A20).
+func (s Source) ListWithSlots(ctx context.Context) ([]keysource.Certificate, *SlotCounts, error) {
 	if s.w == nil {
-		return nil, errNoWorker
+		return nil, nil, errNoWorker
 	}
-	payloads, err := s.w.List(ctx)
+	payloads, slots, err := s.w.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return s.convert(payloads), nil
+	return s.convert(payloads), slots, nil
 }
 
 // convert is List's body, separated so the skipping rule below can be tested

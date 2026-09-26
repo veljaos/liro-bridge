@@ -36,7 +36,7 @@ func TestOneWorkerServesManyRequests(t *testing.T) {
 		t.Fatalf("Enumerate came back as %+v", certs)
 	}
 
-	if _, err := w.List(ctx); err != nil {
+	if _, _, err := w.List(ctx); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 

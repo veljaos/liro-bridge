@@ -156,10 +156,10 @@ func (h *heldModule) Enumerate(ctx context.Context) ([]CertificatePayload, error
 	return out, nil
 }
 
-func (h *heldModule) List(ctx context.Context) ([]CertificatePayload, error) {
+func (h *heldModule) List(ctx context.Context) ([]CertificatePayload, *SlotCounts, error) {
 	certs, err := h.live.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := make([]CertificatePayload, 0, len(certs))
 	for _, c := range certs {
@@ -168,7 +168,14 @@ func (h *heldModule) List(ctx context.Context) ([]CertificatePayload, error) {
 		// decision made in the wrong process.
 		out = append(out, CertificatePayload{DER: c.DER})
 	}
-	return out, nil
+	// The survey never costs the listing: a module that lists certificates and
+	// then will not describe its slots has still answered the question that
+	// signs. Nil is "this module did not say", which the report reads as such.
+	var counts *SlotCounts
+	if s, err := h.live.Slots(ctx); err == nil && s != nil {
+		counts = &SlotCounts{ReaderSlots: s.ReaderSlots, CardsPresent: s.CardsPresent, CardsUnrecognised: s.CardsUnrecognised}
+	}
+	return out, counts, nil
 }
 
 func (h *heldModule) ChainFor(ctx context.Context, thumbprint string) ([][]byte, error) {

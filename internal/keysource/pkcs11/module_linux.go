@@ -210,6 +210,15 @@ func (m *module) slots(tokenPresent bool) ([]ckULong, error) {
 	return out, nil
 }
 
+// slotFlags is CK_SLOT_INFO's flags for one slot, and nothing else of it.
+func (m *module) slotFlags(slot ckULong) (uint64, error) {
+	var flags C.CK_FLAGS
+	if rv := ckr(C.liro_get_slot_flags(m.list, C.CK_SLOT_ID(slot), &flags)); rv != ckrOK {
+		return 0, &ckrError{"C_GetSlotInfo", rv}
+	}
+	return uint64(flags), nil
+}
+
 func (m *module) tokenInfo(slot ckULong) (tokenInfo, error) {
 	var ti C.CK_TOKEN_INFO
 	if rv := ckr(C.liro_get_token_info(m.list, C.CK_SLOT_ID(slot), &ti)); rv != ckrOK {

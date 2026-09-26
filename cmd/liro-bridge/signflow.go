@@ -47,8 +47,6 @@ import (
 	"github.com/veljaos/liro-bridge/internal/cli"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
-	"github.com/veljaos/liro-bridge/internal/errs"
-	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/trust/classify"
 	"github.com/veljaos/liro-bridge/internal/ui"
 )
@@ -461,14 +459,10 @@ func (m *mainWindow) certificateNotice() string {
 	if len(m.certInfos) > 0 {
 		return ""
 	}
-	switch m.certReason {
-	case "":
+	if m.certReason == "" {
 		return ""
-	case errs.CodeCertNotFound:
-		return m.c.T("consent.no_certificate_found")
-	default:
-		return m.c.T(i18n.CodeKey(m.certReason))
 	}
+	return m.c.T(cli.NothingUsableKey(m.certReason))
 }
 
 // gatherCertificates fills in what the certificate step shows. It is

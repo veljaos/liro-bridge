@@ -70,7 +70,7 @@ func TestKillingAWorkerDoesNotReachTheBackstopEither(t *testing.T) {
 	})
 
 	began := time.Now()
-	_, err := w.List(context.Background())
+	_, _, err := w.List(context.Background())
 	took := time.Since(began)
 
 	if !errors.Is(err, ErrUnexpectedPINRequest) {

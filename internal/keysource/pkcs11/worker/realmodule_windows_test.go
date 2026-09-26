@@ -289,7 +289,7 @@ func TestARealModuleHeldOpenAnswersTheSameAsAOneShotOpen(t *testing.T) {
 
 		listCtx, listCancel := bounded(t)
 		begin = time.Now()
-		_, err = w.List(listCtx)
+		_, _, err = w.List(listCtx)
 		listCancel()
 		if err != nil {
 			stuck(t, w, "List through the worker", err)

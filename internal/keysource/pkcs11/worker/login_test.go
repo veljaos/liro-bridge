@@ -127,7 +127,7 @@ func TestThePINReachesTheWorkerIntactAndTheSessionSigns(t *testing.T) {
 	}
 	// The module is still loaded: closing a session logs the card out and
 	// nothing more, which is the whole reason a worker is held open (D-297).
-	if _, err := w.List(ctx); err != nil {
+	if _, _, err := w.List(ctx); err != nil {
 		t.Errorf("the worker stopped answering after its session closed: %v", err)
 	}
 	if w.ChildStderr() != "" {
@@ -243,7 +243,7 @@ func TestACancelledPINScreenIsNotAFailure(t *testing.T) {
 
 	// And the worker was ended rather than left waiting for a PIN that is not
 	// coming. The next request starts a fresh one and is answered.
-	if _, err := w.List(context.Background()); err != nil {
+	if _, _, err := w.List(context.Background()); err != nil {
 		t.Errorf("the worker did not recover after a cancelled screen: %v", err)
 	}
 }
@@ -400,7 +400,7 @@ func TestAPINRequestWithNothingPendingIsRefusedLoudly(t *testing.T) {
 	w := New(cannedPath(askingCard(cannedAnswers{AskUnbidden: true})), io.Discard)
 	t.Cleanup(closing(t, w))
 
-	_, err := w.List(context.Background())
+	_, _, err := w.List(context.Background())
 	if !errors.Is(err, ErrUnexpectedPINRequest) {
 		t.Fatalf("List against a worker that asked for a PIN: %v, want ErrUnexpectedPINRequest", err)
 	}

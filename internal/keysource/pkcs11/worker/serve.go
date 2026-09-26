@@ -26,8 +26,10 @@ import (
 type Handler interface {
 	// Enumerate reads certificate objects off every token the module sees.
 	Enumerate(ctx context.Context) ([]CertificatePayload, error)
-	// List is the same reading, deduplicated for the agent's listing.
-	List(ctx context.Context) ([]CertificatePayload, error)
+	// List is the same reading, deduplicated for the agent's listing, with the
+	// module's count of readers and cards where the platform has one (nil
+	// where it does not).
+	List(ctx context.Context) ([]CertificatePayload, *SlotCounts, error)
 	// ChainFor returns the issuer chain the token itself carries for one
 	// certificate, which is empty for both Serbian cards (D-274).
 	ChainFor(ctx context.Context, thumbprint string) ([][]byte, error)
@@ -315,11 +317,11 @@ func serveOne(ctx context.Context, h Handler, req Request) Response {
 		return Response{Certificates: certs}
 
 	case OpList:
-		certs, err := h.List(ctx)
+		certs, slots, err := h.List(ctx)
 		if err != nil {
 			return Response{Err: err.Error()}
 		}
-		return Response{Certificates: certs}
+		return Response{Certificates: certs, Slots: slots}
 
 	case OpChainFor:
 		if req.Thumbprint == "" {

@@ -29,6 +29,6 @@ func configurePKCS11Modules(path string) { modules.configure(path) }
 
 // pkcs11CertificateProvider is cli.Deps.ModuleCertificates for a build that has
 // a PKCS#11 path.
-func pkcs11CertificateProvider() func(context.Context) ([]cli.ModuleCertificate, []cli.ModuleFailure, error) {
+func pkcs11CertificateProvider() func(context.Context) (cli.ModuleListing, error) {
 	return moduleCertificates
 }

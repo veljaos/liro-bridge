@@ -42,6 +42,7 @@ type fakeHandler struct {
 	collected   int   // how many bytes ask reported, or -1 if ask was not called
 	askErr      error // what ask answered with, kept so a test can see it was not swallowed
 	signature   []byte
+	slots       *SlotCounts
 	signAlg     int
 	signDigest  []byte
 	signs       int
@@ -60,10 +61,10 @@ func (f *fakeHandler) Enumerate(context.Context) ([]CertificatePayload, error) {
 	return f.enumerate, f.fail
 }
 
-func (f *fakeHandler) List(context.Context) ([]CertificatePayload, error) {
+func (f *fakeHandler) List(context.Context) ([]CertificatePayload, *SlotCounts, error) {
 	f.note()
 	f.lists++
-	return f.list, f.fail
+	return f.list, f.slots, f.fail
 }
 
 func (f *fakeHandler) ChainFor(_ context.Context, tp string) ([][]byte, error) {

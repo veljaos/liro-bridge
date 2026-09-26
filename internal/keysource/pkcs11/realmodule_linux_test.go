@@ -3,6 +3,7 @@
 package pkcs11
 
 import (
+	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -338,5 +339,43 @@ func TestAnUnrecognisedSlotBesideTheTokenDoesNotHideIt(t *testing.T) {
 	}
 	if err != nil && !errors.Is(err, ErrPINCancelled) {
 		t.Fatalf("Open stopped before reaching the token's PIN: %v", err)
+	}
+}
+
+// TestTheSlotSurveyReadsARealModulesFlags is the C half of open item A20's
+// survey against a real module. SoftHSM's token slot says a token is present
+// and is not a slot a card goes into — the shape of gnome-keyring's and
+// p11-kit-trust's slots on every Ubuntu desktop — so the survey must count no
+// reader. The first assertion is what makes the second mean something: a
+// wrapper that read nothing would return zero flags and a survey of zeros.
+func TestTheSlotSurveyReadsARealModulesFlags(t *testing.T) {
+	path, _ := softhsmModule(t)
+	m, err := openModule(path)
+	if err != nil {
+		t.Fatalf("openModule: %v", err)
+	}
+	defer func() { _ = m.close() }()
+
+	present, err := m.slots(true)
+	if err != nil || len(present) == 0 {
+		t.Fatalf("no slot with a token (%v); the token this test needs is not there", err)
+	}
+	flags, err := m.slotFlags(present[0])
+	if err != nil {
+		t.Fatalf("slotFlags: %v", err)
+	}
+	if flags&ckfTokenPresent == 0 {
+		t.Fatalf("slot %d is listed as holding a token and its flags (%#x) do not say so: C_GetSlotInfo was not read", present[0], flags)
+	}
+	if flags&ckfRemovableDevice != 0 {
+		t.Errorf("SoftHSM's slot is flagged removable (%#x); the survey would count it as a reader", flags)
+	}
+
+	s, err := survey(context.Background(), m)
+	if err != nil {
+		t.Fatalf("survey: %v", err)
+	}
+	if s.ReaderSlots != 0 || s.CardsPresent != 0 {
+		t.Errorf("survey of a module with no reader slot = %+v, want nothing counted", *s)
 	}
 }
