@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-358, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-359, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -37,6 +37,7 @@ prose of an entry before D-280, outside those words, may be missing.
 14. **Should the audit log travel with ordinary backups?** Decided by implication. — D-340. *Needs:* owner's decision.
 15. **Publishing the package-signing fingerprint somewhere other than the repository's own host.** — session 6 §E; D-356. *Needs:* owner's decision.
 16. **A second environment for the package-signing key.** `sign-linux` shares `release` with the release key and could name it; only review keeps it from doing so. — D-356. *Needs:* owner's decision.
+17. **A module's load-failure sentence is English in every locale.** Module reasons are data under SPEC §9.3; D-359's sentences are for a person. — D-359. *Close:* translate by category, or accept. *Needs:* owner's decision.
 
 ## B. Claims not measured
 
@@ -110,7 +111,7 @@ prose of an entry before D-280, outside those words, may be missing.
 3. **MUP on Linux needs a direct PC/SC route.** — F11 "Deferred"; SPEC §6.5.1. *Needs:* code, hardware.
 4. **No Linux module for the Pošta card** without SafeSign for Linux. — D-355. *Needs:* hardware.
 5. *`pcscd.socket` left disabled: the agent now says so with the command (D-358); whether it is left disabled is reported by CI (B22). Numbering kept.*
-6. **An old module failing `dlopen` on a missing OpenSSL symbol becomes a readable `Failure`** (F12 §10). *Needs:* code, measurement — §10.
+6. *Load failures as readable `Failure`s: built and measured with compiled fixtures (D-359). Numbering kept.*
 7. **The audit record says which backend signed but perhaps not why.** Status uncertain — check D-313's `signerOrigin`. — D-311. *Needs:* code.
 
 ## F. F12's exit checklist, what is not done

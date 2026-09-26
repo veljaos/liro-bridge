@@ -37036,3 +37036,101 @@ package's unit — and the owner's.
 - **§9's driver question is a sentence, not a detector.** A USB interface's
   class could be read from sysfs (CCID is `0x0b`) without PC/SC; not built,
   because a vendor-class reader is not thereby a reader.
+
+## D-359 — F12 §10: a module that will not load says why in words a person can act on, the loader killing the probe says where to look, and SafeSign's Linux paths are measured off the vendor's own packages
+
+**Date:** 2026-09-26
+**Phase:** F12 §10.
+
+### What was already built
+
+Discovery on Linux — the p11-kit registry, the multiarch directories, the
+named vendor paths, the entry-point check performed by a probe child —
+predates this session (`discover_linux.go`), and `openModule` already used
+`RTLD_NOW` so that a missing symbol fails at the load. **What was left was
+F12 §10's last paragraph**: "an older vendor module can want symbols from an
+OpenSSL the distribution no longer ships, and `dlopen` fails with an
+undefined symbol rather than anything meaningful. That is a `Failure` with a
+readable reason, not a crash." Nothing had produced that failure, and the
+comment in `probechild_linux.go` claiming the reason "is readable" had never
+been checked. It passed `dlerror()` through untouched.
+
+### SafeSign, measured from the vendor's packages
+
+Before installing anything: `SafeSign_4600_Linux.zip` on the owner's Desktop
+(Pošta's distribution, 4.6.0.0-AET.000), listed with `dpkg-deb` and `rpm
+-qlp`:
+
+| | module | p11-kit `.module` | maintainer scripts |
+|---|---|---|---|
+| `ub2404` `.deb` | `/usr/lib/libaetpkss.so` → `libaetpkss.so.3.9.33.1` | none | none (an `ldconfig` trigger) |
+| `redhat10` `.rpm` | `/usr/lib64/libaetpkss.so` → the same version | — | — |
+
+The owner gave `/usr/lib/libaetpkss.so` from the vendor's guide; **the
+package agrees**, and a documented path and a shipped path are two claims,
+of which this is the second. Plain `/usr/lib` on Ubuntu, not the multiarch
+directory. **SafeSign does not register with p11-kit**, so it is exactly
+§10's "vendor module that does not register itself": the named path is the
+only thing that finds it. `DT_NEEDED`: `libgdbm_compat.so.4`,
+`libcrypto.so.3`, `libpcsclite.so.1`, `libstdc++`, `libgcc_s`, `libc` — all
+present here, so the unpacked module would load; **current OpenSSL, not an
+old one**. It exports `C_GetFunctionList` (70 `C_` functions). The `.deb`
+depends on `pcscd`. The on-machine confirmation after install is still to
+come.
+
+### The reasons
+
+`explainLoadFailure` turns glibc's words into a sentence and keeps the
+words beside it as data (SPEC §9.3) — they are what a vendor's support desk
+asks for. Every branch the tests reach was produced by a real module the
+test compiles, through `Modules` and the real probe child, as a configured
+path:
+
+| the module | what a person reads |
+|---|---|
+| needs `libcrypto.so.1.1` | it needs libcrypto.so.1.1, which is not installed on this system. That is an older OpenSSL than this distribution ships: the module was built for an older system, and its vendor's build for this one is needed |
+| calls a function nothing exports | it needs the function …, which no library on this system provides; it was probably built for a different system |
+| built against a symbol version its library no longer has | it was built against LIRO_OLD_1.0 of libliroold.so.1, and the copy on this system does not provide it |
+| a text file named `.so` | it is not a shared library |
+| no file | there is no file at this path |
+
+The OpenSSL advice is not given for `libssl.so.3`/`libcrypto.so.3`, which
+every supported distribution ships — a module missing those has a different
+problem. 32-bit is covered by string only (no multilib here).
+Mutation-checked: without the explanation, seven assertions fail.
+**Through the program**: `liro-bridge certs` with the `libcrypto.so.1.1`
+module configured (in a scratch `XDG_CONFIG_HOME`) exits 0 and prints the
+first row above under "modules that could not answer".
+
+### The finding: glibc's loader can end the process from inside dlopen
+
+My first fixture for the version case replaced the library with one that has
+**no version nodes at all**. The probe child did not return an error — it
+died with status 127:
+
+```
+Inconsistency detected by ld.so: dl-lookup.c: 106: check_match:
+Assertion `version->filename == NULL || ! _dl_name_match_p (version->filename, map)' failed!
+```
+
+**No in-process code survives that**, and it is the plainest demonstration
+yet on Linux of why a module is loaded in a child (F12 §2, D-275): the agent
+carried on, and the module became a `Failure`. What was lost was the reason.
+A probe child exiting 127 now says so: *exit 127 is the system loader
+stopping the process while loading this module or a library it needs —
+``ldd <module>`` shows which*. Only 127 gets a hint; any other status is the
+module's own crash and a guess would be worse than the number. The realistic
+shape — a newer library that has versions, just not the one wanted — is the
+ordinary `version … not found` above; both are tests.
+
+### Limits
+
+- **The sentence is English inside a Serbian report.** Module reasons are
+  passed through as data (SPEC §9.3), which suited a PKCS#11 return code; a
+  sentence meant for a person is another thing. Translating it means
+  categories and catalogue keys in `internal/keysource/pkcs11`. The owner's
+  decision (open-items A).
+- **No real old vendor module has been seen failing.** The fixtures are
+  built the way such modules are; SafeSign 4.6 is not one.
+- **A configured path from the protocol stays refused** — nothing here
+  changed that; `Candidates` still takes only the configuration's path.

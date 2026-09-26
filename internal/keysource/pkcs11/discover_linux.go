@@ -164,6 +164,18 @@ func knownModulePaths() []Candidate {
 	}
 
 	// SPEC §11.11: the only Serbian middleware with a Linux build.
+	//
+	// Measured off the vendor's own packages as Pošta distributes them
+	// (SafeSign_4600_Linux.zip, 4.6.0.0-AET.000; D-359), not recalled:
+	//
+	//	ub2404 .deb    /usr/lib/libaetpkss.so   -> libaetpkss.so.3.9.33.1
+	//	redhat10 .rpm  /usr/lib64/libaetpkss.so -> libaetpkss.so.3.9.33.1
+	//
+	// Plain /usr/lib on Ubuntu, not the multiarch directory, and **no
+	// p11-kit .module file and no maintainer scripts** in either — so the
+	// registry above never finds it, and this line is the only thing that
+	// does. It needs libcrypto.so.3, libpcsclite.so.1 and
+	// libgdbm_compat.so.4, and exports C_GetFunctionList.
 	add("A.E.T. Europe (SafeSign)", "libaetpkss.so")
 	add("A.E.T. Europe (SafeSign)", "libaetpkss.so.3")
 	// OpenSC, which reaches a good many national cards and is what a

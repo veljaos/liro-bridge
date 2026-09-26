@@ -214,7 +214,7 @@ func probeOutOfProcess(ctx context.Context, path string, stderr io.Writer) (prob
 		// number.
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
-			return probeResult{}, fmt.Errorf("%w (exit 0x%X)", errWorkerDied, uint32(exitErr.ExitCode()))
+			return probeResult{}, fmt.Errorf("%w (exit 0x%X)%s", errWorkerDied, uint32(exitErr.ExitCode()), exitHint(path, exitErr.ExitCode()))
 		}
 		return probeResult{}, fmt.Errorf("running the probe: %w", runErr)
 	}
