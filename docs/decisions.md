@@ -37134,3 +37134,90 @@ ordinary `version … not found` above; both are tests.
   built the way such modules are; SafeSign 4.6 is not one.
 - **A configured path from the protocol stays refused** — nothing here
   changed that; `Candidates` still takes only the configuration's path.
+
+## D-360 — SafeSign confirmed on the machine and loaded twice, a stopped pcscd watched in the window, CI's two answers, the package key in its own environment, and a hole in the audit story
+
+**Date:** 2026-09-26
+**Phase:** F12 §9, §10; the signing half of §8.
+
+### SafeSign, on this machine
+
+The owner installed `safesignidentityclient 4.6.0.0-AET.000` (with
+`libwxbase3.2-1t64` and `libwxgtk3.2-1t64`). `/usr/lib/libaetpkss.so` →
+`libaetpkss.so.3.9.33.1`, owned by the package (`dpkg -S`); **no p11-kit
+`.module` was added** (the registry holds gnome-keyring, opensc, p11-kit-trust
+and softhsm2). The vendor's-package reading of [[D-359]] held on the machine,
+and discovery found the module through the named path — the only thing that
+can find it.
+
+### And loaded it twice
+
+The installed agent's log: `module available` for `/usr/lib/libaetpkss.so`
+**and** `/usr/lib/libaetpkss.so.3` — two symlinks to one library, both on the
+known list (the second in case a machine has only the versioned link), keyed
+by name. Each would have had its own worker, and **two workers would have
+held `C_Initialize` open on one card** — the concurrent access D-027 rejects.
+[[D-271]]'s thumbprint collapse was built for two *different* files that see
+one card; this was one file seen twice. Found before the card went in.
+
+`candidateKey` now keys a candidate by the file it resolves to
+(`filepath.EvalSymlinks`), first name kept for display, a path that does not
+resolve keyed by its own name so a mistyped configured path is still reported.
+Measured after: one `module available` for `libaetpkss.so`. Test with
+SafeSign's layout in a temp directory; mutation-checked (without resolution,
+"two names for one file are two candidates").
+
+### A stopped pcscd, watched
+
+The owner stopped `pcscd.socket` and `pcscd.service`. **The socket file
+stayed**: `/run/pcscd/pcscd.comm` survives the stop (systemd's
+`RemoveOnStop=` defaults to off), so the real stopped state is [[D-358]]'s
+"socket file nothing listens on" row. pcsc-lite: `0x8010001D Service not
+available`. `certs` (installed `0.9.9-dev.4`): the Linux sentence, and
+`"cardServiceDown": true`. Checking did not reactivate anything.
+
+**The window**, opened by `sign --in` on a test PDF with the installed agent:
+the owner read it — "Servis za pametne kartice (pcscd) nije pokrenut, pa
+nijedan čitač kartica nije dostupan. U terminalu pokrenite: sudo systemctl
+enable --now pcscd.socket, pa pokušajte ponovo." Nothing naming Windows, no
+"Čitač kartica nije pronađen". The owner closed it; the run exited 1. I did not
+take exit 1 as evidence of who closed it.
+
+### The hole this exposed
+
+**The agent does not record which reason it showed a person.** The log has
+the run's start and module discovery; nothing says what the screen said. So
+the only record of what somebody was told, when nothing could be signed, is
+whoever happened to be looking — this time the owner. In the owner's terms:
+**this is a hole in the audit story, not in the test.** SPEC §6.7 records
+what was signed and what was refused; nothing records what a person was shown
+when nothing could be. Open (open-items A18).
+
+### CI's two answers ([[D-358]], [[D-356]])
+
+Run 36242995303 on `b9d5d2c`, all nine jobs green:
+
+- **`pcscd.socket` is enabled after install on `ubuntu:24.04`,
+  `debian:trixie` and `fedora:44`** — the symlink points at
+  `/usr/lib/systemd/system/pcscd.socket` on all three. D-358's predictions
+  held, Fedora's included. F12 §9's "historically left disabled" is not true
+  of these three today; the agent's sentence stays for the machine where
+  somebody disabled it, as here.
+- **Fedora's `rpm -K` accepts the ed25519 signature Ubuntu's `rpmsign`
+  made**: `digests signatures OK`. `gpg --verify` and `sha256sum --check` on
+  Ubuntu and Debian; the committed key refused the throwaway signature; the
+  README fingerprint check passed.
+
+### The package key gets its own environment
+
+Owner's ruling on D-356's open question: "a job that can read a key it does
+not use has a blast radius bigger than its purpose, and separating them costs
+one environment." `sign-linux` is bound to **`package-signing`**. The two
+package secrets have to be created there (GitHub cannot move a secret or
+show its value) and deleted from `release`; the environment needs the same
+`v*`-only deployment rule. Until the owner has done that, a tag's
+`sign-linux` fails on "LIRO_PACKAGE_SIGNING_KEY is not set", which is the
+refusal it was built to make.
+
+The four commits before this entry were pushed from this machine at about
+12:46; I did not run that push, and noted it rather than assumed it.

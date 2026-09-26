@@ -94,7 +94,7 @@ func Candidates(configured string) []Candidate {
 		if path == "" {
 			return
 		}
-		key := strings.ToLower(filepath.Clean(path))
+		key := candidateKey(path)
 		if seen[key] {
 			return
 		}
@@ -114,6 +114,27 @@ func Candidates(configured string) []Candidate {
 		}
 	}
 	return out
+}
+
+// candidateKey is what makes two candidates one module: the file a path
+// resolves to, not the name it was found under.
+//
+// SafeSign installs /usr/lib/libaetpkss.so and /usr/lib/libaetpkss.so.3 as
+// two symlinks to one library, and the known list names both — the second
+// in case a machine has only the versioned link. Keyed by name, both were
+// loaded, each would get its own worker, and two workers would hold
+// C_Initialize open on one card (measured, D-360). Two *different* files
+// that see one card, NetSeT's two builds, stay two candidates: that is
+// D-271's case, and the thumbprint collapses it.
+//
+// A path that does not resolve — a configured one with a typo — keys by its
+// own name, so it still reaches Modules and is reported by name. Lower-cased
+// because Windows paths are case-insensitive.
+func candidateKey(path string) string {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	return strings.ToLower(filepath.Clean(path))
 }
 
 func fileExists(path string) bool {

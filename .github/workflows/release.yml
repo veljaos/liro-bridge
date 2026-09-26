@@ -26,14 +26,15 @@ on:
 #   build    runs for a tag and for a dispatch, and never holds the
 #            release signing key.
 #   release  runs only for a tag, is bound to the `release`
-#            environment, and is the only job that uses that key.
+#            environment, and is the only place that key exists.
 #
-# sign-linux (D-356) is bound to the same environment, because that is
-# where the package signing key is kept. An environment's secrets are
-# open to every job bound to it, so sign-linux *could* name the release
-# key; it does not, and nothing but review of this file keeps it that
-# way. A second environment for the package key would make that a
-# setting rather than a convention — the owner's choice (D-356).
+# sign-linux (D-356) is bound to its own environment, `package-signing`,
+# which holds the package key and nothing else. An environment's secrets
+# are open to every job bound to it, so sharing `release` would have let
+# sign-linux name the release key it has no use for; the owner ruled that
+# a blast radius bigger than the job's purpose (D-360). Both environments
+# need the same deployment rule — refs matching v* only — and that rule
+# lives in repository settings, where this file cannot see it.
 #
 # Four things make the signing job unreachable from a fork's pull
 # request, and only the last three are this file:
@@ -226,8 +227,8 @@ jobs:
           retention-days: 7
 
   # Package signing (session 6 §E, D-356). A job of its own, tag pushes
-  # only, bound to the `release` environment where the package key is
-  # kept, in the build's own ubuntu:24.04 so gpg and rpmsign are the
+  # only, bound to the `package-signing` environment, which holds the
+  # package key and nothing else (D-360), in the build's own ubuntu:24.04 so gpg and rpmsign are the
   # versions CI runs on every push with a throwaway key.
   #
   # sign.sh signs the .rpm in place, writes SHA256SUMS and
@@ -243,7 +244,7 @@ jobs:
     if: github.event_name == 'push' && github.repository == 'veljaos/liro-bridge'
     runs-on: ubuntu-latest
     container: ubuntu:24.04
-    environment: release
+    environment: package-signing
     steps:
       - name: gpg and rpmsign
         run: |
@@ -294,10 +295,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
-    # Everything in this job can reach the release signing key, and so
-    # can sign-linux, which shares the environment and does not use it.
-    # The environment's deployment rule is what restricts both to a
-    # release tag; see the note at the top.
+    # Everything in this job can reach the release signing key, and
+    # nothing outside it can. The environment's deployment rule is what
+    # restricts that to a release tag; see the note at the top.
     environment: release
     steps:
       - uses: actions/checkout@v4

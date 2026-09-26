@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-359, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-360, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -36,8 +36,9 @@ prose of an entry before D-280, outside those words, may be missing.
 13. **A deadline on `uiThread.do`'s wait (Windows).** — D-207, D-099. *Needs:* owner's decision, then code.
 14. **Should the audit log travel with ordinary backups?** Decided by implication. — D-340. *Needs:* owner's decision.
 15. **Publishing the package-signing fingerprint somewhere other than the repository's own host.** — session 6 §E; D-356. *Needs:* owner's decision.
-16. **A second environment for the package-signing key.** `sign-linux` shares `release` with the release key and could name it; only review keeps it from doing so. — D-356. *Needs:* owner's decision.
+16. **The `package-signing` environment exists only in `release.yml`.** Ruled and wired (D-360); the owner creates it, with the `v*` rule, puts the two package secrets there and deletes them from `release`. *Needs:* owner's hands.
 17. **A module's load-failure sentence is English in every locale.** Module reasons are data under SPEC §9.3; D-359's sentences are for a person. — D-359. *Close:* translate by category, or accept. *Needs:* owner's decision.
+18. **Nothing records what a person was shown when nothing could be signed.** SPEC §6.7 records what was signed and refused; the reason on the empty screen reaches no log and no audit entry, so the only record is whoever was looking. — D-360. *Needs:* owner's decision (what SPEC §6.7 should cover), then code.
 
 ## B. Claims not measured
 
@@ -62,8 +63,6 @@ prose of an entry before D-280, outside those words, may be missing.
 19. **Stale discovery files under linger, with `XDG_RUNTIME_DIR` unset, and across two users.** — D-325. *Needs:* measurement, owner's hands.
 20. **Is gotk4 v0.3.1 missing an API the remaining UI needs?** — D-327, D-330. *Needs:* code.
 21. **CI fuzz flake rate.** — D-328. *Needs:* CI.
-22. **Is `pcscd.socket` enabled after install on clean Ubuntu, Debian and Fedora?** Predicted yes on all three, Fedora with low confidence. — D-358. *Close:* read `linux-install`'s notices. *Needs:* CI.
-23. **A really stopped `pcscd`, and the window's empty screen saying so.** Measured only with `PCSCLITE_CSOCK_NAME` at a missing socket. — D-358. *Needs:* owner's hands (root).
 
 ## C. Built, and never watched or never run end to end
 
@@ -82,7 +81,7 @@ prose of an entry before D-280, outside those words, may be missing.
 13. **`Sign.java` and `sign.php` never executed.** — sdk/examples README. *Needs:* a JDK and PHP.
 14. **The stamp with a real card's name through the Linux flow.** — D-339. *Needs:* hardware.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
-16. **Package signing with the real key has never run**, and neither have its CI steps (throwaway signing, the README's check on three images, Fedora's `rpm -K` over an ed25519 signature). Measured only here, with a throwaway key. — D-356. *Close:* the next push, then the first `v*` tag. *Needs:* CI.
+16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
 17. **The notification coming down at approval, on a desktop.** Tested through the answering paths, never seen. — D-357. *Close:* with the rebuilt package, at the real-card run. *Needs:* owner's hands.
 
 ## D. Known defects, not fixed
@@ -109,7 +108,7 @@ prose of an entry before D-280, outside those words, may be missing.
 1. *Package signing: built in D-356; its first real run is C16. Numbering kept, because F1 cites E3 and E4.*
 2. **SPEC §12.6's B-LT default** — see A2.
 3. **MUP on Linux needs a direct PC/SC route.** — F11 "Deferred"; SPEC §6.5.1. *Needs:* code, hardware.
-4. **No Linux module for the Pošta card** without SafeSign for Linux. — D-355. *Needs:* hardware.
+4. **The Pošta card through SafeSign on Linux**: SafeSign installed and discovered (D-360); the card has not been read. — D-355. *Needs:* hardware.
 5. *`pcscd.socket` left disabled: the agent now says so with the command (D-358); whether it is left disabled is reported by CI (B22). Numbering kept.*
 6. *Load failures as readable `Failure`s: built and measured with compiled fixtures (D-359). Numbering kept.*
 7. **The audit record says which backend signed but perhaps not why.** Status uncertain — check D-313's `signerOrigin`. — D-311. *Needs:* code.
