@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-362, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-363, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -44,6 +44,8 @@ prose of an entry before D-280, outside those words, may be missing.
     5. In `release`, delete `LIRO_PACKAGE_SIGNING_KEY` and `LIRO_PACKAGE_SIGNING_PASSPHRASE`.
 17. *A module's load-failure sentence: translated (D-362). Numbering kept.*
 18. **Nothing records what a person was shown when nothing could be signed.** SPEC §6.7 records what was signed and refused; the reason on the empty screen reaches no log and no audit entry, so the only record is whoever was looking. — D-360. *Needs:* owner's decision (what SPEC §6.7 should cover), then code.
+19. **Credentials outlive an uninstall, on both platforms.** A pairing's secret is in the login keyring on Linux (in DPAPI-protected storage on Windows), and nothing in an uninstall path can see it: the package cannot reach a home directory, and the MSI runs as whoever installs. Nobody has looked at Windows. — D-363. *Close:* decide whether uninstall tells the person, or the agent offers to forget pairings, or it is accepted. *Needs:* owner's decision.
+20. **SPEC §11.11 on Linux is not implemented.** "The agent must tell the user which issuers are actually supported rather than reporting 'no certificates found'." Today a MUP or Halcom holder on Linux is told no reader was found, with the reader plugged in — a false statement about their own hardware. Wording drafted with the owner; the MUP claim waits on a measurement with the owner's MUP card, and Halcom is unverified and must be said so. — D-363. *Needs:* owner's MUP card, then code. **Before any other item on this list: it is the only one that tells a person something untrue about their own machine** (the owner).
 
 ## B. Claims not measured
 
@@ -73,8 +75,8 @@ prose of an entry before D-280, outside those words, may be missing.
 
 1. **The two-window fix on Windows.** It changes the Explorer verb whenever a tray agent is running — the same race existed there since D-344 — and nothing has run it on Windows. — D-355 §3. *Needs:* Windows, owner's hands.
 2. **The web-process leak fix across a day of requests.** — D-355 §4. *Needs:* owner's hands.
-3. **GNOME skipping a left-behind autostart entry.** — D-355 §8. *Close:* remove the package, log out and in. *Needs:* owner's hands.
-4. **What `remove` and `purge` leave in a home directory.** — D-354 P6; D-355. *Needs:* owner's hands.
+3. **GNOME skipping a left-behind autostart entry.** The package is purged and the entry is in place (D-363); the owner logs out and in. *Needs:* owner's hands.
+4. *What `remove` and `purge` leave: measured, both (D-363). Numbering kept.*
 5. **Window tests run only when built to the profiled path**; CI never runs them. — D-355 §4. *Close:* a CI job with a display and a profile, or a recorded decision. *Needs:* CI.
 6. **A batch through PKCS#11, and a one-PIN-per-signature card.** — D-318. *Needs:* hardware.
 7. **The certificate chooser for PKCS#11 in the agent on Windows.** Status uncertain: D-318 signed through PKCS#11. — D-316. *Needs:* hardware.
@@ -84,12 +86,14 @@ prose of an entry before D-280, outside those words, may be missing.
 11. **The ported sign flow has only `*_windows_test.go` tests.** — D-338. *Needs:* code.
 12. **Demo A to a written PDF; demo B to the end**, and the README table. — handover-next-session §2; D-265. *Needs:* owner's hands.
 13. **`Sign.java` and `sign.php` never executed.** — sdk/examples README. *Needs:* a JDK and PHP.
-14. **The stamp with a real card's name through the Linux flow.** A stamp is on D-361's signed file and its glyph pattern fits the holder's name; nobody has looked at it. — D-339, D-361. *Close:* the owner opens the file. *Needs:* owner's eyes.
+14. *The stamp with the holder's name: read by the owner — "SAVKA ODŽIĆ", Ž and Ć rendered (D-363). Numbering kept.*
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
 
 ## D. Known defects, not fixed
+
+**Flagged by the owner, above the rest though neither is F12's: D3 and D4.** Both are about a signature, not about Linux, and both mean the Windows version people have installed today may report something it did not establish. Neither should be discovered by a user.
 
 1. *The notification outlived the approval: fixed in D-357; watching it is C17. Numbering kept.*
 2. **No file or folder chooser, no message box, no drag and drop on Linux.** `ChooseFiles`/`ChooseFolder` return `ErrUnsupportedPlatform` and are called from the main window, audit export and the stamp window. — D-330, D-331, D-338. *Needs:* code.
@@ -114,7 +118,7 @@ prose of an entry before D-280, outside those words, may be missing.
 2. **SPEC §12.6's B-LT default** — see A2.
 3. **MUP on Linux needs a direct PC/SC route.** — F11 "Deferred"; SPEC §6.5.1. *Needs:* code, hardware.
 4. *The Pošta card through SafeSign on Linux: signed and verified (D-361). Numbering kept.*
-5. *`pcscd.socket` left disabled: the agent now says so with the command (D-358); whether it is left disabled is reported by CI (B22). Numbering kept.*
+5. *`pcscd.socket` left disabled: the agent says so with the command (D-358), and CI found it enabled after install on all three clean images (D-360). Numbering kept.*
 6. *Load failures as readable `Failure`s: built and measured with compiled fixtures (D-359). Numbering kept.*
 7. **The audit record says which backend signed but perhaps not why.** Status uncertain — check D-313's `signerOrigin`. — D-311. *Needs:* code.
 
@@ -129,6 +133,6 @@ the checklist wants updating against D-354 and D-355.
 4. **A module that kills its worker becomes a `Failure`, with the real module** — C9.
 5. **DMABUF and NVIDIA** — B6.
 6. **The sandbox on stock 24.04** — B7.
-7. **The "desktop entry … marked trusted" box contradicts the owner's ruling** of D-355 §9. *Needs:* owner's decision (reword or strike).
+7. *The "marked trusted" box: struck and replaced by the owner (D-363). Numbering kept.*
 8. **What a stock GNOME user sees** — only an empty bus so far (D-342). *Needs:* Fedora machine.
 9. **Package signing** — built (D-356); the real-key run is C16.

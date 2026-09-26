@@ -37353,3 +37353,94 @@ without a sentence fails there. Mutation-checked: without the mapping in
 `asModuleFailure`, "the LoadError did not reach the report".
 
 **The Serbian is mine and is for the owner's review**, like D-358's.
+
+## D-363 — F12 §11 on Ubuntu: remove and purge measured separately, the kernel keeps the profile by design, and a checklist box struck
+
+**Date:** 2026-09-26
+**Phase:** F12 §11, the Ubuntu half.
+
+### Method
+
+A snapshot script recorded everything this program can leave: dpkg's state
+and the 30 files it listed at install, the AppArmor profile and
+`postinst`'s `local/` file, the MIME and icon caches, and in the home
+directory the config, audit log, logs, update state, TSL cache, autostart
+entry, runtime directory and keyring items. Taken installed, after `remove`,
+after `purge`. **Predictions written at 14:00:46, before either** (the owner
+ran `remove` at 14:04:01 and `purge` at 14:08:22; dpkg's log and apt's
+history carry both). The kernel's profile needs root: the owner ran
+`aa-status` after each. The agent was not running.
+
+### Remove
+
+| | predicted | measured |
+|---|---|---|
+| P1 | package files gone; the profile (a conffile) and `local/liro-bridge` stay | binary, both desktop entries, all 7 icons gone; both profile files stay; dpkg `config-files` |
+| P2 | the kernel keeps the profile | `aa-status`: 1 |
+| P3 | the MIME and icon caches stop naming it | neither mentions it |
+| P4 | home unchanged | **byte-identical**: config, audit log (sha256 `bebb3f79…`), logs, update state, TSL cache, autostart entry |
+
+### Purge
+
+| | predicted | measured |
+|---|---|---|
+| P5 | both profile files gone | gone; `/etc/apparmor.d/local/` stays, holding other packages' files; dpkg `not-installed` |
+| P6 | the kernel still holds the profile | `aa-status`: 1 |
+| P7 | home unchanged | byte-identical to after remove; audit log hash unchanged |
+
+**Every prediction held.** Remove and purge are different promises and
+both are kept: remove takes what a person runs and leaves configuration;
+purge takes the configuration too; neither reaches a home directory, which
+dpkg cannot.
+
+### What survives in a home directory, and whether that is right
+
+- **The audit log** — must (SPEC §6.7; D-244's rule on Windows). Measured
+  intact to the byte.
+- **Config, logs, update state, TSL cache** — apt never touches a home
+  directory, and a reinstall reads them back. Right.
+- **The runtime directory** — tmpfs, gone at logout.
+- **The autostart entry** — left behind, pointing at a binary that is gone.
+  Whether GNOME skips it silently is the logout check (open-items C3).
+- **Keyring credentials** — none today; a pairing made before an uninstall
+  would survive, and nothing in the uninstall path can see it. **On the open
+  list by the owner's ruling (A19), for both platforms**, not settled here.
+
+### The loaded profile: kept, by decision
+
+The profile is `flags=(unconfined)` with one rule, `userns,` — it confines
+nothing and grants unprivileged user namespaces, which WebKitGTK's bwrap
+sandbox needs on Ubuntu 24.04, to a program executed at exactly
+`/usr/bin/liro-bridge`. With the binary gone nothing runs under it; anything
+placed at that path later needs root to put there and gains nothing root
+lacks; it costs a few kilobytes until reboot, and `postinst` replaces it
+(`-r`) on reinstall. `dh_apparmor` does not unload on remove either.
+
+**Owner's ruling: it stays, and no unload step is added to `postrm`** — "a
+postrm that unloads would be correct in the case nobody does and wrong in the
+case everybody does": remove followed straight by reinstall is exactly when
+the kernel should keep it.
+
+### The checklist box
+
+F12's "desktop entry with the icon, marked trusted" is **struck by the
+owner**: it asked for evidence of a desktop launcher D-355 §9 decided must not
+exist. In its place, what was decided and what the owner has seen work: the
+app-grid entry with the icon, and the `MimeType=application/pdf` association.
+
+### Also recorded here
+
+- **SPEC §11.11 on Linux is unimplemented** (open-items A20): a MUP or Halcom
+  holder is told no reader was found, reader plugged in. The owner ranks it
+  first. Nobody had looked; the triage found it.
+- **D3 and D4 flagged** by the owner above the rest of group 2: they are about
+  a signature, and the Windows version installed today may report what it
+  did not establish.
+- **The stamp (C14) is closed** by the owner's reading of the signed PDF:
+  "SAVKA ODŽIĆ", Ž and Ć rendered, top right, every line legible.
+- **Sentence (7)** of D-362 reads "`ldd %s` pokazuje koja nedostaje", the
+  owner's correction.
+
+### Still to do on this machine for §11
+
+The logout: package purged, entry in place. Then reinstall.

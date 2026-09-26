@@ -21,7 +21,7 @@
   "certs.module_load.not_a_library": "Ovo nije deljena biblioteka.",
   "certs.module_load.no_file": "Na ovoj putanji nema datoteke.",
   "certs.module_load.wrong_class": "Ovo je 32-bitna biblioteka, a ovaj program je 64-bitni.",
-  "certs.module_load.loader_stopped": "Sistemski učitavač je zaustavio proces dok je učitavao ovaj modul ili biblioteku koja mu je potrebna; `ldd %s` pokazuje koju.",
+  "certs.module_load.loader_stopped": "Sistemski učitavač je zaustavio proces dok je učitavao ovaj modul ili biblioteku koja mu je potrebna; `ldd %s` pokazuje koja nedostaje.",
   "certs.module_load.old_openssl": "To je starija verzija OpenSSL-a od one koju ova distribucija isporučuje: modul je napravljen za stariji sistem, i potrebna je verzija proizvođača za ovaj.",
   "certs.module_load.loader_said": "(Sistemski učitavač je javio: %s)",
   "certs.issuer_label": "Izdavalac",
