@@ -521,6 +521,9 @@ func (m *mainWindow) approveCertificate(ctx context.Context) bool {
 // after the certificate step has been reached goes through it: SPEC
 // §6.7 wants the refusals as much as the approvals.
 func (m *mainWindow) deny() {
+	// A refusal answers the request as an approval does, and a timeout
+	// and a closed window both arrive here (D-357).
+	m.withdrawWaiting()
 	if m.denied {
 		// One refusal, however many ways out of the flow it took. A
 		// person who presses Cancel and then closes the window has

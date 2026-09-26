@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-356, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-357, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -80,10 +80,11 @@ prose of an entry before D-280, outside those words, may be missing.
 14. **The stamp with a real card's name through the Linux flow.** — D-339. *Needs:* hardware.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. **Package signing with the real key has never run**, and neither have its CI steps (throwaway signing, the README's check on three images, Fedora's `rpm -K` over an ed25519 signature). Measured only here, with a throwaway key. — D-356. *Close:* the next push, then the first `v*` tag. *Needs:* CI.
+17. **The notification coming down at approval, on a desktop.** Tested through the answering paths, never seen. — D-357. *Close:* with the rebuilt package, at the real-card run. *Needs:* owner's hands.
 
 ## D. Known defects, not fixed
 
-1. **The notification outlives the approval** — withdrawn when the window closes, not when the request is answered, against D-341. — D-355 §7. *Needs:* code.
+1. *The notification outlived the approval: fixed in D-357; watching it is C17. Numbering kept.*
 2. **No file or folder chooser, no message box, no drag and drop on Linux.** `ChooseFiles`/`ChooseFolder` return `ErrUnsupportedPlatform` and are called from the main window, audit export and the stamp window. — D-330, D-331, D-338. *Needs:* code.
 3. **`lowerLevel` has no caller**: a mixed batch may report a level it did not reach. — session 4 §8; `batchlevel_windows.go`. *Needs:* code, measurement.
 4. **`CERT_REVOKED` has no producer**; the parsed CRL is thrown away. — D-310, D-312. *Needs:* code (and A8).

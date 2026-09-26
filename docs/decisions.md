@@ -36870,3 +36870,41 @@ would do with a failure; the answer was on screen before it was in my log.
   owner's decision (open-items A).
 - **The fingerprint published somewhere other than this repository** —
   unchanged, open-items A15.
+
+## D-357 — The notification comes down when the request is answered, not when the window closes
+
+**Date:** 2026-09-26
+**Phase:** F12 §8's leftover; [[D-355]] §7.
+
+**The defect.** D-355 §7: the owner watched the "a signature is waiting"
+notification stay in the list through the method screen and the PIN, and
+leave only when the window closed. [[D-341]] says it is "withdrawn when the
+request is answered, however the run ended"; the only withdrawal was a
+`defer` at the end of `open`, which is the end of the window's life, not the
+answer.
+
+**What "answered" means here, taken from the code rather than invented.**
+`startSigning` already stops the 120-second consent clock with the comment
+"The person has answered": that is the approval, the moment Sign is pressed,
+before the card is touched. A refusal, an expiry and a closed window all
+reach `deny`. So the notification is withdrawn in those two places — the
+same instant the clock stops, and the same function every refusal passes
+through. **One definition of answered, not two.** The end-of-run `defer`
+stays as the backstop; `withdrawWaiting` was already safe to call twice.
+
+This means the notification is still there on the certificate and method
+screens, which is right: nothing has been answered while the person is
+still choosing.
+
+**The test** — `TestTheNotificationComesDownWhenTheRequestIsAnswered` —
+drives the three answering paths (`startSigning`, `deny`, `consentExpired`)
+with the window still open, rather than calling `withdrawWaiting` as the
+existing test does. Mutation-checked: without the call in `startSigning`,
+"approved" fails with "withdrawn 0 times"; without the call in `deny`,
+"refused" and "timed out" fail. `cmd/liro-bridge` green, `go vet` clean.
+
+**Not watched.** Nobody has seen it on a desktop: it needs the package
+rebuilt and installed, which is the owner's hands (no sudo here), and it
+belongs with the real-card run. SPEC §6.5.2 is still silent on when the
+notification is withdrawn; D-341 is the rule the code now keeps, and
+whether SPEC should say it is the owner's.

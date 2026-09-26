@@ -129,3 +129,58 @@ func TestAPersonsOwnRunIsNotAnnounced(t *testing.T) {
 		t.Fatalf("a local run posted %d notifications, want none: the person opened this window", f.posted)
 	}
 }
+
+// navigateFails is a window whose next step cannot be shown, so
+// startSigning stops right after the point where the request counts as
+// answered and before anything touches a card.
+type navigateFails struct{ countingWindow }
+
+func (*navigateFails) Navigate(string) error { return errors.New("no next step in this test") }
+
+// TestTheNotificationComesDownWhenTheRequestIsAnswered is D-341's
+// sentence, "withdrawn when the request is answered", through the paths
+// that answer it rather than through withdrawWaiting itself. D-355 §7
+// watched the notification stay through the method screen and the PIN,
+// because the only withdrawal was at the end of the window's life
+// (D-357). Each case asks while the window is still open.
+func TestTheNotificationComesDownWhenTheRequestIsAnswered(t *testing.T) {
+	answer := map[string]func(m *mainWindow){
+		"approved": func(m *mainWindow) {
+			// startSigning tells the caller the PIN is next, which needs
+			// a job the registry made rather than remoteFlow's bare one.
+			job, err := jobs.NewRegistry(nil).Submit("My ERP", 1, "fp")
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.remote.job = job
+			m.win = &navigateFails{}
+			m.remoteItems = []jobs.Item{{DisplayName: "ugovor.pdf"}}
+			m.selected = "a-certificate"
+			m.startSigning(context.Background())
+		},
+		"refused":   func(m *mainWindow) { m.deny() },
+		"timed out": func(m *mainWindow) { m.consentExpired() },
+	}
+	for name, answer := range answer {
+		t.Run(name, func(t *testing.T) {
+			f := useFakeNotifier(t)
+			m := remoteFlow("My ERP")
+			m.announceWaiting()
+			if f.posted != 1 {
+				t.Fatalf("posted %d notifications, want 1", f.posted)
+			}
+
+			answer(m)
+
+			if f.closed != 1 {
+				t.Fatalf("the request was %s and the notification was withdrawn %d times, want 1: "+
+					"it said a signature was waiting for a request already answered", name, f.closed)
+			}
+			// The window's own end still withdraws, and must not twice.
+			m.withdrawWaiting()
+			if f.closed != 1 {
+				t.Errorf("withdrawn %d times by the end of the run, want 1", f.closed)
+			}
+		})
+	}
+}

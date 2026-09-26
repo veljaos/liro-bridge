@@ -461,8 +461,12 @@ func (m *mainWindow) open(ctx context.Context, inbox *jobs.Inbox, first flowStep
 	// and §6.5.2 exists because nothing may *depend* on that.
 	//
 	// It is posted after the first step, so it never announces a window
-	// that then fails to draw, and it is withdrawn however this run
-	// ends — approved, refused, closed or timed out.
+	// that then fails to draw. **It is withdrawn when the request is
+	// answered** (D-341), not when this window closes: at approval in
+	// startSigning, the moment the consent clock stops, and at refusal or
+	// timeout in deny. D-355 §7 watched it outlive the approval through
+	// the PIN because this defer was the only withdrawal (D-357). The
+	// defer stays as the backstop for a run that ends any other way.
 	if m.remote != nil {
 		m.announceWaiting()
 	}
@@ -1051,10 +1055,12 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 		return false
 	}
 	if m.remote != nil {
-		// The person has answered, so the clock stops. From here the
-		// caller is told what the run is doing rather than how long the
-		// window has left.
+		// The person has answered, so the clock stops and the
+		// notification saying a signature is waiting comes down (D-357).
+		// From here the caller is told what the run is doing rather than
+		// how long the window has left.
 		m.remote.endCountdown()
+		m.withdrawWaiting()
 		m.remote.job.Publish(jobs.Update{State: jobs.JobAwaitingPIN})
 	}
 	if !m.gotoPage(pageMain) {
