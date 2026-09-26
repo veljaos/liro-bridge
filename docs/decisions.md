@@ -37444,3 +37444,53 @@ app-grid entry with the icon, and the `MimeType=application/pdf` association.
 ### Still to do on this machine for §11
 
 The logout: package purged, entry in place. Then reinstall.
+
+## D-364 — A left-behind autostart entry: nothing reaches the person, and gnome-session says so in the journal — the prediction of silence was wrong, and so was the grep that confirmed it
+
+**Date:** 2026-09-26
+**Phase:** F12 §11, the Ubuntu half; closes open-items C3.
+
+**What ran.** The package purged at 14:08:22 ([[D-363]]), and
+`~/.config/autostart/liro-bridge.desktop` left in place — 190 bytes,
+`Exec="/usr/bin/liro-bridge" tray`, `TryExec=/usr/bin/liro-bridge`, with no
+binary at that path. The owner then started a new session. **It was a
+reboot, not a logout** (`last`: system boot 14:18; the session began
+14:19). Both run the session's autostart pass, so the result is the same;
+the reboot is why the passed-through reader was gone afterwards, because
+VirtualBox does not re-attach a USB device across a guest reboot.
+
+| | predicted (session 7 §B.1) | measured |
+|---|---|---|
+| a dialog or notification about Liro Bridge | none | **none** — the owner |
+| `pgrep -a liro-bridge` | nothing | **nothing** — the owner |
+| the entry | still there | **still there**, 190 bytes, unchanged |
+| the user journal | silence (GIO refuses an entry whose `TryExec` is missing) | **not silent** — see below |
+
+gnome-session logged one warning, twice (its own line and its stderr):
+
+> `gnome-session-binary[2164]: WARNING: Desktop file /home/vboxuser/.config/autostart/liro-bridge.desktop for application liro-bridge.desktop could not be parsed or references a missing TryExec binary`
+
+**So: silent to the person, not silent in the journal.** The refusal
+happens where session 7 said it would (the `TryExec`); the prediction that
+nothing would be written was mine and was wrong.
+
+**The instrument that failed.** The owner's check,
+`journalctl --user -b | grep -i -E 'liro|autostart'`, and the handover
+that suggested it: this VM's hostname is `Ubuntu-Liro`, so `liro` matches
+every line journalctl prints — all 479 of them. A grep that matches
+everything reads, on a screen, exactly like a grep that matched nothing
+useful, and the warning was one line among them. Found by counting the
+matches, then re-run on the message alone (`journalctl -o cat`), which
+matched 4: the warning twice, an unrelated scope, and the reinstall's
+`sudo` line. The check could not have failed; question 1 of [[D-304]].
+**Any future journal search here uses `-o cat`, or names the program as
+`liro-bridge`.**
+
+**Nothing to change.** A person who uninstalls gets no dialog, no process
+and no error at the next login; the entry is inert until the package
+returns, and then it is live again — which is what reinstalling someone's
+own choice should do. Removing it would need the program running at
+uninstall, which it is not (D-363: apt cannot reach a home directory).
+
+**Reinstalled** by the owner at 14:21:36, `0.9.9~dev.6`. The entry is live
+again, and the agent will start at the next login.

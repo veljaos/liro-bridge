@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-363, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-364, 2026-09-26.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -75,7 +75,7 @@ prose of an entry before D-280, outside those words, may be missing.
 
 1. **The two-window fix on Windows.** It changes the Explorer verb whenever a tray agent is running — the same race existed there since D-344 — and nothing has run it on Windows. — D-355 §3. *Needs:* Windows, owner's hands.
 2. **The web-process leak fix across a day of requests.** — D-355 §4. *Needs:* owner's hands.
-3. **GNOME skipping a left-behind autostart entry.** The package is purged and the entry is in place (D-363); the owner logs out and in. *Needs:* owner's hands.
+3. *GNOME and a left-behind autostart entry: nothing reaches the person; gnome-session logs one warning (D-364). Numbering kept.*
 4. *What `remove` and `purge` leave: measured, both (D-363). Numbering kept.*
 5. **Window tests run only when built to the profiled path**; CI never runs them. — D-355 §4. *Close:* a CI job with a display and a profile, or a recorded decision. *Needs:* CI.
 6. **A batch through PKCS#11, and a one-PIN-per-signature card.** — D-318. *Needs:* hardware.
