@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/keysource"
 )
 
@@ -180,8 +181,8 @@ func TestSignDigestPropagatesOpenErrorAsLocalisedCode(t *testing.T) {
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero when Open fails")
 	}
-	if !strings.Contains(stderr.String(), "Insert your card into the reader.") {
-		t.Fatalf("expected the localised CARD_NOT_PRESENT message, got: %s", stderr.String())
+	if want := localisedCodeMessage(t, errs.CodeCardNotPresent); !strings.Contains(stderr.String(), want) {
+		t.Fatalf("expected the localised CARD_NOT_PRESENT message %q, got: %s", want, stderr.String())
 	}
 }
 
@@ -192,7 +193,23 @@ func TestSignDigestFailureSurfacesLocalisedCode(t *testing.T) {
 	if code == 0 {
 		t.Fatal("exit code = 0, want non-zero when signing fails")
 	}
-	if !strings.Contains(stderr.String(), "The card failed to produce a signature.") {
-		t.Fatalf("expected the localised SIGN_FAILED message, got: %s", stderr.String())
+	if want := localisedCodeMessage(t, errs.CodeSignFailed); !strings.Contains(stderr.String(), want) {
+		t.Fatalf("expected the localised SIGN_FAILED message %q, got: %s", want, stderr.String())
 	}
+}
+
+// localisedCodeMessage is the English sentence a person is shown for code
+// on the platform the test runs on. Read from the catalogue rather than
+// written here: these tests are about the code reaching stderr localised,
+// and a copy of the wording went red on Linux the day CARD_NOT_PRESENT
+// gained a Linux sentence (D-368). Which sentence each platform shows is
+// i18n's to test (platformkeys_linux_test.go).
+func localisedCodeMessage(t *testing.T, code errs.Code) string {
+	t.Helper()
+	key := i18n.CodeKey(code)
+	msg := i18n.Load("en").T(key)
+	if msg == "" || msg == key {
+		t.Fatalf("the catalogue has no English sentence for %s", code)
+	}
+	return msg
 }

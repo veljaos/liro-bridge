@@ -71,14 +71,18 @@ func TestRenderTextThumbprintShowsLastEightCharacters(t *testing.T) {
 
 func TestRenderTextHidesEverythingThatIsNotASigningCertificate(t *testing.T) {
 	var buf bytes.Buffer
-	RenderText(&buf, sampleReport(), i18n.Load("en"), referenceTime, false)
+	c := i18n.Load("en")
+	RenderText(&buf, sampleReport(), c, referenceTime, false)
 	if strings.Contains(buf.String(), "{GUID}") {
 		t.Fatalf("default view must hide the unknown-purpose, unqualified certificate: %s", buf.String())
 	}
 	// The authentication certificate carries the same display name as
 	// the signing one — which is the whole point (SPEC §11.5) — so what
-	// says it is gone is the role line, not the name.
-	if strings.Contains(buf.String(), "authentication") {
+	// says it is gone is the role line, not the name. The role word is
+	// read from the catalogue, and --all's test below shows it can be
+	// found: a copy of it here would stop looking the day it was reworded,
+	// and pass (D-368).
+	if strings.Contains(buf.String(), c.T("certs.purpose_authentication")) {
 		t.Fatalf("default view must hide the authentication certificate: %s", buf.String())
 	}
 	if !strings.Contains(buf.String(), "Certificates: 1") {
@@ -94,6 +98,9 @@ func TestRenderTextAllShowsHiddenCertificate(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "Certificates: 3") {
 		t.Fatalf("expected 3 certificates with --all, got: %s", buf.String())
+	}
+	if role := i18n.Load("en").T("certs.purpose_authentication"); !strings.Contains(buf.String(), role) {
+		t.Fatalf("--all must show the authentication certificate's role %q: %s", role, buf.String())
 	}
 }
 

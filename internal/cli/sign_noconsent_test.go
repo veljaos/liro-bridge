@@ -686,7 +686,7 @@ func TestRunSignWithoutConsentRefusesAnOutputThatIsAnotherInput(t *testing.T) {
 	// other per-document failure. What must be true is that it is said
 	// out loud and that nothing was destroyed.
 	_ = code
-	if !strings.Contains(stderr.String(), "another document in this batch") {
+	if !strings.Contains(stderr.String(), i18n.Load("en").T("sign.output_is_another_input")) {
 		t.Errorf("stderr does not say why: %q", stderr.String())
 	}
 

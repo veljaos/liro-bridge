@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-367, 2026-09-26.** One list, to be read in one sitting and acted
+**As of D-368, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -113,6 +113,7 @@ prose of an entry before D-280, outside those words, may be missing.
 14. **Session 5's pre-push commands are wrong in two places.** — D-354. *Close:* use D-354's corrections; the document is a record. *Needs:* nothing but reading.
 15. **The thinned icon has never reached the owner's installed tray.** — D-321. *Needs:* Windows, owner's hands.
 16. **The autostart test cannot see the `$` and backtick escapes.** — D-354. *Needs:* code (low).
+17. **A Windows window test pins the singular sentence's wording** (`alreadysigned_windows_test.go:124`, "1 of these documents is") and goes red when it improves. The four such tests that run on Linux read from the catalogue now. — D-368. *Needs:* Windows.
 
 ## E. Promises in documents that nothing does yet
 

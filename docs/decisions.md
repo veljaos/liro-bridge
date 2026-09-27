@@ -37761,3 +37761,77 @@ only the zero-byte `.lock` beside it. **One instrument note:** the line I
 printed as the holder's PID was the shell's, and the shell had exec'd the
 probe — the holder was `flock(1)`, its parent. M2 is what shows M1's
 timeout was the hold and not something else.
+
+## D-368 — CI's red job was a test that copied a sentence, not a sentence that moved on one path: the catalogue is the expectation now, and the sweep for others found two that would have gone blind rather than red
+
+**Date:** 2026-09-27
+**Phase:** F12; CI's `ci` job, red since `d727d12`.
+
+**The failure.** `TestSignDigestPropagatesOpenErrorAsLocalisedCode` expected
+"Insert your card into the reader." and got "No card was found. Check that the
+reader is connected and the card is inserted." — the Linux sentence
+`error.card_not_present` gained in [[D-365]].
+
+**Which of the two was wrong: the test.** The Linux sentence is chosen inside
+`Catalogue.T` (`platformKeys`, [[D-358]]), not at any caller, so no path can
+show the other one; `c.data` is read nowhere else, and no page or script
+carries a copy of either sentence (searched, with the same search finding the
+copies that do exist, in `en.json` and the test). `platformkeys_linux_test.go`
+checks that one place for every replaced key in all three catalogues. The
+message moved everywhere at once, which is what it was built to do. The test
+pinned the Windows wording of a key that has had a Linux one since `5a96f04`.
+
+**Why it reached CI.** The file is `//go:build softtoken`. D-365's "`go test
+./...` green" was untagged, and could not have seen it — question 2 of
+[[D-304]]; CI's `ci` job runs the tagged view on Linux, and `windows` passed
+because `platformKeys` is empty there. My own first reproduction here said
+`ok … [no tests to run]` — question 4: a run that did not run. **A local
+green claimed before a push is both views**: `go test -p 1 ./...` and
+`go test -p 1 -tags softtoken ./...`. The counts differ by one package,
+`internal/keysource/softtoken`, which the untagged `./...` leaves out entirely.
+
+**The change.** The two `sign-digest` tests take their expectation from the
+English catalogue through `i18n.CodeKey`, so they test that the code reaches
+stderr localised, not how it is worded; which sentence each platform shows is
+i18n's to test. Mutations, each red: the wrong code's sentence, and the raw
+error in place of any sentence.
+
+### The sweep: which other tests pin a message
+
+Every string literal of twelve characters or more in every `_test.go`,
+matched as a substring against every value in the three catalogues: 102 hits,
+the known one among them. Twenty look like sentences; the rest are flags
+(`--thumbprint` is inside a help sentence), JSON field names, corner names and
+comments. Read one by one, the twenty are of four kinds:
+
+| kind | fails how, when the wording improves | found | done |
+|---|---|---|---|
+| **positive pin of wording** — "must contain X" | goes red for no fault | `signdigest_test.go` (two), `certs_test.go` "Trusted List:", `sign_noconsent_test.go` "another document in this batch", `alreadysigned_windows_test.go` "1 of these documents is" | the first four read from the catalogue; the fifth left (below) |
+| **negative pin of wording** — "must not contain X" | **goes blind and stays green** | `loadfailure_i18n_test.go`: eight English fragments copied from `loadfailure.go`; `render_test.go`: "authentication", with nothing showing the word can appear | fixed |
+| a fact in a sentence | red only if the fact goes | `systemctl enable --now pcscd.socket`; the issuer names in `cardslots_test.go`; the loader's own words | kept |
+| a wording decided on purpose | red is the point | the stamp label, "Elektronski potpisano" | kept |
+
+**The second kind is the one that answers "the others are not watching".**
+A positive pin announces itself the day the sentence moves, as this one did.
+A negative pin whose copy no longer matches passes forever and looks at
+nothing. `loadfailure_i18n_test.go` now takes the English it must not find
+from `LoadError.Error()` itself — the reason and the OpenSSL clause separately,
+without the loader's words, which a Serbian report does show. `render_test.go`
+takes the role word from the catalogue, and `--all`'s test gains the positive
+half: the same word must appear there, so the pair can fail.
+
+Mutations, each written down before it ran and each red: the raw English
+reason for every load failure (D-362's defect) — every kind, both scripts;
+only the OpenSSL clause, as the English catalogue's sentence — **the least
+certain**, since it needed `loadfailure.go`'s wording and `en.json`'s to agree
+after the first ". ", and they do; the authentication row shown in the default
+view; the Trusted List heading printed without the catalogue; the collision's
+reason replaced by another sentence. Seven mutations across the five files,
+seven reds, each restored from git and the diff checked applied.
+
+**Left.** `alreadysigned_windows_test.go:124` is a Windows window test, which
+runs neither here nor in CI (C5); a test I cannot run is not one I change.
+Open-items D17.
+
+`go test -count=1 -p 1 ./...` (36 packages) and with `-tags softtoken` (37)
+green; `golangci-lint` 0 issues on both GOOS, with the tag.

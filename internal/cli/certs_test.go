@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
 )
 
@@ -20,8 +21,11 @@ func TestRunCertsTextOutput(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; output: %s", code, out.String())
 	}
-	if !strings.Contains(out.String(), "Trusted List:") {
-		t.Fatalf("expected Trusted List heading, got: %s", out.String())
+	// The heading's words before its first value, from the catalogue: a
+	// copy of them here would go red whenever they improved (D-368).
+	heading, _, _ := strings.Cut(i18n.Load("en").T("certs.tsl_heading"), "%")
+	if heading == "" || !strings.Contains(out.String(), heading) {
+		t.Fatalf("expected the Trusted List heading %q, got: %s", heading, out.String())
 	}
 }
 

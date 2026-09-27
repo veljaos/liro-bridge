@@ -34,8 +34,7 @@ func TestEveryLoadFailureReachesAPersonInTheirLanguage(t *testing.T) {
 			var b strings.Builder
 			cli.RenderText(&b, cli.Report{ModuleFailures: []cli.ModuleFailure{f}}, i18n.Load(locale), time.Now(), false)
 			out := b.String()
-			for _, english := range []string{"which is not installed", "no library on this system", "was built against",
-				"not a shared library", "no file at this path", "32-bit library", "system loader stopping", "older OpenSSL"} {
+			for _, english := range englishReasons(le) {
 				if strings.Contains(out, english) {
 					t.Errorf("%s in %s still reads %q:\n%s", kind, locale, english, out)
 				}
@@ -48,4 +47,21 @@ func TestEveryLoadFailureReachesAPersonInTheirLanguage(t *testing.T) {
 			}
 		}
 	}
+}
+
+// englishReasons are the English sentences LoadError.Error() gives for le —
+// the reason, and the OpenSSL clause when le carries one — without the
+// loader's words, which a Serbian report does show. Taken from Error()
+// rather than copied: a copied fragment that no longer matched the English
+// would leave the check above passing and looking at nothing (D-368).
+func englishReasons(le *pkcs11.LoadError) []string {
+	bare := *le
+	bare.Loader, bare.OldOpenSSL = "", false
+	reason := bare.Error()
+	bare.OldOpenSSL = le.OldOpenSSL
+	reasons := []string{reason}
+	if extra := strings.TrimPrefix(bare.Error(), reason); extra != "" {
+		reasons = append(reasons, strings.TrimPrefix(extra, ". "))
+	}
+	return reasons
 }
