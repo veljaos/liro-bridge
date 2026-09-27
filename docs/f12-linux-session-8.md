@@ -6,7 +6,7 @@ the next session starts by reading what the sitting wrote (§D). Then
 `docs/open-items.md`.
 
 **Written:** 2026-09-27, Ubuntu 24.04.5 VM, HWE kernel 7.0.0-31-generic.
-**Entries:** D-368 to D-388. Master at the end of the session: `8177efd`
+**Entries:** D-368 to D-389. Master at the end of the session: `8177efd`
 plus this document.
 
 ---
@@ -69,12 +69,13 @@ Permission denied`.
 
 **The owner's steps:**
 
-0. *(A28, the owner's decision, before anything else.)* Remove the leftover
+0. *(A28 — the owner decided: remove it, D-389.)* Remove the leftover
    profile that gives `python3.12` the userns permission, so the sitting
    measures the stock state:
    `sudo apparmor_parser -R /etc/apparmor.d/liro-f12-probe && sudo rm /etc/apparmor.d/liro-f12-probe`,
    then re-run `~/liro-bridge/scripts/sandboxcheck/run.sh` (a minute; a new
-   baseline file). Or keep it, and say so.
+   baseline file). Predicted unchanged: the check no longer launches from
+   Python.
 1. `sudo aa-status | grep -E 'liro|unprivileged|bwrap'` — note the output.
 2. `sudo apt update && sudo apt upgrade` — the 22.
    Then `dpkg-query -W -f='${Package} ${Version}\n' | sort > ~/sitting-packages-after-update.txt`.
@@ -84,14 +85,25 @@ Permission denied`.
    `~/liro-bridge/scripts/sandboxcheck/run.sh`; then step 1's `aa-status`
    again.
 5. Check that a one-time boot will be honoured:
-   `sudo grep -c next_entry /boot/grub/grub.cfg` must be more than 0. If it
-   is 0, **stop** and leave it for the next session. Then
+   `sudo grep -c next_entry /boot/grub/grub.cfg` must be more than 0. **If it
+   is 0**, `grub-reboot` would do nothing and the VM would boot 7.0 again —
+   use the menu instead: at the reboot, **hold Shift** as GRUB starts (this VM
+   boots by legacy BIOS), choose *Advanced options for Ubuntu*, then the
+   6.8.0-142 entry; nothing on disk changes, and missing the moment only boots
+   the default — try again (D-389). Otherwise
    `sudo grep -E "menuentry |submenu " /boot/grub/grub.cfg | cut -c1-110`
    for the exact titles, and
    `sudo grub-reboot "Advanced options for Ubuntu>Ubuntu, with Linux 6.8.0-142-generic"`
    (the titles as printed), and `sudo grub-editenv list` shows `next_entry`.
 6. **Reboot.** `uname -r` → `6.8.0-142-generic`. Run
    `~/liro-bridge/scripts/sandboxcheck/run.sh`; `aa-status` again.
+   **If the sandbox fails on 6.8** (or on boot 2): do not fix anything —
+   capture, each into `~`, then continue (D-389 says why each):
+   `sudo journalctl -k -b -o cat | grep -i apparmor > ~/sitting-6.8-kernel-apparmor.txt`,
+   `sudo aa-status > ~/sitting-6.8-aa-status.txt`,
+   `sudo apparmor_parser -r -v /etc/apparmor.d/liro-bridge > ~/sitting-6.8-parser.txt 2>&1`,
+   `sudo ls -R /sys/kernel/security/apparmor/features/namespaces > ~/sitting-6.8-features.txt 2>&1`
+   (on boot 2, name the files `sitting-7.0-34-…`).
 7. **Reboot** once more: back on 7.0.0-34, GRUB's default.
 
 The passed-through reader is dropped at every reboot; nothing in the sitting
@@ -118,7 +130,7 @@ needs it. The agent starts at each login (autostart, dev.10).
 2. Compare each boot with its predecessor, **one change at a time**: boot 2
    against the baseline is the update; boot 3 against boot 2 is the kernel.
    A difference is explained or it is a finding.
-3. Write the entry (D-389), close or re-open open-items B7/F6, A23 and A28.
+3. Write the entry (D-390; D-389 is the contingencies), close or re-open open-items B7/F6, A23 and A28. If any `~/sitting-*-kernel-apparmor.txt` exists, a boot failed: read those first.
 4. Then what is left on Ubuntu: B1/B2 (more pinmem runs on the new field —
    D-382's copy after the wipe is still open), B19 (its own sitting), a dev.11
    package carrying the field, paste and focus fix for the owner's window.

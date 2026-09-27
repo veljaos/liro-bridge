@@ -39384,3 +39384,68 @@ every Python 3.12 process on this VM**, left from an instrument, not the stock
 state the sitting means to measure, and it may have coloured any earlier
 measurement that ran under Python. Removing it is a system change and the
 owner's (open-items A28).
+
+## D-389 — The python3.12 userns profile goes: what it could and could not have touched, and what the sitting does if 6.8 fails or GRUB will not boot it once
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items A28 decided; the kernel-and-update sitting's
+contingencies, written before it starts.
+
+### A28 — removed, by the owner's decision
+
+`/etc/apparmor.d/liro-f12-probe` names `/usr/bin/python3.12`, `flags=(unconfined)`,
+`userns,`. **It was made on purpose by session 1** ([[D-324]], 2026-09-20) so a
+PyGObject probe could start WebKitGTK, and session 1's handover wrote the
+command that removes it. **Seven sessions carried it without running that
+command**, this one included until [[D-388]]'s control failed. The owner: it has
+been a machine-wide loosening of Ubuntu's default since the first day, and it
+silently made a check pass for a case that should have failed.
+
+**What it could have touched, and it is narrower than "anything through
+Python".** Python on this VM is unconfined either way; the profile's one effect
+is the permission to create a user namespace, for Python and everything it
+starts. So the readings at risk are those that **both** ran from Python **and**
+needed a user namespace — WebKit's `bwrap` sandbox. From the entries:
+
+- **D-324's own measurement** — the profile's purpose, and recorded as such.
+- **D-376 and D-378's window checks** — launched from Python, but the binary
+  they started, `/home/vboxuser/liro-f12probe`, has its own profile
+  (`liro-f12-window`) granting the same permission; the result does not depend
+  on the Python one.
+- **D-388's first sandbox baseline** — affected, and caught by its control.
+
+Not at risk: the SDK's `sign.py` runs (HTTP to an agent Python did not start),
+pinmem (Go, from the owner's shell, no WebKit), the accessibility probes (a
+GtkPasswordEntry, no sandbox), the core-dump harness (no namespace). **The
+limit**: this is a search of what the entries say ran through Python; a
+measurement whose entry did not mention it would escape it.
+
+The sitting's step 0 removes it and re-takes the baseline; predicted
+unchanged — the installed agent's sandbox starts, the unprofiled control fails
+— because the check no longer launches from Python.
+
+### If the sandbox fails on 6.8
+
+**That is the kernel real Ubuntu 24.04 users have**, and F12 §3.1 set 24.04 as
+the floor; a failure there would mean the package's profile does not work on
+stock 24.04, and the agent would show no windows there. Not something to fix
+during the sitting. **Capture before rebooting back**, each into `~`:
+
+- the check's own file (it writes it);
+- `sudo journalctl -k -b -o cat | grep -i apparmor > ~/sitting-6.8-kernel-apparmor.txt` — AppArmor's denials, which name the operation (`userns_create`) and the profile;
+- `sudo aa-status > ~/sitting-6.8-aa-status.txt` — whether `liro-bridge` is loaded at all on this kernel;
+- `sudo apparmor_parser -r -v /etc/apparmor.d/liro-bridge > ~/sitting-6.8-parser.txt 2>&1` — reloading the installed profile, which is what boot already did; if the rule or its `abi <abi/4.0>` is not understood by 6.8's AppArmor, this is where it says so;
+- `sudo ls -R /sys/kernel/security/apparmor/features/namespaces > ~/sitting-6.8-features.txt 2>&1` — whether this kernel offers userns mediation at all;
+- the same five if **boot 2** (7.0.0-34, updated) fails instead: then the update, not the kernel, is the change.
+
+### If GRUB will not boot 6.8 once
+
+`next_entry` absent from `grub.cfg` would mean GRUB's configuration has no
+one-time-boot hook: `grub-reboot` would record an entry nothing reads, the VM
+would boot the default 7.0 kernel, and the check would measure 7.0 while
+labelled 6.8. That is why step 6 checks `uname -r` before anything else. **The
+other way, with nothing changed on disk**: this VM boots by legacy BIOS with
+GRUB's menu hidden and a zero timeout, and holding **Shift** as GRUB starts
+shows the menu for that one boot — Advanced options, then the 6.8.0-142 entry.
+Missing the moment only means the default boots; try again. Changing
+`GRUB_DEFAULT` is not needed and is a bigger change than this sitting is for.

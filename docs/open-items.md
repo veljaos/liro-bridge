@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-388, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-389, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -53,7 +53,7 @@ prose of an entry before D-280, outside those words, may be missing.
 25. *The Linux PIN dialog's own field: built and measured — no TextChanged, the copy locked while typed, nothing after the wipe (D-385). Numbering kept.*
 26. **Report to GTK that a GtkPasswordEntry sends its text in AT-SPI TextChanged**, with the measurement, not a conclusion: the payload equality, the plain AddMatch listener, GTK 4.14.5, and `scripts/a11yprobe` as the reproducer (D-384, D-385). *Needs:* the owner files it (an outward post). And measure Fedora 44's GTK with the same script when the Fedora VM exists (F1).
 27. *Paste into the PIN field: measured — one copy in the locked page, none after the wipe, nothing on the accessibility bus (D-388). Numbering kept.*
-28. **An AppArmor profile from an earlier session gives every `/usr/bin/python3.12` process the userns permission** (`/etc/apparmor.d/liro-f12-probe`, `flags=(unconfined)`, `userns,`). Not the stock state; it made D-388's first sandbox baseline wrong and may have coloured earlier measurements run under Python. *Close:* remove it (`sudo rm /etc/apparmor.d/liro-f12-probe && sudo apparmor_parser -R` of it, or a reboot after removal), or keep it on purpose. *Needs:* owner's decision (a system change).
+28. **The python3.12 userns profile: removed by the owner's decision, as step 0 of the sitting** (D-389). Made on purpose by session 1 (D-324), carried by seven sessions. Could have touched only readings that ran from Python and needed a user namespace: D-324's own, and D-388's first baseline (caught); D-376/D-378's ran a binary with its own profile. *Close:* the removal done and the baseline re-taken. *Needs:* the sitting.
 
 ## B. Claims not measured
 
