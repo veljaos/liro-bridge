@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-390, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-391, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -54,12 +54,12 @@ prose of an entry before D-280, outside those words, may be missing.
 26. **Report to GTK that a GtkPasswordEntry sends its text in AT-SPI TextChanged**, with the measurement, not a conclusion: the payload equality, the plain AddMatch listener, GTK 4.14.5, and `scripts/a11yprobe` as the reproducer (D-384, D-385). *Needs:* the owner files it (an outward post). And measure Fedora 44's GTK with the same script when the Fedora VM exists (F1).
 27. *Paste into the PIN field: measured — one copy in the locked page, none after the wipe, nothing on the accessibility bus (D-388). Numbering kept.*
 28. *Both hand-made userns profiles removed by the owner in the sitting's step 0; the baselines before and after each unchanged, `liro-bridge` the only profile left (D-389, D-390). Numbering kept.*
-29. **`internal/ui`'s window tests need a profiled path again, and it should not be one the user can write.** Until then they cannot run on this VM (they skip under `go test`, C5). When needed: a profile naming a root-owned binary (e.g. installed with `sudo install -o root -m 0755` under `/usr/local/libexec/`), so the grant covers one known binary rather than whatever is placed in a home directory. *Needs:* owner's decision (a system change), when the window tests are next needed.
+29. **`internal/ui`'s window tests need a profiled path again, and it should not be one the user can write.** Until then they cannot run on this VM (they skip under `go test`, C5). When needed: a profile naming a root-owned binary (e.g. installed with `sudo install -o root -m 0755` under `/usr/local/libexec/`), so the grant covers one known binary rather than whatever is placed in a home directory. *Needs:* owner's decision (a system change), when the window tests are next needed — left open by the owner, not to be decided in the abstract (D-391).
 
 ## B. Claims not measured
 
 1. **Does the PIN dialog's process send keystrokes to IBus, and would the entry's `im-module` stop it?** Two pinmem runs disagree (21 key events on IBus's bus, then 1), and IBus received calls while the dialog provably did not use it, so the bus count is not the dialog's (D-380, D-382). *Close:* repeated runs of both dialogs, with pinmem reporting whether its own process is connected to `ibus-daemon`. *Needs:* owner's hands.
-2. **Does anything of what is typed survive the dialog's wipe?** The accessibility-bus broadcast that broke clause 2 is closed by the dialog's own field (D-384, D-385). What stays open is D-382's: one run of three left a whole copy after the wipe; zeros since are consistent with a copy written over before the scan. *Close:* repeated runs on the new field. *Needs:* owner's hands.
+2. **Does anything of what is typed survive the dialog's wipe?** The accessibility-bus broadcast that broke clause 2 is closed by the dialog's own field (D-384, D-385). What stays open is D-382's: one run of three left a whole copy after the wipe; zeros since are consistent with a copy written over before the scan. *Close:* eight valid typed runs on the new field, every one 0 after the wipe — the stopping rule in D-391, which says what eight closes and what it cannot. *Needs:* owner's hands.
 3. **Why a notification with no action now raises the window when D-337 said it did not.** Not the desktop entry (control). — D-355 §6. SPEC §6.5.2 no longer rests on the answer (D-369). *Close:* vary WebKit view against bare GTK, and posting from Go against another process. *Needs:* owner's hands, measurement.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.

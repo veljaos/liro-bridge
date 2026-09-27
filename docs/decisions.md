@@ -39573,3 +39573,100 @@ is also what makes it possible to re-run this check on stock 24.04 against
 a later package (dev.11) with one `grub-reboot`. Keeping it or removing it is
 the owner's call. A29 (the window tests need a root-owned profiled path) is
 unchanged.
+
+## D-391 — A plan that would blame the wrong change is a defect before anything fails; the owner keeps 6.8 and leaves A29 open; dev.11 built; and B2's stopping rule, written before its runs
+
+**Date:** 2026-09-27
+**Phase:** F12; after D-390. B2's runs follow.
+
+### The first reboot's two changes, in the owner's terms
+
+[[D-390]] recorded that the sitting's first reboot brought the 22 updates
+**and** a kernel point release (7.0.0-31 → 7.0.0-34), where the plan meant it
+to bring one change. D-390 said nothing depended on it because nothing
+failed. **The owner's correction: that is the wrong measure. A plan that
+would attribute a failure wrongly is a defect even when no failure happens.**
+D-389's contingency ("then the update, not the kernel, is the change") would
+have sent a failure on that boot to the wrong cause, and the sitting would
+have gone on to 6.8 believing the update was established as the culprit. The
+defect was in D-388's plan from the start; the passing result only kept it
+from costing anything. **How it was missed**: the plan named the kernel that
+was installed (7.0.0-34), and nobody checked it against the kernel the
+baseline actually ran on, which was written in the baseline file's first
+line. **For the next sitting**: every "this boot changes one thing" is checked
+against the predecessor's own file, line by line, before the reboot, not
+against what is installed.
+
+### The owner's decisions
+
+- **The 6.8.0-142 kernel stays installed**, with `linux-image-generic`. One
+  `grub-reboot` to re-check stock 24.04 is worth the disk, and future updates
+  bring 6.8's kernel updates as well as HWE's.
+- **A29 stays open.** A root-owned path under `/usr/local/libexec` is the
+  right shape, but deciding it with no window test waiting would be deciding
+  it in the abstract. It is decided when the window tests are next needed.
+- **A26, the GTK report: the owner files it.** Unchanged from open-items; the
+  reproducer still reproduces after the update (D-390).
+- **The order from here**: dev.11 installed; then B2 with the owner's hands;
+  then D7, D8 and C2 if it fits. B19 and C12 left for now: B19 needs its own
+  sitting, and C12 needs the owner's hands when they are not also running
+  pinmem. After that this VM is done, and Fedora is next.
+
+### dev.11
+
+`build/linux/build.sh 0.9.9-dev.11 dist/linux` at `4ddbde1`, nFPM from
+`~/go/bin`. `liro-bridge_0.9.9-dev.11_amd64.deb`, SHA-256
+`2e4267f66a988234b44dae8d82db29585b4b5d0cc9e16b34711202c4e1e8bea2`; the binary
+says `0.9.9-dev.11 (commit 4ddbde1)`; glibc 2.34 needed, below the 2.39
+floor. Against dev.10: the same file list, `/etc` (the AppArmor profile
+included) byte for byte the same, and the field's "characters entered"
+string present once in dev.11's binary and absent from dev.10's. So the field,
+paste and focus fix are in it. Code changes since dev.10 (`f598509`) are the
+PIN dialog, its tests, i18n and the instruments; CI was green on every push
+carrying them.
+
+### What dev.11 changes for B2, which is less than D-390's reply implied
+
+**pinmem does not measure the installed package.** It links
+`internal/ui.CollectPIN` into its own binary and opens the dialog in its own
+process. `~/pinmem` was built clean (`vcs.modified=false`) from `83a55ed`, the
+last commit that touches `internal/ui`, `internal/pinscreen` or
+`scripts/pinmem`, so it already runs the field that dev.11 ships. Installing
+dev.11 is for what the owner uses, and for re-running the sandbox check on
+what ships. B2's readings would be the same without it. The earlier reply's
+"measurements should run on what ships" is true of the sandbox check and the
+owner's own use, not of pinmem.
+
+### B2: what the new field has, and how many runs before a zero means anything
+
+**The copy after the wipe that B2 is about was D-382's run 1, on the old
+field** — the shipped GtkPasswordEntry, whose copies [[D-383]] found laid out
+as accessibility messages, and whose broadcast D-384 found. The new field has
+no GtkPasswordEntry. That makes the old copy's likeliest source absent. **It
+is a reason to expect zeros, not a measurement of them.**
+
+On the new field so far: **two valid runs, both 0 after the wipe.**
+`pinmem-report-20260927-190744` was typed on `1df8dab` (before the focus
+change). `…-194155` was pasted on `83a55ed`. `…-192219` was cancelled and is
+not a measurement. Neither is a typed run on the current field.
+
+**The stopping rule, fixed now:**
+
+- **A valid run** is one where both baselines are 0, the needle comes back
+  byte for byte, it is typed by hand (not pasted), OK is pressed only after
+  the count has settled, and it runs on `~/pinmem` as built from `83a55ed`.
+  Anything else is recorded and does not count.
+- **Eight valid typed runs, every one 0 after the wipe.** On the old field
+  the observed rate was one run in three. If the new field still left a copy
+  one run in three, eight zeros in a row would happen by chance
+  (2/3)^8 ≈ 3.9 % of the time. That is below 5 %, and seven, at 5.9 %, is
+  not. **What eight zeros cannot rule out** is a rare copy: one run in ten
+  would give eight zeros 43 % of the time, and excluding one in twenty at the
+  same 5 % would take 59 runs. Eight closes "the old behaviour survived the
+  new field". It does not close "nothing ever survives". B2's sentence will
+  say which one it closes.
+- **One copy after the wipe in any valid run stops the series.** That run is
+  the finding. Its address, mapping and surrounding bytes are read before
+  anything else is run, and B2 stays open whatever the other runs show.
+- The two earlier runs are not counted toward the eight. One is paste, and
+  the other ran on an earlier build of the field.
