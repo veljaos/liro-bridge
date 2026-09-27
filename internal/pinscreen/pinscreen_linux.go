@@ -56,6 +56,7 @@ func Entry(cat *i18n.Catalogue, owner uintptr) pkcs11.PINEntry {
 			Hint:    p.Hint,
 			OK:      p.OK,
 			Cancel:  p.Cancel,
+			Entered: p.Entered,
 		}, len(dst), dst)
 		if err != nil {
 			return 0, err

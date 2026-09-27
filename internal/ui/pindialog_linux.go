@@ -2,111 +2,128 @@
 
 package ui
 
-/*
-#cgo pkg-config: gtk4
-
-#include <gtk/gtk.h>
-#include <string.h>
-
-// The PIN never becomes a Go string, and these three functions are how
-// that is arranged.
+// The PIN dialog on Linux. **Its input is not a GTK text widget** (D-385).
 //
-// gtk_editable_get_text returns a const char * into GtkPasswordEntry's
-// own buffer — which is mlocked, measured (D-350) — and the only thing
-// Go is ever handed is its length and a copy of its bytes into a buffer
-// the caller owns. A Go string cannot be overwritten, and SPEC §6.5.1
-// clause 2 requires these bytes to be, which is the whole reason this
-// window is not a page (SPEC §10, D-277).
-
-// liro_pin_len reports how many bytes the entry holds, without copying
-// any of them.
-static size_t liro_pin_len(GtkWidget *entry) {
-	const char *t = gtk_editable_get_text(GTK_EDITABLE(entry));
-	return t == NULL ? 0 : strlen(t);
-}
-
-// liro_pin_copy copies at most cap bytes of the entry's text into dst
-// and returns how many it wrote. dst is the caller's own buffer, all
-// the way up to the one login() pins and passes to C_Login.
-static size_t liro_pin_copy(GtkWidget *entry, void *dst, size_t cap) {
-	const char *t = gtk_editable_get_text(GTK_EDITABLE(entry));
-	if (t == NULL) return 0;
-	size_t n = strlen(t);
-	if (n > cap) return 0;
-	memcpy(dst, t, n);
-	return n;
-}
-
-// liro_pin_clear overwrites the entry through the widget's own
-// interface.
+// Until D-385 it was a GtkPasswordEntry, and a GtkPasswordEntry told the
+// accessibility bus what was typed into it: AT-SPI TextChanged "insert" and
+// "delete", payload the whole text, from this process, on a bus gnome-session
+// starts for every session and any process running as the same user may
+// subscribe to (D-384). That is a second boundary for the PIN, and SPEC
+// §6.5.1 clause 2 permits exactly one — the inherited pipe to the worker.
 //
-// This is SPEC §6.5.1 clause 2's **first** exception in its GTK
-// spelling, and it carries across unchanged: the characters are in
-// GTK's memory rather than this program's, so this program cannot wipe
-// them — but it can overwrite them through the control's own interface,
-// and it does, before the window is destroyed rather than by destroying
-// it.
+// So the field is this program's own: a page it maps and locks, filled from
+// key events by this file, drawn as dots, and described to assistive
+// technology only by how many characters it holds. What the password entry
+// gave, the field keeps, and says where:
 //
-// Measured (D-350): after this call the buffer's own copy is gone from
-// every writable mapping of the process, and the page it was in is
-// mlocked while it is there.
+//   - **locked**: the page is mlocked, and marked not to be dumped;
+//   - **overwritten through the control's own interface**: the control is
+//     this program's now, so its wipe is this program overwriting its own
+//     page, before the window is destroyed;
+//   - **no undo**: none is implemented.
 //
-// **That is a statement about the buffer and not about the process**
-// (D-351, D-352). What this call touches is the widget's own copy.
-// What it does not touch, and what nothing here has yet measured, is
-// whatever the layers in front of the widget do with a keystroke on the
-// way in — GdkEvent, and whatever input method is between the
-// compositor and this process. An attempt to measure that found seven
-// copies and they were all coincidences of a short needle (D-352), so
-// the honest state is that **the path has not been looked at**, not
-// that it is clean.
-//
-// Clause 2's first exception is a sentence about the destination and is
-// silent about the path, on this platform and on Windows alike. Do not
-// read this call as making the PIN unreadable.
-static void liro_pin_clear(GtkWidget *entry) {
-	gtk_editable_set_text(GTK_EDITABLE(entry), "");
-}
-*/
-import "C"
+// What it gives up, deliberately: an input method (a PIN needs none), paste
+// (the clipboard is another exposure), and any editing but Backspace.
 
 import (
+	"errors"
 	"fmt"
-	"unsafe"
+	"runtime"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"golang.org/x/sys/unix"
 )
 
-// entryWidget is the GtkWidget * behind entry, for the C helpers above.
+// fieldAction is what a key did to the field.
+type fieldAction int
+
+const (
+	fieldIgnored fieldAction = iota // not the field's: let GTK have it (Tab moves focus)
+	fieldChanged                    // a character added or removed
+	fieldAccept                     // Enter
+	fieldCancel                     // Escape
+)
+
+// fieldKey applies one key press to the typed bytes in page[:n] and returns
+// the new length. Pure, and taken out of the dialog's closure so a test can
+// drive it with keyvals rather than with anybody's hands (D-094: calling this
+// program's own handler forges nothing at the compositor).
 //
-// **It is not entry.Widget.Native(), and that expression is the defect
-// this function exists to replace** (D-355). gotk4 generates
-// Widget.Native() as the binding for gtk_widget_get_native(): it returns
-// the widget's toplevel, as a Go wrapper (*NativeSurface), and shadows the
-// Object.Native() that returns the object's own C pointer. Converted with
-// unsafe.Pointer it compiles, and go vet says nothing because the
-// conversion is pointer-to-pointer. Outside a window the wrapper is nil
-// and C is handed NULL; inside the dialog it is a Go allocation full of Go
-// pointers, and the runtime's cgo check panicked on the first call —
-// which killed the agent the first time a person pressed OK in this
-// dialog, and would have on Cancel too. The embedded *coreglib.Object is
-// the one field whose Native() means what it says.
-func entryWidget(entry *gtk.PasswordEntry) *C.GtkWidget {
-	return (*C.GtkWidget)(unsafe.Pointer(entry.Object.Native()))
+// A character is written straight into the locked page as UTF-8 — there is no
+// intermediate buffer to wipe. Backspace removes the last whole character and
+// overwrites its bytes. A key with Control, Alt or Super held is not the
+// field's: Ctrl+V is not a way in.
+func fieldKey(page []byte, n int, keyval uint, state gdk.ModifierType) (int, fieldAction) {
+	switch keyval {
+	case gdk.KEY_Return, gdk.KEY_KP_Enter:
+		return n, fieldAccept
+	case gdk.KEY_Escape:
+		return n, fieldCancel
+	case gdk.KEY_BackSpace:
+		if n == 0 {
+			return n, fieldIgnored
+		}
+		_, size := utf8.DecodeLastRune(page[:n])
+		wipeField(page[n-size : n])
+		return n - size, fieldChanged
+	}
+	if state&(gdk.ControlMask|gdk.AltMask|gdk.SuperMask) != 0 {
+		return n, fieldIgnored
+	}
+	r := rune(gdk.KeyvalToUnicode(keyval))
+	if r == 0 || !unicode.IsPrint(r) {
+		return n, fieldIgnored
+	}
+	if n+utf8.RuneLen(r) > len(page) {
+		return n, fieldIgnored
+	}
+	return n + utf8.EncodeRune(page[n:], r), fieldChanged
 }
 
-// pinLen, pinCopy and pinClear are the three C calls the dialog makes,
-// taken out of its closures so that a test can make them on a real entry
-// in a real window without anybody pressing anything. Until D-355 they had
-// only ever been read by the AST guards, never executed.
-func pinLen(entry *gtk.PasswordEntry) int { return int(C.liro_pin_len(entryWidget(entry))) }
-
-func pinCopy(entry *gtk.PasswordEntry, dst []byte, maxLen int) int {
-	return int(C.liro_pin_copy(entryWidget(entry), unsafe.Pointer(&dst[0]), C.size_t(maxLen)))
+// lockedPage maps one page of this program's own for the field, locks it,
+// and asks for it to be left out of any core. A page that cannot be locked
+// is an error rather than a silent fallback: locked is what the password
+// entry gave, and the field does not quietly give less.
+func lockedPage() ([]byte, error) {
+	page, err := unix.Mmap(-1, 0, unix.Getpagesize(), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
+	if err != nil {
+		return nil, fmt.Errorf("ui: mapping the PIN field's page: %w", err)
+	}
+	if err := unix.Mlock(page); err != nil {
+		_ = unix.Munmap(page)
+		return nil, fmt.Errorf("ui: locking the PIN field's page: %w", err)
+	}
+	_ = unix.Madvise(page, unix.MADV_DONTDUMP)
+	return page, nil
 }
 
-func pinClear(entry *gtk.PasswordEntry) { C.liro_pin_clear(entryWidget(entry)) }
+// releasePage overwrites the page, then unlocks and unmaps it.
+func releasePage(page []byte) {
+	wipeField(page)
+	_ = unix.Munlock(page)
+	_ = unix.Munmap(page)
+}
+
+// wipeField overwrites b and keeps it alive across the write. The same shape
+// as internal/keysource/pkcs11's wipe, which this package may not import:
+// with no use after the loop the stores have no reader, and a compiler is
+// entitled to drop them (pinmem's own selftest was caught by exactly that,
+// D-383).
+func wipeField(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+	runtime.KeepAlive(b)
+}
+
+// errFieldUnlocked is the one way the field refuses to open.
+var errFieldUnlocked = errors.New("ui: the PIN field's memory could not be locked")
 
 // CollectPIN shows the native PIN dialog and writes what was typed into
 // dst (SPEC §10).
@@ -133,8 +150,8 @@ func pinClear(entry *gtk.PasswordEntry) { C.liro_pin_clear(entryWidget(entry)) }
 // # This function does four things and must never do a fifth
 //
 //   - shows the dialog, once
-//   - copies the typed bytes straight into the caller's buffer
-//   - overwrites the entry before the window goes
+//   - copies the typed bytes from its own locked page into the caller's buffer
+//   - overwrites that page before the window goes
 //   - answers ok=false for a cancellation
 //
 // It does not loop. SPEC §6.5.1 clause 5: nothing retries a PIN
@@ -151,6 +168,11 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 		err error
 	}
 	done := make(chan result, 1)
+
+	page, err := lockedPage()
+	if err != nil {
+		return 0, false, fmt.Errorf("%w: %v", errFieldUnlocked, err)
+	}
 
 	if err := theUIThread.do(func() {
 		win := gtk.NewWindow()
@@ -183,10 +205,22 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 		label.SetXAlign(0)
 		box.Append(label)
 
-		entry := gtk.NewPasswordEntry()
-		entry.SetShowPeekIcon(false)
-		entry.SetHExpand(true)
-		box.Append(entry)
+		// The field: a frame the keyboard can focus, holding a label of
+		// dots. The label is the only text it has, and its text is one dot
+		// per character, never a character.
+		dots := gtk.NewLabel("")
+		dots.SetXAlign(0)
+		dots.SetMarginStart(8)
+		dots.SetMarginEnd(8)
+		dots.SetMarginTop(6)
+		dots.SetMarginBottom(6)
+		field := gtk.NewFrame("")
+		field.SetChild(dots)
+		field.SetFocusable(true)
+		field.SetFocusOnClick(true)
+		field.SetHExpand(true)
+		field.UpdateProperty([]gtk.AccessibleProperty{gtk.AccessiblePropertyLabel}, []coreglib.Value{*coreglib.NewValue(prompt.Label)})
+		box.Append(field)
 
 		if prompt.Hint != "" {
 			hint := gtk.NewLabel(prompt.Hint)
@@ -206,6 +240,12 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 		box.Append(buttons)
 		win.SetChild(box)
 
+		// typed is the number of bytes in page; page is the field's locked
+		// page. Both live in this closure, which the window's handlers
+		// capture and which ends with the window — before CollectPIN
+		// returns, so nothing here outlives the call.
+		typed := 0
+
 		// answered guards against a second answer: a click and a close
 		// can both arrive, and the second must not write into a buffer
 		// the caller has already been told about.
@@ -215,37 +255,61 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 				return
 			}
 			answered = true
-			// The entry is overwritten before the window is destroyed
-			// rather than by destroying it — exception 1's remedy, in
-			// GTK's spelling.
-			pinClear(entry)
+			// The field is overwritten before the window is destroyed
+			// rather than by destroying it — clause 2's first exception,
+			// and the control is this program's own now.
+			wipeField(page)
+			typed = 0
 			done <- r
 			win.Destroy()
+			releasePage(page)
 		}
 
 		take := func() {
-			// The length is asked for first and nothing is copied
-			// unless all of it fits — the same rule, and the same
-			// reason, as encodePINInto's: a prefix of somebody's PIN
-			// left in the caller's buffer on a path the caller is being
-			// told produced nothing.
-			if pinLen(entry) > maxLen {
+			// The length is checked first and nothing is copied unless
+			// all of it fits — the same rule, and the same reason, as
+			// encodePINInto's: a prefix of somebody's PIN left in the
+			// caller's buffer on a path the caller is being told produced
+			// nothing. Nothing typed comes back as a zero-length accept
+			// rather than as a cancellation: pkcs11's login() turns it
+			// into a PINLengthError, which says what happened.
+			if typed > maxLen {
 				finish(result{0, false, ErrPINTooLong})
 				return
 			}
-			// Nothing typed comes back as a zero-length accept rather
-			// than as a cancellation, and the difference matters: the
-			// length check in pkcs11's login() turns it into a
-			// PINLengthError, which says what happened, where a
-			// cancellation would report something the person did not
-			// do (D-145's converse, which pin.go's own sentinel is
-			// about). Nothing empty reaches the card either way.
-			got := pinCopy(entry, dst, maxLen)
+			got := copy(dst[:maxLen], page[:typed])
 			finish(result{got, true, nil})
 		}
 
+		show := func() {
+			count := utf8.RuneCount(page[:typed])
+			dots.SetText(strings.Repeat("\u25CF", count))
+			if prompt.Entered != "" {
+				said := fmt.Sprintf(prompt.Entered, count)
+				field.UpdateProperty([]gtk.AccessibleProperty{gtk.AccessiblePropertyDescription}, []coreglib.Value{*coreglib.NewValue(said)})
+				field.Announce(said, gtk.AccessibleAnnouncementPriorityLow)
+			}
+		}
+
+		keys := gtk.NewEventControllerKey()
+		keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+			next, action := fieldKey(page, typed, keyval, state)
+			typed = next
+			switch action {
+			case fieldChanged:
+				show()
+			case fieldAccept:
+				take()
+			case fieldCancel:
+				finish(result{0, false, nil})
+			default:
+				return false
+			}
+			return true
+		})
+		field.AddController(keys)
+
 		accept.ConnectClicked(take)
-		entry.ConnectActivate(take)
 		cancel.ConnectClicked(func() { finish(result{0, false, nil}) })
 		win.ConnectCloseRequest(func() bool {
 			finish(result{0, false, nil})
@@ -253,8 +317,9 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 		})
 
 		win.Present()
-		entry.GrabFocus()
+		field.GrabFocus()
 	}); err != nil {
+		releasePage(page)
 		return 0, false, err
 	}
 

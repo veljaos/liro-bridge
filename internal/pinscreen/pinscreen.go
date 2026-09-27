@@ -111,6 +111,10 @@ type Prompt struct {
 	// than discovering it by being refused.
 	Hint string
 
+	// Entered is how the Linux field tells assistive technology how many
+	// characters have been typed, never which (D-385).
+	Entered string
+
 	// OK and Cancel are the two buttons. There is no third: SPEC §6.5.1 clause
 	// 5 forbids a retry, so there is nothing for a "try again" to do.
 	OK     string
@@ -159,6 +163,7 @@ func Text(cat *i18n.Catalogue, req pkcs11.PINRequest, maxLen int) Prompt {
 		Subject: fmt.Sprintf(cat.T("pindialog.subject"), card),
 		Label:   cat.T("pindialog.label"),
 		Hint:    fmt.Sprintf(cat.T("pindialog.hint"), req.MinLength, maxLen),
+		Entered: cat.T("pindialog.entered"),
 		OK:      cat.T("pindialog.ok"),
 		Cancel:  cat.T("pindialog.cancel"),
 	}

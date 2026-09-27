@@ -212,6 +212,7 @@
   "pairing.window_title": "Connection request",
   "pindialog.cancel": "Cancel",
   "pindialog.heading": "Liro Bridge is asking for your card's PIN",
+  "pindialog.entered": "%d characters entered",
   "pindialog.hint": "This card accepts %d to %d characters.",
   "pindialog.label": "PIN",
   "pindialog.ok": "OK",

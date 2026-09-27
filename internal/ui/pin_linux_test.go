@@ -153,9 +153,11 @@ func TestTheDialogOverwritesTheEntryBeforeTheWindowGoes(t *testing.T) {
 		t.Fatal("CollectPIN is not in the file")
 	}
 	src = src[body:]
-	clear := strings.Index(src, "pinClear(entry)")
+	// Since D-385 the field is this program's own page, and its overwrite
+	// is wipeField on that page.
+	clear := strings.Index(src, "wipeField(page)")
 	if clear < 0 {
-		t.Fatal("the dialog never overwrites the entry through the widget's own interface")
+		t.Fatal("the dialog never overwrites the field's page")
 	}
 	destroy := strings.Index(src, "win.Destroy()")
 	if destroy < 0 {

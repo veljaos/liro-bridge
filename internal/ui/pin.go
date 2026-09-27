@@ -122,4 +122,11 @@ type PINPrompt struct {
 	// OK and Cancel are the two buttons.
 	OK     string
 	Cancel string
+
+	// Entered is how the field describes itself to assistive technology: a
+	// format with one %d, the number of characters typed — "5 characters
+	// entered" — and never which (D-385). Silence would tell a person using a
+	// screen reader nothing about whether their typing registered. Linux
+	// only; the Windows edit control describes itself.
+	Entered string
 }

@@ -212,6 +212,7 @@
   "pairing.window_title": "Zahtev za povezivanje",
   "pindialog.cancel": "Otkaži",
   "pindialog.heading": "Liro Bridge traži PIN vaše kartice",
+  "pindialog.entered": "Uneto znakova: %d",
   "pindialog.hint": "Ova kartica prihvata od %d do %d znakova.",
   "pindialog.label": "PIN",
   "pindialog.ok": "Potvrdi",

@@ -212,6 +212,7 @@
   "pairing.window_title": "Захтев за повезивање",
   "pindialog.cancel": "Откажи",
   "pindialog.heading": "Liro Bridge тражи ПИН ваше картице",
+  "pindialog.entered": "Унето знакова: %d",
   "pindialog.hint": "Ова картица прихвата од %d до %d знакова.",
   "pindialog.label": "ПИН",
   "pindialog.ok": "Потврди",
