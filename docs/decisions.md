@@ -39955,3 +39955,216 @@ as the eight that passed**, and it is the second time pinmem's validity check
 has caught something that would otherwise have been reported as a clean run.
 A zero from a scan that could not have found anything reads the same as a
 real zero. Only the check tells them apart.
+
+## D-395 — Windows tells UI Automation, MSAA and `WM_GETTEXT` nothing about what is typed into the shipped PIN dialog: D-384 stays a Linux finding, and the one method whose instrument could not see the needle in the control either is named rather than counted
+
+**Date:** 2026-09-27
+**Phase:** F12; open-item B22, closed for three of its four methods and
+narrowed to a fourth (B24). **Assumed neither way until tonight** — B22's
+own words — and the assumption is now retired in one direction for three
+methods and in neither direction for one.
+
+### What was measured
+
+Run `X8B8YR`, holder pid 2944, on Windows 11 Pro 10.0.26200, as the owner, with
+no screen reader running. Three random needles from `crypto/rand`, **typed by
+hand** (D-094: nothing here sends input), each held in the field about two
+seconds so that a 10 Hz poller had twenty samples of steady state.
+
+Three windows in one process, in this order, and the order is the whole
+argument:
+
+| phase | the window | what it is for |
+|---|---|---|
+| A | a plain Win32 `EDIT`, no `ES_PASSWORD` | **the instrument's control** |
+| B | the same control with `ES_PASSWORD` set | isolates the style from this program |
+| C | **`ui.CollectPIN`, the shipped dialog** | the measurement |
+
+The probe is a separate process. Every lookup is filtered on the holder's exact
+pid; nothing captured is ever printed, only compared.
+
+**The run is valid, and that is a reading rather than an assumption.** The
+holder reads its own control at the moment OK is pressed and says whether the
+needle was in it. For all three phases it was — *"the needle WAS in the control
+when OK was pressed"*, three times, from the owner's terminal. **Every refusal
+in the table below is content-independent**: `E_ACCESSDENIED`, a missing
+`TextPattern` and `WM_GETTEXTLENGTH` = 0 read exactly the same against an empty
+field as against a full one, so without this line the whole entry would rest on
+nobody having mistyped.
+
+### Phase A: the instrument sees what there is to see
+
+Six of the probe's rows returned **the exact needle** from the unprotected
+control: UIA `ValuePattern.Value`, UIA `TextPattern.DocumentRange`, the
+desktop-wide UIA value subscription, the desktop-wide UIA text subscription,
+MSAA `get_accValue` read directly, and cross-process `WM_GETTEXT`
+(`WM_GETTEXTLENGTH` = 8, `WM_GETTEXT` returned 8). `IsPassword` was `FALSE` and
+MSAA's `accState` did not carry `STATE_SYSTEM_PROTECTED`.
+
+**One row did not, and it matters more than the six that did — see "the control
+that failed" below.**
+
+### Phases B and C: every one of those six refuses, and they refuse identically
+
+The shipped dialog and a bare `ES_PASSWORD` edit behaved the same in every row,
+which is what the code predicts: `pindialog_windows.go` creates a stock `EDIT`
+with `esPassword|esAutoHScroll|wsBorder|wsTabStop|wsGroup` and implements no UIA
+provider, no `WM_GETOBJECT` handler and no accessibility code of any kind, so
+the dialog's whole accessibility surface is the one Windows gives a password
+edit for free.
+
+| method | phase B | phase C (the shipped dialog) |
+|---|---|---|
+| UIA `IsPassword` | `TRUE` | `TRUE` |
+| UIA `ValuePattern.Value` | refused, `InvalidOperationException` 0x80131509 | the same |
+| UIA `TextPattern` | **the element exposes no `TextPattern` at all** | the same |
+| MSAA `get_accValue`, direct | **refused, `E_ACCESSDENIED` 0x80070005**, `accState` carries `STATE_SYSTEM_PROTECTED` | the same |
+| cross-process `WM_GETTEXT` | `WM_GETTEXTLENGTH` **0**, `WM_GETTEXT` returned **0** | the same |
+
+**These are refusals, not absences, and the difference is the result.** MSAA
+does not return an empty string; it returns "access is denied" and flags the
+control as protected. `WM_GETTEXTLENGTH` does not return the true length to
+another process; it returns zero, so **not even the number of characters
+crosses**. Where a reading is merely an absence — `TextPattern` missing — it is
+an absence of the object rather than of its contents.
+
+So my least certain prediction, written before any of this ran, was answered by
+being dissolved: I expected the text range to return either an empty string or a
+run of mask characters, and said mask characters would still be a finding
+because eight of them tell a listener the PIN's length. There is no text range
+to return either, and the length does not leak through `WM_GETTEXTLENGTH`
+either.
+
+### The one thing that does cross, named rather than filed under "nothing found"
+
+The desktop-wide UIA subscription — B22's *"property-changed (Value) events on
+all windows while the needle is typed"* — delivered **exactly one
+`ValuePatternIdentifiers.ValueProperty` event in each password phase, carrying
+no string.** The dry run on the synthetic path delivered eight of the same
+shape.
+
+**So a listener learns that something was typed. It does not learn what.** The
+provider announces that the value changed and withholds what it changed to.
+That is D-384's shape with the payload removed, and it is worth one paragraph
+rather than silence: against a PIN it is close to nothing — a process that can
+subscribe to UIA can already see that a window called "Enter your PIN" is on
+screen — but "close to nothing" is a judgement, and the measurement is that the
+notification crosses and the text does not.
+
+### The control that failed, and what it costs
+
+**Method 2, the out-of-process WinEvent hook, has no working control on the
+typed path, and its silence in B and C is therefore not evidence about B and C.**
+
+In phase A — the unprotected control, with the needle sitting in it — the hook
+received **2 deliveries and read no value from either**: `get_accValue` returned
+null with no error, and the event recorded was `0x8001`,
+`EVENT_OBJECT_DESTROY`, which is the window closing rather than anything typed.
+**No `EVENT_OBJECT_VALUECHANGE` reached the hook for any phase.** The hook was
+installed on the holder's pid over the whole WinEvent range — deliberately wider
+than B22's three named events, so that a silence could not be answered with
+*you hooked the wrong event* — and 22 deliveries from that process arrived
+across the session, none of them a value change while a window was up.
+
+**On the synthetic dry run the same row read a prefix of the needle from
+`0x800E`.** Text installed with `WM_SETTEXT` raises `EVENT_OBJECT_VALUECHANGE`;
+a person typing into the same control, in this run, raised none that this hook
+received. That is the difference between the two paths that D-351 and D-352
+established in the other direction, showing up here in the instrument.
+
+This is the same failure as [[D-384]]'s own control — *"My prediction that the
+terminal would send `TextChanged` for pinmem's output, as a built-in control,
+failed: it sent none"* — and it is [[D-304]]'s second question. It is recorded
+here rather than in the summary line because **0 deliveries for a protected
+field reads exactly like a protected field, and tonight it was an instrument
+that saw nothing anywhere.**
+
+**What bounds the gap, stated as reasoning and not as a measurement.** A
+WinEvent carries no text: it carries an hwnd, an object id and a child id, and
+the client must call back to read the value. That call is
+`AccessibleObjectFromEvent` followed by `get_accValue` — **the same call method
+2b made directly, and measured refused with `E_ACCESSDENIED` on both password
+phases.** So for the hook to yield the PIN, Windows would have to answer that
+call differently when it is reached from an event than when it is reached from a
+window handle. That is a narrow gap and an argument for why it is narrow; it is
+not a reading, and this entry does not count it as one.
+
+### The method that could not run at all
+
+`1b`, UIA `LegacyIAccessiblePattern.Value`, **was not attempted, and that is
+not a refusal by anything.** `System.Windows.Automation` — the managed UIA
+client — exposes no such pattern; it exists only on the COM client
+(`IUIAutomationLegacyIAccessiblePattern`, pattern id 10018), this machine has no
+type library to bind it, and the interface is not `IDispatch` so late binding
+cannot reach it either. **Method 2b reads the same provider through MSAA
+directly, which is what `LegacyIAccessible` wraps**, and 2b is measured on all
+three phases.
+
+It is written down because a row that quietly vanishes reads as a clean pass,
+and because the distinction it needs — *not attempted* versus *attempted and
+refused* — is the distinction this whole session is about.
+
+### What is concluded
+
+**D-384 is a Linux finding about a Linux toolkit on a Linux desktop bus, and
+not a finding about this program.** The shipped Windows dialog, measured through
+three of B22's four methods with a control that demonstrably saw the needle when
+there was a needle to see, hands the typed text to no other process: not to UI
+Automation's value or text patterns, not to a desktop-wide UIA subscription, not
+to MSAA's `get_accValue`, and not to a cross-process `WM_GETTEXT`. The refusals
+are Windows' own, they are positive refusals rather than empty answers, and they
+do not depend on anything this program does — which is also why they are not a
+thing this program can be said to have got right.
+
+**[[D-385]]'s remedy is not needed here**, and the arc [[D-350]]–[[D-383]] that
+was looking in this program's memory for a secret the Linux program was handing
+out has no Windows counterpart to find.
+
+### What is **not** concluded
+
+- **Nothing about method 2**, per the section above. B22's second method is
+  narrowed and left open as B24 rather than counted as clean.
+- **Only what a client is *told*.** The plaintext in the control's own buffer is
+  [[D-277]]'s exception and this probe is not pointed at it. `ES_PASSWORD` has
+  been on that edit since the file's first commit (`f581e68`), so the property
+  producing these refusals is not new — but "the shipped version never had
+  D-384's exposure" is a statement about a style that has always been there,
+  inferred, and not a measurement of older builds.
+- **Only this desktop, this build, this Windows version, with no screen reader
+  running.** A running Narrator or a third-party tool may cause providers to be
+  activated that were not activated here. Not measured.
+- **Only `owner` = 0.** The holder calls `CollectPIN` with no owner window,
+  where the agent passes its main window. Same styles, same process, same code
+  path; if a later reading differs, look there first.
+- **Nothing about the keystroke path in front of the control** — TSF/IME, B1's
+  Windows half — which is a different measurement and remains unmeasured.
+
+### D-304's five questions
+
+1. **Could it have failed?** Phase A is the same instrument on a control that
+   does have text, and the report prints A first. Six rows returned the needle;
+   one did not, and that one is now a finding rather than a result.
+2. **Could the instrument have seen the absence it reports?** Two controls, and
+   they answered differently, which is the point of having two. At the
+   instrument, phase A: six rows passed and **one failed**, and that one is B24.
+   At the subject, the holder's own read: all three phases held the needle, so
+   no refusal below is a refusal to hand over nothing.
+3. **Resolution finer than the thing measured?** 10 Hz against a two-second
+   steady state, and the event subscriptions are not sampled at all.
+4. **Did this run actually run?** Three needles from `crypto/rand`, fresh per
+   run, a run id printed by both programs and carried in the report's filename;
+   a stale capture cannot match, and a cross-phase mix-up would show as needle A
+   matching in phase C.
+5. **Was anything read, and was a discrepancy explained or absorbed?** The
+   summary this entry was first asked to write said the hook "delivered in A".
+   It delivered two window-lifecycle events and read nothing. That is the
+   discrepancy, and it is this entry's second-longest section.
+
+### The probe's own defects, found by its own dry runs
+
+Three, all before the measurement, all of the shape being hunted: the WinEvent
+hook printed **no row at all** for two phases instead of "no event delivered";
+the MSAA read printed "nothing returned" while discarding the `E_ACCESSDENIED`
+that was the entire finding; and the desktop-wide value row went blank rather
+than saying *one event arrived carrying no string*. A missing row, a dropped
+reason and a blank count all read as a clean absence.
