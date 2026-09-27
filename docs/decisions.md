@@ -38488,3 +38488,65 @@ zeroed, "core 0 unlimited" — both red.
 **Left on the machine:** four cores in `/var/lib/apport/coredump`, about
 620 MB, from test processes only (OpenSC, the fixture; no PIN, no secret). The
 directory is root's; removing them is the owner's, with `sudo`.
+
+## D-377 — The installed, hardened agent leaves nothing when its worker crashes: A4 closed, and what it closed is a prompt to send a person's memory to a third party
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items A4, the case [[D-376]] left.
+
+**What A4 was about, said plainly.** [[D-376]] found that when the installed
+agent crashes on Ubuntu, apport does not only keep a core on the machine. It
+writes a report into `/var/crash` with the core embedded — the process's
+memory, its environment and its command line — and the desktop then **asks
+the person whether to send it to Canonical**. That is not a local file
+somebody might stumble on. It is a prompt that invites a person to send their
+own memory to a third party, and until today, a crash in the PKCS#11 worker
+during `C_Login`, or in the agent while the PIN dialog held its buffer, would
+have put the PIN in what they were invited to send. It is the sentence that
+made A4 worth the work.
+
+**The measurement the condition asked for.** The owner installed dev.10
+(`f598509`, the hardening in it). The same two crashes as D-376, against the
+installed worker, `/usr/bin/liro-bridge pkcs11-worker`, soft limit raised
+first. Predictions written before.
+
+| | read from the running process | new files in `/var/lib/apport/coredump` and `/var/crash` | `/var/log/apport.log` |
+|---|---|---|---|
+| (a) fixture module faults at SIGSEGV's default action | — (it dies at load) | **none** | **no line** |
+| (b) holding OpenSC, `GOTRACEBACK=crash`, SIGABRT to its exact PID | core limit **0/0**; `/proc/PID/status` owned by **root** | **none** | **no line** |
+| control, minutes later: the unhardened build, (b) | unlimited/unlimited, uid 1000 | a core, 160 MB | "called for global pid …", "writing core dump" |
+
+**Every prediction held**, including the least certain — that the package's
+path through apport would not matter. It does not, because apport is never
+reached: the kernel decides from the dumpable flag before anything knows the
+binary belongs to a package. The control is what gives the silence its
+meaning: the same method, the same log, the same minutes, and apport wrote
+both its line and its core. **The installed agent, crashed two ways, left no
+core and no report, and nothing was offered to anybody.**
+
+**The window check that failed first, as the owner asked it be stated.** In
+D-376 the first attempt to show that a hardened build still opens a window
+failed — and failed for **both** builds: first the hardened one (both calls),
+then, as the control, the unhardened one, the same binary path and the same
+scratch environment. Both exited 2 with WebKit's "Failed to fully launch
+dbus-proxy: Child process exited with code 1". Because the control failed
+the same way, the change was not the cause; the environment was — my scratch
+runtime directory's path, about 110 characters, against the 108 a Unix socket
+path may have, where WebKit's D-Bus proxy puts its sockets. With a 12-character
+runtime directory under `/tmp`, both builds opened with WebKit's full set of
+processes. Had I run only the hardened build, the reading would have been
+"the hardening breaks windows", and it would have been wrong.
+
+**SPEC §6.5.1 clause 3 now says something that is not true on Linux.** It
+reads: "the operating system may capture that memory in a crash dump, and
+nothing available to this program prevents it", with Windows' measurements
+behind it (D-292). On Linux something available to this program does prevent
+it, measured, and the worker's non-dumpable flag covers the module's own copy
+of the PIN too, since that copy is in the worker's memory. The clause should
+say which platform each half is true of. **The wording is the owner's**:
+open-items A24.
+
+**Left on the machine:** five cores in `/var/lib/apport/coredump`, about
+780 MB, from test processes only (OpenSC, the fixture; no PIN, no secret);
+removing them needs `sudo`. The report D-376's baseline wrote to `/var/crash`
+was deleted before the desktop could offer it.
