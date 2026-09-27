@@ -47,6 +47,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
@@ -209,8 +210,59 @@ func vmLck() string {
 func describe(label string, hits []hit) {
 	say("%-44s %d copies, VmLck=%s", label, len(hits), vmLck())
 	for _, h := range hits {
-		say("    at %#x in %s", h.addr, h.name)
+		say("    at %#x in %s, %s; in front: %q", h.addr, h.name, lockedAt(h.addr), inFront(h.addr))
 	}
+}
+
+// lockedAt reads /proc/self/smaps for the mapping holding addr and reports
+// its Locked size: whether a copy sits in locked memory is a reading, not a
+// fit (D-382).
+func lockedAt(addr uintptr) string {
+	b, err := os.ReadFile("/proc/self/smaps")
+	if err != nil {
+		return "smaps unreadable"
+	}
+	inside := false
+	for _, l := range strings.Split(string(b), "\n") {
+		f := strings.Fields(l)
+		if len(f) > 0 && strings.Contains(f[0], "-") && !strings.HasSuffix(f[0], ":") {
+			bounds := strings.SplitN(f[0], "-", 2)
+			s, err1 := strconv.ParseUint(bounds[0], 16, 64)
+			e, err2 := strconv.ParseUint(bounds[1], 16, 64)
+			inside = err1 == nil && err2 == nil && uintptr(s) <= addr && addr < uintptr(e)
+			continue
+		}
+		if inside && len(f) >= 2 && f[0] == "Locked:" {
+			return "mapping Locked " + f[1] + " kB"
+		}
+	}
+	return "mapping not found in smaps"
+}
+
+// inFront is the 32 bytes before addr as printable characters, dots for the
+// rest — a structure's header in front of a copy is often what names it.
+// Nothing is masked: the needle is a test string the program itself shows,
+// never a PIN.
+func inFront(addr uintptr) string {
+	mem, err := os.Open("/proc/self/mem")
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = mem.Close() }()
+	var b [32]byte
+	n, _ := mem.ReadAt(b[:], int64(addr-32))
+	out := make([]byte, n)
+	for i := 0; i < n; i++ {
+		c := b[i]
+		switch {
+		case c >= 0x20 && c < 0x7f:
+			out[i] = c
+		default:
+			out[i] = '.'
+		}
+	}
+	clear(b[:])
+	return string(out)
 }
 
 // imModules lists the input-method modules and IBus libraries mapped into
@@ -243,6 +295,61 @@ type ibusCounts struct {
 	unparsed          int
 	senders           map[string]bool
 	note              string
+	// who numbers the senders in the order they appeared. IBus's bus will
+	// not say which process a sender is; ibusClients says whether this
+	// process could be one (D-382).
+	who       map[string]string
+	perSender map[string]map[string]int
+}
+
+// ibusClients lists the processes holding a connection to ibus-daemon's
+// socket, from the kernel's socket table: IBus's own bus refuses to say which
+// process owns a connection (GetConnectionUnixProcessID: "does not support"),
+// so a sender on it cannot be named — but whether THIS process is connected
+// at all can be read here, and a process with no connection sent nothing
+// (D-382).
+func ibusClients() (clients []string, self bool) {
+	addr, err := exec.Command("ibus", "address").Output()
+	if err != nil {
+		return []string{"ibus address unavailable"}, false
+	}
+	path := strings.TrimPrefix(strings.TrimSpace(string(addr)), "unix:path=")
+	path, _, _ = strings.Cut(path, ",")
+	out, err := exec.Command("ss", "-xp").Output()
+	if err != nil {
+		return []string{"ss: " + err.Error()}, false
+	}
+	type row struct{ local, peer, users string }
+	var rows []row
+	for _, l := range strings.Split(string(out), "\n") {
+		f := strings.Fields(l)
+		if len(f) < 8 {
+			continue
+		}
+		users := ""
+		if len(f) >= 9 {
+			users = f[8]
+		}
+		rows = append(rows, row{f[5], f[7], users})
+		if f[4] == path && len(f) >= 9 {
+			rows[len(rows)-1].local = "daemon:" + f[5]
+		}
+	}
+	mine := fmt.Sprintf("pid=%d,", os.Getpid())
+	for _, d := range rows {
+		if !strings.HasPrefix(d.local, "daemon:") {
+			continue
+		}
+		for _, c := range rows {
+			if c.local == d.peer {
+				clients = append(clients, c.users)
+				if strings.Contains(c.users, mine) {
+					self = true
+				}
+			}
+		}
+	}
+	return clients, self
 }
 
 // ibusReleaseMask is IBUS_RELEASE_MASK, bit 30 of ProcessKeyEvent's state.
@@ -268,7 +375,7 @@ func watchIBus() (stop func() ibusCounts) {
 	if err := cmd.Start(); err != nil {
 		return func() ibusCounts { return ibusCounts{note: "dbus-monitor did not start: " + err.Error()} }
 	}
-	c := ibusCounts{byMember: map[string]int{}, senders: map[string]bool{}}
+	c := ibusCounts{byMember: map[string]int{}, senders: map[string]bool{}, who: map[string]string{}, perSender: map[string]map[string]int{}}
 	var refused bool
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -304,14 +411,23 @@ func watchIBus() (stop func() ibusCounts) {
 				refused = true
 			case strings.Contains(l, "member="):
 				flush()
+				sender := ""
 				for _, f := range strings.FieldsFunc(l, func(r rune) bool { return r == ' ' || r == ';' }) {
 					if v, ok := strings.CutPrefix(f, "member="); ok {
 						member = v
 						c.byMember[v]++
 					}
 					if v, ok := strings.CutPrefix(f, "sender="); ok {
+						sender = v
 						c.senders[v] = true
 					}
+				}
+				if sender != "" {
+					if _, known := c.who[sender]; !known {
+						c.who[sender] = fmt.Sprintf("sender %d", len(c.who)+1)
+						c.perSender[sender] = map[string]int{}
+					}
+					c.perSender[sender][member]++
 				}
 			case strings.HasPrefix(strings.TrimSpace(l), "uint32 "):
 				args = append(args, strings.TrimPrefix(strings.TrimSpace(l), "uint32 "))
@@ -398,6 +514,9 @@ func main() {
 	time.Sleep(3 * time.Second)
 	describe("dialog open, nothing typed (baseline):", scan(needle, scratch, skip))
 	say("IM modules mapped: %v", imModules())
+	clients, self := ibusClients()
+	say("IBus's clients with the dialog open: %v", clients)
+	say("  this process connected to ibus-daemon: %v", self)
 
 	var a answer
 	tick := time.NewTicker(2 * time.Second)
@@ -434,6 +553,12 @@ wait:
 	say("IM modules mapped: %v", imModules())
 	say("IBus InputContext calls while the dialog was up, by method: %v", ibus.byMember)
 	say("  of which key events: %d presses, %d releases; from %d distinct sender(s)", ibus.presses, ibus.releases, len(ibus.senders))
+	clients, self = ibusClients()
+	say("IBus's clients at the end: %v", clients)
+	say("  this process connected to ibus-daemon: %v", self)
+	for sender, calls := range ibus.perSender {
+		say("  sender %s (%s): %v", sender, ibus.who[sender], calls)
+	}
 	say("  (%s)", ibus.note)
 
 	clear(needle.b)
@@ -452,8 +577,23 @@ func selftest(needle, scratch page, skip []page) {
 	clear(planted)
 	after := scan(needle, scratch, skip)
 	describe("selftest, the planted copy wiped:", after)
-	if len(hits) == 1 && len(after) == 0 {
-		say("selftest: OK — finds one planted copy, and none after wiping")
+	// The connection check's own control: a plain connection to IBus's
+	// socket from this process must be seen, and not once it is closed.
+	_, before := ibusClients()
+	connected := false
+	if addr, err := exec.Command("ibus", "address").Output(); err == nil {
+		path := strings.TrimPrefix(strings.TrimSpace(string(addr)), "unix:path=")
+		path, _, _ = strings.Cut(path, ",")
+		if conn, err := net.Dial("unix", path); err == nil {
+			_, connected = ibusClients()
+			_ = conn.Close()
+		}
+	}
+	time.Sleep(200 * time.Millisecond)
+	_, closed := ibusClients()
+	say("selftest, IBus connection seen: before %v, while connected %v, after closing %v", before, connected, closed)
+	if len(hits) == 1 && len(after) == 0 && !before && connected && !closed {
+		say("selftest: OK — finds one planted copy and none after wiping, and sees its own IBus connection and not after")
 	} else {
 		say("selftest: FAILED — this instrument cannot be believed")
 	}

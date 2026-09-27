@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-380 and D-381, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-382, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -53,8 +53,8 @@ prose of an entry before D-280, outside those words, may be missing.
 
 ## B. Claims not measured
 
-1. **Every keystroke into the PIN dialog crosses IBus — can the dialog decline it?** Measured with a person typing into the real dialog: 21 `ProcessKeyEvent` calls on IBus's bus for 20 characters, IBus's module loaded into our process (D-380). Open: whether setting the entry's `im-module` to GTK's simple method keeps keys out of `ibus-daemon`; what the 21st event is; whether the whole text also crosses (`SetSurroundingText`). — D-351, D-352, D-380. *Close:* pinmem against a dialog with the property set. *Needs:* code (a variant), owner's hands.
-2. *D-350's findings on this program's own dialog: locked while typed, nothing left after the wipe — measured with a person typing (D-380). Numbering kept.*
+1. **Does the PIN dialog's process send keystrokes to IBus, and would the entry's `im-module` stop it?** Two pinmem runs disagree (21 key events on IBus's bus, then 1), and IBus received calls while the dialog provably did not use it, so the bus count is not the dialog's (D-380, D-382). *Close:* repeated runs of both dialogs, with pinmem reporting whether its own process is connected to `ibus-daemon`. *Needs:* owner's hands.
+2. **Does anything of what is typed survive the dialog's wipe?** One run of three left a whole copy after the wipe, made while the dialog accepted; the other zeros are consistent with a copy written over before the scan (D-382). *Close:* repeated runs, each hit's mapping and surroundings recorded. *Needs:* owner's hands.
 3. **Why a notification with no action now raises the window when D-337 said it did not.** Not the desktop entry (control). — D-355 §6. SPEC §6.5.2 no longer rests on the answer (D-369). *Close:* vary WebKit view against bare GTK, and posting from Go against another process. *Needs:* owner's hands, measurement.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.

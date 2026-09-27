@@ -38791,3 +38791,86 @@ So the clause's input-path line states the measurement and what it means,
 and does **not** yet say that nothing inside the dialog can change it: that is
 the owner's claim to make once pinmem has been run against a dialog with the
 property set.
+
+## D-382 — The next two pinmem runs do not agree with D-380: one key event where there had been 21, a copy that survived the wipe, and IBus traffic from somebody else while the dialog was told not to use it — B2 reopens, and D-380's sender was an inference the data never supported
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items B1 and B2.
+
+**The runs.** The owner, the same way as D-380's valid run — the random
+needle typed by hand, Enter to confirm. Run 1: `~/pinmem`, the dialog as
+shipped. Run 2: `~/pinmem-simple`, the same dialog with its inner text
+widget's `im-module` set to GTK's simple method — a temporary edit, never
+committed; its own readback printed `gtk-im-context-simple`. The monitor now
+counted every call on IBus's input-context interface by method, key events by
+press and release, and senders. Both runs valid: baselines 0, the needle
+returned byte for byte.
+
+| | run 1 (as shipped) | run 2 (simple method) |
+|---|---|---|
+| while typed | 1 copy, `…57008`, VmLck 16 kB | 1 copy, `…1008`, VmLck 16 kB |
+| after OK, returned copy held (excluded) | **1 copy, `…7cbb23d1c73c`** | 0 |
+| after wiping the returned copy | **1 copy, the same address** | 0 |
+| IBus `ProcessKeyEvent` | **1 press, 0 releases** | 0 |
+| other IBus calls | Reset 22, SetCursorLocation 30, FocusIn 9, FocusOut 9, SetCapabilities 9 | Reset 9, SetCursorLocation 12, FocusIn 3, FocusOut 4, SetCapabilities 3 |
+| distinct senders | 1 | **1** |
+
+### What does not agree, and what can and cannot be said
+
+**Run 1 against D-380: 1 key event where there were 21.** Same binary, same
+dialog, same person, the same way. **Which is right cannot be established
+from what was recorded**: both monitors counted what reached them, and
+neither recorded who sent it. What run 2 does establish is that **IBus
+received calls from a sender while the dialog was provably not using IBus** —
+so at least some IBus traffic during a pinmem run is not the dialog's, and a
+count on IBus's bus was never, by itself, a count of what the dialog sent.
+
+**D-380's attribution falls.** It said the likeliest sender was the dialog's
+own process, because `libim-ibus.so` was mapped into it. **Run 2 has the same
+module mapped, and does not use it**: GTK maps input-method modules it does
+not use, so the mapping was never evidence of who sent. That inference was
+mine and it was wrong. D-380's numbers stand as readings; its "likeliest
+sender" does not.
+
+**The copy after the wipe in run 1.** Not the returned copy: that lives in a
+page the scan excludes, and this one persisted after that page was wiped. It
+appeared **between the last scan while the needle was typed and the first
+after Enter** — while typing, the only copy was the locked buffer, and after
+Enter that was gone and this was there — so something in the process made a
+whole copy while the dialog was accepting. **What, I cannot say from this
+run**; anonymous memory, not page-aligned, and the scan recorded neither
+whether it was locked nor what was around it. A random 20-character needle
+does not match by chance, so it is not noise.
+
+**And it changes what D-380's zero means.** The earlier valid run and run 2
+read 0 after the wipe. With this run beside them, those zeros are not
+"nothing survives": they are consistent with a copy that exists and was
+written over before the scan looked. **"Went away" means something else was
+written over it, not that anything wiped it, so its absence is luck** — the
+sentence D-380 wrote about the second copy while typing applies to the whole
+of B2. **B2 reopens.**
+
+### The instrument, again, and a check that would have been blind
+
+To name senders I first had pinmem ask IBus's bus which process owns each —
+`GetConnectionUnixProcessID`. **Checked before any run depended on it**, it
+returned nothing for every connection: IBus's own bus lists the method and
+then refuses it ("does not support"). A run would have reported every sender
+as unresolved. Instead pinmem now reads the kernel's socket table (`ss -xp`):
+the processes holding connections to `ibus-daemon`'s socket, and **whether
+pinmem's own process is one** — a process with no connection sent nothing.
+Taken now, with no pinmem running: IBus's clients are GNOME Shell and IBus's
+own helpers; no application, and not the terminal — consistent with the
+"other sender" being GNOME Shell passing on Wayland text input, which is a
+fit, not a reading. **Its control, in `selftest`**: a plain connection from
+pinmem to IBus's socket is seen (false before, true while open, false after).
+
+Each hit is now reported with its mapping's `Locked` size from
+`/proc/self/smaps`, so "the locked buffer" is a reading rather than a fit, and
+with the 32 bytes in front of it, because a structure's header is often what
+names a copy.
+
+**What is proposed is nothing yet.** The one-line change the owner asked
+about (the entry's `im-module`) rests on run 1 being the baseline, and run 1
+does not agree with D-380. Repeated runs of both, with an instrument that can
+say whether the dialog talks to IBus at all, come first.
