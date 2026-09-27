@@ -39449,3 +39449,127 @@ GRUB's menu hidden and a zero timeout, and holding **Shift** as GRUB starts
 shows the menu for that one boot — Advanced options, then the 6.8.0-142 entry.
 Missing the moment only means the default boots; try again. Changing
 `GRUB_DEFAULT` is not needed and is a bigger change than this sitting is for.
+
+## D-390 — The kernel-and-update sitting: WebKit's sandbox starts under the package's profile on 24.04's own 6.8 kernel and on HWE 7.0, updated, and fails without it on both; one boot changed two things, and neither list could show step 3
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items B7/F6, A23 and A28; A29 stays.
+
+Read from the files the sitting left in `~`, not from the account of it: five
+`sandboxcheck-*.txt`, `sitting-packages-before.txt`,
+`sitting-packages-after-update.txt`, `sitting-upgradable-before.txt`. **No
+`sitting-*-kernel-apparmor.txt` or other capture file exists** — D-389's
+failure path was never taken. Each reading is compared only with the one
+before it (session 8 §D).
+
+Named by kernel below, because two numberings exist: session 8's table counts
+the baseline as boot 1 (so 6.8 is boot 3); the owner's account counts from the
+first reboot (so 6.8 is boot 2).
+
+### The five readings, each against its predecessor
+
+| file | what changed since the one before | installed agent: sandbox | control: sandbox | a11y probe: payload is the text |
+|---|---|---|---|---|
+| `7.0.0-31-…-194541` | — (session 8's baseline; profiles `liro-bridge`, `liro-f12-probe`, `liro-f12-window`) | starts | fails, `bwrap: setting up uid map: Permission denied`, exit 2 | insert True, delete True |
+| `7.0.0-31-…-201646` | `liro-f12-probe` (python3.12) removed | starts | the same | the same |
+| `7.0.0-31-…-202328` | `liro-f12-window` removed; only `liro-bridge` left | starts | the same | the same |
+| `7.0.0-34-…-203544` | the 22 updates **and** kernel 7.0.0-31 → 7.0.0-34, one reboot | starts | the same | the same |
+| `6.8.0-142-…-203858` | kernel 7.0.0-34 → 6.8.0-142; nothing else | starts | the same | the same |
+
+In every file: `apparmor_restrict_unprivileged_userns: 1`; the shell `dash`;
+the agent's children `bwrap WebKitNetworkPr WebKitWebProces xdg-dbus-proxy`;
+the same four `libEGL … dri2` warnings, which are the VM's graphics, not the
+sandbox; bubblewrap `0.9.0-1ubuntu0.3`, GTK `4.14.5+ds-0ubuntu0.10`, WebKitGTK
+`2.52.6-0ubuntu0.24.04.1` and `liro-bridge 0.9.9~dev.10` unchanged throughout.
+The only other differences are pids and bus names, which follow the reboots.
+
+- **Step 0, both removals: predicted unchanged, unchanged.** The check has
+  launched from `/bin/sh` since D-388, so the python3.12 grant no longer
+  reached it; and neither of its binaries is at `/home/vboxuser/liro-f12probe`.
+  The last baseline, `…-202328`, is the stock profile set: `liro-bridge` alone.
+  **A28 closed.**
+- **7.0.0-34, updated: unchanged.** The context moves exactly where the update
+  said it would — AppArmor `…0.24.04.7` → `.8`, GNOME Shell `~24.04.14` →
+  `.15` — and nothing in the results moves.
+- **6.8.0-142: unchanged**, and the context differs from the 7.0.0-34 reading
+  in the kernel line and nothing else. The prediction marked least certain —
+  whether 6.8's AppArmor mediates user namespaces for the package's profile the
+  way 7.0's does — held: **the restriction is on (the control is refused), and
+  the package's profile lifts it for the agent (its sandbox starts).** F12
+  §3.2's worry, bwrap failing outright on 23.10 and later, does not happen with
+  the profile the package installs.
+
+**B7 and F6 closed: the sandbox starts on Ubuntu 24.04's own kernel, 6.8, and
+on the HWE 7.0 line, with the distribution's updates as of today; without the
+profile it fails on both.** 6.8 is 24.04's GA kernel, the floor F12 §3.1 set;
+desktop installs from later point-release media follow the HWE line instead,
+which is what this VM runs. Both lines are now measured.
+
+**The accessibility probe** — a bare GtkPasswordEntry, not this program's
+field — sent its text in `TextChanged` on every reading, on both kernels,
+before and after the update. As predicted: the update does not touch GTK.
+D-384's finding stands on today's 24.04, and A26's reproducer still reproduces.
+The dialog's own field (D-385) is not what this probe measures.
+
+### What the packages say
+
+- **The update was exactly the 22.** The before and after lists both hold
+  2,086 packages; 22 versions changed, none were added or removed, and the 22
+  names are exactly `sitting-upgradable-before.txt`'s.
+- **The 6.8 kernel's packages are in neither list**, and cannot be:
+  session 8 §D said to find them in the diff, but the after list is step 2's,
+  taken before step 3 installed the kernel. The instruction was wrong, not the
+  lists. Taken by this session instead, on 7.0.0-34 after the sitting
+  (`dpkg-query`, read-only): 2,090 packages, and against the after-update list
+  exactly four added — `linux-image-6.8.0-142-generic`,
+  `linux-modules-6.8.0-142-generic`, `linux-modules-extra-6.8.0-142-generic`
+  (all `6.8.0-142.142`), and `linux-image-generic` — and nothing changed.
+
+### One boot changed two things
+
+**The 7.0.0-34 reading is not the update alone.** `linux-image-7.0.0-34-generic`
+was already installed before the sitting (it is in the before list), but the
+baseline ran on 7.0.0-31: 7.0.0-34 had never been booted. So the first reboot
+brought both the 22 updates and a kernel point release. D-388 wrote "on the
+7.0 kernel already installed (7.0.0-34)" without noticing that the baseline's
+kernel was a different one, and the sitting's plan, which was written so that
+each boot changed one thing, did not either. Nothing depends on it, because
+nothing changed; had the sandbox failed on that boot, D-389's contingency
+("then the update, not the kernel, is the change") would have blamed the
+update for what could have been the kernel. The 6.8 comparison is clean: one
+change.
+
+### What was not measured, and the owner's notes
+
+- **One run per kernel.** The results are yes or no and identical five times,
+  but each boot was measured once.
+- **`aa-status` (steps 1, 4, 6)** was noted by the owner, not written to a
+  file. The owner's account for 7.0.0-34: the profile loaded, the agent running
+  under it. Nothing was recorded here for 6.8; the check's own result there —
+  the profiled binary's sandbox starts and the unprofiled copy's is refused —
+  shows the profile in effect without it.
+- **The one-time boot**: the owner used `grub-reboot`. The 6.8 file's
+  `kernel: 6.8.0-142-generic` is what establishes that 6.8 was measured.
+- **The return to 7.0.0-34 (step 7)** had no check in the plan, and none was
+  run. Read by this session afterwards: `uname -r` 7.0.0-34-generic, the
+  restriction 1, and the running `liro-bridge tray` confined as
+  `liro-bridge (unconfined)` — the package's profile.
+
+### A23 — closed by doing it
+
+The VM took Ubuntu's updates between measurements, with the package list
+recorded before and after, which is what A23 asked be decided. Readings before
+2026-09-27 20:27 were taken on the older stack (AppArmor `.7`, GNOME Shell
+`.14`, krb5 `2.8`, Xorg `1.6`, netplan, libaudit, libpciaccess, dmidecode,
+AMD graphics firmware); for the sandbox and the accessibility probe it made no
+difference, as shown above.
+
+### Left on the machine by the sitting
+
+`linux-image-generic` and the 6.8.0-142 kernel stay installed; GRUB's default
+is still the newest kernel, 7.0.0-34, and 6.8 is under *Advanced options*.
+The metapackage means future updates bring 6.8's updates as well as HWE's. It
+is also what makes it possible to re-run this check on stock 24.04 against
+a later package (dev.11) with one `grub-reboot`. Keeping it or removing it is
+the owner's call. A29 (the window tests need a root-owned profiled path) is
+unchanged.

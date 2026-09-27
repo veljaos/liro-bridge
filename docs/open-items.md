@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-389, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-390, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -48,12 +48,12 @@ prose of an entry before D-280, outside those words, may be missing.
 20. *SPEC §11.11 on Linux: built and measured with the owner's MUP card (D-365). What was not watched is C18. Numbering kept.*
 21. **`certs` on Windows still says "Certificates: 0" with no reason.** Linux now prints the window's sentence under the count (D-365); Windows was left unchanged by F12's rule, not by decision. *Needs:* owner's decision.
 22. *A native message box on Linux: not built, by the owner's decision (D-373). Numbering kept.*
-23. **When this VM takes Ubuntu's updates.** Ubuntu offered one during D-374's runs and the owner declined it, because an update mid-measurement moves the libraries under the measurement. Unupdated, the VM drifts from the 24.04 it is meant to represent; updated, earlier readings were taken on a different stack. — D-374. *Close:* decide when — between measurements, with the package list recorded before and after. *Needs:* owner's decision.
+23. *Ubuntu's updates: taken between measurements on 2026-09-27, the package list recorded before and after — exactly the 22 (D-390). Numbering kept.*
 24. *SPEC §6.5.1 clause 3 per platform, with the same-user routes measured and the open ones named (D-381). Numbering kept.*
 25. *The Linux PIN dialog's own field: built and measured — no TextChanged, the copy locked while typed, nothing after the wipe (D-385). Numbering kept.*
 26. **Report to GTK that a GtkPasswordEntry sends its text in AT-SPI TextChanged**, with the measurement, not a conclusion: the payload equality, the plain AddMatch listener, GTK 4.14.5, and `scripts/a11yprobe` as the reproducer (D-384, D-385). *Needs:* the owner files it (an outward post). And measure Fedora 44's GTK with the same script when the Fedora VM exists (F1).
 27. *Paste into the PIN field: measured — one copy in the locked page, none after the wipe, nothing on the accessibility bus (D-388). Numbering kept.*
-28. **Both hand-made userns profiles removed by the owner in the sitting's step 0** (D-389; session 8 §C): `liro-f12-probe` (python3.12, made by session 1 for D-324, carried by seven sessions) and `liro-f12-window` (`/home/vboxuser/liro-f12probe`, a user-writable path, so any same-user process could put a binary under the grant). *Close:* D-390 records the baselines before and after.
+28. *Both hand-made userns profiles removed by the owner in the sitting's step 0; the baselines before and after each unchanged, `liro-bridge` the only profile left (D-389, D-390). Numbering kept.*
 29. **`internal/ui`'s window tests need a profiled path again, and it should not be one the user can write.** Until then they cannot run on this VM (they skip under `go test`, C5). When needed: a profile naming a root-owned binary (e.g. installed with `sudo install -o root -m 0755` under `/usr/local/libexec/`), so the grant covers one known binary rather than whatever is placed in a home directory. *Needs:* owner's decision (a system change), when the window tests are next needed.
 
 ## B. Claims not measured
@@ -64,7 +64,7 @@ prose of an entry before D-280, outside those words, may be missing.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.
 6. **DMABUF and NVIDIA variables on real GPUs.** — D-329, D-324; F12 §0.1. *Needs:* hardware (GPU).
-7. **The sandbox on a stock 24.04 kernel** (this VM runs HWE 7.0, not 6.8). Prepared: `scripts/sandboxcheck/run.sh`, a baseline on 7.0.0-31 that discriminates (installed agent: sandbox starts; unprofiled control: `bwrap: setting up uid map: Permission denied`), and a two-boot sitting (D-388). — D-324. *Needs:* the sitting.
+7. *The sandbox on stock 24.04: starts under the package's profile on 6.8.0-142 and on HWE 7.0.0-34, updated; refused without it on both (D-390). Numbering kept.*
 8. **WebKitGTK's sandbox under SELinux, with no profile.** — D-354, session 6 §G. *Needs:* Fedora machine.
 9. **A module dying inside `C_Login`, or a worker that hangs.** — D-289. *Needs:* hardware.
 10. **The reaper's extra ~320 ms after a deliberate crash.** — D-296, D-297, D-301. *Needs:* Windows; possibly unreachable.
@@ -147,7 +147,7 @@ the checklist wants updating against D-354 and D-355.
 3. **Which findings came from a VM, stated — the F12 report.** No `docs/f12-report.md` yet. *Needs:* a document.
 4. **A module that kills its worker becomes a `Failure`, with the real module** — C9.
 5. **DMABUF and NVIDIA** — B6.
-6. **The sandbox on stock 24.04** — B7.
+6. *The sandbox on stock 24.04 — B7, closed (D-390). Numbering kept.*
 7. *The "marked trusted" box: struck and replaced by the owner (D-363). Numbering kept.*
 8. **What a stock GNOME user sees** — only an empty bus so far (D-342). *Needs:* Fedora machine.
 9. **Package signing** — built (D-356); the real-key run is C16.
