@@ -210,6 +210,33 @@ body.drag-over #file-list {
   overflow-wrap: anywhere;
 }
 
+/* The documents step's output folder (D-372). The label and the buttons
+   are short and fixed, so they share the first line and neither may
+   shrink or wrap; the path is the one thing whose length nobody controls,
+   so it gets a line of its own at the full width and wraps anywhere.
+   Beside the buttons, a long path squeezed the label and both buttons
+   into columns a few words wide. */
+.output-setting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-1);
+}
+
+#output-label,
+.output-actions .liro-btn {
+  white-space: nowrap;
+}
+
+.output-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--liro-space-2);
+}
+
+#output-folder {
+  overflow-wrap: anywhere;
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;

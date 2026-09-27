@@ -38111,3 +38111,95 @@ is the package manager's, with no program of ours running (D-363). A native
 box on Linux would be code with no caller that no person could ever see.
 **Recommended: record that, rather than build it** — the owner's decision.
 Until then `showNativeMessage` on Linux logs, as it did.
+
+## D-372 — D2 watched on dev.8: the choosers and the drop work, including the least certain prediction; a long output folder squeezed its row, and the check written for it first could not see it; and Save reached its handler on neither day
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items D2 (the message box moves to A22).
+
+### What the owner watched
+
+`0.9.9~dev.8` (`7bb5def`, clean). The agent started from a terminal, not at
+login. Predictions from D-371's handover, readings the owner's.
+
+| | predicted | measured |
+|---|---|---|
+| the new sentence | both sentences, justified | **held** — "right edge even" |
+| Browse | GNOME's chooser, PDF filter; two files join; cancel changes nothing | **held** |
+| output folder | the chooser opens on the current folder; the choice is shown and saved | **works** — `outputFolder` written at 14:11:48 — **and the row breaks on a long path** (below) |
+| **drop — least certain** | one PDF from Files joins the list once; no navigation, the file not shown | **held**: WebKit's own drop handling never took it |
+| export | written where chosen | **held**: `liro-audit-20260927-141216.jsonl`, 5 entries; the owner's chain check: OK, `BrokenAt -1`, one chain, 2026-09-23T20:12:33Z to 2026-09-26T13:15:24Z. Moved to the Trash by the owner afterwards |
+| Save | the file's time and hash change; `explorerMenuEnabled` stays true | **not held** — below |
+
+### The output folder's row
+
+The owner's report, with the path `/home/vboxuser/liro-bridge/cmd/liro-bridge`:
+the label, the path and the buttons ran into each other and the button read
+"Promeni i…". The same class as [[D-317]]'s report screen, found the same way.
+
+**The first check I wrote could not see it.** It loaded the real
+`main.html` at the documents step's 560×690, posted the `init` payload with a
+long path, and asked the page for overlapping boxes, clipped buttons and
+sideways overflow. **Run against the unfixed page it passed** — the prediction
+was that it would fail, and it did not. Dumping the boxes said why: wrapped
+text fits its box, so nothing is clipped and nothing overlaps; what a person
+reads is the label squeezed to 54 points and wrapped onto three lines, and
+the buttons to 84 and 44 with "Promeni..." on three lines of its own. The
+check that sees it counts each element's lines of text with a `Range`. With
+that, the unfixed page failed exactly as the owner described.
+
+**The owner's own path I could not reproduce.** At 560 points it fits on one
+line with room between every piece (label 16–111, path 119–325, buttons
+333–544). Either the owner's path was longer than the one reported or the
+owner's window differed; the owner is asked. The fix holds for it either way:
+the test now runs the short path, the owner's and a long one.
+
+**The fix is not the one the owner suggested, and why.** The buttons on a
+line of their own would cost a button's height, about 44 points, out of the
+file list, whose size is chosen for eight rows. Instead the label and its
+buttons — both short, both fixed, neither allowed to shrink or wrap — share
+the first line, and **the path takes a line of its own at the full width**
+and wraps anywhere. That is the arrangement Settings already uses for its
+fields (labels above values). Measured with eight documents in the list:
+all eight still fully visible, the list 539 → 519 points with a short path
+and 505 → 503 with the long one, nothing scrolls but the list.
+
+**The export screen, checked rather than assumed**, as the owner asked:
+`TestALongExportFolderFitsInBothExportWindows` posts the export's own status
+— the sentence carrying the whole folder, and the grid of the two files
+written — to Settings (520×880) and to the audit log window (460×520), the two
+windows with an Export button. Both fit. **Mutation**: the status sentence
+set not to wrap — both fail, "the page scrolls sideways: 956 in 520" and
+"884 in 460". I predicted the sentence would be named as reaching past the
+edge; the page's sideways scroll is what caught it, because a block's own box
+stays the window's width while its text runs out of it.
+
+### Save, again, and what is now established
+
+`config.json` was written at 14:11:48 — the output folder chosen in step 4,
+which is where `outputFolder` became the Desktop. The owner pressed Save at
+about 14:12; the export is logged at 14:12:16; **nothing after that is in the
+log, and the agent was gone when I looked**, as on dev.7.
+
+Two findings narrow it:
+
+- **The save handler ran on neither day.** Save always rewrites the
+  autostart entry (`SetEnabled(true)` writes unconditionally, and the
+  owner's `startWithWindows` is true); `~/.config/autostart/liro-bridge.desktop`
+  was last written 2026-09-26 13:06. So neither Save reached
+  `handleSettingsAction`'s `"save"` case.
+- **The handler works on Linux.** `TestSettingsSaveWritesTheConfigurationOnLinux`
+  runs it against a scratch home: the form is written, the Explorer-menu value
+  kept. The only tests of that case had been Windows'. Mutation — the write
+  skipped — red.
+
+And the export, which travels the same loop (`Approve` → `__liroCollectState`
+→ decode → `handleSettingsAction`), worked in the same window minutes
+earlier; every failure on that path logs, and none is logged. So the Save
+click's message did not reach the loop, or the process was gone before it
+did. Both days the agent was started from a terminal, and both days it
+vanished without a line — a Go program ends on SIGHUP without logging, so a
+terminal closed after the steps would do it. **What separates the
+explanations is what the owner saw**: whether Settings closed when Save was
+pressed (a handled save closes it), and whether the terminal printed
+anything. Asked. D18 stays open.

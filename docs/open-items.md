@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-371, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-372, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -47,6 +47,7 @@ prose of an entry before D-280, outside those words, may be missing.
 19. **Credentials outlive an uninstall, on both platforms.** A pairing's secret is in the login keyring on Linux (in DPAPI-protected storage on Windows), and nothing in an uninstall path can see it: the package cannot reach a home directory, and the MSI runs as whoever installs. Nobody has looked at Windows. — D-363. *Close:* decide whether uninstall tells the person, or the agent offers to forget pairings, or it is accepted. *Needs:* owner's decision.
 20. *SPEC §11.11 on Linux: built and measured with the owner's MUP card (D-365). What was not watched is C18. Numbering kept.*
 21. **`certs` on Windows still says "Certificates: 0" with no reason.** Linux now prints the window's sentence under the count (D-365); Windows was left unchanged by F12's rule, not by decision. *Needs:* owner's decision.
+22. **A native message box on Linux.** `ShowWarning` and `ShowNotice` have only Windows callers (WebView2 missing, the uninstall notice) and no Linux counterpart; where GTK cannot open a window it cannot show a dialog either. D-371 recommends recording that rather than building a box nobody could see. *Needs:* owner's decision.
 
 ## B. Claims not measured
 
@@ -91,14 +92,14 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
-18. **§11.11's Linux sentences and Settings on dev.7: watched, except what follows.** The owner watched P1–P3 and the hidden Explorer row (D-370). Not watched: the replaced sentences and the justified notice (need a dev.8 package); `certs` for a reader with no card and for no reader; a stock desktop with no card program (`NO_READER`, a unit test only); what OpenSC's slots show with no reader. — D-365, D-366, D-370. *Needs:* owner's hands; a clean machine for the stock desktop.
+18. **§11.11's Linux sentences beyond what was watched.** The owner watched P1–P3 on dev.7 and the replaced sentence, justified, on dev.8 (D-370, D-372). Not watched: `certs` for a reader with no card and for no reader; a stock desktop with no card program (`NO_READER`, a unit test only); what OpenSC's slots show with no reader. — D-365, D-370, D-372. *Needs:* owner's hands; a clean machine for the stock desktop.
 
 ## D. Known defects, not fixed
 
 **Flagged by the owner, above the rest though neither is F12's: D3 and D4.** Both are about a signature, not about Linux, and both mean the Windows version people have installed today may report something it did not establish. Neither should be discovered by a user.
 
 1. *The notification outlived the approval: fixed in D-357; watching it is C17. Numbering kept.*
-2. **The file and folder choosers and the drop on Linux: built, not watched.** GtkFileDialog and a GtkDropTarget on the window in the capture phase (D-371); structure-tested, never used by a person. Whether WebKit's own drop handling ever takes a drop of files first is the least certain part. The message box is not built: it has no Linux caller (D-371 recommends recording that). — D-330, D-331, D-338, D-371. *Close:* the owner chooses files, a folder and drops a PDF on dev.8; decides on the message box. *Needs:* owner's hands, owner's decision.
+2. *File and folder choosers and the drop on Linux: built (D-371) and watched by the owner on dev.8 (D-372). The message box is A22. Numbering kept.*
 3. **`lowerLevel` has no caller**: a mixed batch may report a level it did not reach. — session 4 §8; `batchlevel_windows.go`. *Needs:* code, measurement.
 4. **`CERT_REVOKED` has no producer**; the parsed CRL is thrown away. — D-310, D-312. *Needs:* code (and A8).
 5. *The Explorer-menu row: shown on Windows only; on Linux Save keeps the saved value (D-366). Watching it is C18. Numbering kept.*
@@ -114,7 +115,7 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **The thinned icon has never reached the owner's installed tray.** — D-321. *Needs:* Windows, owner's hands.
 16. **The autostart test cannot see the `$` and backtick escapes.** — D-354. *Needs:* code (low).
 17. **A Windows window test pins the singular sentence's wording** (`alreadysigned_windows_test.go:124`, "1 of these documents is") and goes red when it improves. The four such tests that run on Linux read from the catalogue now. — D-368. *Needs:* Windows.
-18. **Settings' Save on Linux wrote nothing** (dev.7, 2026-09-27): no `config.json` anywhere was written, and no warning was logged; the agent (PID 24680, started by hand) was gone afterwards with no log line. Cause unknown — possibly the terminal it was started from was closed. — D-370. *Close:* the owner's account, then Save once more on an agent started at login, with the file's mtime and hash before and after. *Needs:* owner's hands.
+18. **Settings' Save on Linux reached its handler on neither day** (dev.7 and dev.8): no `config.json` written, the autostart entry — which every save rewrites — untouched since 2026-09-26, nothing logged, and the agent (started from a terminal both times) gone afterwards with no log line. The handler itself writes on Linux (`TestSettingsSaveWritesTheConfigurationOnLinux`), and the export travels the same loop and worked. — D-370, D-372. *Close:* whether Settings closed at Save and what the terminal printed; then Save on an agent started at login, with the file's time and hash before and after. *Needs:* owner's hands.
 
 ## E. Promises in documents that nothing does yet
 

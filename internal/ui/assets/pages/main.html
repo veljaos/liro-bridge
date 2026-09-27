@@ -38,15 +38,20 @@
   <div class="files-footer liro-fixed-region">
     <!-- This step asks one thing: which documents. How to sign is the
          method step's question, so it is not also asked here. -->
-    <div class="liro-row setting-row">
-      <span class="liro-text-small" data-i18n="main.output_label"></span>
-      <span class="setting-value">
-        <span class="liro-text-small" id="output-folder"></span>
-        <!-- Only shown once a folder has been chosen: without a way
-             back, choosing one was a one-way door. -->
-        <button id="output-beside-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.output_beside" hidden></button>
-        <button id="output-change-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.output_change"></button>
-      </span>
+    <!-- The label and its buttons on one line, the folder on its own
+         line below at the full width: a long path once squeezed the label
+         and both buttons into columns a few words wide (D-372). -->
+    <div class="output-setting">
+      <div class="liro-row">
+        <span class="liro-text-small" id="output-label" data-i18n="main.output_label"></span>
+        <span class="output-actions">
+          <!-- Only shown once a folder has been chosen: without a way
+               back, choosing one was a one-way door. -->
+          <button id="output-beside-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.output_beside" hidden></button>
+          <button id="output-change-btn" class="liro-btn liro-btn-secondary liro-btn-compact" data-i18n="main.output_change"></button>
+        </span>
+      </div>
+      <span class="liro-text-small" id="output-folder"></span>
     </div>
 
     <div class="actions">
