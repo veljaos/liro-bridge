@@ -53,7 +53,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -235,50 +234,106 @@ func imModules() []string {
 	return out
 }
 
-// watchIBus counts ProcessKeyEvent calls on IBus's own bus while it runs. It
-// prints no message contents. If IBus is not running, or its bus refuses a
-// monitor, it says so and counts nothing — which is then not evidence of
-// anything.
-func watchIBus() (stop func() (count int64, note string)) {
+// ibusCounts is what crossed IBus's input-context interface while the dialog
+// was up: calls by method name, key events split by press and release, and
+// how many distinct senders made them. Never a key value (D-380).
+type ibusCounts struct {
+	byMember          map[string]int
+	presses, releases int
+	unparsed          int
+	senders           map[string]bool
+	note              string
+}
+
+// ibusReleaseMask is IBUS_RELEASE_MASK, bit 30 of ProcessKeyEvent's state.
+const ibusReleaseMask = 1 << 30
+
+// watchIBus monitors every method call on IBus's InputContext interface while
+// it runs. dbus-monitor prints a header line naming sender and member, then
+// one indented line per argument; ProcessKeyEvent's third argument is the
+// state, whose release bit is all that is read of it. If IBus is not running,
+// or its bus refuses a monitor, it says so and the counts are not evidence.
+func watchIBus() (stop func() ibusCounts) {
 	addr, err := exec.Command("ibus", "address").Output()
 	if err != nil || len(bytes.TrimSpace(addr)) == 0 {
-		return func() (int64, string) { return 0, "IBus address not available (ibus not running?)" }
+		return func() ibusCounts { return ibusCounts{note: "IBus address not available (ibus not running?)"} }
 	}
 	cmd := exec.Command("dbus-monitor", "--address", string(bytes.TrimSpace(addr)),
-		"type='method_call',interface='org.freedesktop.IBus.InputContext',member='ProcessKeyEvent'")
+		"type='method_call',interface='org.freedesktop.IBus.InputContext'")
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return func() (int64, string) { return 0, "dbus-monitor: " + err.Error() }
+		return func() ibusCounts { return ibusCounts{note: "dbus-monitor: " + err.Error()} }
 	}
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
-		return func() (int64, string) { return 0, "dbus-monitor did not start: " + err.Error() }
+		return func() ibusCounts { return ibusCounts{note: "dbus-monitor did not start: " + err.Error()} }
 	}
-	var count atomic.Int64
-	var refused atomic.Bool
+	c := ibusCounts{byMember: map[string]int{}, senders: map[string]bool{}}
+	var refused bool
+	var mu sync.Mutex
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		sc := bufio.NewScanner(out)
+		member := ""
+		var args []string
+		flush := func() {
+			if member == "ProcessKeyEvent" {
+				if len(args) >= 3 {
+					if state, err := strconv.ParseUint(args[2], 10, 64); err == nil {
+						if state&ibusReleaseMask != 0 {
+							c.releases++
+						} else {
+							c.presses++
+						}
+					} else {
+						c.unparsed++
+					}
+				} else {
+					c.unparsed++
+				}
+			}
+			member, args = "", nil
+		}
 		for sc.Scan() {
 			l := sc.Text()
-			if strings.Contains(l, "member=ProcessKeyEvent") {
-				count.Add(1)
+			mu.Lock()
+			switch {
+			case strings.Contains(l, "Failed") || strings.Contains(l, "AccessDenied"):
+				refused = true
+			case strings.Contains(l, "member="):
+				flush()
+				for _, f := range strings.FieldsFunc(l, func(r rune) bool { return r == ' ' || r == ';' }) {
+					if v, ok := strings.CutPrefix(f, "member="); ok {
+						member = v
+						c.byMember[v]++
+					}
+					if v, ok := strings.CutPrefix(f, "sender="); ok {
+						c.senders[v] = true
+					}
+				}
+			case strings.HasPrefix(strings.TrimSpace(l), "uint32 "):
+				args = append(args, strings.TrimPrefix(strings.TrimSpace(l), "uint32 "))
 			}
-			if strings.Contains(l, "Failed") || strings.Contains(l, "AccessDenied") {
-				refused.Store(true)
-			}
+			mu.Unlock()
 		}
+		mu.Lock()
+		flush()
+		mu.Unlock()
 	}()
-	return func() (int64, string) {
+	return func() ibusCounts {
 		_ = cmd.Process.Kill() // this child, by its own PID
 		_ = cmd.Wait()
 		wg.Wait()
-		if refused.Load() {
-			return count.Load(), "IBus's bus refused the monitor — the count is not evidence"
+		c.note = fmt.Sprintf("dbus-monitor on IBus's bus, pid %d", cmd.Process.Pid)
+		if refused {
+			c.note = "IBus's bus refused the monitor — the counts are not evidence"
 		}
-		return count.Load(), fmt.Sprintf("dbus-monitor on IBus's bus, pid %d", cmd.Process.Pid)
+		if c.unparsed > 0 {
+			c.note += fmt.Sprintf("; %d key events whose state could not be read — the press/release split is not evidence", c.unparsed)
+		}
+		return c
 	}
 }
 
@@ -356,7 +411,7 @@ wait:
 		}
 	}
 	tick.Stop()
-	keys, note := stopIBus()
+	ibus := stopIBus()
 
 	say("")
 	switch {
@@ -377,7 +432,9 @@ wait:
 	clear(dst.b)
 	describe("after wiping the returned copy:", scan(needle, scratch, skip))
 	say("IM modules mapped: %v", imModules())
-	say("IBus ProcessKeyEvent calls while the dialog was up: %d (%s)", keys, note)
+	say("IBus InputContext calls while the dialog was up, by method: %v", ibus.byMember)
+	say("  of which key events: %d presses, %d releases; from %d distinct sender(s)", ibus.presses, ibus.releases, len(ibus.senders))
+	say("  (%s)", ibus.note)
 
 	clear(needle.b)
 }
