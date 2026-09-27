@@ -39276,3 +39276,111 @@ inside `gtk_css_provider_load_from_string`). **The agent never connects that
 handler, so nothing ships with it** — but somebody adding a CSS error handler
 later would find it by crashing; this is where they would be told —
 and open-items D19.
+
+## D-388 — Paste counts; the six key events carried no PIN; B19 deferred; the tool that answered emptily; and a baseline for the kernel-and-update sitting, found wrong once by its own control
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items A27; B19 deferred; F6/B7 prepared.
+
+### Paste, measured (the owner's run)
+
+The needle copied in the terminal and pasted into the real dialog:
+**1 copy while in the field, in a mapping Locked 4 kB; 0 after the wipe,
+VmLck 0; no `TextChanged` at all; the needle returned byte for byte.** The
+least certain prediction — that GTK's clipboard read would leave no extra copy
+in this process — held. **Paste counts.**
+
+**The six key events on IBus's bus** — 3 presses, 3 releases — where typed
+runs on the new field showed 0. **Which keys they were, I cannot tell**:
+pinmem records no key values by design, and IBus does not say which client an
+input context belongs to. **What is certain is that none carried the needle**:
+in this run it never went through the keyboard — it came through the
+clipboard — and a key event carries one key, never text; the dialog's process
+held no connection to `ibus-daemon`; all six came from the one other sender,
+`:1.3`, as in every run. **What fits, and is not a reading:** Ctrl, Shift and
+C — the copy made in the terminal, which is a text-input client whose keys the
+desktop hands to IBus, while the dialog was open (focus moved twice: FocusIn 1,
+FocusOut 2). The owner's guess of the paste shortcut fits less well: the paste
+was Ctrl+V into this program's field, which is not a text-input client, and
+the typed runs on it showed none.
+
+### B19, deferred deliberately
+
+**Not in the kernel-and-update sitting, by the owner's decision.** A second
+user account is a system change that buys one measurement about discovery
+files, and that sitting is already changing the kernel and taking the
+distribution's updates. Two system changes at once means neither can be
+attributed if something breaks. Deferred, not skipped.
+
+### The D-386 correction, in the owner's words
+
+The seventh correction of its kind this week, and the first made about myself
+unprompted. **"The logs could not be read" was a statement about gh 2.45
+returning nothing at exit 0, made as though it were about the logs. A tool that
+answers emptily is the same shape as a check that cannot fail, and it took the
+REST API to show the difference** ([[D-387]]).
+
+### The sitting, and why it is two boots
+
+The update this VM is offered (22 packages) includes **AppArmor**
+(4.0.1…0.24.04.7 → .8) and GNOME Shell, and AppArmor is what decides whether
+WebKit's sandbox may create a user namespace. Taken together with the kernel in
+one boot, a sandbox result could not be attributed — the owner's B19 reasoning,
+inside the sitting. So: a baseline now; a boot after the update on the 7.0
+kernel already installed (7.0.0-34), which isolates the update; and a one-time
+boot of Ubuntu's own 6.8 kernel (`linux-image-generic` 6.8.0-142), which
+differs from the second only in the kernel — F6/B7's question. The VM runs the
+HWE 7.0 kernel today, which is why "stock 24.04" was never measured.
+
+### The instrument, and its control finding it wrong
+
+`scripts/sandboxcheck/run.sh`: the context (kernel, the userns restriction,
+package versions), the installed `/usr/bin/liro-bridge open` in a scratch home
+with a short runtime directory — does WebKit's sandbox start — and **a control,
+the same binary copied where no profile names it**, which under the userns
+restriction should fail; then the a11y reproducer.
+
+**Its first baseline was wrong, and the control is what said so**: the
+"unprofiled" copy's sandbox started too. The script launched both windows from
+Python, and **this VM carries a profile from an earlier session,
+`liro-f12-probe`, that gives `/usr/bin/python3.12` the userns permission**
+(`flags=(unconfined)`, `userns,`) — everything Python started inherited it.
+Launched from `/bin/sh` instead, the baseline discriminates:
+
+    == context
+    kernel: 7.0.0-31-generic
+    apparmor_restrict_unprivileged_userns: 1
+    this shell: /usr/bin/dash
+    apparmor 4.0.1really4.0.1-0ubuntu0.24.04.7
+    bubblewrap 0.9.0-1ubuntu0.3
+    gnome-shell 46.0-0ubuntu6~24.04.14
+    libgtk-4-1 4.14.5+ds-0ubuntu0.10
+    libwebkitgtk-6.0-4 2.52.6-0ubuntu0.24.04.1
+    liro-bridge 0.9.9~dev.10
+    profile file: liro-bridge
+    profile file: liro-f12-probe
+    profile file: liro-f12-window
+    
+    == the installed agent, /usr/bin/liro-bridge (the package's profile names it)
+    alive after 10 s: yes (pid 110181, parent run.sh)
+    processes under it: bwrap WebKitNetworkPr WebKitWebProces xdg-dbus-proxy 
+    sandbox started (bwrap and WebKitWebProcess): yes
+    stderr, bwrap and WebKit lines:
+        libEGL warning: egl: failed to create dri2 screen
+        libEGL warning: DRI2: failed to create screen
+        libEGL warning: egl: failed to create dri2 screen
+        libEGL warning: DRI2: failed to create screen
+    
+    == control: the same binary where no profile names it
+    alive after 10 s: no, exit 2
+    sandbox started (bwrap and WebKitWebProcess): no
+    stderr, bwrap and WebKit lines:
+        bwrap: setting up uid map: Permission denied
+    
+    == accessibility: does a GtkPasswordEntry send its text (D-384)?
+
+**That profile is a machine-wide loosening of Ubuntu's userns restriction for
+every Python 3.12 process on this VM**, left from an instrument, not the stock
+state the sitting means to measure, and it may have coloured any earlier
+measurement that ran under Python. Removing it is a system change and the
+owner's (open-items A28).

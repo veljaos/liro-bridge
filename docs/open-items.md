@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-387, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-388, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -52,7 +52,8 @@ prose of an entry before D-280, outside those words, may be missing.
 24. *SPEC §6.5.1 clause 3 per platform, with the same-user routes measured and the open ones named (D-381). Numbering kept.*
 25. *The Linux PIN dialog's own field: built and measured — no TextChanged, the copy locked while typed, nothing after the wipe (D-385). Numbering kept.*
 26. **Report to GTK that a GtkPasswordEntry sends its text in AT-SPI TextChanged**, with the measurement, not a conclusion: the payload equality, the plain AddMatch listener, GTK 4.14.5, and `scripts/a11yprobe` as the reproducer (D-384, D-385). *Needs:* the owner files it (an outward post). And measure Fedora 44's GTK with the same script when the Fedora VM exists (F1).
-27. **Paste into the PIN field: accepted by the owner and built, not yet counted.** Read straight into the locked page; refused whole if invalid, too large or cut short; the wrong-clipboard risk recorded (D-387). *Close:* pinmem with a pasted needle — no copy outside the locked page, nothing on the accessibility bus. *Needs:* owner's hands.
+27. *Paste into the PIN field: measured — one copy in the locked page, none after the wipe, nothing on the accessibility bus (D-388). Numbering kept.*
+28. **An AppArmor profile from an earlier session gives every `/usr/bin/python3.12` process the userns permission** (`/etc/apparmor.d/liro-f12-probe`, `flags=(unconfined)`, `userns,`). Not the stock state; it made D-388's first sandbox baseline wrong and may have coloured earlier measurements run under Python. *Close:* remove it (`sudo rm /etc/apparmor.d/liro-f12-probe && sudo apparmor_parser -R` of it, or a reboot after removal), or keep it on purpose. *Needs:* owner's decision (a system change).
 
 ## B. Claims not measured
 
@@ -62,7 +63,7 @@ prose of an entry before D-280, outside those words, may be missing.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.
 6. **DMABUF and NVIDIA variables on real GPUs.** — D-329, D-324; F12 §0.1. *Needs:* hardware (GPU).
-7. **The sandbox on a stock 24.04 kernel** (this VM runs 7.0, not 6.8). — D-324. *Needs:* another machine.
+7. **The sandbox on a stock 24.04 kernel** (this VM runs HWE 7.0, not 6.8). Prepared: `scripts/sandboxcheck/run.sh`, a baseline on 7.0.0-31 that discriminates (installed agent: sandbox starts; unprofiled control: `bwrap: setting up uid map: Permission denied`), and a two-boot sitting (D-388). — D-324. *Needs:* the sitting.
 8. **WebKitGTK's sandbox under SELinux, with no profile.** — D-354, session 6 §G. *Needs:* Fedora machine.
 9. **A module dying inside `C_Login`, or a worker that hangs.** — D-289. *Needs:* hardware.
 10. **The reaper's extra ~320 ms after a deliberate crash.** — D-296, D-297, D-301. *Needs:* Windows; possibly unreachable.
@@ -74,7 +75,7 @@ prose of an entry before D-280, outside those words, may be missing.
 16. **WebKit's SIGUSR1 against the Go runtime under load.** — D-326, D-327; session 4 §7. *Needs:* another machine.
 17. **CI's cache behaviour is reasoned, not measured.** — D-335; session 4 §10.5. *Close:* read step timings. *Needs:* CI.
 18. *The audit `flock` across two processes: excludes at the real directory, and a cross-process test now runs on Linux (D-367). Numbering kept.*
-19. **Stale discovery files under linger, with `XDG_RUNTIME_DIR` unset, and across two users.** — D-325. *Needs:* measurement, owner's hands.
+19. **Stale discovery files under linger, with `XDG_RUNTIME_DIR` unset, and across two users — deferred deliberately.** Not in the kernel-and-update sitting: a second user is a system change, and two at once cannot be attributed (D-388). — D-325. *Needs:* measurement, owner's hands, a sitting of its own.
 20. **Is gotk4 v0.3.1 missing an API the remaining UI needs?** Not for D2: FileDialog, DropTarget with FileList, AlertDialog are all generated, and D-338's "FileList has no methods" was wrong (D-371). Open only for UI not yet written. — D-327, D-330, D-371. *Needs:* code.
 21. **CI fuzz flake rate.** — D-328. *Needs:* CI.
 22. **Does the Windows PIN dialog tell UI Automation, MSAA or `WM_GETTEXT` what is typed?** Assumed neither way: if it does, D-384 stops being a Linux finding and becomes a finding about the program, and this week's entries would read wrong (D-385). On the Windows machine, as the same user, a random needle typed by hand into the real dialog: (1) **UI Automation** — a client subscribed to text-changed and property-changed (Value) events on all windows while the needle is typed; then, with the dialog open, the edit's `ValuePattern.Value`, its `TextPattern` document range, and its `IsPassword` property. (2) **MSAA/WinEvents** — an out-of-context `SetWinEventHook` for `EVENT_OBJECT_VALUECHANGE`, `EVENT_OBJECT_NAMECHANGE` and the text-edit events, reading `accValue`/`accName` from each source. (3) **`WM_GETTEXT` sent across processes** to the edit's HWND. (4) Each compared with the needle, never printed — pinmem's arrangement. *Needs:* Windows, owner's hands.
