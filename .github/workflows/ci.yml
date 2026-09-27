@@ -56,14 +56,22 @@ jobs:
       # that ships without one — and the answer then is not to widen this
       # list but to find out why something that is not a window grew a
       # window dependency (D-335's own case was one symbol in one file).
+      #
+      # **scripts/pinmem is the fourth, and it passes the list's own test**:
+      # its job is to put this program's PIN dialog on a screen and measure
+      # what typing into it leaves (D-380). It ships in nothing. It is here,
+      # and vetted in linux-gui, so that a probe a later measurement needs
+      # is compiled on every push rather than rebuilt from a document —
+      # the first pinmem lived in /tmp and went with a reboot.
       - name: only the window packages and the agent need GTK on linux
         run: |
           set -eu
           ui=github.com/veljaos/liro-bridge/internal/ui
-          expected="$(printf '%s\n%s\n%s' \
+          expected="$(printf '%s\n%s\n%s\n%s' \
             github.com/veljaos/liro-bridge/cmd/liro-bridge \
             github.com/veljaos/liro-bridge/internal/pinscreen \
-            github.com/veljaos/liro-bridge/internal/ui)"
+            github.com/veljaos/liro-bridge/internal/ui \
+            github.com/veljaos/liro-bridge/scripts/pinmem)"
 
           needs_ui() {
             go list "$@" -f '{{.ImportPath}}{{range .Deps}}{{if eq . "'"$ui"'"}} needs-ui{{end}}{{end}}' ./... |
@@ -348,7 +356,7 @@ jobs:
       # module, since it loads every package it is pointed at and cannot
       # be told to skip one.
       - name: go vet (the two packages that link GTK)
-        run: go vet -unsafeptr=false ./internal/ui/... ./internal/pinscreen/... ./cmd/liro-bridge/...
+        run: go vet -unsafeptr=false ./internal/ui/... ./internal/pinscreen/... ./cmd/liro-bridge/... ./scripts/pinmem/...
 
       - name: golangci-lint (GOOS=linux)
         uses: golangci/golangci-lint-action@v9
