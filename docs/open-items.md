@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-377, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-379, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -94,7 +94,7 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
-18. **§11.11's Linux sentences beyond what was watched.** The owner watched P1–P3 on dev.7 and the replaced sentence, justified, on dev.8 (D-370, D-372). Not watched: `certs` for a reader with no card and for no reader; a stock desktop with no card program (`NO_READER`, a unit test only); what OpenSC's slots show with no reader. — D-365, D-370, D-372. *Needs:* owner's hands; a clean machine for the stock desktop.
+18. **§11.11's Linux sentences on a stock desktop with no card program.** Everything else is measured: P1–P3 and the replaced sentence watched (D-370, D-372); `certs` with the card out and with no reader, and what OpenSC and SafeSign present with no reader (D-379). Left: `NO_READER` on a machine with no card program, a unit test only. — D-365, D-370, D-379. *Needs:* a clean machine.
 
 ## D. Known defects, not fixed
 

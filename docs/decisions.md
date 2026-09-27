@@ -38550,3 +38550,71 @@ open-items A24.
 780 MB, from test processes only (OpenSC, the fixture; no PIN, no secret);
 removing them needs `sudo`. The report D-376's baseline wrote to `/var/crash`
 was deleted before the desktop could offer it.
+
+## D-378 — A change appeared to break every window, and the control showed the breakage was the test's: why a check is run against the unchanged program too
+
+**Date:** 2026-09-27
+**Phase:** F12; a method, recorded on its own at the owner's request. The
+events are in [[D-376]] and [[D-377]]; this is what they show.
+
+**What happened.** After [[D-376]]'s hardening, the check that the program
+still opens a window ran the hardened build's `open` from the profiled path,
+in a scratch home and a scratch runtime directory. It exited 2 at once:
+"Failed to fully launch dbus-proxy: Child process exited with code 1". The
+reading that offered itself — the non-dumpable mark changes who owns
+`/proc/self`, WebKit's sandbox reads it, the hardening breaks windows — was
+plausible, specific, and on the way to being written down.
+
+**The control was the unchanged build, in the same place, the same way.** It
+failed identically. So the change was not the cause, and the question became
+what the two runs shared: the scratch runtime directory, whose path was about
+110 characters, where WebKit's D-Bus proxy creates its sockets and a Unix
+socket path may be at most 108. With a 12-character directory under `/tmp`,
+both builds opened, WebKit's web, network, `bwrap` and proxy processes
+running under each.
+
+**Why it is recorded as a method, not as a detail.** A check that only ever
+runs against the changed program can report two things — "works" and
+"broken" — and cannot tell "broken by the change" from "broken by the way I
+looked". Run against the unchanged program too, the same check has a third
+answer — "broken either way" — and that answer points at the test. Here it
+turned a wrong conclusion about a security change into a line about socket
+path lengths. It is [[D-304]]'s questions in one pair of runs: the check could
+fail, but it failed for a reason that had nothing to do with what it was
+checking.
+
+**The rule this leaves:** when a change appears to break something, the first
+run after that is the same check on the unchanged program, before any
+explanation is written. It costs one run. In D-377 the same arrangement ran the
+other way — the unchanged build crashed minutes after the installed one, to
+show apport's silence was a reading and not a dead log.
+
+## D-379 — C18's remaining states measured through `certs` on dev.10: every prediction held, and with no reader OpenSC presents no slots at all
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items C18's `certs` states.
+
+dev.10 installed, the agent restarted on it by the owner (PID 73321,
+non-dumpable). The owner's **Pošta** card, not the MUP card of the earlier
+runs — `certs` listed its qualified signing certificate, "Pošta Srbije CA 1",
+and `cards` read 6/2/1, where the MUP card gave 6/2/2: SafeSign reads this
+card, OpenSC does not. Predictions written before each step; the owner pulled
+the card, then detached the reader in VirtualBox.
+
+| state | predicted | `certs` |
+|---|---|---|
+| card in | — | "Sertifikati: 1"; `cards` 6/2/1 |
+| card out, reader attached | "Nijedna kartica nije pronađena. Proverite da li je čitač priključen i kartica ubačena."; 6/0/0 | **exactly that** |
+| reader detached — **least certain** (what OpenSC presents) | the same sentence; fewer reader slots, more than zero | **the same sentence; 5/0/0** |
+
+**What the five are**, asked of each module with OpenSC's `pkcs11-tool`:
+SafeSign presents its five placeholder slots, "UNAVAILABLE 0" to "4"; **OpenSC
+presents none**. So with no reader, SafeSign's placeholders are the whole count,
+and they are why the answer is "no card" rather than "no reader". On a machine
+with OpenSC and not SafeSign, no reader gives zero reader slots and the
+`NO_READER` sentence — the distinction [[D-370]] discussed for P3 exists by
+itself there; only SafeSign's placeholders blur it. That machine is not
+measured (this one has SafeSign).
+
+Left of C18: a stock desktop with no card program, which needs a clean
+machine.
