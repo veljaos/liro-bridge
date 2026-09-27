@@ -1,0 +1,64 @@
+﻿
+  PROBE   watching pid=6556 (holder)  run=ESBRG8
+  started 2026-09-27T22:10:19.6515234+02:00
+  Every lookup is filtered on that PID. Nothing else is read.
+  Press Enter in the holder now. This window prints its report when
+  all three phases are done.
+
+  method 2: WinEvent hook installed on pid 6556.
+  phase A: window found (class LiroProbeControlPlain), measuring...
+  phase B: window found (class LiroProbeControlPassword), measuring...
+  phase C: window found (class LiroBridgePINDialog), measuring...
+
+  ================ B22 PROBE REPORT ================
+  run ESBRG8   holder pid 6556   finished 2026-09-27T22:10:37.8620474+02:00
+  WinEvent deliveries from that pid, all phases: 44
+  HWNDs skipped for belonging to another process: 49879 (counted per lookup, so it grows with the 10 Hz poll)
+  Captured text is never printed.
+
+  --- phase A  plain edit, no ES_PASSWORD   [INSTRUMENT CONTROL]
+      0 lookup             : edit found, ES_PASSWORD clear
+      1 UIA IsPassword     : IsPassword = FALSE
+      1 UIA text range     : EXACT NEEDLE  len=8  events=7  [read inside TextChanged event]
+      1 UIA value          : EXACT NEEDLE  len=8  events=15  [from ValueProperty change event]
+      1b UIA legacy        : COULD NOT RUN - NOT ATTEMPTED - no LegacyIAccessiblePattern in the managed UIA client; see 2b
+      1c UIA Name          : other text, longest needle run 1 (noise)  len=75  [AutomationElement.Current.Name sha256[0:8]=118f31e5 classes=len=75 upper=14 lower=42 digit=1 space=13 other=5]
+      2 MSAA WinEvent      : PREFIX OF NEEDLE (7 of 8)  len=7  events=28  [event=0x800E protected=no]  (also: AccessibleObjectFromEvent hr=0x80004005)
+      2b MSAA direct       : EXACT NEEDLE  len=8  [accState protected=no]
+      2c MSAA accName      : other text, longest needle run 1 (noise)  len=75  [from the same event object sha256[0:8]=118f31e5 classes=len=75 upper=14 lower=42 digit=1 space=13 other=5]
+      3 WM_GETTEXT         : EXACT NEEDLE  len=8  [WM_GETTEXTLENGTH=8 WM_GETTEXT returned=8]
+
+  --- phase B  bare edit, ES_PASSWORD set
+      0 lookup             : edit found, ES_PASSWORD SET
+      1 UIA IsPassword     : IsPassword = TRUE
+      1 UIA text range     : COULD NOT RUN - the element does not support TextPattern (TryGetCurrentPattern returned false)
+      1 UIA value          : COULD NOT RUN - InvalidOperationException hr=0x80131509 "Operation is not valid due to the current state of the object."
+      1b UIA legacy        : COULD NOT RUN - NOT ATTEMPTED - no LegacyIAccessiblePattern in the managed UIA client; see 2b
+      1c UIA Name          : other text, longest needle run 1 (noise)  len=82  [AutomationElement.Current.Name sha256[0:8]=a2864cd5 classes=len=82 upper=14 lower=47 digit=1 space=14 other=6]
+      2 MSAA WinEvent      : NO EVENT DELIVERED for this phase (hook was installed; 0 deliveries while this window was up)
+      2b MSAA direct       : no value returned  [accState protected=YES; get_accValue REFUSED: UnauthorizedAccessException hr=0x80070005 "Access is denied. (Exception from HRESULT: 0x80070005 (E_ACCESSDENIED))" <- E_ACCESSDENIED]
+      2c MSAA accName      : NO EVENT DELIVERED for this phase (hook was installed; 0 deliveries while this window was up)
+      3 WM_GETTEXT         : empty string  [WM_GETTEXTLENGTH=0 WM_GETTEXT returned=0]
+
+  --- phase C  the real Liro Bridge PIN dialog
+      0 lookup             : edit found, ES_PASSWORD SET
+      1 UIA IsPassword     : IsPassword = TRUE
+      1 UIA text range     : COULD NOT RUN - the element does not support TextPattern (TryGetCurrentPattern returned false)
+      1 UIA value          : COULD NOT RUN - InvalidOperationException hr=0x80131509 "Operation is not valid due to the current state of the object."
+      1b UIA legacy        : COULD NOT RUN - NOT ATTEMPTED - no LegacyIAccessiblePattern in the managed UIA client; see 2b
+      1c UIA Name          : other text, longest needle run 0 (noise)  len=3  [AutomationElement.Current.Name sha256[0:8]=7497602c classes=len=3 upper=3 lower=0 digit=0 space=0 other=0]
+      2 MSAA WinEvent      : NO EVENT DELIVERED for this phase (hook was installed; 0 deliveries while this window was up)
+      2b MSAA direct       : no value returned  [accState protected=YES; get_accValue REFUSED: UnauthorizedAccessException hr=0x80070005 "Access is denied. (Exception from HRESULT: 0x80070005 (E_ACCESSDENIED))" <- E_ACCESSDENIED]
+      2c MSAA accName      : NO EVENT DELIVERED for this phase (hook was installed; 0 deliveries while this window was up)
+      3 WM_GETTEXT         : empty string  [WM_GETTEXTLENGTH=0 WM_GETTEXT returned=0]
+
+  Read phase A first. If any method there reports no observation, an
+  empty string, or that it could not run, then that method is broken
+  and its silence in B and C is not evidence of anything.
+  ==================================================
+
+  This report was also written to:
+    C:\Users\Veljko\AppData\Local\Temp\claude\C--Users-Veljko-Desktop-liro-bridge\ae29397d-ed9b-4cc4-bd7e-1f2192c4e05a\scratchpad\b22-report-ESBRG8.txt
+
+  Press Enter to close.
+

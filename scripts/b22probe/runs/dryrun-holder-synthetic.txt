@@ -1,0 +1,29 @@
+﻿
+  HOLDER  pid=6556  run=ESBRG8  started=2026-09-27T22:10:18+02:00
+  handover: C:\Users\Veljko\AppData\Local\Temp\claude\C--Users-Veljko-Desktop-liro-bridge\ae29397d-ed9b-4cc4-bd7e-1f2192c4e05a\scratchpad\handover.json
+
+  Three windows, in order. Type the needle for that window, WAIT TWO
+  SECONDS so a poller cannot miss it, then press Enter.
+
+    A  plain edit, no ES_PASSWORD  (instrument control) : NUZZR3ZV
+    B  bare ES_PASSWORD edit, this program's window     : 9CFQAY6F
+    C  the real Liro Bridge PIN dialog                  : A4THAQMA
+
+  Needles are case-sensitive and random per run. Start the probe in the
+  other terminal now, then press Enter here.
+  > 
+  --- A: plain edit, no ES_PASSWORD -------------------------------
+  phase A: the needle WAS in the control when OK was pressed.
+           So any silence the probe reports for A is about the probe.
+
+  --- B: bare ES_PASSWORD edit ------------------------------------
+  phase B: the needle WAS in the control when OK was pressed.
+           So any silence the probe reports for B is about the probe.
+
+  --- C: the real dialog, ui.CollectPIN ---------------------------
+  phase C: the needle WAS in the control when OK was pressed.
+           So any silence the probe reports for C is about the probe.
+
+  All three phases done. The probe prints its report and exits.
+  Press Enter to close this window.
+  > 
