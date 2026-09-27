@@ -39182,3 +39182,22 @@ with the same script when that VM exists.
   finding and becomes a finding about the program, and the entries written
   this week would read wrong. B22 carries the four methods that would measure
   it, word for word.
+
+## D-386 — F2: the soft token signed on Ubuntu 24.04, Debian 13 and Fedora 44 in CI, both verifiers agreeing and refusing a changed byte
+
+**Date:** 2026-09-27
+**Phase:** F12's exit checklist, "the soft token signs on both, in CI";
+closes open-items F2.
+
+Run `36332684836` (`992a778`, which carries [[D-375]]): all nine jobs green,
+and the step "the soft token signs, and two independent verifiers agree"
+**succeeded on all three images**, read from the run's jobs API step by step.
+The script stops with an error at any failed check, its own tamper control
+included, so a successful step is one that reached its OK line — the
+independent verifier and `pdfsig` accepting the signature, and both refusing
+one changed byte. **The least certain prediction, Fedora 44, held.**
+
+**What I could not read:** the job logs themselves — `gh run view --log`
+returned nothing for the run and for each job, so the OK line and `pdfsig`'s
+verdict on each image are inferred from the step's success and the script's
+exits, not read. A signature on Fedora with a real card is still F1.

@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-385, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-386, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -140,7 +140,7 @@ The boxes in `docs/phases/F12.md` are all unticked, including the done ones;
 the checklist wants updating against D-354 and D-355.
 
 1. **A real card on Fedora 44.** The Ubuntu half is done on this VM with the real reader passed through (D-361) — the OS a VM, the reader and card hardware. *Needs:* Fedora machine (and E3 for a MUP card).
-2. **The soft token signs on the clean images in CI: built, first run is the next push.** `linux-install` now signs with a softtoken build on Ubuntu 24.04, Debian 13 and Fedora 44 after installing the package, and requires the independent verifier and `pdfsig` to accept it and to refuse one changed byte (D-375). *Close:* the run green on all three. *Needs:* CI.
+2. *The soft token signs on Ubuntu 24.04, Debian 13 and Fedora 44 in CI, both verifiers agreeing (D-386). Numbering kept.*
 3. **Which findings came from a VM, stated — the F12 report.** No `docs/f12-report.md` yet. *Needs:* a document.
 4. **A module that kills its worker becomes a `Failure`, with the real module** — C9.
 5. **DMABUF and NVIDIA** — B6.
