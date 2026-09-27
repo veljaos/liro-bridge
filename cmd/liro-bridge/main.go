@@ -56,7 +56,20 @@ var (
 )
 
 func main() {
-	// First, before anything writes anywhere: give back a console
+	// Before anything else, in every process this binary becomes — the
+	// agent, the PKCS#11 worker where a PIN meets C_Login, the probe child
+	// a vendor module may crash, the command line: no core image of this
+	// process's memory on disk, by this program's own setting rather than
+	// the desktop's (SPEC §6.5.1 clause 3, D-376). In main rather than in
+	// run, so that tests driving run are not made undumpable by it. A
+	// failure is said and not fatal: logging does not exist yet, and a
+	// program that refused to start over it would be a new failure nobody
+	// chose.
+	if err := platform.ForbidCoreDumps(); err != nil {
+		fmt.Fprintln(os.Stderr, "liro-bridge:", err)
+	}
+
+	// Then, before anything writes anywhere: give back a console
 	// Windows allocated for this process because it had none to
 	// inherit. That is what every launcher an installed agent is
 	// reached by looks like, and it is why an empty terminal window

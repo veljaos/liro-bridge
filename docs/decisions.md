@@ -38365,3 +38365,126 @@ unmeasured.
 
 **Not done by this.** A signature on Fedora with a **real card** is F1, and
 needs a Fedora machine.
+
+## D-376 — The agent forbids its own core dumps: measured against apport with the program's own worker crashed two ways, each mechanism alone and together; the installed package's case is the one left, and it is measured before this is called done
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items A4 — the owner's decision, and a condition with it.
+
+**The decision (the owner's).** The agent turns off its own core dumps
+rather than relying on a system setting: "a system setting is something a
+person or a distribution can change without knowing what it protects", and
+[[D-292]] measured on Windows that a crash dump is where a PIN would sit.
+**The condition: if turning it off cannot be shown to work — measured, not
+by the call returning success — stop and say so rather than ship the gap.**
+
+**The change.** `platform.ForbidCoreDumps`, the first thing `main` does in
+every process this binary becomes — the agent, the PKCS#11 worker where a PIN
+meets `C_Login`, the probe child a vendor module may crash, the command line:
+
+- `RLIMIT_CORE` to zero, **soft and hard** — the hard limit so that nothing
+  loaded later can raise the soft one; inherited by every child;
+- `PR_SET_DUMPABLE` to 0 — not inherited across `execve`, which is why every
+  process calls it itself rather than only the agent.
+
+In `main` rather than `run`, so tests that drive `run` are not made
+undumpable. A failure is written to stderr and is not fatal: logging does not
+exist yet, and refusing to start would be a new failure mode nobody chose.
+Off Linux it does nothing (D-292).
+
+### The machine it was measured on
+
+Ubuntu 24.04, kernel 7.0: `core_pattern` pipes every core to apport 2.28.3
+(`-c%c` the limit, `-d%d` the dump mode); `fs.suid_dumpable = 2`, so the kernel
+may still hand a non-dumpable process's core to the helper; the shell's soft
+core limit 0, hard unlimited (GNOME's, D-355); `systemd-coredump` absent.
+
+### The measurement: the program's own worker, crashed two ways
+
+The real `pkcs11-worker` subcommand, from four builds of this tree differing
+only in `ForbidCoreDumps`' body — nothing, the limit only, the flag only,
+both — each run with the soft limit raised first, as anybody starting the
+program may:
+
+- **(a) the vendor-module case:** a fixture `.so` whose `C_GetFunctionList`
+  puts SIGSEGV back to the default action and faults, so the kernel dumps
+  without Go having a say — what a module that installs its own handlers can
+  do;
+- **(b) Go's own path:** the worker holding OpenSC, `GOTRACEBACK=crash`,
+  SIGABRT sent to its exact PID.
+
+**Each build was checked for doing what its name says, in the running
+process, not by its source:** `/proc/PID/limits` (soft and hard core limit)
+and the owner of `/proc/PID/status` (root when a process is not dumpable).
+Evidence of a core: new files in `/var/lib/apport/coredump` and `/var/crash`,
+and apport's own log, `/var/log/apport.log`. Predictions written first; the
+least certain was the flag alone.
+
+| build | read from the process | (a) fixture | (b) SIGABRT | apport's log |
+|---|---|---|---|---|
+| nothing | limit unlimited/unlimited, status uid 1000 | **core, 151 MB** | **core, 160 MB** | "called … core limit unlimited", "does not belong to a package", "writing core dump" |
+| limit only | 0/0, uid 1000 | none | none | "called … **core limit 0**", nothing written |
+| flag only | unlimited/unlimited, **uid 0** | none | none | **no entry at all** — apport was never called |
+| both | 0/0, uid 0 | none | none | no entry |
+
+**Every prediction held.** The baseline is what makes the rest mean
+something: the same method, on the same machine, produces a core without the
+change. And the two mechanisms fail differently, which is why both are kept:
+with the limit, apport is called and told the limit is zero; with the flag,
+nothing reaches apport at all — so a pipe helper that ignored the limit would
+still be given nothing.
+
+**An instrument that could not have seen anything:** my first reading of
+apport went to the journal (`journalctl -t apport`), and it printed nothing
+even for the two runs that wrote a core. apport logs to `/var/log/apport.log`;
+the journal search was dropped, not counted.
+
+### What the installed package does, and why this is not done yet
+
+Every binary above ran from a scratch directory, and apport says so: "does
+not belong to a package". **The installed agent does belong to one**, and
+apport's path for it is different. Measured on the installed dev.9, which has
+no hardening — both methods:
+
+- a full core in `/var/lib/apport/coredump` (151 MB and 160 MB), as before;
+- **and a report, `/var/crash/_usr_bin_liro-bridge.1000.crash`**, 3.8 MB,
+  owner the user, group `whoopsie`, mode 0640, carrying `CoreDump`,
+  `ProcEnviron` and `ProcCmdline`. `whoopsie` is inactive, but
+  `show-apport-crashes` is true: the desktop offers a person to send such a
+  report to Canonical. A crash of this program with a PIN in memory would
+  have been offered for upload. The report from this measurement was deleted
+  by me before the desktop could offer it.
+
+**The hardened build has not yet been crashed from `/usr/bin`.** The kernel
+decides the flag's effect before apport knows about packages, so the
+prediction is nothing at all — but that is a prediction, and the condition
+was a measurement. It needs the owner to install dev.10; then the same two
+methods against the installed worker. **Until then A4 stays open.**
+
+### That the program still works
+
+- `certs` from the hardened build, scratch home, the owner's MUP card in the
+  reader: the same answer as unhardened — `cards` 6/2/2 from SafeSign's and
+  OpenSC's workers, SoftHSM's one failure. Workers start, talk over their
+  pipes, and answer.
+- A window: the hardened build's `open` at the profiled path, with a scratch
+  home and runtime directory — WebKit's web and network processes, `bwrap`
+  and `xdg-dbus-proxy` all running under it, the main process non-dumpable
+  with a 0/0 limit, no error logged; the unhardened build the same. **My
+  first attempt at this failed for both builds** ("Failed to fully launch
+  dbus-proxy") — the control showed it was my scratch runtime directory's
+  length, about 110 characters against a socket path's 108, not the change;
+  a short directory under `/tmp` fixed both. Whether the page *looks* right is
+  the owner's to see on dev.10.
+
+### The guard
+
+`TestForbidCoreDumpsIsWhatTheKernelReports`, in a re-executed child so the
+test binary keeps its own settings: it raises the soft limit, calls the
+function, and reads the kernel — `/proc/self/limits` and `PR_GET_DUMPABLE`.
+Mutations: without the `prctl`, "dumpable nonzero"; with only the soft limit
+zeroed, "core 0 unlimited" — both red.
+
+**Left on the machine:** four cores in `/var/lib/apport/coredump`, about
+620 MB, from test processes only (OpenSC, the fixture; no PIN, no secret). The
+directory is root's; removing them is the owner's, with `sudo`.

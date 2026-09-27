@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-375, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-376, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -24,7 +24,7 @@ prose of an entry before D-280, outside those words, may be missing.
 1. *SPEC §6.5.2: rules, not measurements; the table removed (D-369). Numbering kept.*
 2. **B-LT on Serbian cards: a bundled trust store, or an LDAP client.** SPEC §12.6 makes B-LT the default and no Serbian card reaches it today. — D-281; README F11. *Close:* choose; LDAP needs a SPEC §6.8 amendment. *Needs:* owner's decision, then code.
 3. **Clause 2 and the keystroke path.** Whether §6.5 already concedes what an input method sees, or clause 2 needs rewriting rather than a third exception. — D-351, D-352. *Close:* after B1 is measured. *Needs:* owner's decision.
-4. **Core-dump hardening (clause 3).** Whether the agent sets `prctl(PR_SET_DUMPABLE, 0)` or a zero `RLIMIT_CORE` itself; apport keeps full images when a core is produced, and autostart sends crash traces to the journal. — D-355 §2. *Needs:* owner's decision, then code.
+4. **Core-dump hardening (clause 3): decided and built; the installed package's case not yet measured.** The agent forbids its own (RLIMIT_CORE 0/0 and PR_SET_DUMPABLE 0, in every process of the binary). Measured against apport with the real worker crashed two ways, each mechanism alone and together: no core; the baseline produces one (D-376). Not yet: the hardened build crashed from `/usr/bin`, where apport also writes a `/var/crash` report carrying the core. — D-355 §2, D-376. *Close:* that measurement on dev.10. *Needs:* owner installs dev.10.
 5. **Per-request deadline for the PKCS#11 worker, and a bound on `Close`/`C_Finalize`.** `pkcs11ShutdownGrace` is 5 s "chosen rather than measured"; a login lasts as long as a person takes. — D-297, D-301, D-309, D-313. *Needs:* owner's decision.
 6. **Should SPEC state the source preference (CNG, then PKCS#11, then soft token)?** — D-311. *Needs:* owner's decision.
 7. **The icon test that fails on newer Go.** Three answers offered, none chosen. — D-308; still failing per D-318, D-320. *Needs:* owner's decision, then code.
