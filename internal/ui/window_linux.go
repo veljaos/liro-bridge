@@ -31,17 +31,6 @@ import (
 // of ours that never finishes loading is a defect rather than a wait.
 const pageLoadTimeout = 30 * time.Second
 
-// ErrDropNotImplemented is returned by NewWindow when Options.
-// OnFilesDropped is set. F6's drop target is GTK4's GtkDropTarget and
-// is not wired yet.
-//
-// It is an error and not a silent no-op deliberately: a window that
-// became a drop target on Windows and quietly did not on Linux would
-// present a caller with a feature that works on one machine and does
-// nothing on another, which is the shape of bug that takes a week to
-// find. Failing where the window is created names it immediately.
-var ErrDropNotImplemented = errors.New("ui: dropped files are not implemented on Linux yet (F12 §3, F6 §1)")
-
 // liveWindows maps a WebKitWebView's GObject address to the window that
 // owns it.
 //
@@ -85,9 +74,6 @@ type linuxWindow struct {
 
 // NewWindow creates one window hosting one WebKitGTK view.
 func NewWindow(opts Options) (Window, error) {
-	if opts.OnFilesDropped != nil {
-		return nil, ErrDropNotImplemented
-	}
 	if opts.Assets == nil || opts.VirtualHost == "" {
 		return nil, errors.New("ui: Options.Assets and Options.VirtualHost are both required")
 	}
@@ -145,6 +131,9 @@ func NewWindow(opts Options) (Window, error) {
 		// F5 §2.3: every window this program has is fixed-size.
 		w.win.SetResizable(false)
 		w.win.SetChild(w.view)
+		if opts.OnFilesDropped != nil {
+			w.connectDrop(opts.OnFilesDropped)
+		}
 
 		if opts.AlwaysOnTop {
 			// **Not honoured, and this is a decision rather than a
@@ -152,8 +141,8 @@ func NewWindow(opts Options) (Window, error) {
 			// no protocol lets a client raise itself, the compositor
 			// decides, and no amount of GTK will change that.
 			//
-			// It is not an error either, unlike OnFilesDropped above,
-			// because §4 has already designed the replacement: a new
+			// It is not an error either, because §4 has already
+			// designed the replacement: a new
 			// window per request rather than a hidden one shown again,
 			// a desktop notification alongside, and nothing in the
 			// consent argument resting on the window being in front.
@@ -578,17 +567,7 @@ func showNativeMessage(title, body string, _ bool) {
 	slog.Warn("ui: no native message box on Linux yet (F12 §5)", "title", title, "body", body)
 }
 
-// pickFolder and pickFiles are F12's and are not this section's. The
-// GTK4 answer is GtkFileDialog, which is asynchronous like everything
-// else in this binding and therefore lands with the same shape the
-// evaluate_javascript bridge has (D-330).
-func pickFolder(uintptr, string, string) (string, bool, error) {
-	return "", false, ErrUnsupportedPlatform
-}
-
-func pickFiles(uintptr, string, string, string) ([]string, bool, error) {
-	return nil, false, ErrUnsupportedPlatform
-}
+// pickFolder and pickFiles are in filedialog_linux.go.
 
 // iconFilePath has no Linux implementation: there is no Explorer to
 // register a menu icon with, and §8's desktop entry names the icon by

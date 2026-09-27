@@ -38020,3 +38020,94 @@ from would end it silently — **that is a guess, not a finding**. If Save
 panicked, the trace went to that terminal and not to the log. The owner is
 asked. Until then P4's file half is open, and so is whether Save works on
 Linux at all: open-items D18.
+
+## D-371 — D2 built: the file and folder choosers are GtkFileDialog, a drop is a GtkDropTarget on the window in the capture phase, and D-338's reason there could be no drop was not true of the binding it named
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items D2. Built and structure-tested; **not yet watched
+with a person's hands**, which is what closes it.
+
+### The binding had it all along
+
+[[D-338]] recorded that `gdk.FileList` was "a type with no methods at all",
+so that reading a drop needed hand-written cgo, and `filesdropped_other.go`
+repeated it. **The same gotk4 v0.3.1 that `go.mod` named then (`a2b8b56`)
+generates `FileList.Files()` over `gdk_file_list_get_files`** (`gdk.go`
+19391). The claim was wrong when it was written; how it was checked then is
+not recorded, so which of [[D-304]]'s questions it failed cannot be said. It
+cost the Linux window its drop target for a week, and the "not implemented"
+seam it justified is gone. B20 — whether gotk4 lacks an API the remaining UI
+needs — is answered for D2: `FileDialog` (open-multiple, select-folder,
+filters, initial folder), `DropTarget` with `GTypeFileList`, and
+`AlertDialog` are all generated.
+
+### The choosers
+
+`filedialog_linux.go`: `GtkFileDialog`, the chooser every GTK program on the
+desktop shows. `window.go`'s contract blocks the caller until the person
+answers and the dialog is asynchronous, so it is started on the UI thread and
+waited for off it. Asked for *from* the UI thread it returns an error rather
+than deadlocking, since the answer is delivered by that thread's loop; no
+caller does, because every chooser is opened from a window's event goroutine.
+
+- **Files:** a PDF filter (MIME type and suffix) chosen by default, and "all
+  files" beside it — F6 §1: a file chosen deliberately is not filtered away.
+- **Folder:** starts on the folder the caller holds, as on Windows, so an
+  accidental OK keeps it.
+- **Cancel** is `GtkDialogError` dismissed or cancelled, and is `ok == false`
+  with no error, as the contract says. Any other error is an error.
+- **A chosen item with no local path** — a network location the file chooser
+  can browse — is left out and logged. Every caller opens what it is given
+  as a path, and an empty string would reach one.
+
+No caller changed: all five (Browse, the output folder, the report export,
+the audit export, the stamp window's chooser) already log an error and treat
+not-ok as nothing chosen.
+
+### The drop
+
+`drop_linux.go`: a `GtkDropTarget` for `GdkFileList` with the copy action,
+the same local-path rule, and the paths delivered through the window's own
+ordered event channel like every other callback. `cmd/liro-bridge` now
+passes the handler through on Linux as on Windows.
+
+**On the window, in the capture phase, and that is the least certain part.**
+The web view is a drop target of its own: WebKit hands a drop to the page,
+which can read a file's name and contents but never its path, and this
+program opens paths. Capture runs from the toplevel down, before anything on
+the view. Whether that is enough for WebKit's controller never to take a
+drop of files is what a real drag will show — **predicted: a PDF dragged
+from Files onto the window joins the list, once, and the page does not
+navigate or show the file.** The Windows host switches WebView2's handling
+off and registers its own targets for the same reason.
+
+### Tests
+
+- `TestLocalPathsKeepsFilesOnThisDiskAndNothingElse` (no display): order
+  kept, a URI with no local path left out, a choice of only that is nothing
+  chosen. Mutation — keeping the empty path — red.
+- `TestOnlyADismissedChooserIsACancel`: an ordinary error is an error.
+  The two `GtkDialogError` codes are not exercised: making one needs cgo in
+  a test file or a real dialog dismissed by a person.
+- `TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor` replaces
+  `TestDropIsRefusedRatherThanIgnored`: with drops asked for, the window
+  carries one drop target, for file lists, in the capture phase; without,
+  none — the control. It **skips under `go test`** (bwrap, D-324) and was
+  run from the profiled path: 44 passed, 0 skipped. Mutation — the capture
+  phase line removed — "1 drop targets on the window, 1 for files, 0 in the
+  capture phase", red. It checks structure; it is not a drop (D-094).
+
+Both suite views green (36 and 37 packages), `golangci-lint` 0 issues on both
+GOOS with the tag; Linux and Windows build, macOS vets.
+
+### The message box: not built, and why
+
+`ShowWarning` and `ShowNotice` have two callers, both in `_windows.go` files:
+the WebView2 runtime missing, and what an uninstall left behind. Neither has a
+Linux counterpart. WebKitGTK is a declared dependency, so it cannot be
+missing; the one Linux failure `detectRuntime` exists for is GTK reaching no
+display, where a GTK dialog cannot be shown either; and an uninstall on Linux
+is the package manager's, with no program of ours running (D-363). A native
+box on Linux would be code with no caller that no person could ever see.
+**Recommended: record that, rather than build it** — the owner's decision.
+Until then `showNativeMessage` on Linux logs, as it did.

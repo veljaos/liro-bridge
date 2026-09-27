@@ -14,6 +14,9 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
 const testPage = `<!doctype html><title>t</title><body><p id="p">start</p>
@@ -232,21 +235,60 @@ func TestCloseIsIdempotentAndLaterCallsSaySo(t *testing.T) {
 	}
 }
 
-// Options.OnFilesDropped fails loudly rather than silently doing
-// nothing on this platform.
-func TestDropIsRefusedRatherThanIgnored(t *testing.T) {
+// Options.OnFilesDropped makes the window a drop target for files: a
+// DropTarget for GdkFileList on the window itself, in the capture phase,
+// so that it answers before the web view's own (drop_linux.go). A window
+// asked for no drops has none — the control, and the reason the test can
+// fail. That a real drag arrives here is not this test's: a drag is a
+// person's hands (D-094, D-371).
+func TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor(t *testing.T) {
 	requireWebKitCanStart(t)
 
-	_, err := NewWindow(Options{
-		Assets:         testAssets(),
-		VirtualHost:    "liro.invalid",
-		StartPage:      "/index.html",
-		Width:          200,
-		Height:         200,
-		OnFilesDropped: func([]string) {},
-	})
-	if !errors.Is(err, ErrDropNotImplemented) {
-		t.Errorf("NewWindow with OnFilesDropped returned %v, want ErrDropNotImplemented", err)
+	for _, asked := range []bool{true, false} {
+		opts := Options{
+			Assets:      testAssets(),
+			VirtualHost: "liro.invalid",
+			StartPage:   "/index.html",
+			Width:       200,
+			Height:      200,
+		}
+		if asked {
+			opts.OnFilesDropped = func([]string) {}
+		}
+		win, err := NewWindow(opts)
+		if err != nil {
+			t.Fatalf("NewWindow (drops asked for: %v): %v", asked, err)
+		}
+		lw := win.(*linuxWindow)
+		var targets, forFiles, inCapture int
+		if err := theUIThread.do(func() {
+			controllers := lw.win.ObserveControllers()
+			for i := uint(0); i < controllers.NItems(); i++ {
+				dt, ok := controllers.Item(i).Cast().(*gtk.DropTarget)
+				if !ok {
+					continue
+				}
+				targets++
+				if dt.Formats().ContainGType(gdk.GTypeFileList) {
+					forFiles++
+				}
+				if dt.PropagationPhase() == gtk.PhaseCapture {
+					inCapture++
+				}
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		_ = win.Close()
+
+		want := 0
+		if asked {
+			want = 1
+		}
+		if targets != want || forFiles != want || inCapture != want {
+			t.Errorf("drops asked for: %v: %d drop targets on the window, %d for files, %d in the capture phase; want %d of each",
+				asked, targets, forFiles, inCapture, want)
+		}
 	}
 }
 

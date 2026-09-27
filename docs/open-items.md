@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-370, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-371, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -69,7 +69,7 @@ prose of an entry before D-280, outside those words, may be missing.
 17. **CI's cache behaviour is reasoned, not measured.** — D-335; session 4 §10.5. *Close:* read step timings. *Needs:* CI.
 18. *The audit `flock` across two processes: excludes at the real directory, and a cross-process test now runs on Linux (D-367). Numbering kept.*
 19. **Stale discovery files under linger, with `XDG_RUNTIME_DIR` unset, and across two users.** — D-325. *Needs:* measurement, owner's hands.
-20. **Is gotk4 v0.3.1 missing an API the remaining UI needs?** — D-327, D-330. *Needs:* code.
+20. **Is gotk4 v0.3.1 missing an API the remaining UI needs?** Not for D2: FileDialog, DropTarget with FileList, AlertDialog are all generated, and D-338's "FileList has no methods" was wrong (D-371). Open only for UI not yet written. — D-327, D-330, D-371. *Needs:* code.
 21. **CI fuzz flake rate.** — D-328. *Needs:* CI.
 
 ## C. Built, and never watched or never run end to end
@@ -98,7 +98,7 @@ prose of an entry before D-280, outside those words, may be missing.
 **Flagged by the owner, above the rest though neither is F12's: D3 and D4.** Both are about a signature, not about Linux, and both mean the Windows version people have installed today may report something it did not establish. Neither should be discovered by a user.
 
 1. *The notification outlived the approval: fixed in D-357; watching it is C17. Numbering kept.*
-2. **No file or folder chooser, no message box, no drag and drop on Linux.** `ChooseFiles`/`ChooseFolder` return `ErrUnsupportedPlatform` and are called from the main window, audit export and the stamp window. — D-330, D-331, D-338. *Needs:* code.
+2. **The file and folder choosers and the drop on Linux: built, not watched.** GtkFileDialog and a GtkDropTarget on the window in the capture phase (D-371); structure-tested, never used by a person. Whether WebKit's own drop handling ever takes a drop of files first is the least certain part. The message box is not built: it has no Linux caller (D-371 recommends recording that). — D-330, D-331, D-338, D-371. *Close:* the owner chooses files, a folder and drops a PDF on dev.8; decides on the message box. *Needs:* owner's hands, owner's decision.
 3. **`lowerLevel` has no caller**: a mixed batch may report a level it did not reach. — session 4 §8; `batchlevel_windows.go`. *Needs:* code, measurement.
 4. **`CERT_REVOKED` has no producer**; the parsed CRL is thrown away. — D-310, D-312. *Needs:* code (and A8).
 5. *The Explorer-menu row: shown on Windows only; on Linux Save keeps the saved value (D-366). Watching it is C18. Numbering kept.*
