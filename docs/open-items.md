@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-379, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-381, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -49,7 +49,7 @@ prose of an entry before D-280, outside those words, may be missing.
 21. **`certs` on Windows still says "Certificates: 0" with no reason.** Linux now prints the window's sentence under the count (D-365); Windows was left unchanged by F12's rule, not by decision. *Needs:* owner's decision.
 22. *A native message box on Linux: not built, by the owner's decision (D-373). Numbering kept.*
 23. **When this VM takes Ubuntu's updates.** Ubuntu offered one during D-374's runs and the owner declined it, because an update mid-measurement moves the libraries under the measurement. Unupdated, the VM drifts from the 24.04 it is meant to represent; updated, earlier readings were taken on a different stack. — D-374. *Close:* decide when — between measurements, with the package list recorded before and after. *Needs:* owner's decision.
-24. **SPEC §6.5.1 clause 3 says nothing available to this program keeps the PIN out of a crash dump.** True on Windows (D-292); on Linux the agent now does, measured, including the module's copy in the worker (D-377). *Close:* the clause says which platform each half is true of. *Needs:* owner's decision (the wording).
+24. *SPEC §6.5.1 clause 3 per platform, with the same-user routes measured and the open ones named (D-381). Numbering kept.*
 
 ## B. Claims not measured
 

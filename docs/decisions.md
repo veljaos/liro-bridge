@@ -38618,3 +38618,63 @@ measured (this one has SafeSign).
 
 Left of C18: a stock desktop with no card program, which needs a clean
 machine.
+
+## D-381 — SPEC §6.5.1 clause 3 says what is true on each platform: on Linux the program keeps a crash from carrying the PIN away and keeps same-user readers out by three routes, Yama already does part of that, and five routes stay open
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items A24. The owner's shape, and the owner's
+leave to write the draft as it stood.
+
+**Why the clause changed, in two halves.** It said, of every platform, that
+nothing available to this program keeps the PIN out of a crash dump — true on
+Windows ([[D-292]]), not on Linux since [[D-376]]/[[D-377]]. And it leaned on
+§6.5 conceding "that anything running as the same user can read it live",
+a sentence repeated from D-292 without anyone checking it still held. The
+owner asked for the second half to rest on a reading. It does now, and the
+reading made it narrower.
+
+**The reading.** On the PKCS#11 worker, built with and without
+`ForbidCoreDumps`, holding OpenSC; three routes by which one process reads
+another's memory, each reading 16 bytes of the binary's ELF header at its
+fixed load address (the binary is `EXEC`, not position-independent, so the
+address is valid and a success is a real read; nothing secret was read by
+any of them). Predictions written first; the least certain was `/proc/PID/mem`
+from the parent on the marked worker.
+
+| target | from its parent | from a same-user process that is not its ancestor |
+|---|---|---|
+| unmarked | `process_vm_readv` read 16; `/proc/PID/mem` read 16; `ptrace` seize attached | refused: EPERM, EACCES, EPERM |
+| marked | **refused: EPERM, EACCES, EPERM** | refused: EPERM, EACCES, EPERM |
+
+Every prediction held. **What the reading does not separate:** the refusal
+of the non-ancestor on the unmarked worker is Yama's (`ptrace_scope` = 1) by
+Yama's documented rule; that nothing else caused it is not measured, because
+changing Yama needs root. The clause says "by the system's setting", not
+"measured to be Yama's".
+
+**What the clause now says** (SPEC §6.5.1, clause 3):
+
+- **A crash on Linux carries nothing away**, measured with the installed
+  package, and the worker being the module's process means the module's copy
+  is covered too; **on Windows it cannot be prevented, and the clause says
+  that is the platform's limit rather than this program's effort**, with
+  D-292's three mechanisms named.
+- **Reading while the process lives is a separate question.** On Linux the
+  mark refuses same-user readers by `ptrace`, `process_vm_readv` and
+  `/proc/PID/mem`, including the parent. **Ubuntu's Yama already refuses
+  non-ancestors — the system's setting, not this program's, which a
+  distribution may ship off**; what the mark adds is the ancestor and
+  independence from that setting.
+- **Five routes stay open, named so the clause cannot be quoted as broader
+  than it is:** anything that runs before the mark is set or instead of this
+  program (a preloaded library, a changed launcher or autostart entry, a GTK
+  module); the input path in front of the dialog (B1, being measured today);
+  clause 2's kernel pipe buffer; what the module does with its copy; and root.
+  On Windows this program closes none of them.
+- The promise stays bounded by the window: the program does not *record* the
+  PIN, and on Linux does not let a crash record it; it does not claim code
+  running as the same user cannot reach it by the named routes.
+
+**Left as it was, deliberately:** the input-path line, until pinmem's reading
+lands (the owner's instruction), and "the copy that matters was never this
+program's", which is about wiping and is unchanged by any of this.

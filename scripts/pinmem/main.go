@@ -38,7 +38,7 @@
 //
 // The needle, the scan buffer and the returned copy live in mmap'd pages the
 // scan skips; the instrument must not find itself (D-350). The report is
-// written to ./pinmem-report.txt as well as printed.
+// written to ./pinmem-report-<UTC time>.txt as well as printed.
 package main
 
 import (
@@ -283,7 +283,9 @@ func watchIBus() (stop func() (count int64, note string)) {
 }
 
 func main() {
-	f, err := os.Create("pinmem-report.txt")
+	// One file per run: a fixed name let a second run overwrite the first
+	// run's report before it was read (D-380).
+	f, err := os.Create("pinmem-report-" + time.Now().UTC().Format("20060102-150405") + ".txt")
 	if err == nil {
 		report = io.MultiWriter(os.Stdout, f)
 		defer func() { _ = f.Close() }()
