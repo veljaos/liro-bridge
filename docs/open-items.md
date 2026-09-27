@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-368, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-369, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -21,7 +21,7 @@ prose of an entry before D-280, outside those words, may be missing.
 
 ## A. Decisions not yet made
 
-1. **SPEC §6.5.2 states measured facts that are now measured false.** Its table's third row and "Measured: clicking it raised nothing". No security clause rests on them. — D-355 §6. *Close:* amend the facts. *Needs:* owner's decision.
+1. *SPEC §6.5.2: rules, not measurements; the table removed (D-369). Numbering kept.*
 2. **B-LT on Serbian cards: a bundled trust store, or an LDAP client.** SPEC §12.6 makes B-LT the default and no Serbian card reaches it today. — D-281; README F11. *Close:* choose; LDAP needs a SPEC §6.8 amendment. *Needs:* owner's decision, then code.
 3. **Clause 2 and the keystroke path.** Whether §6.5 already concedes what an input method sees, or clause 2 needs rewriting rather than a third exception. — D-351, D-352. *Close:* after B1 is measured. *Needs:* owner's decision.
 4. **Core-dump hardening (clause 3).** Whether the agent sets `prctl(PR_SET_DUMPABLE, 0)` or a zero `RLIMIT_CORE` itself; apport keeps full images when a core is produced, and autostart sends crash traces to the journal. — D-355 §2. *Needs:* owner's decision, then code.
@@ -52,7 +52,7 @@ prose of an entry before D-280, outside those words, may be missing.
 
 1. **Does a real keystroke into the PIN dialog leave copies before the widget, and is an input method in the path?** — D-351, D-352; session 5 §B.4. *Close:* `pinmem`'s `type` mode against its `baseline`, and ask which `GtkIMContext` the entry has. *Needs:* owner's hands, measurement.
 2. **D-350's findings (mlocked, one copy, emptied) are true of GTK, not yet of this program's dialog**, whose calls could not run until D-355. *Close:* repeat D-350 against the real `CollectPIN`. *Needs:* owner's hands, measurement.
-3. **Why a notification with no action now raises the window when D-337 said it did not.** Not the desktop entry (control). — D-355 §6. *Close:* vary WebKit view against bare GTK, and posting from Go against another process. *Needs:* owner's hands, measurement.
+3. **Why a notification with no action now raises the window when D-337 said it did not.** Not the desktop entry (control). — D-355 §6. SPEC §6.5.2 no longer rests on the answer (D-369). *Close:* vary WebKit view against bare GTK, and posting from Go against another process. *Needs:* owner's hands, measurement.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.
 6. **DMABUF and NVIDIA variables on real GPUs.** — D-329, D-324; F12 §0.1. *Needs:* hardware (GPU).

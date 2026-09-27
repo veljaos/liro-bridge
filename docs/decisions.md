@@ -37835,3 +37835,67 @@ Open-items D17.
 
 `go test -count=1 -p 1 ./...` (36 packages) and with `-tags softtoken` (37)
 green; `golangci-lint` 0 issues on both GOOS, with the tag.
+
+## D-369 — SPEC §6.5.2 states rules, not measurements: the table is removed rather than corrected, because the specification is the one place a reading is never taken again
+
+**Date:** 2026-09-27
+**Phase:** F12 §4; closes open-items A1. The text is the draft in
+`docs/f12-linux-session-7.md` §C.1, approved by the owner; that draft called
+itself D-364, a number [[D-364]]'s own entry took first.
+
+**What was false, and what was not.** The owner asked for rules in place of
+measurements. The correction to that brief, agreed in session 7, stands: of
+the table's three rows **only the third was measured false** — a clicked
+notification "did not raise it, and carried no activation token" — together
+with the sentence beneath it, "no token without a desktop entry". [[D-355]]
+§6 contradicted both: a notification with no action raised the window, with
+the mechanism unexplained (open-items B3), and a token arrives exactly when
+an action is invoked, with or without the entry. **The second row — `present()`
+on an existing window does nothing — is unrefuted, and has not been
+re-measured since [[D-337]].** The first — a new window takes focus — has
+been seen again on every consent window since.
+
+**Why the table went rather than being corrected.** A reading written into a
+specification stops being re-measured. The specification is what every later
+session reads as settled; nobody re-takes a number that is already the
+rule, and the only reason this one was re-taken is that D-355 was measuring
+something else and happened across it. And this subsection's own third row was
+overturned two days after it was written — the table entered the SPEC on
+2026-09-21 (`5e824c5`) and D-355 is dated 2026-09-23 — while its second row
+has never been looked at again. A corrected table would be the same kind of
+object as the one it replaced, and no more likely to last. None of the
+requirements ever rested on a row: the security argument is that nothing
+depends on the window having been seen. So the readings stay in D-337 and
+D-355, where they carry their limits and their dates, and §6.5.2 keeps the
+three things the rules rest on, each worded so that the compositor or the
+desktop may answer either way without making a sentence false.
+
+**What changed in the clauses.** Two, both already true of the code:
+
+- **A new window per request** is "the one arrangement that does not depend on
+  raising an existing window" rather than "the only arrangement measured to
+  work" — the same rule, now resting on the one row not contradicted rather
+  than on the table.
+- **The notification** is no longer "a prompt to go and look rather than a
+  way to reach the window", which was the false reading turned into a
+  rule. It "tells the person a request is waiting", and it is **withdrawn
+  when the request is answered — approved, refused or timed out — not when
+  the window closes**. That is [[D-341]]'s rule as [[D-357]] made the code
+  keep it: `TestTheNotificationComesDownWhenTheRequestIsAnswered` drives all
+  three paths and is mutation-checked, and D-361 watched it come down at
+  approval with a real card. D-357 left "whether SPEC should say it" to the
+  owner; this is the answer.
+
+The other five clauses — best-effort, the caller half, nothing depending on
+the window having been seen, the X11 fallback refused, Windows unchanged —
+are carried over word for word. §6.5's own clause ("§6.5.2 says what the
+agent does instead") needed nothing.
+
+**Not changed.** `docs/phases/F12.md` §0 and §8 still quote D-337's readings
+as measured, including the one now contradicted. The phase document is the
+brief this phase was given, and it is read as a record rather than as the
+rule; its exit checklist ("clicking it activates legitimately") is for
+the F12 report (open-items F3) to answer, not this entry.
+
+**Still open, and no longer blocking anything.** Why a notification with no
+action raises the window (B3). The SPEC no longer needs the answer.
