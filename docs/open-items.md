@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-373, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-374, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -48,6 +48,7 @@ prose of an entry before D-280, outside those words, may be missing.
 20. *SPEC §11.11 on Linux: built and measured with the owner's MUP card (D-365). What was not watched is C18. Numbering kept.*
 21. **`certs` on Windows still says "Certificates: 0" with no reason.** Linux now prints the window's sentence under the count (D-365); Windows was left unchanged by F12's rule, not by decision. *Needs:* owner's decision.
 22. *A native message box on Linux: not built, by the owner's decision (D-373). Numbering kept.*
+23. **When this VM takes Ubuntu's updates.** Ubuntu offered one during D-374's runs and the owner declined it, because an update mid-measurement moves the libraries under the measurement. Unupdated, the VM drifts from the 24.04 it is meant to represent; updated, earlier readings were taken on a different stack. — D-374. *Close:* decide when — between measurements, with the package list recorded before and after. *Needs:* owner's decision.
 
 ## B. Claims not measured
 
@@ -115,7 +116,7 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **The thinned icon has never reached the owner's installed tray.** — D-321. *Needs:* Windows, owner's hands.
 16. **The autostart test cannot see the `$` and backtick escapes.** — D-354. *Needs:* code (low).
 17. **A Windows window test pins the singular sentence's wording** (`alreadysigned_windows_test.go:124`, "1 of these documents is") and goes red when it improves. The four such tests that run on Linux read from the catalogue now. — D-368. *Needs:* Windows.
-18. **Settings' Save on Linux reached its handler on neither day** (dev.7 and dev.8): no `config.json` written, the autostart entry — which every save rewrites — untouched since 2026-09-26, nothing logged, and the agent (started from a terminal both times) gone afterwards with no log line. The handler itself writes on Linux (`TestSettingsSaveWritesTheConfigurationOnLinux`), and the export travels the same loop and worked. — D-370, D-372. *Close:* dev.9's Settings log lines (D-373), with what the owner sees at Save, and the file's time and hash before and after. *Needs:* owner's hands.
+18. **Settings' Save on dev.7 and dev.8 never reached its handler, and nothing explains it.** On dev.9, with log lines at each step (D-373), Save worked three times out of three, including after an export in the same window (D-374). The log also recorded windows the owner does not remember opening — a second Save a minute after the first, and a Settings window cancelled 0.39 s after it opened — left unexplained. — D-370, D-372, D-374. *Close:* a recurrence, which the log lines will place; or accepted as unexplained. *Needs:* nothing to do until it recurs.
 
 ## E. Promises in documents that nothing does yet
 

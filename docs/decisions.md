@@ -38238,3 +38238,63 @@ not:
 880 points tall plus GTK's 37-point header bar, 917, against about 923 left
 under GNOME's top bar. It fits, by about six points — so whether Save is
 fully on screen is one of the things to watch rather than assume.
+
+## D-374 — Save measured three times on dev.9 with the log lines, and it worked every time; dev.7 and dev.8 remain unexplained, and the log recorded more than the person remembers doing
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items D18.
+
+**Three runs, dev.9 (`64c9247`), the agent started from a terminal and left
+open** (PID 58117, alive throughout). Times are the log's, UTC. Before each,
+`config.json` and the autostart entry recorded; after, read back by me.
+
+| run | what the owner did | log | files |
+|---|---|---|---|
+| 1 | opened Settings, `-signed` → `-potpisano`, Save once; Settings closed, the terminal printed nothing but startup noise | 14:48:40 window open; **14:49:19** approve → `save` → done, closing | overwritten by run 1b before I read them |
+| 1b | **not reported** | 14:50:14 window open; **14:50:17** approve → `save` → done, closing | `config.json` and the autostart entry both 14:50:17.807, `-potpisano`, new hash |
+| 2 | **the D-372 hypothesis tested**: Export first (folder chooser parented to Settings), then `-potpisano` → `-signed` and Save, in the same window; Settings closed | 15:30:45 window open; 15:30:56 `exportAuditLog`; 15:31:03 exported; **15:31:27** `save` → done, closing | autostart entry 15:31:27.879; `outputSuffix` `-signed` |
+
+**My prediction for run 1 failed**: I predicted Settings would stay open with
+no message from the page at Save. It closed and saved. **The hypothesis run 2
+tested is refuted**: a folder chooser opened from Settings before Save does not
+stop Save. The owner's export in run 2: 5 entries, chain OK, `BrokenAt -1`.
+
+**What was different from dev.7 and dev.8: nothing that explains it.** The
+Save path in dev.9 differs from dev.8 by four log lines, which write to the log
+and nothing else. The terminal left open can only bear on what happens after
+Save, and both earlier failures happened before the handler — the autostart
+entry every save rewrites was untouched both times ([[D-372]]). The export
+before Save was the one uncontrolled difference named, and run 2 removed it.
+**dev.7's and dev.8's Saves remain unexplained.** No cause is assigned. The
+log lines stay in the program, so that a recurrence says where it stopped.
+
+**The log recorded more than the owner remembers, twice, and both are left
+unexplained rather than attributed:**
+
+- **Run 1b**, a second Settings window and a second Save a minute after the
+  first. The owner remembers opening Settings once and will not claim a
+  second press as a memory. Every window is inside the one agent: there is no
+  second `liro-bridge starting` line, so nothing else launched a process.
+- **After run 2**, which the owner describes as one Settings window and
+  nothing else: Settings opened again at 15:31:38 (cancelled at 15:31:51),
+  and again at 15:32:57, **cancelled 0.39 seconds after it opened** — faster
+  than a person closes a window they have just opened. Then a signing window
+  added a document at 15:33:04 with no shell-verb line (added from inside the
+  window, not by Open With), and `config.json` was written at 15:33:22 with
+  `outputFolder` set to `/home/vboxuser/liro-bridge/cmd/liro-bridge` — the
+  path from the owner's layout report, chosen in the signing window.
+
+My commands in this session touched the agent's files only to read them, and
+drive nothing: no synthetic input exists here (D-094). The likeliest reading of
+the second group is the owner checking the new layout, which this entry does
+not assert. The one reading this entry does record: **a Settings window closed
+0.39 seconds after it opened is not accounted for by anything above.**
+
+**An instrument note.** The owner read the host's clock for run 1 ("16:49"),
+two hours ahead of the VM's UTC; for the dev.8 Save the owner's "14:12" had
+been the VM's. Times here are the log's.
+
+**The Ubuntu update.** Ubuntu offered a software update during the runs; the
+owner dismissed it and installed nothing, because an update mid-measurement
+moves the libraries under it. The VM will fall behind the distribution it is
+meant to represent: open-items A23, a question of when rather than whether.
