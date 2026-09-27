@@ -38874,3 +38874,86 @@ names a copy.
 about (the entry's `im-module`) rests on run 1 being the baseline, and run 1
 does not agree with D-380. Repeated runs of both, with an instrument that can
 say whether the dialog talks to IBus at all, come first.
+
+## D-383 — Four more pinmem runs: the shipped dialog never talks to IBus, the variant meant to keep keys out of IBus left copies outside locked memory in both its runs, and those copies are laid out as accessibility messages, not undo history
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items B1 and B2.
+
+**The runs.** The owner, the same way each time — the random needle by hand,
+Enter to confirm — alternating the dialog as shipped and the `im-module`
+variant (a temporary edit, its readback `gtk-im-context-simple`). All four
+valid: baselines 0, the needle returned byte for byte. pinmem now reported
+whether its own process was connected to `ibus-daemon` (from the kernel's
+socket table, with its selftest control), and for each copy its mapping's
+`Locked` size and the 32 bytes in front of it.
+
+| | connected to ibus-daemon | IBus key events | while typed | after the wipe |
+|---|---|---|---|---|
+| shipped 1 | **false** (open and at the end) | 1 press | 1 copy, `…153008`, **Locked 16 kB** | **0** |
+| simple 1 | false | 0 | 2: the locked one, and `…befcc`, **Locked 0 kB**, in front `insert` | **1**: `…befcc`, `insert` |
+| shipped 2 | **false** | 1 press | 1 copy, `…015008`, **Locked 16 kB** | **0** |
+| simple 2 | false | 0 | 2: the locked one, and `…a0b1c`, Locked 0, `insert` | **2**: `…a0b1c` `insert`, and `…e4cc`, in front `delete` — made at the accept |
+
+Every IBus call in all four came from one sender, `:1.3`, the same in runs
+where the dialog provably did not use IBus.
+
+### The owner's three readings, and mine
+
+**1. The shipped dialog never talks to IBus — agreed.** Its process held no
+connection to `ibus-daemon` in either run, with the dialog open or at the end,
+and the check sees a connection when there is one. So whatever reaches IBus
+while a person types into it is sent by another client — the likeliest is
+GNOME Shell, a fit and not a reading. **The one-line change had nothing to
+fix.** What this does not show is that a person's keystrokes never reach IBus:
+the shipped runs each still carried one key event, from somebody else. The
+input path is not settled; only the dialog's own part of it is.
+
+**2. The variant is worse — agreed.** In both its runs copies outside locked
+memory survived the wipe; in both shipped runs nothing did, and the only copy
+while typing was the entry's own, in a mapping with `Locked` 16 kB — now a
+reading, not a fit. **The change I was ready to propose would have moved the
+PIN out of locked memory and left it there.** That it was not written is
+because D-382 put repeated runs before any proposal.
+
+**3. "insert" and "delete" — not undo history, by their layout; an
+accessibility message, by a reading still to be taken.** The 32 bytes in front
+of each read `........insert...........s......` (and `delete`). Counted: after
+the word, 11 bytes, then `s`, then 6 bytes, then the needle. That is D-Bus's
+layout for a message body of a string, two 32-bit integers and a variant
+holding a string — the word's terminator and padding and two integers make
+10, the variant's one-byte signature length the 11th; after the `s`, its
+terminator, a padding byte and the string's 4-byte length make 6. **That body
+is AT-SPI's `TextChanged` signal** — the event that tells screen readers text
+was inserted or deleted, whose payload is the text. GTK's undo history stores
+no "insert" beside its text. If the reading holds, it is larger than undo: the
+typed text serialised into a message whose purpose is to go to another
+process. **It is a reading of 32 bytes; the measurement is next**: the
+accessibility bus watched during the runs, each `TextChanged` resolved to its
+sending process, and whether its payload is the needle. The accessibility bus
+is a real `dbus-daemon` (unlike IBus's) and names a connection's process —
+checked before relying on it; no screen reader is enabled on this machine, and
+the bus runs regardless.
+
+**What else `im-module` changes, beyond this**, is not measured: at least,
+that the widget stops using any input method at all, so dead keys and compose
+work only through GTK's own tables.
+
+### B2 stays open on the shipped path
+
+Two clean shipped runs today do not close it. The run that reopened it
+(D-382's run 1) was the shipped build, and its copy after the wipe appeared at
+the accept, as the variant's `delete` copy did here. **A zero means nothing
+was there when the scan looked.**
+
+### The selftest failed on its own wipe
+
+Adding the accessibility watch changed pinmem, and its selftest then failed:
+the planted copy was still found after being wiped, at the same address. The
+planted slice never escaped, so it lived on the goroutine's stack (inside the
+`[anon: Go: heap]` mapping), and nothing read it after `clear` — the compiler
+removed the wipe as a dead store. **SPEC §6.5.1 clause 2's "a loop that was
+elided and a loop that ran look identical", in the instrument**; it passed
+before only because earlier edits happened to change the compiler's choice.
+The planted copy now lives in a package variable; five runs of five pass.
+The selftest caught it, which is what it is for.

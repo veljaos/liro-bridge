@@ -352,6 +352,126 @@ func ibusClients() (clients []string, self bool) {
 	return clients, self
 }
 
+// a11yBus is the accessibility bus's address, from the session bus.
+func a11yBus() string {
+	out, err := exec.Command("gdbus", "call", "--session", "--dest", "org.a11y.Bus",
+		"--object-path", "/org/a11y/bus", "--method", "org.a11y.Bus.GetAddress").Output()
+	if err != nil {
+		return ""
+	}
+	v := strings.TrimSpace(string(out))
+	v = strings.TrimPrefix(v, "('")
+	v, _, _ = strings.Cut(v, "',")
+	return v
+}
+
+// watchTextChanged records AT-SPI TextChanged signals on the accessibility
+// bus into a file, from a separate dbus-monitor process. The payload of such a
+// signal is the inserted or deleted text, so reading it while scanning would
+// put copies of the needle into this process's own heap and the scans would
+// count them; the file is read only after the last scan, then removed
+// (D-382).
+func watchTextChanged(bus string) (stop func() string) {
+	if bus == "" {
+		return func() string { return "" }
+	}
+	f, err := os.CreateTemp("", "pinmem-a11y-*.txt")
+	if err != nil {
+		return func() string { return "" }
+	}
+	cmd := exec.Command("dbus-monitor", "--address", bus,
+		"type='signal',interface='org.a11y.atspi.Event.Object',member='TextChanged'")
+	cmd.Stdout, cmd.Stderr = f, f
+	if err := cmd.Start(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return func() string { return "" }
+	}
+	return func() string {
+		_ = cmd.Process.Kill() // this child, by its own PID
+		_ = cmd.Wait()
+		_ = f.Close()
+		return f.Name()
+	}
+}
+
+// textChangedReport reads the monitor's file after the last scan: each
+// TextChanged signal's sender, resolved to a process while this one still
+// holds its connection, its detail (insert or delete), and whether its
+// payload is the needle — compared, never printed. The file is removed.
+func textChangedReport(bus, file string, needle []byte) {
+	if file == "" {
+		say("accessibility bus: not watched (no address, or dbus-monitor did not start)")
+		return
+	}
+	defer func() { _ = os.Remove(file) }()
+	b, err := os.ReadFile(file)
+	if err != nil {
+		say("accessibility bus: %v", err)
+		return
+	}
+	defer clear(b)
+	type key struct{ sender, detail string }
+	total := map[key]int{}
+	carries := map[key]int{}
+	var cur key
+	inSignal := false
+	for _, l := range strings.Split(string(b), "\n") {
+		t := strings.TrimSpace(l)
+		switch {
+		case strings.Contains(l, "member=TextChanged"):
+			inSignal = true
+			cur = key{}
+			for _, f := range strings.Fields(l) {
+				if v, ok := strings.CutPrefix(f, "sender="); ok {
+					cur.sender = v
+				}
+			}
+		case inSignal && cur.detail == "" && strings.HasPrefix(t, "string \""):
+			cur.detail = strings.Trim(strings.TrimPrefix(t, "string "), "\"")
+			total[cur]++
+		case inSignal && strings.HasPrefix(t, "variant") && strings.Contains(t, "string \""):
+			_, v, _ := strings.Cut(t, "string \"")
+			v = strings.TrimSuffix(v, "\"")
+			if v == string(needle) {
+				carries[cur]++
+			}
+			inSignal = false
+		}
+	}
+	if len(total) == 0 {
+		say("accessibility bus: no TextChanged signals while the dialog was up")
+		return
+	}
+	who := map[string]string{}
+	for k, n := range total {
+		if _, ok := who[k.sender]; !ok {
+			who[k.sender] = resolveOn(bus, k.sender)
+		}
+		say("accessibility bus: %d TextChanged %q from %s (%s); payload is the needle in %d", n, k.detail, k.sender, who[k.sender], carries[k])
+	}
+}
+
+// resolveOn asks a real dbus-daemon which process owns a unique name.
+func resolveOn(bus, sender string) string {
+	out, err := exec.Command("dbus-send", "--bus="+bus, "--dest=org.freedesktop.DBus", "--print-reply",
+		"/org/freedesktop/DBus", "org.freedesktop.DBus.GetConnectionUnixProcessID", "string:"+sender).Output()
+	if err != nil {
+		return "unresolved"
+	}
+	f := strings.Fields(string(out))
+	if len(f) == 0 {
+		return "unresolved"
+	}
+	pid := f[len(f)-1]
+	comm, _ := os.ReadFile("/proc/" + pid + "/comm")
+	self := ""
+	if pid == strconv.Itoa(os.Getpid()) {
+		self = ", THIS PROCESS"
+	}
+	return "pid " + pid + " " + strings.TrimSpace(string(comm)) + self
+}
+
 // ibusReleaseMask is IBUS_RELEASE_MASK, bit 30 of ProcessKeyEvent's state.
 const ibusReleaseMask = 1 << 30
 
@@ -499,6 +619,8 @@ func main() {
 	}
 
 	stopIBus := watchIBus()
+	bus := a11yBus()
+	stopA11y := watchTextChanged(bus)
 
 	type answer struct {
 		n   int
@@ -531,18 +653,22 @@ wait:
 	}
 	tick.Stop()
 	ibus := stopIBus()
+	a11yFile := stopA11y()
 
 	say("")
 	switch {
 	case a.err != nil:
 		say("CollectPIN: %v — nothing below is a measurement", a.err)
+		textChangedReport(bus, a11yFile, needle.b[:needleLen])
 		return
 	case !a.ok:
 		say("cancelled — nothing below is a measurement")
+		textChangedReport(bus, a11yFile, needle.b[:needleLen])
 		return
 	case a.n != needleLen || !bytes.Equal(dst.b[:a.n], needle.b[:needleLen]):
 		say("INVALID: the dialog returned %d bytes that are not the needle (a keyboard layout?). Every scan above would read zero and look clean; none of it is evidence.", a.n)
 		clear(dst.b)
+		textChangedReport(bus, a11yFile, needle.b[:needleLen])
 		return
 	}
 	say("returned: the needle, byte for byte (%d bytes)", a.n)
@@ -561,6 +687,9 @@ wait:
 	}
 	say("  (%s)", ibus.note)
 
+	// Last, after every scan: reading the monitor's file puts the payloads
+	// into this process.
+	textChangedReport(bus, a11yFile, needle.b[:needleLen])
 	clear(needle.b)
 }
 
@@ -570,7 +699,13 @@ wait:
 // run could mean "no copies" or "cannot see copies" (D-304, question 1).
 func selftest(needle, scratch page, skip []page) {
 	describe("selftest, nothing planted:", scan(needle, scratch, skip))
-	planted := make([]byte, needleLen)
+	// Planted through a package variable, so it lives on the heap and the
+	// wipe below cannot be dropped: a local slice nothing reads afterwards
+	// sat on the goroutine's stack, and the compiler removed its clear as a
+	// dead store — the selftest failed on its own wipe, not on the scan
+	// (D-382; SPEC §6.5.1 clause 2's elided loop, in the instrument).
+	selftestPlanted = make([]byte, needleLen)
+	planted := selftestPlanted
 	copy(planted, needle.b[:needleLen])
 	hits := scan(needle, scratch, skip)
 	describe("selftest, one copy planted on the heap:", hits)
@@ -601,5 +736,8 @@ func selftest(needle, scratch page, skip []page) {
 }
 
 func runtimeKeepAlive(b []byte) { runtime.KeepAlive(b) }
+
+// selftestPlanted holds selftest's planted copy; see selftest.
+var selftestPlanted []byte
 
 func uintptrOf(b []byte) uintptr { return uintptr(unsafe.Pointer(&b[0])) }
