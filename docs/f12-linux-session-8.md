@@ -187,3 +187,15 @@ need a profile again before they can run (A29). **Removed:** the test
 cores in `/var/lib/apport/coredump` (the owner, with sudo); the test crash
 report in `/var/crash` (session 8, before the desktop could offer it);
 `~/pinmem-simple`.
+
+---
+
+## G. The state when session 8 ended (the owner's reboot, step 4)
+
+Written at the reboot. Done: step 0 (both hand-made profiles removed; the
+baselines `~/sandboxcheck-7.0.0-31-generic-20260927-201646.txt` without the
+Python one and `…-202328.txt` without either — the one to compare boot 2
+against), step 1, step 2 (AppArmor now `…0.24.04.8`, GNOME Shell
+`~24.04.15`, nothing left to upgrade; `~/sitting-packages-after-update.txt`),
+step 3 (`linux-image-generic`; kernels in /boot: 6.8.0-142-generic 7.0.0-31-generic 7.0.0-34-generic ).
+Next: the owner's step 4 on 7.0.0-34.
