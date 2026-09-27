@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-382, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-384, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -50,11 +50,12 @@ prose of an entry before D-280, outside those words, may be missing.
 22. *A native message box on Linux: not built, by the owner's decision (D-373). Numbering kept.*
 23. **When this VM takes Ubuntu's updates.** Ubuntu offered one during D-374's runs and the owner declined it, because an update mid-measurement moves the libraries under the measurement. Unupdated, the VM drifts from the 24.04 it is meant to represent; updated, earlier readings were taken on a different stack. — D-374. *Close:* decide when — between measurements, with the package list recorded before and after. *Needs:* owner's decision.
 24. *SPEC §6.5.1 clause 3 per platform, with the same-user routes measured and the open ones named (D-381). Numbering kept.*
+25. **How the Linux PIN dialog stops broadcasting what is typed.** Not the `im-module` property (D-383: worse). One reading so far: `GTK_A11Y=none` stops the signals, process-wide (D-384). Candidates and their costs are the owner's to choose between. *Needs:* owner's decision, then code and a pinmem run.
 
 ## B. Claims not measured
 
 1. **Does the PIN dialog's process send keystrokes to IBus, and would the entry's `im-module` stop it?** Two pinmem runs disagree (21 key events on IBus's bus, then 1), and IBus received calls while the dialog provably did not use it, so the bus count is not the dialog's (D-380, D-382). *Close:* repeated runs of both dialogs, with pinmem reporting whether its own process is connected to `ibus-daemon`. *Needs:* owner's hands.
-2. **Does anything of what is typed survive the dialog's wipe?** One run of three left a whole copy after the wipe, made while the dialog accepted; the other zeros are consistent with a copy written over before the scan (D-382). *Close:* repeated runs, each hit's mapping and surroundings recorded. *Needs:* owner's hands.
+2. **SPEC §6.5.1 clause 2 is broken on the shipped path: the PIN dialog broadcasts what is typed on the accessibility bus.** AT-SPI `TextChanged` "insert" and "delete" carrying the whole text, from the dialog's process, received by an ordinary same-user subscriber; the bus is on by default in every GNOME session (D-384). Memory copies after the wipe (D-382) remain open beside it. *Close:* A25's remedy, measured with pinmem's accessibility watch. *Needs:* owner's decision, code.
 3. **Why a notification with no action now raises the window when D-337 said it did not.** Not the desktop entry (control). — D-355 §6. SPEC §6.5.2 no longer rests on the answer (D-369). *Close:* vary WebKit view against bare GTK, and posting from Go against another process. *Needs:* owner's hands, measurement.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.
@@ -74,6 +75,7 @@ prose of an entry before D-280, outside those words, may be missing.
 19. **Stale discovery files under linger, with `XDG_RUNTIME_DIR` unset, and across two users.** — D-325. *Needs:* measurement, owner's hands.
 20. **Is gotk4 v0.3.1 missing an API the remaining UI needs?** Not for D2: FileDialog, DropTarget with FileList, AlertDialog are all generated, and D-338's "FileList has no methods" was wrong (D-371). Open only for UI not yet written. — D-327, D-330, D-371. *Needs:* code.
 21. **CI fuzz flake rate.** — D-328. *Needs:* CI.
+22. **Does the Windows PIN dialog tell UI Automation, MSAA or `WM_GETTEXT` what is typed?** D-290 measured the edit control's memory, not its accessibility surface. Measure with a same-user UIA client, a WinEvent hook and a cross-process `WM_GETTEXT`, the needle typed by hand and compared, never printed (D-384). *Needs:* Windows, owner's hands.
 
 ## C. Built, and never watched or never run end to end
 

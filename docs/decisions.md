@@ -38957,3 +38957,103 @@ elided and a loop that ran look identical", in the instrument**; it passed
 before only because earlier edits happened to change the compiler's choice.
 The planted copy now lives in a package variable; five runs of five pass.
 The selftest caught it, which is what it is for.
+
+## D-384 — The shipped PIN dialog hands what is typed to the accessibility bus, where any process running as the same user can read it: SPEC §6.5.1 clause 2 is broken on the shipped path, and D-350 to D-383 were reading memory for a secret the program was handing out
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items B2, and new items A25 and B22. **No remedy is
+written here; the owner's order was to establish what receives it and whether
+Windows does the same first.**
+
+### What was measured
+
+pinmem watching the accessibility bus (D-383's instrument), the owner typing
+the random needle, Enter to confirm. Both runs valid; both **0 copies after the
+wipe** — clean by every memory measure D-350 to D-383 took.
+
+| run | on the accessibility bus, while the dialog was up |
+|---|---|
+| `pinmem-simple` (the variant) | 1 `TextChanged` "insert" and 1 "delete" from **pid 85067, this process**; **payload is the needle** in each |
+| `pinmem` — **the dialog as shipped** | 1 "insert" and 1 "delete" from **pid 85146, this process**; **payload is the needle** in each |
+
+**So it is not the variant and it is not undo** ([[D-383]]'s third reading
+holds): the shipped PIN dialog, on a stock GNOME desktop with no screen reader
+enabled, sends AT-SPI `TextChanged` signals carrying the whole text typed into
+it — once as inserted, once as deleted when the dialog clears the entry.
+
+My prediction that the terminal would send `TextChanged` for pinmem's output,
+as a built-in control, **failed**: it sent none. The monitor sees — it caught
+pinmem's own signals — but that control did not work as claimed.
+
+### What receives it (the owner's first question)
+
+- **The bus is on by default.** gnome-session starts `at-spi-bus-launcher
+  --launch-immediately` for every session from
+  `/etc/xdg/autostart/at-spi-dbus-bus.desktop` (`X-GNOME-AutoRestart=true`),
+  package `at-spi2-core` 2.52.0; no screen reader is involved
+  (`screen-reader-enabled` false, `toolkit-accessibility` false).
+- **Who is on it**, resolved through the bus (a real `dbus-daemon`, which
+  names a connection's process): about eighteen of the desktop's own —
+  GNOME Shell, the settings daemons, `gnome-terminal`, `update-notifier`,
+  `evolution-alarm`, the portals, IBus's X11 helper, the registry.
+- **Who can read it: any process running as this user, by ordinary means.**
+  Measured with a separate listener making only a plain signal subscription
+  (`AddMatch` — what any application may do; not `BecomeMonitor`), and a GTK 4
+  password entry whose text was set from code (no human input forged, D-094):
+  it received "insert" and "delete" with **the payload equal to the test
+  string**. The socket is in `/run/user/1000` (mode 0700), so the audience is
+  this user's processes and root — **which is exactly the audience SPEC
+  §6.5.1 clause 2 names when it forbids "a socket anything else on the machine
+  can connect to … readable by another process running as the same user by
+  ordinary means"**. That makes this an exposure, not a leak: the text is
+  broadcast to a bus any of the person's own processes may subscribe to.
+
+### Clause 2, on the shipped path
+
+Clause 2 permits exactly one boundary for the PIN — the inherited pipe to the
+PKCS#11 worker — and names it as the only one. **This is a second, to a bus
+any of the person's processes can listen on, and nobody chose it.** Clause 3's
+new text ([[D-381]]) lists routes by which same-user code could reach the PIN;
+this is not one of them, because it is not somebody reaching in — it is the
+program sending it out.
+
+**And it reframes the arc.** [[D-350]] through [[D-383]] measured this
+process's memory — copies, locking, wipes, dumps, who may read the process —
+and every one of them was looking in the right place for the wrong threat.
+**The PIN was never going to be found by reading this program's memory,
+because the program was handing it out.** D-384's shipped run was clean by all
+of those measures in the same minute it broadcast the text.
+
+### Whether Windows does the same (the owner's second question)
+
+**Not measurable from here, and it must not be assumed either way.** The
+Windows PIN dialog is a Win32 edit control with `ES_PASSWORD`; [[D-290]]
+measured its memory, not what the accessibility layers were told about it.
+Windows is commonly said not to expose a password edit's text to other
+processes — that is exactly the kind of sentence this arc has learned to
+measure. What would measure it, on the Windows machine, as the same user,
+with a random needle typed by hand into the real dialog (open-items B22):
+
+1. **UI Automation**: a client subscribed to text-changed and
+   property-changed (Value) events on all windows while the needle is typed;
+   then, with the dialog open, the edit's `ValuePattern.Value`, its
+   `TextPattern` document range, and its `IsPassword` property.
+2. **MSAA/WinEvents**: an out-of-context `SetWinEventHook` for
+   `EVENT_OBJECT_VALUECHANGE`, `EVENT_OBJECT_NAMECHANGE` and the text-edit
+   events, reading `accValue`/`accName` from each source.
+3. **`WM_GETTEXT` sent across processes** to the edit's HWND.
+4. Each compared with the needle, never printed — pinmem's arrangement.
+
+And the input-method side on Windows (TSF/IME) is B1's Windows half, still
+unmeasured. The WebView2 consent window never holds the PIN, so it is not in
+this question.
+
+### One reading toward the remedy, and nothing more
+
+With `GTK_A11Y=none` in the emitter's environment, the same plain listener
+received **no** `TextChanged` (the same listener had received the text a
+minute before, so it was not blind). That is evidence about one candidate,
+not a decision — it switches accessibility off for the whole process, and the
+agent's other windows with it. The remedy is the owner's, after this entry,
+and it is not the `im-module` property, which [[D-383]] measured to make
+things worse.
