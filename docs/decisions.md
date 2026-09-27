@@ -39057,3 +39057,128 @@ not a decision — it switches accessibility off for the whole process, and the
 agent's other windows with it. The remedy is the owner's, after this entry,
 and it is not the `im-module` property, which [[D-383]] measured to make
 things worse.
+
+## D-385 — The PIN dialog's input is this program's own locked field: measured closing D-384 on the shipped path, a focus sign the owner found missing, and paste argued rather than changed
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items A25; B2's broadcast half closed, its
+memory half ([[D-382]]) still open.
+
+### The decision (the owner's)
+
+**C, with D in parallel; A only if something ships before C exists, and then
+with a line in the release notes rather than silently.** The owner's reasons:
+A — `GTK_A11Y=none` for the whole agent — takes accessibility away from the
+consent window, the one screen where a person decides to sign, which SPEC §6.5
+rests on being usable; a blind person losing it is a worse outcome than the
+one being fixed. B reopens a clause that took three days and two amendments to
+settle, and buys nothing C does not. **"N characters entered" is what makes C
+right rather than merely safe**: silence would tell a screen-reader user
+nothing about whether their typing registered, which is its own failure.
+
+### The two conditions, answered before building
+
+**Measured with pinmem before it counts** — the `im-module` change looked
+obviously better and was worse ([[D-383]]), and it never shipped only because
+it was measured first. **And nothing the password entry gave may be quietly
+lost**: the locked buffer, the wipe through the control's own interface, no
+undo. Answered before a line was written: all three kept — a page this program
+maps and `mlock`s itself (and marks not to be dumped; it refuses to open if the
+page cannot be locked); the control is this program's now, so its wipe is this
+program overwriting its own page before the window is destroyed; and no undo is
+implemented. What it gives up, deliberately: an input method, paste, and all
+editing but Backspace.
+
+### What was built (`1df8dab`, focus fix after)
+
+`internal/ui/pindialog_linux.go`: a focusable frame holding a label of dots; a
+key controller writing each character straight into the locked page as UTF-8
+(`fieldKey`, pure, tested with keyvals — Latin and Cyrillic; Backspace removes
+a whole character and overwrites its bytes; Ctrl/Alt/Super keys and Tab are not
+the field's; Enter and Escape answer; a full page takes nothing more); the
+field's accessible label and a description and announcement of "N characters
+entered" (`PINPrompt.Entered`, `pindialog.entered` in three languages); the
+page overwritten before `win.Destroy()`, then unlocked and unmapped. The old
+entry's three C helpers and the file's cgo are gone. Tests: the key logic, the
+page locked **as the kernel reports it** (`smaps`) and zero after the wipe read
+through its fixed address, the guards repointed. **Five mutations, five reds**
+— no lock, Backspace without the overwrite, Ctrl accepted, no overwrite before
+destroy, a wipe the compiler may elide.
+
+### Measured with pinmem (the owner's run)
+
+| | predicted | measured |
+|---|---|---|
+| accessibility bus, while the dialog was up | no `TextChanged` carrying the needle | **no `TextChanged` at all** |
+| while typed | 1 copy, in a mapping Locked 4 kB | **1 copy, mapping Locked 4 kB** |
+| after the wipe | 0 | **0 copies, VmLck 0 kB** |
+| IBus | 0 key events, not connected | **0, not connected** |
+| least certain: the field takes focus as it opens | yes | **yes — the dots appeared as typed** |
+
+**Every prediction held. On the shipped path, D-384's broadcast is closed.**
+The copies-after-the-wipe question of [[D-382]] is a different one and stays
+open: one run is not a guarantee, and a zero means nothing was there when the
+scan looked.
+
+### A defect only a person could see: no sign of focus
+
+The owner: the field gave no sign it had focus — no caret, no highlight — so a
+person could not tell they were typing into it until a dot appeared. "Am I
+typing into the right place" should not be a question on the screen where the
+next thing a person does is type a PIN. **Not a trade; a missing affordance.**
+Fixed: a caret after the dots while the field has focus (`fieldDisplay`,
+tested), and an outline in the text's own colour on `:focus` (`pinFieldCSS`).
+**Its test found a binding bug on the way**: checking that the stylesheet
+parses by connecting a Go handler to the provider's `parsing-error` signal
+double-freed the error inside GTK ("free(): double free detected" in
+`gtk_css_provider_load_from_string`) — gotk4 v0.3.1's marshaller takes
+ownership of an error GTK frees again. The agent never connects that signal;
+the test now loads the stylesheet in a child process and reads GTK's own
+"Theme parser error" warning from its stderr. Mutation — `sold` for `solid` —
+red, naming the error. **What the outline and caret look like is the owner's to
+see**; the tests say they exist and parse.
+
+### Paste: refused, and argued rather than changed
+
+Refused deliberately in C; the owner now thinks that is wrong for a person —
+people keep PINs in password managers, and refusing paste makes them retype
+from memory or another window, which is worse for secrecy — and asked to be
+argued out of it rather than have it changed, with one rule: if accepting it
+reintroduces a clipboard copy this program cannot wipe, it stays refused.
+
+**That reason does not hold, as far as I can tell.** The clipboard copy is
+created by the person copying, in the password manager, before this dialog is
+involved; refusing paste does not remove it and accepting does not create it.
+On Wayland the compositor does not keep clipboard contents; the source
+application does (and a clipboard-history tool, if the person has one). **What
+accepting would add is bytes entering this process** — through a pipe from the
+source application, which could be read straight into the locked page — and
+that is unmeasured, and C has just shown what an unmeasured understanding of
+GTK is worth. **The real residual cost** is pasting the wrong thing: a field
+filled with whatever was on the clipboard, and Enter spending a card attempt —
+the same class as a mistyped PIN; the dots show the length, and anything longer
+than the token allows is refused before the card. Recommended: accept paste,
+read straight into the locked page, counted only after pinmem measures a
+pasted needle. **The owner's decision; paste stays refused until then.**
+
+### D — the GTK report
+
+Drafted with the measurement rather than the conclusion, "Measured:" first in
+the evidence, the reproducer attached: `docs/reports/gtk-password-entry-textchanged.md`.
+**Not filed from here**: this machine has no GNOME GitLab account, and a post
+under somebody's name is the owner's to make (A26). Fedora 44's GTK is measured
+with the same script when that VM exists.
+
+### What D-384 needs added, which an entry cannot edit
+
+- **Two of my predictions failed on the way to D-384**, and the finding is
+  stronger for being reported by an instrument that was not entirely right
+  about itself: the terminal I said would send `TextChanged` for pinmem's
+  output, as a built-in control, sent none; and in my own plain-listener test
+  I did not resolve the emitting connection to a process, where the owner's
+  pinmem runs did — to pinmem's own.
+- **Windows is assumed neither way.** If the Windows dialog tells UI
+  Automation, MSAA or `WM_GETTEXT` what is typed, D-384 stops being a Linux
+  finding and becomes a finding about the program, and the entries written
+  this week would read wrong. B22 carries the four methods that would measure
+  it, word for word.

@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -120,6 +121,44 @@ func wipeField(b []byte) {
 		b[i] = 0
 	}
 	runtime.KeepAlive(b)
+}
+
+// fieldCaret is shown after the dots while the field has keyboard focus.
+// The owner found the first field gave no sign it had focus — no caret, no
+// highlight — so a person could not tell they were typing into it until a
+// dot appeared (D-385). The caret answers that without depending on anybody
+// seeing a colour; the outline in pinFieldCSS is the other half.
+const fieldCaret = "\u2502"
+
+// fieldDisplay is the field's only text: one dot per character typed, and the
+// caret while it has focus. Never a character.
+func fieldDisplay(count int, focused bool) string {
+	text := strings.Repeat("\u25CF", count)
+	if focused {
+		text += fieldCaret
+	}
+	return text
+}
+
+// pinFieldCSS draws the field's frame and, while it has keyboard focus, an
+// outline in the text's own colour — so it is visible in any theme and uses
+// no colour this program chose.
+const pinFieldCSS = `
+frame.liro-pin-field { border-radius: 6px; }
+frame.liro-pin-field:focus { outline: 2px solid alpha(currentColor, 0.8); outline-offset: 2px; }
+`
+
+// pinFieldStyle installs pinFieldCSS once per process, on the UI thread.
+var pinFieldStyle sync.Once
+
+func installPINFieldStyle() {
+	pinFieldStyle.Do(func() {
+		provider := gtk.NewCSSProvider()
+		provider.LoadFromString(pinFieldCSS)
+		if display := gdk.DisplayGetDefault(); display != nil {
+			gtk.StyleContextAddProviderForDisplay(display, provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+		}
+	})
 }
 
 // errFieldUnlocked is the one way the field refuses to open.
@@ -214,7 +253,9 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 		dots.SetMarginEnd(8)
 		dots.SetMarginTop(6)
 		dots.SetMarginBottom(6)
+		installPINFieldStyle()
 		field := gtk.NewFrame("")
+		field.AddCSSClass("liro-pin-field")
 		field.SetChild(dots)
 		field.SetFocusable(true)
 		field.SetFocusOnClick(true)
@@ -281,10 +322,11 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 			finish(result{got, true, nil})
 		}
 
-		show := func() {
+		focused := false
+		show := func(changed bool) {
 			count := utf8.RuneCount(page[:typed])
-			dots.SetText(strings.Repeat("\u25CF", count))
-			if prompt.Entered != "" {
+			dots.SetText(fieldDisplay(count, focused))
+			if changed && prompt.Entered != "" {
 				said := fmt.Sprintf(prompt.Entered, count)
 				field.UpdateProperty([]gtk.AccessibleProperty{gtk.AccessiblePropertyDescription}, []coreglib.Value{*coreglib.NewValue(said)})
 				field.Announce(said, gtk.AccessibleAnnouncementPriorityLow)
@@ -297,7 +339,7 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 			typed = next
 			switch action {
 			case fieldChanged:
-				show()
+				show(true)
 			case fieldAccept:
 				take()
 			case fieldCancel:
@@ -308,6 +350,11 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 			return true
 		})
 		field.AddController(keys)
+
+		focus := gtk.NewEventControllerFocus()
+		focus.ConnectEnter(func() { focused = true; show(false) })
+		focus.ConnectLeave(func() { focused = false; show(false) })
+		field.AddController(focus)
 
 		accept.ConnectClicked(take)
 		cancel.ConnectClicked(func() { finish(result{0, false, nil}) })

@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-384, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-385, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -50,13 +50,14 @@ prose of an entry before D-280, outside those words, may be missing.
 22. *A native message box on Linux: not built, by the owner's decision (D-373). Numbering kept.*
 23. **When this VM takes Ubuntu's updates.** Ubuntu offered one during D-374's runs and the owner declined it, because an update mid-measurement moves the libraries under the measurement. Unupdated, the VM drifts from the 24.04 it is meant to represent; updated, earlier readings were taken on a different stack. — D-374. *Close:* decide when — between measurements, with the package list recorded before and after. *Needs:* owner's decision.
 24. *SPEC §6.5.1 clause 3 per platform, with the same-user routes measured and the open ones named (D-381). Numbering kept.*
-25. **The Linux PIN dialog's own field: decided (C) and built, not yet counted.** The owner chose C, with D in parallel, and A only if something ships before C, with a line in the release notes (D-385). Built in `1df8dab`: a locked page of this program's own, dots, "N characters entered". *Close:* pinmem on it — no TextChanged carrying the needle, the copy locked while typed, nothing after the wipe. *Needs:* owner's hands.
+25. *The Linux PIN dialog's own field: built and measured — no TextChanged, the copy locked while typed, nothing after the wipe (D-385). Numbering kept.*
 26. **Report to GTK that a GtkPasswordEntry sends its text in AT-SPI TextChanged**, with the measurement, not a conclusion: the payload equality, the plain AddMatch listener, GTK 4.14.5, and `scripts/a11yprobe` as the reproducer (D-384, D-385). *Needs:* the owner files it (an outward post). And measure Fedora 44's GTK with the same script when the Fedora VM exists (F1).
+27. **Paste into the PIN field.** Refused in C; the owner thinks refusal is worse for a person. The stated reason to keep refusing (a clipboard copy this program cannot wipe) does not hold as far as known; what accepting adds is bytes read from the source's pipe, which could go straight into the locked page, unmeasured (D-385). *Close:* the owner's decision, then pinmem on a pasted needle. *Needs:* owner's decision.
 
 ## B. Claims not measured
 
 1. **Does the PIN dialog's process send keystrokes to IBus, and would the entry's `im-module` stop it?** Two pinmem runs disagree (21 key events on IBus's bus, then 1), and IBus received calls while the dialog provably did not use it, so the bus count is not the dialog's (D-380, D-382). *Close:* repeated runs of both dialogs, with pinmem reporting whether its own process is connected to `ibus-daemon`. *Needs:* owner's hands.
-2. **SPEC §6.5.1 clause 2 is broken on the shipped path: the PIN dialog broadcasts what is typed on the accessibility bus.** AT-SPI `TextChanged` "insert" and "delete" carrying the whole text, from the dialog's process, received by an ordinary same-user subscriber; the bus is on by default in every GNOME session (D-384). Memory copies after the wipe (D-382) remain open beside it. *Close:* A25's remedy, measured with pinmem's accessibility watch. *Needs:* owner's decision, code.
+2. **Does anything of what is typed survive the dialog's wipe?** The accessibility-bus broadcast that broke clause 2 is closed by the dialog's own field (D-384, D-385). What stays open is D-382's: one run of three left a whole copy after the wipe; zeros since are consistent with a copy written over before the scan. *Close:* repeated runs on the new field. *Needs:* owner's hands.
 3. **Why a notification with no action now raises the window when D-337 said it did not.** Not the desktop entry (control). — D-355 §6. SPEC §6.5.2 no longer rests on the answer (D-369). *Close:* vary WebKit view against bare GTK, and posting from Go against another process. *Needs:* owner's hands, measurement.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.

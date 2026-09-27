@@ -76,6 +76,21 @@ func TestAFullFieldTakesNothingMore(t *testing.T) {
 	}
 }
 
+// The field says it has focus: a caret after the dots while it does, and only
+// dots — never a character — in either state (D-385: the first field gave no
+// sign of focus at all).
+func TestTheFieldShowsACaretOnlyWhileFocused(t *testing.T) {
+	if got := fieldDisplay(0, true); got != fieldCaret {
+		t.Errorf("an empty focused field shows %q, want the caret alone", got)
+	}
+	if got := fieldDisplay(3, true); got != "\u25CF\u25CF\u25CF"+fieldCaret {
+		t.Errorf("three characters, focused: %q", got)
+	}
+	if got := fieldDisplay(3, false); got != "\u25CF\u25CF\u25CF" {
+		t.Errorf("three characters, not focused: %q — the caret must go with the focus", got)
+	}
+}
+
 // The page is locked — read from the kernel, not from the call's return — and
 // after the wipe it is zero, read back through its fixed address rather than
 // through a slice header (SPEC §6.5.1 clause 2: a loop that was elided and a
