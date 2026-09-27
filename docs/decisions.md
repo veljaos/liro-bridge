@@ -39851,3 +39851,107 @@ The scratch tray registered a tray icon on the owner's panel for about 8 s
 (`org.kde.StatusNotifierItem-5912-1`), and wrote its autostart entry, log and
 discovery file into its scratch home only. It did not pair, and wrote nothing
 to the keyring.
+
+## D-394 — SIGTERM ends the tray the way Quit does, measured against dev.11; B1 settled for the shipped field's own part and no further; the explanation of runs 3–5 was tested and did not hold
+
+**Date:** 2026-09-27
+**Phase:** F12; D20 narrowed (the discovery-file half fixed and measured);
+B1 closed for the field and B23 opened for the rest; A3's condition moved.
+
+### D20: the handler, by the owner's decision, before Fedora
+
+The owner: a logout leaving `bridge.json` behind is not a tidiness problem.
+It is a discovery file naming a port nobody answers, and [[D-344]] made a
+discovery file "a claim that gets dialled rather than believed" precisely
+because a stale file cannot be told from a live one by reading it. Leaving
+it is leaving the case dialling exists for, on the path a real person takes
+every day.
+
+**Built.** `cmd/liro-bridge/traysignal_other.go` (`!windows`):
+`quitOnTerminate(quitOnce)`, registered in `runTray` right after `quitOnce`
+exists, so SIGTERM closes the same channel as the tray's Quit item. Then
+`runTray` returns normally, its deferred calls run (`t.Close()`,
+`protocol.stop()`, which removes the discovery file), and `run()`'s deferred
+`closePKCS11Modules` shuts the workers down in the order Quit uses. **Only the
+first SIGTERM is taken.** The handler restores the default before quitting,
+so a second one, from a session manager that has stopped waiting, ends the
+process at once. SIGINT and SIGHUP are not handled: a logout sends SIGTERM,
+and D20 was about that. `traysignal_windows.go` does nothing. What a Windows
+logoff does to that agent's discovery file has not been looked at, and F12
+changes nothing on Windows that was not decided.
+
+**Tests.** `traysignal_test.go`: a SIGTERM sent to the test process reaches
+quit within 5 s, and stopping without a signal does not quit. Run with `-v`
+(both ran, both passed). **The first can fail**: with the `Notify` line
+removed, the test binary died of the signal ("signal: terminated", FAIL),
+and the file was then restored. **What the tests cannot see**: that `runTray`
+calls it. With the `defer` line removed they would still pass. That half is
+the measurement's.
+
+**The measurement** — D-393's harness, the fix built to a scratch path
+(not installed) and installed dev.11 as the control, one after the other,
+same conditions:
+
+| | dev.11 (control) | the fix |
+|---|---|---|
+| alive after 8 s, discovery file present | yes, yes | yes, yes |
+| after SIGTERM | killed by it, `returncode -15` | **`returncode 0`**, 0.02 s |
+| discovery file afterwards | **still there** | **gone** |
+| the log's last lines | the tray icon's registration, nothing after | "tray: asked to terminate, so stopping the way Quit does", "protocol: stopped" |
+
+`go test -p 1 ./cmd/liro-bridge/`, untagged and `-tags softtoken`, both
+green. `go vet` clean on Linux and on `GOOS=windows`, apart from two
+existing `unsafe.Pointer` warnings in `dropdelivery_windows_test.go`, which
+this change does not touch. golangci-lint: 0 issues. **Scope of that green**:
+the one package changed, not `./...`.
+
+**Left in D20**: the tray's `pkcs11-worker` children under SIGTERM. The
+handler now takes them through `closePKCS11Modules` instead of leaving them
+to their pipe's end-of-file, but a tray with workers running has not been
+killed and watched. That needs a Certificates window opened by the owner's
+hand. **Not in an installed package**: the next dev build carries it.
+
+### B1, settled for the shipped field's own part
+
+**What the eight valid runs of [[D-392]] show**: in eight consecutive runs of
+the shipped field, the dialog's process was never connected to
+`ibus-daemon` ("this process connected to ibus-daemon: false", at the end of
+each) and sent IBus nothing. Every InputContext call in every run came from
+one other sender, `:1.3`. With D-383 (the field's predecessor never talked to
+IBus either) and D-385 (the field is not a text-input client), **B1's
+question — does the dialog's process send keystrokes to IBus — is answered
+for the shipped field: no.** The `im-module` half of B1 is moot: nothing in
+the field uses an input method.
+
+**What this does not settle, and stays open as B23.** Something else on
+IBus's bus still receives key events while the dialog is up: `:1.3` sent a
+key release in three of the eight runs. The keys a person types go through
+the compositor before they reach this process, and **what the compositor
+does with them, and which of its clients are handed them, is unmeasured.**
+This entry settles the field's own part of the input path, not the path.
+**A3** (whether clause 2 already concedes what an input method sees) waited
+on B1. It now waits on B23, because the part B1 could answer is the part
+that sends nothing.
+
+### Runs 3–5: an explanation tested, and it did not hold
+
+D-392 offered, as a fit and not a reading, that the lone key release in
+runs 3–5 was Enter, pressed in the dialog to confirm and released after
+focus had gone back to the terminal. **The owner confirmed every one of the
+eight runs with Enter, none with a click.** The explanation predicts the same
+release in all eight or in none. It was seen in three, so **it does not
+separate runs 3–5 from runs 6–8 and is withdrawn.** The focus-regain half
+(whether the terminal's focus returns inside the monitoring window) was not
+tested and explains only the focus calls, not the release. **What varies
+between the runs is still unknown**, and it is not chased: none of it comes
+from the dialog's process, and it bears on B23, not on B2.
+
+### The ninth run, in the owner's terms
+
+The owner did not notice the mistype. The instrument did: "the dialog
+returned 20 bytes that are not the needle … none of it is evidence". **The
+owner: an invalid run caught by the instrument's own check is worth as much
+as the eight that passed**, and it is the second time pinmem's validity check
+has caught something that would otherwise have been reported as a clean run.
+A zero from a scan that could not have found anything reads the same as a
+real zero. Only the check tells them apart.

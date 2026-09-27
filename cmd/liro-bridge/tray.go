@@ -99,6 +99,9 @@ func runTray(cfg config.Config, version string) int {
 	// check, when it has just launched an installer that is about to
 	// replace this binary — so closing it twice must not panic.
 	quitOnce := sync.OnceFunc(func() { close(quit) })
+	// A logout's SIGTERM takes the same way out as Quit, so the deferred
+	// cleanup below runs rather than dying with the process (D-393, D20).
+	defer quitOnTerminate(quitOnce)()
 	openedAWindow := false
 	windows := &oneWindow{}
 

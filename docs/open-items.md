@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-393, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-394, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -23,7 +23,7 @@ prose of an entry before D-280, outside those words, may be missing.
 
 1. *SPEC §6.5.2: rules, not measurements; the table removed (D-369). Numbering kept.*
 2. **B-LT on Serbian cards: a bundled trust store, or an LDAP client.** SPEC §12.6 makes B-LT the default and no Serbian card reaches it today. — D-281; README F11. *Close:* choose; LDAP needs a SPEC §6.8 amendment. *Needs:* owner's decision, then code.
-3. **Clause 2 and the keystroke path.** Whether §6.5 already concedes what an input method sees, or clause 2 needs rewriting rather than a third exception. — D-351, D-352. *Close:* after B1 is measured. *Needs:* owner's decision.
+3. **Clause 2 and the keystroke path.** Whether §6.5 already concedes what an input method sees, or clause 2 needs rewriting rather than a third exception. — D-351, D-352. *Close:* after B23 is measured — B1 answered the field's own part, which sends nothing (D-394). *Needs:* owner's decision.
 4. *Core-dump hardening: the agent forbids its own, measured on the installed package — no core, no report, apport never called (D-376, D-377). Numbering kept.*
 5. **Per-request deadline for the PKCS#11 worker, and a bound on `Close`/`C_Finalize`.** `pkcs11ShutdownGrace` is 5 s "chosen rather than measured"; a login lasts as long as a person takes. — D-297, D-301, D-309, D-313. *Needs:* owner's decision.
 6. **Should SPEC state the source preference (CNG, then PKCS#11, then soft token)?** — D-311. *Needs:* owner's decision.
@@ -58,7 +58,7 @@ prose of an entry before D-280, outside those words, may be missing.
 
 ## B. Claims not measured
 
-1. **Does the PIN dialog's process send keystrokes to IBus, and would the entry's `im-module` stop it?** Two pinmem runs disagree (21 key events on IBus's bus, then 1), and IBus received calls while the dialog provably did not use it, so the bus count is not the dialog's (D-380, D-382). *Close:* repeated runs of both dialogs, with pinmem reporting whether its own process is connected to `ibus-daemon`. *Needs:* owner's hands.
+1. *The shipped field sends IBus nothing: never connected to `ibus-daemon` in eight consecutive runs; the `im-module` half is moot — the field uses no input method. The rest of the input path is B23 (D-392, D-394). Numbering kept.*
 2. *What is typed does not survive the new field's wipe as the old field's did: eight valid typed runs, 0 copies after the wipe in each; a rare copy (one run in ten or fewer) is not ruled out (D-392). Numbering kept.*
 3. **Why a notification with no action now raises the window when D-337 said it did not.** Not the desktop entry (control). — D-355 §6. SPEC §6.5.2 no longer rests on the answer (D-369). *Close:* vary WebKit view against bare GTK, and posting from Go against another process. *Needs:* owner's hands, measurement.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
@@ -80,6 +80,7 @@ prose of an entry before D-280, outside those words, may be missing.
 20. **Is gotk4 v0.3.1 missing an API the remaining UI needs?** Not for D2: FileDialog, DropTarget with FileList, AlertDialog are all generated, and D-338's "FileList has no methods" was wrong (D-371). Open only for UI not yet written. — D-327, D-330, D-371. *Needs:* code.
 21. **CI fuzz flake rate.** — D-328. *Needs:* CI.
 22. **Does the Windows PIN dialog tell UI Automation, MSAA or `WM_GETTEXT` what is typed?** Assumed neither way: if it does, D-384 stops being a Linux finding and becomes a finding about the program, and this week's entries would read wrong (D-385). On the Windows machine, as the same user, a random needle typed by hand into the real dialog: (1) **UI Automation** — a client subscribed to text-changed and property-changed (Value) events on all windows while the needle is typed; then, with the dialog open, the edit's `ValuePattern.Value`, its `TextPattern` document range, and its `IsPassword` property. (2) **MSAA/WinEvents** — an out-of-context `SetWinEventHook` for `EVENT_OBJECT_VALUECHANGE`, `EVENT_OBJECT_NAMECHANGE` and the text-edit events, reading `accValue`/`accName` from each source. (3) **`WM_GETTEXT` sent across processes** to the edit's HWND. (4) Each compared with the needle, never printed — pinmem's arrangement. *Needs:* Windows, owner's hands.
+23. **The input path in front of the dialog: the compositor, and IBus's other clients.** The shipped field's own part is settled (B1, D-394). Something else on IBus's bus still receives key events while the dialog is up (`:1.3`, a lone key release in three of eight runs, D-392), and what the compositor does with keys before they reach this process — and which of its clients it hands them to — is unmeasured. What varies between runs is unknown; the Enter-release explanation was tested and did not hold (D-394). *Close:* a measurement at the compositor's side, or an owner's decision that clause 2 concedes it (A3). *Needs:* measurement, owner's decision.
 
 ## C. Built, and never watched or never run end to end
 
@@ -125,7 +126,7 @@ prose of an entry before D-280, outside those words, may be missing.
 17. **A Windows window test pins the singular sentence's wording** (`alreadysigned_windows_test.go:124`, "1 of these documents is") and goes red when it improves. The four such tests that run on Linux read from the catalogue now. — D-368. *Needs:* Windows.
 18. **Settings' Save on dev.7 and dev.8 never reached its handler, and nothing explains it.** On dev.9, with log lines at each step (D-373), Save worked three times out of three, including after an export in the same window (D-374). The log also recorded windows the owner does not remember opening — a second Save a minute after the first, and a Settings window cancelled 0.39 s after it opened — left unexplained. — D-370, D-372, D-374. *Close:* a recurrence, which the log lines will place; or accepted as unexplained. *Needs:* nothing to do until it recurs.
 19. **gotk4 v0.3.1 double-frees GTK's CSS parse error when a Go handler is connected to `GtkCssProvider::parsing-error`** ("free(): double free detected" in `gtk_css_provider_load_from_string`). The agent never connects that handler, so nothing ships with it; anybody adding one would crash. — D-385, D-387. *Close:* a fixed binding, or never connecting it (the test reads GTK's warning from a child process instead). *Needs:* nothing unless someone reaches for that signal.
-20. **SIGTERM — a logout — ends the tray without its cleanup.** No handler, so `runTray`'s deferred calls never run: the discovery file `bridge.json` is left and the log records no ending (measured, D-393). Under linger the runtime directory survives the session, which makes this B19's stale file from the other side. The tray's `pkcs11-worker` children should end on their pipe's end-of-file (the code), unless blocked inside a module call; not measured. *Close:* a SIGTERM handler that runs Quit's path, then the kill measured again with workers running. *Needs:* code, then measurement (the workers part needs a Certificates window opened by hand).
+20. **The tray's `pkcs11-worker` children when a logout's SIGTERM ends it.** The discovery-file half is fixed and measured: SIGTERM now takes Quit's path, the file is removed and the log says so (D-394; D-393 found it). The workers now go through `closePKCS11Modules` rather than their pipe's end-of-file, but a tray with workers running has not been killed and watched. *Close:* that measurement, on a dev build carrying the fix. *Needs:* measurement, owner's hands (a Certificates window opened by hand, so the tray discovers its modules).
 
 ## E. Promises in documents that nothing does yet
 
