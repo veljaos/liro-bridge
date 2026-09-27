@@ -895,6 +895,39 @@ jobs:
       - name: build the packages
         run: NFPM="$(go env GOPATH)/bin/nfpm" build/linux/build.sh 0.0.0-ci dist/linux
 
+      # F12's exit condition "the soft token signs on both, in CI" (D-375).
+      # The soft token is never in a package (SPEC §16.6), so a softtoken
+      # build is made here, beside the package and with the same container
+      # and flags, and carried to the clean images in its own artefact —
+      # dist/softtoken-check is not dist/linux, and nothing below packages
+      # from it. The two helpers are CGO_ENABLED=0: they must start on any
+      # image before anything is installed.
+      - name: the soft token's check kit, built beside the package and never in it
+        run: |
+          set -eu
+          kit=dist/softtoken-check
+          mkdir -p "$kit"
+          CGO_ENABLED=1 go build -trimpath -tags softtoken -o "$kit/liro-bridge-softtoken" ./cmd/liro-bridge
+          CGO_ENABLED=0 go build -trimpath -o "$kit/gentestkeys" ./scripts/gentestkeys
+          CGO_ENABLED=0 go build -trimpath -o "$kit/verifypdf" ./scripts/verifypdf
+          cp testdata/pdfs/blank.pdf build/linux/check-softtoken-sign.sh "$kit/"
+          # The packaged binary is stripped, so `go tool nm` finds no
+          # symbols in it and a check through nm could never fire. The soft
+          # token's environment variable is a string only that package
+          # carries, and it survives stripping; the kit's own binary is the
+          # control that the search can find it.
+          grep -a -q LIRO_SOFTTOKEN_P12 "$kit/liro-bridge-softtoken" || {
+            echo "::error::the marker is not in the softtoken build; this check finds nothing"; exit 1; }
+          if grep -a -q LIRO_SOFTTOKEN_P12 dist/linux/stage/liro-bridge; then
+            echo "::error::the packaged binary carries the soft token"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-softtoken-check
+          path: dist/softtoken-check/
+
       # SPEC §1.1, on the artefact: "the packaging declare every library
       # found there" — and nothing it does not find, since a library the
       # binary does not name is a defect too. dpkg-shlibdeps is the
@@ -1028,6 +1061,28 @@ jobs:
           fi
           /usr/bin/liro-bridge --version
           command -v pcscd >/dev/null || { echo "::error::no pcscd after install"; exit 1; }
+
+      # The soft token signs here, on this image's own libraries, and two
+      # verifiers sharing no code with the signer accept it: this project's
+      # independent one (SPEC §16.4) and poppler's pdfsig, over NSS. The
+      # script also changes one signed byte and requires both to refuse it,
+      # on every run (D-375).
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-softtoken-check
+          path: softtoken-check
+
+      - name: the soft token signs, and two independent verifiers agree
+        run: |
+          set -eu
+          if command -v apt-get >/dev/null; then
+            apt-get install -y --no-install-recommends jq poppler-utils diffutils
+          else
+            dnf install -y jq poppler-utils diffutils
+          fi
+          chmod +x softtoken-check/liro-bridge-softtoken softtoken-check/gentestkeys \
+            softtoken-check/verifypdf softtoken-check/check-softtoken-sign.sh
+          softtoken-check/check-softtoken-sign.sh "$PWD/softtoken-check"
 
       # F12 §9: "pcscd is socket-activated and has historically been left
       # disabled after install." Whether it is, on a clean image after this

@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-374, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-375, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -127,7 +127,7 @@ prose of an entry before D-280, outside those words, may be missing.
 5. *`pcscd.socket` left disabled: the agent says so with the command (D-358), and CI found it enabled after install on all three clean images (D-360). Numbering kept.*
 6. *Load failures as readable `Failure`s: built and measured with compiled fixtures (D-359). Numbering kept.*
 7. **The audit record says which backend signed but perhaps not why.** Status uncertain — check D-313's `signerOrigin`. — D-311. *Needs:* code.
-8. **The guide says nothing about Linux.** Since D-370 the Linux sentences point to "the documentation or the issuer" instead of naming Pošta, SafeSign, MUP and Halcom, and `docs/guide/Uputstvo.html` and `Guide.html` have no Linux section: the naming the owner moved to the guide is not there yet. *Close:* a Linux section — which cards work (D-361, D-365), where SafeSign comes from, that Halcom is untried. *Needs:* a document.
+8. **The guide says nothing about Linux — deliberately, for now.** Since D-370 the Linux sentences point to "the documentation or the issuer", and `docs/guide/Uputstvo.html` and `Guide.html` have no Linux section. **Not written yet by the owner's decision**: a guide is written once, when the Linux work is finished and what it has to say is known, not rewritten after each measurement. *Close:* a Linux section — which cards work (D-361, D-365), where SafeSign comes from, that Halcom is untried — at the end of F12. *Needs:* a document, then.
 
 ## F. F12's exit checklist, what is not done
 
@@ -135,7 +135,7 @@ The boxes in `docs/phases/F12.md` are all unticked, including the done ones;
 the checklist wants updating against D-354 and D-355.
 
 1. **A real card on Fedora 44.** The Ubuntu half is done on this VM with the real reader passed through (D-361) — the OS a VM, the reader and card hardware. *Needs:* Fedora machine (and E3 for a MUP card).
-2. **The soft token signs on both distributions in CI.** `linux-install` checks loading, `--version`, entries and remove/purge — not a signature. *Needs:* CI.
+2. **The soft token signs on the clean images in CI: built, first run is the next push.** `linux-install` now signs with a softtoken build on Ubuntu 24.04, Debian 13 and Fedora 44 after installing the package, and requires the independent verifier and `pdfsig` to accept it and to refuse one changed byte (D-375). *Close:* the run green on all three. *Needs:* CI.
 3. **Which findings came from a VM, stated — the F12 report.** No `docs/f12-report.md` yet. *Needs:* a document.
 4. **A module that kills its worker becomes a `Failure`, with the real module** — C9.
 5. **DMABUF and NVIDIA** — B6.

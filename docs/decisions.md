@@ -38298,3 +38298,70 @@ been the VM's. Times here are the log's.
 owner dismissed it and installed nothing, because an update mid-measurement
 moves the libraries under it. The VM will fall behind the distribution it is
 meant to represent: open-items A23, a question of when rather than whether.
+
+## D-375 — The soft token signs on every clean image in CI, and two verifiers that share no code with the signer must both accept it and both refuse one changed byte
+
+**Date:** 2026-09-27
+**Phase:** F12's exit checklist, "the soft token signs on both, in CI";
+open-items F2. **Built and rehearsed here; its first run on the three images
+is the next push.**
+
+**What was missing.** `ci` has signed a PDF with a softtoken build since F3
+and verified it with OpenSSL and the independent verifier — on the build
+runner, which has every `-dev` package installed. `linux-install` installs
+the package on clean Ubuntu 24.04, Debian 13 and Fedora 44 images and ran
+`--version`: it never signed. The soft token cannot be in the package
+(SPEC §16.6), so the installed program could not sign there by design.
+
+**The arrangement.** `linux-packages` builds a check kit beside the package,
+in the same `ubuntu:24.04` container: a softtoken build of the agent, and
+`gentestkeys` and `verifypdf` built with `CGO_ENABLED=0`, plus
+`testdata/pdfs/blank.pdf` and `build/linux/check-softtoken-sign.sh`. It goes
+in its own artefact, `linux-softtoken-check`, from `dist/softtoken-check` —
+not `dist/linux`, and nothing packages from it. Each `linux-install` image,
+**after** installing the package so the libraries loaded are the
+distribution's, installs `jq`, `poppler-utils` and `diffutils` and runs the
+script. The script points every path the program writes into a temporary
+directory, makes the test key there (it dies with the directory), signs at
+B-B with no TSA, and requires:
+
+- **this project's independent verifier** (SPEC §16.4) to pass it;
+- **poppler's `pdfsig`**, which reads the PDF itself and verifies over NSS —
+  chosen over the `ci` job's OpenSSL step because that one needs this
+  project's own parser to extract the CMS first;
+- **and, on every run, both to refuse the same file with one byte changed
+  inside the signed range.** A verifier that accepts everything would
+  otherwise pass.
+
+**Two instruments that would have checked nothing, found before they ran:**
+
+- **`pdfsig` exits 0 whatever it finds** — measured: "Digest Mismatch" with
+  status 0. Its verdict is read from its output line, never its status.
+- **The guard that the package carries no soft token.** I first wrote it
+  with `go tool nm`; the packaged binary is stripped (`-s -w`), and on it
+  `nm` reports "no symbol section" — so the guard could never have fired.
+  It now searches the stripped binary for `LIRO_SOFTTOKEN_P12`, a string
+  only the soft token's package carries (the one other mention is a
+  comment), measured: 0 in dev.9's packaged binary, 1 in a softtoken build;
+  and the kit's own binary is searched first, as the control that the search
+  can find it.
+
+**Rehearsed on this VM** (24.04, the script as committed): signed; verifypdf
+— digest, signature and signing-certificate checks true, chain not trusted
+(a self-signed test key, expected); pdfsig "Signature is Valid", "Total
+document signed"; the tampered copy refused by both. **Mutations**, each
+failing at its own control: `verifypdf` replaced by `/bin/true` — "verifypdf
+accepts a tampered document"; `pdfsig`'s verdict forced true — "pdfsig
+accepts a tampered document". `sh -n` and `dash -n` clean; no shell linter
+here (`shellcheck` is not installed and `sudo -n` cannot install it) and
+none in CI.
+
+**Predictions for the first run**, written before it: green on all three
+images. **Least certain: fedora:44** — nothing of this has run on Fedora
+outside a package install; the likeliest failures there are a package name
+in the `dnf` line, or `pdfsig`'s NSS in a bare container. Debian's poppler
+is newer than Ubuntu's and prints the same validation line, which is also
+unmeasured.
+
+**Not done by this.** A signature on Fedora with a **real card** is F1, and
+needs a Fedora machine.
