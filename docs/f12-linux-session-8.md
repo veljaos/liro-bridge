@@ -75,7 +75,16 @@ Permission denied`.
    `sudo apparmor_parser -R /etc/apparmor.d/liro-f12-probe && sudo rm /etc/apparmor.d/liro-f12-probe`,
    then re-run `~/liro-bridge/scripts/sandboxcheck/run.sh` (a minute; a new
    baseline file). Predicted unchanged: the check no longer launches from
-   Python.
+   Python. **Done by the owner; the baseline re-taken at 20:16:46, unchanged.**
+   Then, **also by the owner's decision**, the second hand-made profile,
+   `liro-f12-window`, which grants userns to `/home/vboxuser/liro-f12probe` — a
+   file the user owns and can overwrite, so any same-user process could place
+   any binary under the grant:
+   `sudo apparmor_parser -R /etc/apparmor.d/liro-f12-window && sudo rm /etc/apparmor.d/liro-f12-window`,
+   and the baseline once more. Predicted unchanged (neither of the check's
+   binaries is at that path), with only `liro-bridge` in the profile list.
+   **Cost:** `internal/ui`'s window tests cannot run on this VM until a profile
+   exists again (open-items A29).
 1. `sudo aa-status | grep -E 'liro|unprivileged|bwrap'` — note the output.
 2. `sudo apt update && sudo apt upgrade` — the 22.
    Then `dpkg-query -W -f='${Package} ${Version}\n' | sort > ~/sitting-packages-after-update.txt`.
@@ -130,7 +139,7 @@ needs it. The agent starts at each login (autostart, dev.10).
 2. Compare each boot with its predecessor, **one change at a time**: boot 2
    against the baseline is the update; boot 3 against boot 2 is the kernel.
    A difference is explained or it is a finding.
-3. Write the entry (D-390; D-389 is the contingencies), close or re-open open-items B7/F6, A23 and A28. If any `~/sitting-*-kernel-apparmor.txt` exists, a boot failed: read those first.
+3. Write the entry (D-390; D-389 is the contingencies) — including step 0: both hand-made profiles removed, and the baselines before and after each — close or re-open open-items B7/F6, A23 and A28. If any `~/sitting-*-kernel-apparmor.txt` exists, a boot failed: read those first.
 4. Then what is left on Ubuntu: B1/B2 (more pinmem runs on the new field —
    D-382's copy after the wipe is still open), B19 (its own sitting), a dev.11
    package carrying the field, paste and focus fix for the owner's window.
@@ -170,7 +179,11 @@ tooling that touches a secret fails rather than prompts.
 **Left deliberately:** `~/pinmem` (the probe, built from master), its reports
 `~/pinmem-report-*.txt`; `/home/vboxuser/liro-f12probe` (the `internal/ui` test
 binary, at the profiled path); the sitting's files in `~`; the owner's
-`config.json` with `outputFolder` put back by the owner. **Removed:** the test
+`config.json` with `outputFolder` put back by the owner. **Removed in the
+sitting's step 0, by the owner:** both hand-made AppArmor profiles,
+`liro-f12-probe` (python3.12) and `liro-f12-window` (the test binary's path) —
+`liro-bridge`, the package's, is the only one of ours left. The window tests
+need a profile again before they can run (A29). **Removed:** the test
 cores in `/var/lib/apport/coredump` (the owner, with sudo); the test crash
 report in `/var/crash` (session 8, before the desktop could offer it);
 `~/pinmem-simple`.
