@@ -38678,3 +38678,116 @@ changing Yama needs root. The clause says "by the system's setting", not
 **Left as it was, deliberately:** the input-path line, until pinmem's reading
 lands (the owner's instruction), and "the copy that matters was never this
 program's", which is about wiping and is unchanged by any of this.
+
+## D-380 — What typing into the real PIN dialog leaves: nothing in the process after the wipe, and every keystroke handed to IBus, another process, by a module GTK loaded into ours
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items B1 and B2 — B2 closed, B1 measured and turned
+into a question.
+
+### The instrument, and why it was rebuilt this way
+
+`scripts/pinmem`, in the repository. **Against the real dialog**,
+`internal/ui.CollectPIN` — because [[D-350]] measured GTK driven by code and
+the entry read as though it had measured this program's dialog, which is
+what [[D-351]] and [[D-352]] had to unpick. **In the repository**, because the
+first pinmem lived in `/tmp` and went with a reboot: nothing said where a
+probe a later measurement will need should live, so B2 paid for it twice.
+[[D-284]] decided to keep `scripts/p11probe` for exactly this reason and the
+decision did not generalise. **The rule now: a probe that a later measurement
+will need lives in `scripts/`, and CI compiles it** — pinmem is on the GTK
+list and in `linux-gui`'s vet for that reason.
+
+What it does: a random 20-character needle, generated into a page the scan
+skips and shown to the person, who types *that* — never a PIN; baselines with
+the same needle before the dialog and with it open and empty (the control
+D-352's typing mode could not have); a scan every two seconds while the
+dialog is up, with `VmLck`; after OK, a check that what came back is the
+needle byte for byte, then scans with the returned copy held and after it is
+wiped; the input-method modules mapped into the process; and a count of
+`ProcessKeyEvent` calls on IBus's own bus, never their contents. **Its own
+control, `selftest`**: one copy planted on the heap is found exactly once and
+not after wiping (`[anon: Go: heap]`), so a zero means "none", not "cannot
+see".
+
+### The probe caught its own invalid run
+
+The owner's first run returned **21 bytes where the needle is 20** — a key
+too many, by hand or by layout — and the probe said so and stopped:
+"INVALID … Every scan above would read zero and look clean; none of it is
+evidence." **Without that check the report would have read "0 copies" at
+every scan** and looked clean: a measurement of something nobody typed,
+reported as evidence. That is [[D-304]]'s first question built into the
+instrument rather than asked about it afterwards, and it is the difference
+between this probe and session 5's. **The first run's scan lines are lost**:
+the report had one fixed file name and the second run overwrote it before it
+was read; reports are now one file per run.
+
+### The valid run
+
+The owner's second run, PID 79548, predictions written before:
+
+| moment | predicted | measured |
+|---|---|---|
+| before the dialog | 0 | **0**, VmLck 0 |
+| dialog open, nothing typed | 0 | **0**, VmLck 0 |
+| IM modules mapped | none from GTK's immodules — GTK 4 on Wayland uses its built-in text input | **failed: `immodules/libim-ibus.so` and `libibus-1.0.so.5` are mapped into the dialog's process** |
+| while typing, three ticks | — | 0 copies (the needle not yet complete), **VmLck 16 kB from the first keys** |
+| typed, before OK | 1, the entry's buffer | **failed: 2, then 2, then 1** |
+| returned | the needle | **the needle, byte for byte, 20 bytes** |
+| after OK, returned copy held (excluded) | 0 | **0**, VmLck 16 kB |
+| after wiping the returned copy | 0 | **0** |
+| IBus `ProcessKeyEvent` calls while the dialog was up | about 40, sent by the shell — **least certain** | **failed: 21** |
+
+**B2 — clause 2 on the dialog itself: holds.** Nothing of what was typed is
+left in the process once the dialog has copied it out and cleared the entry,
+and the page holding it while it was typed was locked (`VmLck` 16 kB from the
+first keystrokes). D-350's findings — locked, overwritten through the widget,
+gone — are now true of this program's dialog, measured with a person typing.
+
+**The two copies, then one.** Two anonymous addresses held the whole string
+for two ticks: `0x…59bf7a5c` and `0x…b006c008`. Then the first was gone, with
+nobody doing anything, and the second stayed until OK.
+
+- **Which is the entry's buffer is not established.** The one that stayed
+  until OK behaves as D-350's locked buffer does, and its address — eight
+  bytes into a page — fits a secure allocator's block header; but the scan
+  did not record which mapping was locked, so that is a fit, not a reading.
+- **What the one that went away was, I cannot name.** An intermediate copy
+  in GTK, GLib or the IBus module are all candidates, and none is measured.
+  **And "went away" means overwritten, not wiped**: nothing this program does
+  removed it, so its absence afterwards is how the allocator happened to
+  reuse that memory, not a property anybody promises.
+
+**B1 — the input path: every keystroke crossed IBus.** 21 `ProcessKeyEvent`
+calls on IBus's bus while the dialog was up, for 20 characters typed. The
+module GTK loaded into our process is IBus's own, so the likeliest sender of
+those calls is the dialog's process itself — handing each key to
+`ibus-daemon` before the character reached the entry. **The PIN therefore
+exists, character by character, in a process this program does not own and
+cannot wipe**, on a stock GNOME desktop (`GTK_IM_MODULE` unset).
+
+- **What the 21st is, I cannot tell.** The monitor recorded neither sender
+  nor key by design. Twenty presses and the Enter that confirmed the dialog
+  would make 21, if IBus is sent presses only — and whether this module
+  sends releases is not measured; if it did, twenty characters would be forty.
+  Whether the owner pressed Enter or clicked OK would settle one half.
+- **Not measured either**: whether the whole text crossed as well as the
+  keys — GTK can send IBus the text around the cursor (`SetSurroundingText`),
+  and the monitor counted only `ProcessKeyEvent`.
+- **Not a Linux peculiarity.** Windows' keystrokes cross a message queue this
+  program does not own, and a Windows IME sits where IBus sits here; nobody
+  has measured that either (B1's Windows half).
+
+### One question this leaves, and it is not yet answered
+
+Because the IBus module runs *inside this process*, the dialog may be able to
+decline it: the password entry's inner text widget has an `im-module`
+property, and GTK's own simple input method does not talk to IBus. **Whether
+that keeps the keys out of `ibus-daemon` is unmeasured** — the desktop may
+route them there by another way — and it would cost the person any input
+method in the PIN field, which a PIN of digits or Latin letters does not need.
+So the clause's input-path line states the measurement and what it means,
+and does **not** yet say that nothing inside the dialog can change it: that is
+the owner's claim to make once pinmem has been run against a dialog with the
+property set.
