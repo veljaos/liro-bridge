@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-392, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-393, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -112,8 +112,8 @@ prose of an entry before D-280, outside those words, may be missing.
 4. **`CERT_REVOKED` has no producer**; the parsed CRL is thrown away. — D-310, D-312. *Needs:* code (and A8).
 5. *The Explorer-menu row: shown on Windows only; on Linux Save keeps the saved value (D-366). Watching it is C18. Numbering kept.*
 6. **Five of seven example clients use only the Windows discovery path**, and two documents teach it. No guard can see it. — D-345, D-346. *Needs:* code.
-7. **`liro-bridge tray` exits 144 on SIGTERM.** — D-355. *Needs:* measurement.
-8. **`pkcs11-worker` processes linger after a `CERT_NOT_FOUND` job.** Probably D-299's held module. — D-355. *Needs:* measurement.
+7. *`tray` "exits 144 on SIGTERM": the tool's own shell killed by `pkill -f`; the tray dies of SIGTERM itself (−15, a shell's 143) — what that leaves is D20 (D-393). Numbering kept.*
+8. *`pkcs11-worker` processes after a job: one per module for the agent's life, by D-311's design — two modules here, two workers; none outlive a one-shot `certs` (D-393). Numbering kept.*
 9. **`build.sh` does not mark a dirty tree in `--version`.** — D-355. *Needs:* code.
 10. **`cmd/liro-bridge` tests write HKCU Run, and an audit append nobody explained.** — D-266, D-313 §5. *Needs:* Windows.
 11. **The PIN guard walker is copied across seven packages.** — D-270, D-290. *Needs:* code.
@@ -125,6 +125,7 @@ prose of an entry before D-280, outside those words, may be missing.
 17. **A Windows window test pins the singular sentence's wording** (`alreadysigned_windows_test.go:124`, "1 of these documents is") and goes red when it improves. The four such tests that run on Linux read from the catalogue now. — D-368. *Needs:* Windows.
 18. **Settings' Save on dev.7 and dev.8 never reached its handler, and nothing explains it.** On dev.9, with log lines at each step (D-373), Save worked three times out of three, including after an export in the same window (D-374). The log also recorded windows the owner does not remember opening — a second Save a minute after the first, and a Settings window cancelled 0.39 s after it opened — left unexplained. — D-370, D-372, D-374. *Close:* a recurrence, which the log lines will place; or accepted as unexplained. *Needs:* nothing to do until it recurs.
 19. **gotk4 v0.3.1 double-frees GTK's CSS parse error when a Go handler is connected to `GtkCssProvider::parsing-error`** ("free(): double free detected" in `gtk_css_provider_load_from_string`). The agent never connects that handler, so nothing ships with it; anybody adding one would crash. — D-385, D-387. *Close:* a fixed binding, or never connecting it (the test reads GTK's warning from a child process instead). *Needs:* nothing unless someone reaches for that signal.
+20. **SIGTERM — a logout — ends the tray without its cleanup.** No handler, so `runTray`'s deferred calls never run: the discovery file `bridge.json` is left and the log records no ending (measured, D-393). Under linger the runtime directory survives the session, which makes this B19's stale file from the other side. The tray's `pkcs11-worker` children should end on their pipe's end-of-file (the code), unless blocked inside a module call; not measured. *Close:* a SIGTERM handler that runs Quit's path, then the kill measured again with workers running. *Needs:* code, then measurement (the workers part needs a Certificates window opened by hand).
 
 ## E. Promises in documents that nothing does yet
 

@@ -39762,3 +39762,92 @@ knows whether runs 3–5 were confirmed with Enter and runs 6–8 with a click.
 That would test the second half. **Not chased further**: a lone release
 carries one key and never text, the dialog's process is not connected, and
 nothing in B2's claim depends on it.
+
+## D-393 — D7's 144 was this session tool's own shell, not the tray; the tray dies of SIGTERM itself and leaves its discovery file; D8's workers are one per module for the agent's life, by D-311's design, and do not outlive a one-shot command
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items D7 and D8; opens D20. C2 left: it needs the
+owner to close windows, and a day.
+
+Measured on dev.11 (`/usr/bin/liro-bridge`, `4ddbde1`) in scratch homes under
+the session's scratch directory, each with its own `XDG_RUNTIME_DIR`, so the
+owner's running agent (pid 4536) was never a party. It never found them either
+(`liveAgent()` reads the scratch runtime directory). One process at a time; no
+input was synthesised.
+
+### D7: "`liro-bridge tray` exits 144 on SIGTERM"
+
+**The tray does not exit with a status. SIGTERM kills it directly.** A
+scratch tray was started from Python, alive after 8 s with no children, and
+sent SIGTERM. `returncode -15` came 0.02 s later: killed by SIGTERM, which a
+shell reports as 143. The code agrees: nothing in `cmd/` or `internal/`
+outside Windows files calls `signal.Notify`, so Go's default applies.
+
+**144 is what this session's Bash tool reports when its own shell dies of
+SIGTERM.** `kill -TERM $$` as the whole command gave "Exit code 144", and in
+the same place an ordinary parent shell reported the same death as 143.
+Session 7's handover had already recorded the mechanism under failed
+instruments: `pkill -f` with a path in the pattern, exit 144, "it matched my
+own shell". **D-355 did not record its command**, so the attribution rests on
+the number and the mechanism being reproduced, not on D-355's transcript:
+"twice" fits a `pkill -f …liro-bridge` whose own command line matched. **D7
+closed: it was an instrument, not the agent**. It is the same shape as
+D-355's own `pgrep -f` note and session 7's `pkill -f`: a pattern that
+matched the process asking.
+
+### What the measurement found instead: SIGTERM ends the tray without its cleanup
+
+With no handler, none of `runTray`'s deferred calls run on SIGTERM, including
+`protocol.stop()`, which is where the discovery file is removed. **After the
+scratch tray was killed, `run/liro/bridge.json` was still there, and the log's
+last line was the tray icon's registration**: nothing marks the ending. A
+logout ends the agent this way. Where `XDG_RUNTIME_DIR` goes with the session
+it takes the file with it; **under linger it does not**, which makes this
+B19's case (stale discovery files), met from the other side. `liveAgent()`
+and D-325's handling of a stale file are what a next start relies on. Opened
+as **D20**; the remedy (a SIGTERM handler that runs the same path as Quit) is
+code, not decided here.
+
+### D8: "two `pkcs11-worker` processes stayed alive for minutes after a `CERT_NOT_FOUND` job"
+
+**By design, and the count fits.** `cmd/liro-bridge/pkcs11backends.go`
+discovers modules once per process and keeps one worker per module for the
+life of the process: "the children are cheap, they are reaped at exit, and
+what they are holding is the thing that must not be re-initialised", argued
+in [[D-311]]. A job's result does not end them; `CERT_NOT_FOUND` is not
+special. **This machine has two usable modules**: in the measurement below
+the log records OpenSC (`/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so`) and
+SafeSign (`/usr/lib/libaetpkss.so`) available, with SoftHSM's library a
+candidate that was not usable. Two modules, two workers: D-355's count.
+
+**They do not outlive a one-shot command, measured.** `liro-bridge certs` in
+a scratch home listed one certificate through the modules and exited 0. One
+second later the only `liro-bridge` process was the owner's tray (`ps -C
+liro-bridge`, matched on the process name, not `-f`, so it cannot match the
+shell that asks). **The reader was attached**, which was not expected after
+three reboots: the listing read the owner's own card's certificate. No login,
+no PIN.
+
+**Not measured: the tray's workers when the tray is killed.** The code says
+they end. A worker's loop returns on end-of-file from its parent's pipe
+(`worker/serve.go`, `Serve`: "the parent closed its end; nothing is wrong"),
+and a killed parent closes it. The exception would be a worker blocked inside
+a module call, which returns to the loop only when the module does. Measuring
+it needs the tray to have discovered modules, which takes a Certificates
+window opened by the owner's hand. Recorded in D20.
+
+**D8 closed**: the lingering is the design D-311 chose, and the count is this
+machine's module count.
+
+### C2 left
+
+The web-process fix across a day of requests needs windows the tray opens and
+the owner closes. A launch could open one by handover, but closing it is a
+click, and "across a day" does not fit today. Unchanged.
+
+### A side effect, stated
+
+The scratch tray registered a tray icon on the owner's panel for about 8 s
+(`org.kde.StatusNotifierItem-5912-1`), and wrote its autostart entry, log and
+discovery file into its scratch home only. It did not pair, and wrote nothing
+to the keyring.
