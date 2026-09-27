@@ -37899,3 +37899,124 @@ the F12 report (open-items F3) to answer, not this entry.
 
 **Still open, and no longer blocking anything.** Why a notification with no
 action raises the window (B3). The SPEC no longer needs the answer.
+
+## D-370 — C18 watched on dev.7: every sentence as predicted, including the least certain; then the issuer paragraph is replaced by a pointer, a trade the owner made for maintenance; and a Save that wrote nothing
+
+**Date:** 2026-09-27
+**Phase:** F12; C18, and SPEC §11.11 amended.
+
+### What was watched
+
+The installed `0.9.9~dev.7` (built from `d727d12`, Go's own
+`vcs.modified=false`; only tests and docs changed since). The owner's MUP
+card, the passed-through Realtek reader. Predictions written before any of it
+(the session's message to the owner); the window readings are the owner's.
+
+| | state | predicted | measured |
+|---|---|---|---|
+| P1 | MUP card in the reader, Open With | the `CERT_NOT_FOUND` sentence with the issuer paragraph; `cards` 6/2/2 | **the window, word for word**; `certs` afterwards, same state: the same sentence, `readerSlots 6, cardsPresent 2, cardsUnrecognised 2` |
+| P2 | reader, no card | "Nijedna kartica nije pronađena. Proverite da li je čitač priključen i kartica ubačena." | **the window, word for word**. `certs` not taken |
+| P3 | **least certain**: reader detached in VirtualBox, SafeSign installed | the same as P2 | **the same sentence, word for word**. `certs` not taken |
+| P4 | Settings, then Save | no Explorer-menu row; `explorerMenuEnabled` unchanged in `config.json` | **row absent** (the owner read the whole window). **The file half is not established**: see below |
+| P5 | after Quit from the tray | no process left running the replaced binary | `protocol: stopped` at 13:15:06, and the next Open With at 13:15:41 found no agent to hand to ("opening one window", not "handed"). The `(deleted)` check I proposed could not be taken: by the time I looked, nothing was running at all |
+
+The `certs` readings I said I would take after each state were not: the owner
+ran all the states in one sitting, and only the final state (card back in)
+was there when I looked.
+
+**`tray: the main window returned an error, code 1`**, logged after both
+windows the agent opened: explained, not a defect. `exitFor` ends a run that
+had nothing to sign with as 1 on purpose, so that a script can tell it from
+a signature; the tray logs any non-zero as a warning.
+
+### What P3 means
+
+**With SafeSign installed, a person with no reader at all and a person with
+an empty reader are told the same thing.** SafeSign presents placeholder
+slots flagged `CKF_REMOVABLE_DEVICE` whether or not a reader exists
+([[D-365]]'s table: "always there"), so the survey counts reader slots either
+way, and an empty reader slot is `CARD_NOT_PRESENT`.
+
+Whether that is right, argued both ways with the measurement in hand:
+
+- **For drawing the distinction:** "no card" sends a person with no reader
+  to look for a card first. The placeholders are distinguishable — empty,
+  and carrying the vendor bit `0x80000000` in `C_GetSlotInfo`'s flags.
+- **Against, and my recommendation:** the sentence already names both
+  remedies — "check that the reader is connected **and** the card is
+  inserted" — so a person with no reader is told the right thing to do,
+  second rather than first. And the distinction rests on one vendor's
+  undocumented flag bit: code that knows SafeSign's placeholders is the same
+  kind of thing the owner has just ruled out of the messages below, and it
+  goes stale the same way. Without SafeSign — OpenSC alone — what the slots
+  show with no reader is still unmeasured.
+
+Recorded, not changed.
+
+### The sentence, and the trade
+
+The owner replaced the `CERT_NOT_FOUND` sentence, and at the owner's word the
+same paragraph in `NO_READER`'s:
+
+> Ni na jednoj kartici nije pronađen odgovarajući sertifikat za
+> potpisivanje. Za više informacija o korišćenju elektronskih sertifikata i
+> podržanim operativnim sistemima pogledajte dokumentaciju ili sajt svog
+> izdavaoca elektronskog sertifikata.
+
+`NO_READER` keeps its reader and driver sentences and ends with the second
+sentence above. Cyrillic and English are mine, accepted by the owner.
+
+**This is a trade, not a wording change.** A message that names issuers goes
+stale every time one of them changes something this program does not
+control — a download page, a program's name, a card that starts or stops
+working — and nobody is going to keep a sentence about SafeSign and MUP
+current for years. **The cost, accepted by the owner: a Pošta holder no
+longer learns from the message that SafeSign is what they need.** The naming
+belongs in the guide, where updating it is cheap.
+
+**SPEC §11.11 is met by the sentence pointing somewhere, not by naming
+issuers.** Its text said "must tell the user which issuers are actually
+supported", which the new sentence does not do, so recording the ruling as
+an interpretation would have left the SPEC saying something the program no
+longer does. It is amended, at the owner's word: the agent must not stop at
+"no certificates found"; it says where a person learns which cards and
+systems are supported, and does not name issuers itself.
+
+**And where it points does not yet say it.** `docs/guide/Uputstvo.html` and
+`Guide.html` have no Linux section and do not mention SafeSign: today
+"pogledajte dokumentaciju" sends a Pošta holder on Linux to a document that
+does not answer. Until the guide does, the cost above is larger than the
+trade intended. Open-items E8.
+
+**The guard.** `TestLinuxSentencesNameNoIssuer`: no Linux sentence, in any
+catalogue, names an issuer or an issuer's program, in either script. Mutation:
+yesterday's `sr-Cyrl.json` put back — eight failures, both keys, МУП, Пошт,
+Халком and SafeSign — and restored byte for byte. The assertion in
+`cardslots_test.go` that demanded the names is removed. That the sentence
+*points* somewhere is not asserted: it could only be done by pinning the
+wording, which [[D-368]] has just taken out of four tests.
+
+**Justified.** `#cert-notice` on the certificate step is `text-align:
+justify`, the owner's choice: on Linux it is a paragraph. No hyphenation —
+every page is `lang="en"` whatever the locale, and English rules would break
+Serbian words wrongly. **Not watched**: it needs a dev.8 package in the
+owner's window; so do the new sentences.
+
+### A Save that wrote nothing
+
+The owner pressed Save in Settings on the dev.7 agent the owner had started
+by hand (`liro-bridge tray`, 13:19:55, PID 24680). **`config.json` was last
+written 2026-09-26 13:15:03**, and a search of the whole root filesystem for
+any `config.json` written after 13:00 today found none — with a control: the
+same search found a file I created for it, then deleted. Save writes
+unconditionally (temporary file and rename) and logs a warning if it fails;
+the log has no warning and no line at all after 13:21:04.
+
+**And PID 24680 was gone when I looked, with no `protocol: stopped` line**,
+no crash report in `/var/crash`, and no journal entry; the last trace of it is
+a new thread at 13:21:38, which is about when Settings would have opened. A Go
+program ends on SIGHUP without logging, so closing the terminal it was started
+from would end it silently — **that is a guess, not a finding**. If Save
+panicked, the trace went to that terminal and not to the log. The owner is
+asked. Until then P4's file half is open, and so is whether Save works on
+Linux at all: open-items D18.

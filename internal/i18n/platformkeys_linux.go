@@ -19,12 +19,11 @@ package i18n
 //     and it keeps F12 §9's driver question; CARD_NOT_PRESENT is "no card";
 //     and an empty list with a card in the reader says no signing
 //     certificate was found on any card. Those two sentences where a person
-//     may hold a card nothing here reads end with which issuers this program
-//     supports on Linux — SPEC §11.11's requirement. That paragraph says
-//     what was measured of this program (Pošta through SafeSign, D-361; MUP
-//     read by neither SafeSign nor OpenSC, A20) and that Halcom is untried,
-//     and says nothing about what other vendors ship: that belongs in the
-//     guide, by the owner's ruling.
+//     may hold a card nothing here reads end by pointing to the
+//     documentation and the card's issuer — SPEC §11.11's requirement. They
+//     name no issuer and no issuer's program, by the owner's ruling (D-370):
+//     such a sentence goes stale whenever an issuer changes something, and
+//     the naming belongs in the guide, where updating it is cheap.
 //   - `certs` cannot say "none attached", for the same reason.
 var platformKeys = map[string]string{
 	"error.smart_card_service_down": "error.smart_card_service_down_linux",

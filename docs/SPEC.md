@@ -826,7 +826,9 @@ Verified on a machine with both middlewares installed:
 
 > **On Windows, CNG is sufficient for MUP, PKS and Halcom. PKCS#11 is not needed on Windows at all.** It is required only for macOS and Linux, in phase 11 and later.
 
-Pošta's middleware (SafeSign) is the only one shipping macOS and Linux builds. On those platforms the agent must tell the user which issuers are actually supported rather than reporting "no certificates found".
+Pošta's middleware (SafeSign) is the only one shipping macOS and Linux builds. On those platforms the agent must not stop at "no certificates found": it says where a person learns which cards and systems are supported — the documentation or the issuer — and does not name issuers itself, because a sentence that names them goes stale with every change an issuer makes.
+
+*Amended 2026-09-27 (D-370).* The earlier text required the agent to say which issuers are supported. On Linux it did, for one day (D-365); the owner ruled that the naming belongs in the guide, where updating it is cheap, and accepted the cost: a Pošta holder no longer learns from the message that SafeSign is what they need.
 
 ---
 

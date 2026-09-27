@@ -99,11 +99,6 @@ func TestCertsSaysWhyItsListIsEmpty(t *testing.T) {
 		if !said {
 			t.Fatalf("certs did not say why its list is empty; want %q in:\n%s", want, out.String())
 		}
-		for _, claim := range []string{"MUP", "Pošte Srbije", "Halcom"} {
-			if !strings.Contains(want, claim) {
-				t.Errorf("the sentence does not say which issuers are supported (%s missing): %q", claim, want)
-			}
-		}
 		if strings.Contains(out.String(), c.T(i18n.CodeKey(errs.CodeNoReader))) {
 			t.Errorf("certs told a person with a card in the reader that there is no reader:\n%s", out.String())
 		}

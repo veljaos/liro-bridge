@@ -33,3 +33,23 @@ func TestLinuxSaysNothingFalseAboutReaders(t *testing.T) {
 		}
 	}
 }
+
+// TestLinuxSentencesNameNoIssuer is the owner's ruling in D-370: a sentence
+// that names an issuer or its program goes stale whenever the issuer changes
+// something this program does not control, so the Linux sentences point to
+// the documentation and the issuer instead (SPEC §11.11), and the naming
+// lives in the guide. Names in both scripts, because a Cyrillic sentence
+// spells them in Cyrillic.
+func TestLinuxSentencesNameNoIssuer(t *testing.T) {
+	names := []string{"MUP", "МУП", "Pošt", "Пошт", "Halcom", "Халком", "SafeSign", "NetSeT", "TrustEdge", "Nexus"}
+	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
+		c := Load(locale)
+		for key := range platformKeys {
+			for _, name := range names {
+				if strings.Contains(c.T(key), name) {
+					t.Errorf("%s: the Linux sentence for %s names %q", locale, key, name)
+				}
+			}
+		}
+	}
+}

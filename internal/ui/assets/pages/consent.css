@@ -127,3 +127,11 @@ main {
   color: var(--liro-color-text-secondary);
   overflow-wrap: anywhere;
 }
+
+/* The certificate step's notice is justified, the owner's choice (D-370):
+   on Linux it is a paragraph rather than a line. No hyphenation — every
+   page is lang="en" whatever the locale, and English rules would break
+   Serbian words in the wrong places. */
+#cert-notice {
+  text-align: justify;
+}

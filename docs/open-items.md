@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-369, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-370, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -91,7 +91,7 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
-18. **§11.11's Linux sentences, beyond the one state measured.** The MUP card in a reader is measured through `certs` (D-365). Not watched: the window with the new sentence (needs the package installed); a reader with no card, and no reader with SafeSign installed (both predicted `CARD_NOT_PRESENT`; OpenSC's slots with no reader unknown); a stock desktop with no card program (`NO_READER`, a unit test only); and Settings without the Explorer-menu row (D-366). — D-365, D-366. *Needs:* owner's hands; a clean machine for the last.
+18. **§11.11's Linux sentences and Settings on dev.7: watched, except what follows.** The owner watched P1–P3 and the hidden Explorer row (D-370). Not watched: the replaced sentences and the justified notice (need a dev.8 package); `certs` for a reader with no card and for no reader; a stock desktop with no card program (`NO_READER`, a unit test only); what OpenSC's slots show with no reader. — D-365, D-366, D-370. *Needs:* owner's hands; a clean machine for the stock desktop.
 
 ## D. Known defects, not fixed
 
@@ -114,6 +114,7 @@ prose of an entry before D-280, outside those words, may be missing.
 15. **The thinned icon has never reached the owner's installed tray.** — D-321. *Needs:* Windows, owner's hands.
 16. **The autostart test cannot see the `$` and backtick escapes.** — D-354. *Needs:* code (low).
 17. **A Windows window test pins the singular sentence's wording** (`alreadysigned_windows_test.go:124`, "1 of these documents is") and goes red when it improves. The four such tests that run on Linux read from the catalogue now. — D-368. *Needs:* Windows.
+18. **Settings' Save on Linux wrote nothing** (dev.7, 2026-09-27): no `config.json` anywhere was written, and no warning was logged; the agent (PID 24680, started by hand) was gone afterwards with no log line. Cause unknown — possibly the terminal it was started from was closed. — D-370. *Close:* the owner's account, then Save once more on an agent started at login, with the file's mtime and hash before and after. *Needs:* owner's hands.
 
 ## E. Promises in documents that nothing does yet
 
@@ -124,6 +125,7 @@ prose of an entry before D-280, outside those words, may be missing.
 5. *`pcscd.socket` left disabled: the agent says so with the command (D-358), and CI found it enabled after install on all three clean images (D-360). Numbering kept.*
 6. *Load failures as readable `Failure`s: built and measured with compiled fixtures (D-359). Numbering kept.*
 7. **The audit record says which backend signed but perhaps not why.** Status uncertain — check D-313's `signerOrigin`. — D-311. *Needs:* code.
+8. **The guide says nothing about Linux.** Since D-370 the Linux sentences point to "the documentation or the issuer" instead of naming Pošta, SafeSign, MUP and Halcom, and `docs/guide/Uputstvo.html` and `Guide.html` have no Linux section: the naming the owner moved to the guide is not there yet. *Close:* a Linux section — which cards work (D-361, D-365), where SafeSign comes from, that Halcom is untried. *Needs:* a document.
 
 ## F. F12's exit checklist, what is not done
 
