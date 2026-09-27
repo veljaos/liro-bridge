@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-395, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-395, 2026-09-28.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -128,6 +128,7 @@ prose of an entry before D-280, outside those words, may be missing.
 18. **Settings' Save on dev.7 and dev.8 never reached its handler, and nothing explains it.** On dev.9, with log lines at each step (D-373), Save worked three times out of three, including after an export in the same window (D-374). The log also recorded windows the owner does not remember opening — a second Save a minute after the first, and a Settings window cancelled 0.39 s after it opened — left unexplained. — D-370, D-372, D-374. *Close:* a recurrence, which the log lines will place; or accepted as unexplained. *Needs:* nothing to do until it recurs.
 19. **gotk4 v0.3.1 double-frees GTK's CSS parse error when a Go handler is connected to `GtkCssProvider::parsing-error`** ("free(): double free detected" in `gtk_css_provider_load_from_string`). The agent never connects that handler, so nothing ships with it; anybody adding one would crash. — D-385, D-387. *Close:* a fixed binding, or never connecting it (the test reads GTK's warning from a child process instead). *Needs:* nothing unless someone reaches for that signal.
 20. **The tray's `pkcs11-worker` children when a logout's SIGTERM ends it.** The discovery-file half is fixed and measured: SIGTERM now takes Quit's path, the file is removed and the log says so (D-394; D-393 found it). The workers now go through `closePKCS11Modules` rather than their pipe's end-of-file, but a tray with workers running has not been killed and watched. *Close:* that measurement, on a dev build carrying the fix. *Needs:* measurement, owner's hands (a Certificates window opened by hand, so the tray discovers its modules).
+21. **Four entries cite D-290 for a measurement it does not contain.** D-350, D-351, D-352 and D-384 each cite D-290 as the authority for what is known about the Windows PIN dialog's edit control; D-277 measured it and D-279 §6 wrote the exception from it. The B22 briefing inherited it from D-384, which is how it was found (D-395). Recorded rather than fixed by the owner's decision, with the full account, the four sentences and the sweep in `docs/decisions-corrections.md`. *Close:* the four substitutions, and delete the item there in the same commit. *Needs:* nothing but the edit.
 
 ## E. Promises in documents that nothing does yet
 
