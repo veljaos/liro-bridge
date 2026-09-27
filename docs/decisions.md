@@ -39670,3 +39670,95 @@ not a measurement. Neither is a typed run on the current field.
   anything else is run, and B2 stays open whatever the other runs show.
 - The two earlier runs are not counted toward the eight. One is paste, and
   the other ran on an earlier build of the field.
+
+## D-392 — B2 closes on the claim D-391 defined: eight valid typed runs on the new field, no copy after the wipe in any — the old field's behaviour did not survive, and a rare copy is not ruled out
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items B2 on D-391's stated claim, and no further.
+
+Read from the reports, not from the account of them:
+`~/pinmem-report-20260927-205605` to `…-210104`, nine files. `~/pinmem` is
+unchanged: built from `83a55ed`, `vcs.modified=false`, the field dev.11
+ships ([[D-391]]). The tray agent running during the runs was dev.11,
+installed 20:55:00 and started 20:55:43. It is a separate process, and pinmem
+does not measure it.
+
+### The runs
+
+**Nine runs, eight valid. The ninth, `…-205725`, is invalid by the
+instrument's own check**: the dialog returned 20 bytes that were not the
+needle ("INVALID … none of it is evidence"), probably a mistyped character.
+Its scans read 0 throughout, which is what a wrong needle produces. That is
+why the check exists. It is recorded here and not counted.
+
+The eight valid ones, each meeting D-391's definition. Baselines, the
+returned needle and the scans below are in the files. That the needle was
+typed by hand and OK pressed after the count settled is the owner's account;
+the files agree with it (the count reaches 1 and holds for the last two or
+three scans before OK in every run).
+
+| | all eight runs |
+|---|---|
+| before the dialog (baseline) | 0 copies, VmLck 0 kB |
+| dialog open, nothing typed (baseline) | 0 copies, **VmLck 4 kB** |
+| while typed, settled | **1 copy**, in `[anonymous]`, mapping Locked 4 kB, nothing but `.` in the 32 bytes in front |
+| returned | the needle, byte for byte, 20 bytes |
+| after OK, the returned copy held | **0 copies, VmLck 0 kB** |
+| after wiping the returned copy | **0 copies, VmLck 0 kB** |
+| accessibility bus | no `TextChanged` while the dialog was up |
+| this process connected to `ibus-daemon` | false |
+
+### What eight zeros close, and what they do not
+
+**B2 closes on this claim: the old field's behaviour did not survive into the
+new one.** On the old field (the shipped GtkPasswordEntry), one run in three
+left a whole copy after the wipe ([[D-382]]). If the new field still did,
+eight zeros in a row would happen by chance (2/3)^8 ≈ 3.9 % of the time.
+
+**What eight cannot rule out** is a rare copy: one run in ten would give eight
+zeros 43 % of the time, and ruling out one in twenty at the same 5 % would
+take 59 runs. **This does not establish that nothing ever survives the
+wipe**, and B2's closing line says the narrower thing. Nor does it say where
+D-382's copy came from. The new field removes its likeliest source (D-383's
+copies were laid out as accessibility messages), and that remains a reason,
+not a reading.
+
+### VmLck, as a measured property of the field
+
+**In every valid run, VmLck is 0 kB before the dialog, 4 kB from the moment
+the dialog is open (before anything is typed), 4 kB while typing, and 0 kB at
+the first scan after `CollectPIN` returns.** So exactly one locked page
+exists for the dialog's lifetime and none after it, and the one copy while
+typing is in a mapping the kernel reports as Locked. The code does, in order,
+wipe, `munlock`, `munmap` (`internal/ui/pindialog_linux.go:180`–`182`). VmLck
+going to 0 shows the lock is released. **That the page is also unmapped is
+the code's statement, not this measurement's**: pinmem lists copies, not
+mappings, and a page unlocked but still mapped would read the same.
+
+### IBus: the calls vary between runs, in two exact patterns
+
+None came from this process, which was never connected to `ibus-daemon`. In
+every run every call came from one sender, `:1.3`, as in every run since
+D-382.
+
+| runs | InputContext calls while the dialog was up |
+|---|---|
+| 1–2 (`…205605`, `…205652`) | FocusOut 1, Reset 2, SetCursorLocation 1 |
+| 3–5 (`…205756`, `…205834`, `…205908`) | FocusIn 1, FocusOut 2, Reset 4, SetCapabilities 1, SetCursorLocation 6, **ProcessKeyEvent 1 (a release, no press)** |
+| 6–8 (`…205947`, `…210023`, `…210104`) | FocusIn 1, FocusOut 2, Reset 4, SetCapabilities 1, SetCursorLocation 6 |
+
+**What varies is countable**: runs 3–8 carry one extra focus round trip of
+some IBus client inside the monitoring window (FocusIn, SetCapabilities, a
+second FocusOut, and the Reset and SetCursorLocation that come with focus
+changes), and runs 3–5 carry one key release with no press. **Why, I cannot
+say from the files.** pinmem records no key values by design, and IBus does
+not say which client an input context belongs to. **What fits, and is not a
+reading**: the terminal pinmem runs in is an IBus client. It loses focus when
+the dialog opens and regains it when the dialog closes, and whether that
+regain falls inside the monitoring window would give the two focus patterns.
+A key pressed in the dialog, such as Enter to confirm, whose release arrives
+after focus is back on the terminal would give a lone release. The owner
+knows whether runs 3–5 were confirmed with Enter and runs 6–8 with a click.
+That would test the second half. **Not chased further**: a lone release
+carries one key and never text, the dialog's process is not connected, and
+nothing in B2's claim depends on it.

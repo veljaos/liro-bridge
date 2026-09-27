@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-391, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-392, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -59,7 +59,7 @@ prose of an entry before D-280, outside those words, may be missing.
 ## B. Claims not measured
 
 1. **Does the PIN dialog's process send keystrokes to IBus, and would the entry's `im-module` stop it?** Two pinmem runs disagree (21 key events on IBus's bus, then 1), and IBus received calls while the dialog provably did not use it, so the bus count is not the dialog's (D-380, D-382). *Close:* repeated runs of both dialogs, with pinmem reporting whether its own process is connected to `ibus-daemon`. *Needs:* owner's hands.
-2. **Does anything of what is typed survive the dialog's wipe?** The accessibility-bus broadcast that broke clause 2 is closed by the dialog's own field (D-384, D-385). What stays open is D-382's: one run of three left a whole copy after the wipe; zeros since are consistent with a copy written over before the scan. *Close:* eight valid typed runs on the new field, every one 0 after the wipe — the stopping rule in D-391, which says what eight closes and what it cannot. *Needs:* owner's hands.
+2. *What is typed does not survive the new field's wipe as the old field's did: eight valid typed runs, 0 copies after the wipe in each; a rare copy (one run in ten or fewer) is not ruled out (D-392). Numbering kept.*
 3. **Why a notification with no action now raises the window when D-337 said it did not.** Not the desktop entry (control). — D-355 §6. SPEC §6.5.2 no longer rests on the answer (D-369). *Close:* vary WebKit view against bare GTK, and posting from Go against another process. *Needs:* owner's hands, measurement.
 4. **The Windows keystroke path** (`WM_CHAR` crosses a queue this program does not own). — D-352. *Needs:* Windows, owner's hands.
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.
