@@ -39201,3 +39201,78 @@ one changed byte. **The least certain prediction, Fedora 44, held.**
 returned nothing for the run and for each job, so the OK line and `pdfsig`'s
 verdict on each image are inferred from the step's success and the script's
 exits, not read. A signature on Fedora with a real card is still F1.
+
+## D-387 — Paste into the PIN field, read straight into its locked page: the owner's decision, the risk it carries, and a correction to D-386 — the CI lines were readable after all
+
+**Date:** 2026-09-27
+**Phase:** F12; open-items A27 (built; it counts after pinmem measures a
+pasted needle), and F2's record.
+
+### Paste (the owner's decision)
+
+**Accepted.** The owner, on [[D-385]]'s argument: the clipboard copy exists
+because the person made it, in their password manager, before this dialog was
+involved; refusing paste does not remove it. What refusing does is push people
+to retype from another window, which is worse for the secret than the paste.
+The condition stands: read straight into the locked page, and it does not
+count until pinmem measures a pasted needle.
+
+**The risk, recorded rather than dropped:** a wrong clipboard fills the field,
+and Enter spends a card attempt — three block a MUP card. It is the same risk
+as a mistyped PIN, which the program already lives with; the dots show the
+length, and anything longer than the token allows is refused before the card.
+
+**How it is built.** Ctrl+V and Shift+Insert are the field's paste keys; every
+other shortcut is still refused. The clipboard is asked for plain UTF-8 text,
+which on Wayland is the source application's own stream, and the stream is read
+**straight into the page after what was typed** — gotk4's `InputStream.Read`
+hands `g_input_stream_read` the slice's own address, read in the binding's
+source before any code was written. Then the pasted part is checked in place
+(`pasteInto`): a trailing newline removed and overwritten; anything not valid
+UTF-8, holding a control character, larger than the page, **or ending in a read
+error** is overwritten and refused, whole — a paste cut short by the two-second
+limit is part of a PIN, and part of a PIN spends a card attempt as surely as a
+wrong one. That last rule I first wrote the other way — keeping what arrived
+before an error — and found it reading the function back before its tests.
+If the dialog has answered by the time the clipboard replies, the reply is
+dropped unread: the page is already overwritten and unmapped. A screen reader
+hears the new count, never the content.
+
+**Tests**: a paste after typed characters, in chunks, with `\r\n`; and the four
+refusals, each leaving the field as it was with every pasted byte zero; a paste
+exactly the page's size accepted. **Mutations, each red on its own case**: the
+wipe on a read error removed; the "more than fits" probe removed ("the field
+became a1234567"); a stripped newline not overwritten; the control-character
+check removed ("the field became a12\t34"). Two of them first failed to
+*build* — shell escaping put `\&\&` into Go — which proves nothing, and were
+redone until they compiled and failed on their assertions.
+
+### A correction to D-386: the CI lines were readable
+
+[[D-386]] closed F2 on the step results and said the job logs "could not be
+read". **That was a statement about a tool, made as though it were about the
+logs.** `gh run view --log` (gh 2.45, Ubuntu's package) returned nothing and
+exit 0, for the run and for each job. The REST API's own job-log endpoint
+returned them — 2,107 lines for the Fedora job. Read there, on **all three
+images**, the script's own lines:
+
+- the independent verifier: `ByteRangeDigestOK true`, `SignatureOK true`,
+  "every signature passed every check this verifier makes";
+- `pdfsig`: "Signature Validation: Signature is Valid.";
+- "OK: signed with the soft token; verifypdf and pdfsig accept it and reject
+  one changed byte".
+
+So F2 now rests on the lines, not on a job having "succeeded" — which is the
+distinction the owner asked the entry to keep, and the one this week has been
+about. My first try at the API also failed, for my own reason: a query that
+returned an empty job ID, so the request went to `/jobs//logs` and came back
+404; checked, and redone.
+
+### The gotk4 parsing-error double free, on its own line
+
+gotk4 v0.3.1 frees GTK's CSS parse error a second time when a Go handler is
+connected to `GtkCssProvider::parsing-error` ("free(): double free detected"
+inside `gtk_css_provider_load_from_string`). **The agent never connects that
+handler, so nothing ships with it** — but somebody adding a CSS error handler
+later would find it by crashing; this is where they would be told —
+and open-items D19.

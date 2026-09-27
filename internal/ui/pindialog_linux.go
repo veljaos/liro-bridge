@@ -22,20 +22,24 @@ package ui
 //     page, before the window is destroyed;
 //   - **no undo**: none is implemented.
 //
-// What it gives up, deliberately: an input method (a PIN needs none), paste
-// (the clipboard is another exposure), and any editing but Backspace.
+// What it gives up, deliberately: an input method (a PIN needs none) and any
+// editing but Backspace. Paste was refused too until D-387, and is accepted
+// now, read straight into the page.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"golang.org/x/sys/unix"
@@ -49,6 +53,7 @@ const (
 	fieldChanged                    // a character added or removed
 	fieldAccept                     // Enter
 	fieldCancel                     // Escape
+	fieldPaste                      // Ctrl+V or Shift+Insert: read the clipboard into the page
 )
 
 // fieldKey applies one key press to the typed bytes in page[:n] and returns
@@ -59,7 +64,7 @@ const (
 // A character is written straight into the locked page as UTF-8 — there is no
 // intermediate buffer to wipe. Backspace removes the last whole character and
 // overwrites its bytes. A key with Control, Alt or Super held is not the
-// field's: Ctrl+V is not a way in.
+// field's, except paste (D-387).
 func fieldKey(page []byte, n int, keyval uint, state gdk.ModifierType) (int, fieldAction) {
 	switch keyval {
 	case gdk.KEY_Return, gdk.KEY_KP_Enter:
@@ -74,6 +79,17 @@ func fieldKey(page []byte, n int, keyval uint, state gdk.ModifierType) (int, fie
 		wipeField(page[n-size : n])
 		return n - size, fieldChanged
 	}
+	// Paste is accepted since D-387, by the owner's decision: the clipboard
+	// copy is the person's, made in their password manager before this dialog
+	// was involved, and refusing paste pushed people to retype from another
+	// window. What it reads goes straight into this page (pasteInto). Every
+	// other shortcut is still not the field's.
+	if (keyval == gdk.KEY_v || keyval == gdk.KEY_V) && state&gdk.ControlMask != 0 && state&(gdk.AltMask|gdk.SuperMask) == 0 {
+		return n, fieldPaste
+	}
+	if keyval == gdk.KEY_Insert && state&gdk.ShiftMask != 0 {
+		return n, fieldPaste
+	}
 	if state&(gdk.ControlMask|gdk.AltMask|gdk.SuperMask) != 0 {
 		return n, fieldIgnored
 	}
@@ -85,6 +101,61 @@ func fieldKey(page []byte, n int, keyval uint, state gdk.ModifierType) (int, fie
 		return n, fieldIgnored
 	}
 	return n + utf8.EncodeRune(page[n:], r), fieldChanged
+}
+
+// pasteInto reads a paste straight into page[n:] — read writes into the slice
+// it is given, and g_input_stream_read into the pointer it is handed, so the
+// bytes arrive in the locked page with no buffer between — and then checks
+// them in place. A trailing newline (password managers and terminals add one)
+// is removed and overwritten. Anything that is not valid UTF-8, holds a
+// control character, does not fit the page, or ended in a read error is
+// overwritten and refused: the field is left as it was. It returns the new
+// length.
+func pasteInto(page []byte, n int, read func([]byte) (int, error)) int {
+	end := n
+	for end < len(page) {
+		got, err := read(page[end:])
+		end += got
+		if err != nil {
+			// The end of a paste is a read of nothing with no error. An
+			// error — the two-second limit, a source that went away — means
+			// what arrived is part of something, and part of a PIN spends a
+			// card attempt as surely as a wrong one: refused, whole.
+			wipeField(page[n:end])
+			return n
+		}
+		if got == 0 {
+			break
+		}
+	}
+	if end == len(page) {
+		// Full: whatever did not fit is still in the source. Refused rather
+		// than cut — half a PIN is not a PIN (encodePINInto's rule).
+		var probe [1]byte
+		if more, _ := read(probe[:]); more > 0 {
+			wipeField(probe[:])
+			wipeField(page[n:end])
+			return n
+		}
+	}
+	for end > n && (page[end-1] == '\n' || page[end-1] == '\r') {
+		end--
+		page[end] = 0
+	}
+	pasted := page[n:end]
+	if !utf8.Valid(pasted) {
+		wipeField(pasted)
+		return n
+	}
+	for i := 0; i < len(pasted); {
+		r, size := utf8.DecodeRune(pasted[i:])
+		if !unicode.IsPrint(r) {
+			wipeField(pasted)
+			return n
+		}
+		i += size
+	}
+	return end
 }
 
 // lockedPage maps one page of this program's own for the field, locks it,
@@ -333,6 +404,32 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 			}
 		}
 
+		// paste asks the clipboard for plain text and reads the source's own
+		// stream into the page. The reply comes later, on this thread; if the
+		// dialog has answered by then its page is gone, so the reply is
+		// dropped unread. Two seconds bound a source that never sends.
+		paste := func() {
+			clip := field.Clipboard()
+			clip.ReadAsync(context.Background(), []string{"text/plain;charset=utf-8", "text/plain"}, glib.PRIORITY_DEFAULT, func(res gio.AsyncResulter) {
+				_, stream, err := clip.ReadFinish(res)
+				if err != nil || stream == nil {
+					return
+				}
+				in := gio.BaseInputStream(stream)
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				defer func() { _ = in.Close(ctx) }()
+				if answered {
+					return
+				}
+				before := typed
+				typed = pasteInto(page, typed, func(b []byte) (int, error) { return in.Read(ctx, b) })
+				if typed != before {
+					show(true)
+				}
+			})
+		}
+
 		keys := gtk.NewEventControllerKey()
 		keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
 			next, action := fieldKey(page, typed, keyval, state)
@@ -344,6 +441,8 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 				take()
 			case fieldCancel:
 				finish(result{0, false, nil})
+			case fieldPaste:
+				paste()
 			default:
 				return false
 			}

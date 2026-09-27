@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -54,17 +55,98 @@ func TestTheFieldWritesUTF8AndBackspaceOverwritesAWholeCharacter(t *testing.T) {
 	}
 }
 
-// What is not the field's: a shortcut (Ctrl+V is not a way in — the clipboard
-// is another exposure) and Tab, which must move focus. Enter and Escape answer.
+// What is not the field's: shortcuts other than paste, and Tab, which must
+// move focus. Ctrl+V and Shift+Insert paste (D-387) and write nothing by
+// themselves; Enter and Escape answer.
 func TestTheFieldRefusesShortcutsAndAnswersEnterAndEscape(t *testing.T) {
 	page := make([]byte, 16)
-	if n := typeInto(t, page, 0, gdk.KEY_v, gdk.ControlMask, fieldIgnored); n != 0 || page[0] != 0 {
-		t.Fatalf("Ctrl+V wrote into the field: n=%d", n)
+	if n := typeInto(t, page, 0, gdk.KEY_v, gdk.ControlMask, fieldPaste); n != 0 || page[0] != 0 {
+		t.Fatalf("Ctrl+V wrote into the field by itself: n=%d", n)
 	}
+	typeInto(t, page, 0, gdk.KEY_Insert, gdk.ShiftMask, fieldPaste)
+	for _, k := range []uint{gdk.KEY_c, gdk.KEY_a, gdk.KEY_x} {
+		if n := typeInto(t, page, 0, k, gdk.ControlMask, fieldIgnored); n != 0 {
+			t.Fatalf("Ctrl+%c changed the field", rune(k))
+		}
+	}
+	typeInto(t, page, 0, gdk.KEY_v, gdk.AltMask, fieldIgnored)
 	typeInto(t, page, 0, gdk.KEY_Tab, 0, fieldIgnored)
 	typeInto(t, page, 0, gdk.KEY_Return, 0, fieldAccept)
 	typeInto(t, page, 0, gdk.KEY_KP_Enter, 0, fieldAccept)
 	typeInto(t, page, 0, gdk.KEY_Escape, 0, fieldCancel)
+}
+
+// chunks is a paste source that hands over its content a few bytes at a time,
+// as a pipe may, and then an end — or an error, if one is given.
+func chunks(content string, size int, fail error) func([]byte) (int, error) {
+	rest := []byte(content)
+	return func(b []byte) (int, error) {
+		if len(rest) == 0 {
+			return 0, fail
+		}
+		k := size
+		if k > len(rest) {
+			k = len(rest)
+		}
+		if k > len(b) {
+			k = len(b)
+		}
+		copy(b, rest[:k])
+		rest = rest[k:]
+		return k, nil
+	}
+}
+
+// A paste lands in the page after what was typed, straight from the source,
+// whatever size its reads come in; a trailing newline is removed and its
+// bytes overwritten.
+func TestAPasteLandsInThePageAfterWhatWasTyped(t *testing.T) {
+	page := make([]byte, 32)
+	n := typeInto(t, page, 0, gdk.KEY_a, 0, fieldChanged)
+	n = pasteInto(page, n, chunks("1234\u043f\r\n", 2, nil))
+	if string(page[:n]) != "a1234\u043f" {
+		t.Fatalf("after pasting, the field holds %q", page[:n])
+	}
+	for i := n; i < len(page); i++ {
+		if page[i] != 0 {
+			t.Fatalf("byte %d past the paste is %d: the newline was not overwritten", i, page[i])
+		}
+	}
+}
+
+// What a paste may not do: carry a control character, be invalid UTF-8, be
+// larger than the page, or end in a read error. Each is overwritten and the
+// field left as it was — never half a paste, because half a PIN spends a card
+// attempt as surely as a wrong one.
+func TestARefusedPasteLeavesTheFieldAsItWasAndOverwritesWhatArrived(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		src  func([]byte) (int, error)
+		size int
+	}{
+		{"a tab inside", chunks("12\t34", 3, nil), 16},
+		{"invalid UTF-8", chunks("12\xff34", 3, nil), 16},
+		{"larger than the page", chunks("123456789", 4, nil), 8},
+		{"a read error part-way", chunks("1234", 2, errors.New("timed out")), 16},
+	} {
+		page := make([]byte, tc.size)
+		page[0] = 'a'
+		n := pasteInto(page, 1, tc.src)
+		if n != 1 || page[0] != 'a' {
+			t.Errorf("%s: the field became %q", tc.name, page[:n])
+		}
+		for i := 1; i < len(page); i++ {
+			if page[i] != 0 {
+				t.Errorf("%s: byte %d of the refused paste is %d, not overwritten", tc.name, i, page[i])
+				break
+			}
+		}
+	}
+	// And one that exactly fills the page is not refused as too large.
+	page := make([]byte, 4)
+	if n := pasteInto(page, 0, chunks("1234", 4, nil)); n != 4 {
+		t.Errorf("a paste exactly the page's size was refused: n=%d", n)
+	}
 }
 
 // A full page takes nothing more rather than writing past it.

@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-386, 2026-09-27.** One list, to be read in one sitting and acted
+**As of D-387, 2026-09-27.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -52,7 +52,7 @@ prose of an entry before D-280, outside those words, may be missing.
 24. *SPEC §6.5.1 clause 3 per platform, with the same-user routes measured and the open ones named (D-381). Numbering kept.*
 25. *The Linux PIN dialog's own field: built and measured — no TextChanged, the copy locked while typed, nothing after the wipe (D-385). Numbering kept.*
 26. **Report to GTK that a GtkPasswordEntry sends its text in AT-SPI TextChanged**, with the measurement, not a conclusion: the payload equality, the plain AddMatch listener, GTK 4.14.5, and `scripts/a11yprobe` as the reproducer (D-384, D-385). *Needs:* the owner files it (an outward post). And measure Fedora 44's GTK with the same script when the Fedora VM exists (F1).
-27. **Paste into the PIN field.** Refused in C; the owner thinks refusal is worse for a person. The stated reason to keep refusing (a clipboard copy this program cannot wipe) does not hold as far as known; what accepting adds is bytes read from the source's pipe, which could go straight into the locked page, unmeasured (D-385). *Close:* the owner's decision, then pinmem on a pasted needle. *Needs:* owner's decision.
+27. **Paste into the PIN field: accepted by the owner and built, not yet counted.** Read straight into the locked page; refused whole if invalid, too large or cut short; the wrong-clipboard risk recorded (D-387). *Close:* pinmem with a pasted needle — no copy outside the locked page, nothing on the accessibility bus. *Needs:* owner's hands.
 
 ## B. Claims not measured
 
@@ -122,6 +122,7 @@ prose of an entry before D-280, outside those words, may be missing.
 16. **The autostart test cannot see the `$` and backtick escapes.** — D-354. *Needs:* code (low).
 17. **A Windows window test pins the singular sentence's wording** (`alreadysigned_windows_test.go:124`, "1 of these documents is") and goes red when it improves. The four such tests that run on Linux read from the catalogue now. — D-368. *Needs:* Windows.
 18. **Settings' Save on dev.7 and dev.8 never reached its handler, and nothing explains it.** On dev.9, with log lines at each step (D-373), Save worked three times out of three, including after an export in the same window (D-374). The log also recorded windows the owner does not remember opening — a second Save a minute after the first, and a Settings window cancelled 0.39 s after it opened — left unexplained. — D-370, D-372, D-374. *Close:* a recurrence, which the log lines will place; or accepted as unexplained. *Needs:* nothing to do until it recurs.
+19. **gotk4 v0.3.1 double-frees GTK's CSS parse error when a Go handler is connected to `GtkCssProvider::parsing-error`** ("free(): double free detected" in `gtk_css_provider_load_from_string`). The agent never connects that handler, so nothing ships with it; anybody adding one would crash. — D-385, D-387. *Close:* a fixed binding, or never connecting it (the test reads GTK's warning from a child process instead). *Needs:* nothing unless someone reaches for that signal.
 
 ## E. Promises in documents that nothing does yet
 

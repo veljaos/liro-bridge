@@ -602,7 +602,7 @@ func main() {
 	say("pinmem — the real PIN dialog (internal/ui.CollectPIN), pid %d", os.Getpid())
 	say("GTK_IM_MODULE=%q", os.Getenv("GTK_IM_MODULE"))
 	say("")
-	fmt.Print("Type exactly this into the dialog — NOT a PIN:\n\n    ")
+	fmt.Print("Type exactly this into the dialog — or copy it and paste it (Ctrl+V) — NOT a PIN:\n\n    ")
 	_, _ = unix.Write(1, needle.b[:needleLen]) // straight from its page; no formatted copy
 	fmt.Print("\n\nthen wait until two lines in a row show the same count, and only then press OK.\n\n")
 
