@@ -558,13 +558,14 @@ func detectRuntime() (bool, string, error) {
 	return true, "", nil
 }
 
-// showNativeMessage has no Linux implementation yet: F12 §5 decides
-// which native dialog this program uses, and the message box and the
-// PIN dialog are the same decision. Until then a caller that cannot
-// show a window has nowhere to say so, which is recorded rather than
-// papered over with a GtkMessageDialog nobody chose.
+// showNativeMessage logs on Linux, and that is decided rather than
+// pending (D-373). Its two callers are Windows' — WebView2 missing, and what
+// an uninstall left behind — and neither has a Linux counterpart: WebKitGTK
+// is a declared dependency and cannot be missing, an uninstall is the
+// package manager's with no program of ours running, and where GTK cannot
+// reach a display to open a window it cannot show a dialog either.
 func showNativeMessage(title, body string, _ bool) {
-	slog.Warn("ui: no native message box on Linux yet (F12 §5)", "title", title, "body", body)
+	slog.Warn("ui: no native message box on Linux (D-373)", "title", title, "body", body)
 }
 
 // pickFolder and pickFiles are in filedialog_linux.go.

@@ -38203,3 +38203,38 @@ terminal closed after the steps would do it. **What separates the
 explanations is what the owner saw**: whether Settings closed when Save was
 pressed (a handled save closes it), and whether the terminal printed
 anything. Asked. D18 stays open.
+
+## D-373 — No native message box on Linux, by decision; and Settings says in the log where a press got to
+
+**Date:** 2026-09-27
+**Phase:** F12; closes open-items A22.
+
+**The message box: recorded, not built** — the owner's ruling on
+[[D-371]]'s recommendation. `ShowWarning` and `ShowNotice` have two callers,
+both Windows': WebView2 missing, and what an uninstall left behind. Neither
+has a Linux counterpart. WebKitGTK is a declared dependency and cannot be
+missing; an uninstall is the package manager's, with no program of ours
+running ([[D-363]]); and where GTK cannot reach a display to open a window,
+it cannot show a dialog either. On Linux `showNativeMessage` logs, and its
+comment now says that is the decision rather than a gap.
+
+**An instrument for D18.** Two Saves on Linux left nothing between the page
+and the handler ([[D-372]]), and the owner cannot say whether Settings closed
+— "let us measure it rather than guess". Settings now logs, at Info: that its
+window is open; each message type the page sends; the action decoded; and,
+when an action closes the window, that it did. **Action names only**: the
+form carries the timestamp authority's password, and nothing of the form
+reaches the log. Each line separates two explanations the last runs could
+not:
+
+- no "the page sent" at Save → the click never became a message;
+- "the page sent approve" and no "action" → reading or decoding the form
+  failed silently (every failure there logs, so this would be new);
+- "action save" and no "action done" → the handler ran and did not return
+  true;
+- "action done" and no new `config.json` → the write went somewhere else.
+
+**One margin measured on the way:** this VM's screen is 1920×955. Settings is
+880 points tall plus GTK's 37-point header bar, 917, against about 923 left
+under GNOME's top bar. It fits, by about six points — so whether Save is
+fully on screen is one of the things to watch rather than assume.

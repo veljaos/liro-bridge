@@ -108,8 +108,14 @@ func runSettingsWindow(fallback config.Config, owner uintptr, pairings *api.Pair
 		return err
 	}
 
+	// Where a press gets to, in the log (D-373): on Linux two Saves left
+	// no trace between the page and the handler, and what a person
+	// remembers afterwards is not a measurement. Action names only — the
+	// form carries the timestamp authority's password.
+	slog.Info("settings: window open")
 	for {
 		msg := <-messages
+		slog.Info("settings: the page sent", "type", msg.Type)
 		switch msg.Type {
 		case ui.MessageTypeCancel:
 			return nil
@@ -129,7 +135,9 @@ func runSettingsWindow(fallback config.Config, owner uintptr, pairings *api.Pair
 				slog.Warn("settings: decoding form state failed", "error", err)
 				continue
 			}
+			slog.Info("settings: action", "action", state.Action)
 			if handleSettingsAction(win, c, cfg, pairings, state) {
+				slog.Info("settings: action done, closing", "action", state.Action)
 				return nil
 			}
 		}
