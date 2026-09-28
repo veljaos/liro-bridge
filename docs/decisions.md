@@ -35551,8 +35551,10 @@ GTK's rather than Win32's**, because the clause counts its own
 exceptions and says a third *"should be suspected of being a pattern
 rather than a case — at which point this clause has stopped describing
 what the program does, and the honest move is to rewrite it rather than
-to add to it again."* So the answer had to be measured the way [[D-290]]
-measured the Windows edit control, not read out of GTK's documentation.
+to add to it again."* So the answer had to be measured, not read out of
+GTK's documentation — and not carried over from the Windows edit control,
+which was never measured either: [[D-277]] chose it and [[D-279]] §6 named
+its copy from what the code does. *(Corrected 2026-09-28: this sentence cited [[D-290]], which is about the worker's guards and a build-tag control, for a measurement of the Windows edit control that no entry contains — open-items D21.)*
 
 ### Measured: a random needle, a scan of the process's own writable mappings
 
@@ -35751,8 +35753,9 @@ them; it never contemplated them.
 **And that gap is not Linux's.** The same path exists on Windows: a
 keystroke becomes `WM_CHAR` through a message queue this program does
 not own, and a Windows IME sits in the same place ibus does here.
-[[D-290]] measured the edit control and [[D-279]] §6 wrote the exception
-from it, and **neither measured what was in front of it either.** So
+[[D-277]] chose the edit control and [[D-279]] §6 wrote the exception
+from what the code does with it — nobody measured the control — and
+**nothing measured what was in front of it either.** *(Corrected 2026-09-28: this sentence cited [[D-290]], which is about the worker's guards and a build-tag control, for a measurement of the Windows edit control that no entry contains — open-items D21.)* So
 what this finds is not a property of GTK. It is a sentence that was
 always about one object, written as though it were about a path.
 
@@ -35914,7 +35917,8 @@ not that the path is clean. It is that nobody has looked at it yet.**
 That observation from D-351 does not depend on the number and stands
 unchanged, including its Windows half: `WM_CHAR` crosses a message queue
 this program does not own, and [[D-279]] §6 wrote the exception from
-[[D-290]]'s measurement of the control rather than of what fed it.
+what the code does with the control, never measured, rather than from
+what fed it. *(Corrected 2026-09-28: this sentence cited [[D-290]], which is about the worker's guards and a build-tag control, for a measurement of the Windows edit control that no entry contains — open-items D21.)*
 
 ### What this cost and what it bought
 
@@ -39027,8 +39031,9 @@ of those measures in the same minute it broadcast the text.
 ### Whether Windows does the same (the owner's second question)
 
 **Not measurable from here, and it must not be assumed either way.** The
-Windows PIN dialog is a Win32 edit control with `ES_PASSWORD`; [[D-290]]
-measured its memory, not what the accessibility layers were told about it.
+Windows PIN dialog is a Win32 edit control with `ES_PASSWORD`, chosen in
+[[D-277]]; nobody has measured its memory ([[D-279]] §6 named its copy from
+what the code does), nor what the accessibility layers were told about it. *(Corrected 2026-09-28: this sentence cited [[D-290]], which is about the worker's guards and a build-tag control, for a measurement of the Windows edit control that no entry contains — open-items D21.)*
 Windows is commonly said not to expose a password edit's text to other
 processes — that is exactly the kind of sentence this arc has learned to
 measure. What would measure it, on the Windows machine, as the same user,
