@@ -40485,3 +40485,106 @@ D20 and B19's linger half need a live process watched across logouts, and a
 logout ends this session. They are `docs/f12-linux-session-9.md` §C, with
 their predictions written here, before the logout, so that the next session
 measures against them rather than writing them after the fact.
+
+## D-398 — `:1.3` is GNOME Shell as IBus's panel; A3 decided — the keystroke path is conceded in clause 3, not made a third exception to clause 2; SPEC §6.5.1 clause 3 amended to say what is true of the field and stop (D22); B23 stays open
+
+**Date:** 2026-09-28
+**Phase:** F12; closes open-items A3 and D22; narrows B23; opens D24.
+
+### B23's one step: who `:1.3` is
+
+Every IBus call recorded in the pinmem runs from [[D-382]] to [[D-392]] came
+from one sender, `:1.3`, and IBus refuses to say which process holds a
+connection (`GetConnectionUnixProcessID`: "does not support", re-read today).
+Predicted before reading: `:1.3` owns `org.freedesktop.IBus.Panel`, and the
+panel is gnome-shell.
+
+- **Name ownership on IBus's bus** (`ibus address`, then `ListNames` and
+  `GetNameOwner`): `org.freedesktop.IBus.Panel` → **`:1.3`**;
+  `org.freedesktop.IBus.Config` → `:1.2`; `org.freedesktop.IBus.Simple` →
+  `:1.4`; `org.freedesktop.IBus.Panel.Extension.Emoji` → `:1.5`.
+- **The processes connected to IBus's socket** (`ss -xp`, peers of
+  ibus-daemon's connections): gnome-shell (2333), ibus-dconf, ibus-engine-simple,
+  ibus-extension-gtk3, ibus-portal, ibus-x11. `ibus-ui-gtk3`, IBus's own panel,
+  is not running.
+- **One peer was unattributed by `ss`**, which would have left a hole in any
+  elimination. Traced by inode: it is ibus-daemon's own fds 1 and 2 connected
+  to `/run/systemd/journal/stdout` — root's journald, not an IBus client.
+
+So **`:1.3` is GNOME Shell acting as IBus's panel** — by the name it owns and
+by elimination on the roles of the other clients, not by a pid IBus will not
+give. That today's `:1.3` is the one D-382 to D-392 saw rests on the name
+staying `:1.3` through yesterday's reboots, which fits a deterministic startup
+order and was not checked. **GNOME Shell is also the compositor** on this
+desktop, which is what makes the next section's argument concrete.
+
+### A3, decided by the owner: the keystroke path is conceded in clause 3
+
+A3 asked whether §6.5 already concedes what an input method sees, or clause 2
+needs rewriting rather than a third exception ([[D-351]], [[D-352]]). **Decided:
+clause 2 is not rewritten and gets no third exception; the keystroke path
+belongs to clause 3's list of what stays open to code running as the same
+user.**
+
+- **Clause 2 is about this program's memory** — where the PIN sits once it has
+  reached this program. Its two exceptions, the Windows edit control's copy and
+  the kernel pipe buffer, are copies on this program's own path that it cannot
+  wipe. A key on its way to the dialog has not reached this program yet.
+- **On Wayland the compositor sees every key by construction.** It takes each
+  key from the kernel and decides which client receives it; no client can
+  receive a key the compositor did not hand it. That is true on every Wayland
+  desktop, for every program, and no arrangement of this program's code keeps
+  a key from it.
+- **And defending the dialog's keystrokes against it gains nothing.** The
+  compositor runs as the same user — here gnome-shell, pid 2333, which is also
+  `:1.3`. The sentence the owner asked to be kept verbatim, because it is the
+  one that stops this being re-opened as a project to defend keystrokes against
+  Mutter:
+
+  > **"Anything able to subvert the compositor can also draw a window headed
+  > Liro Bridge and collect the PIN directly."**
+
+- **What the decision does not concede**: that the compositor hands keys to
+  other clients. **B23 stays open.** The lone key release from `:1.3` in three
+  of eight runs ([[D-392]]) is unexplained, D-394's Enter explanation did not
+  hold, and **a decision not to pursue something is not an answer to it** — the
+  owner's words. Not pursued, by the owner's decision not to instrument Mutter,
+  until there is a reason to.
+
+### D22: clause 3 amended, and how the sentence survived
+
+Approved as drafted, and written: SPEC §6.5.1 clause 3 now says what the field
+does — it uses no input method, so it hands what is typed to none; in eight
+measured runs its process never connected to IBus; in every measured run it
+sent no text to the accessibility bus — and that **what happens to a key before
+it reaches this process is not measured**, naming the compositor without
+calling it safe or unsafe. Windows' path is cited as B4, not B1. A dated note
+says what changed.
+
+**The accessibility-bus sentence is the one addition to the shape the owner
+set, and it was kept on this reason:** [[D-384]] was the largest same-user
+exposure this dialog has had — it cost a day to find and a rebuild to close
+([[D-385]]) — and a clause listing what stays open would be strange for saying
+nothing about the one thing that was actually leaking. The clause had not
+mentioned it since D-384.
+
+**How the sentence survived three corrections, which is D22's finding.**
+[[D-382]] withdrew D-380's attribution; [[D-383]] found the shipped dialog never
+talks to IBus; [[D-394]] closed B1 for the field. **The finding was fixed and
+the quotation of it was not.** Each entry was right about the reading and
+silent about where the reading had been copied to, and the place it had been
+copied to is the specification — the document nothing re-measures,
+[[D-369]]'s argument about §6.5.2's table. Nothing in the practice asks, when a
+finding is withdrawn, *what quotes it*. D21 was the same shape one level down:
+a claim copied from entry to entry, and then into a briefing.
+
+### D24 opened: clause 2's first exception names a control Linux does not have
+
+Clause 2 says *"The first is the native dialog's own edit control, whose copy
+of the PIN is the operating system's memory"*, with no platform. Since
+[[D-385]] the Linux field is this program's own locked page and there is no
+toolkit control at all, so the exception exists only on Windows. **The owner:
+"An exception that names a thing that does not exist on half the platforms is
+the same shape as the sentence you are fixing today — and it would survive the
+same way, by nobody re-reading it."** To be drafted as its own amendment and
+shown before it is written; not today.

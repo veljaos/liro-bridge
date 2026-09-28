@@ -7,7 +7,7 @@ So the next session starts with §C, whose predictions were written here,
 before the logout — measure against them, do not rewrite them afterwards.
 
 **Written:** 2026-09-28, Ubuntu 24.04.5 VM, HWE kernel 7.0.0-34-generic.
-**Entries:** D-396, D-397; and the D21 fix (`f5c7269`). Master at the end of
+**Entries:** D-396 to D-398; and the D21 fix (`f5c7269`). Master at the end of
 the session: the commit carrying this document.
 
 ---
@@ -28,11 +28,13 @@ the session: the commit carrying this document.
 - **A12 measured**: a protocol run's corner became the owner's default.
 - **D21 fixed** — and the fix found that the claim was an invention: nobody
   ever measured the Windows edit control's memory (D-397).
-- **Opened and not yet worked:** D22 (SPEC §6.5.1 clause 3 still quotes
-  D-380), E9 (SPEC §6.5.2's X11 refusal has no code behind it).
-- **Owed to the owner and not started:** B23's one read-only step (who is
-  `:1.3` on IBus's bus), then **A3 as a decision and the D22 amendment
-  drafted together** — shown to the owner before either is written (§E).
+- **Done before the logout** (D-398): `:1.3` is GNOME Shell as IBus's panel;
+  **A3 decided** — the keystroke path conceded in clause 3, not a third
+  exception; **D22 written** — SPEC §6.5.1 clause 3 amended. **B23 stays
+  open.** **D24 opened**: clause 2's first exception names a control Linux
+  does not have — its own amendment, drafted and shown first, not yet.
+- **Opened and not yet worked:** E9 (SPEC §6.5.2's X11 refusal has no code
+  behind it) — §C4.
 
 ---
 
@@ -196,17 +198,10 @@ clause** — having said plainly what happened if the agent ran normally.
 
 ## E. Owed to the owner, needing no logout
 
-1. **B23's one step**: which process is `:1.3` on IBus's bus. IBus refuses
-   `GetConnectionUnixProcessID` (D-382); the socket table is how D-382
-   answered the same question — read that entry for the method first.
-   Predicted: gnome-shell. **Do not instrument Mutter.**
-2. **A3, as a decision**, with the argument: on Wayland the compositor sees
-   every key by construction, and anything that can subvert it can already
-   draw a fake dialog.
-3. **D22's amendment**, drafted with A3 because both rewrite clause 3's
-   paragraph. **Shown to the owner; neither written until the owner has read
-   both.**
-4. **E9's options**, after C4.
+1. ~~B23's step, A3, D22~~ — done in D-398, before the logout.
+2. **D24's amendment**: draft it (clause 2's first exception is Windows-only
+   since D-385) and show it before writing it.
+3. **E9's options**, after C4.
 
 ---
 
