@@ -40588,3 +40588,103 @@ toolkit control at all, so the exception exists only on Windows. **The owner:
 the same shape as the sentence you are fixing today — and it would survive the
 same way, by nobody re-reading it."** To be drafted as its own amendment and
 shown before it is written; not today.
+
+## D-399 — D20 closes: SIGTERM to a tray with both workers and a window open ends all ten processes within 0.2 s, removes the discovery file and logs the Quit path; and the login meant to follow a logout followed a restart, so C1's stale-file check could not have failed
+
+**Date:** 2026-09-28
+**Phase:** F12; closes open-items D20; session 9 §C1 void, its question moved
+to the next logout; §C2 done.
+
+### CI 36465789774, which nobody had seen finish
+
+On `70bd443`, the head of one push carrying `f5c7269` to `70bd443`; CI ran
+on the head only. **All nine jobs green**, `linux-gui` last at 18:47:05 after
+15.5 minutes, the same as the run before it.
+
+### C1: a restart, not a logout
+
+The owner logged out and back in, and it was a restart: *"I must have clicked
+Restart."* The record says so four ways — GNOME's end-session dialog at
+18:39:26 and logind's "The system will reboot now!" at 18:39:27 in the old
+boot's journal; `journalctl --list-boots` ending that boot at 18:39:31 and
+starting this one at 18:39:43; `last -x` closing the 17:19 tty2 session as
+`down`, not as a logout; and the session id back to `2`. **Nothing measured
+at that login could have told a logout from a reboot.** It was found because
+`uptime -s` was 20 seconds before the new gnome-session.
+
+| | predicted (session 9 §C1) | measured |
+|---|---|---|
+| a tray | exactly one, started by autostart | held: pid 2502, `/usr/bin/liro-bridge tray`, 18:40:00, parent `gnome-session-binary` 2226, cgroup `app.slice/app-gnome-liro\x2dbridge-2502.scope` |
+| `bridge.json` | new mtime, dev.12, 17580 | held: 18:40:01.986, `0.9.9-dev.12`, 17580 |
+| the stale line (least certain) | absent | absent — **and void**: a reboot empties `/run/user/1000` whatever a logout does, so this check could not have failed (D-304, the first question) |
+
+The stale line at 18:13:31 in the same log is D-397's app-grid `open`, already
+explained. **The question C1 existed for — whether a logout with
+`KillUserProcesses=no` ends the user manager and unmounts the directory — is
+unanswered**, and goes to the next logout.
+
+**A better instrument than the stale line, found while checking this one:**
+the birth time of `/run/user/1000` (`stat -c %w`). It read 18:39:58.19, the
+second `last` gives for the login, so it can see a mount; a changed birth time
+across a logout is the tmpfs mounted again, and an unchanged one is the
+directory kept. It does not depend on a stale file being there to be removed,
+which after D20's measurement there is not.
+
+**And one handover sentence did not hold**: "a reboot drops" the card reader.
+After this restart the reader was attached (`0bda:0165` in `lsusb`) and
+`pcscd` active. Whether VirtualBox re-attaches it every boot was not read.
+
+### C2: D20, measured
+
+The owner put the card in and opened **Certificates** from the tray, and left
+the window **open**. The baseline before that, with no window: 0 descendants.
+
+**Before** (`proctree.py 2502`, 18:46:42): nine descendants — `pkcs11-worker`
+3765 (`/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so`) and 3783
+(`/usr/lib/libaetpkss.so`), started 18:46:16 and 18:46:20;
+`WebKitNetworkProcess` 3851; one `bwrap → bwrap → xdg-dbus-proxy` chain
+(3852, 3853, 3857); one `bwrap → bwrap → WebKitWebProcess` (3861, 3863, 3864,
+69 MB PSS). `bridge.json` present, 18:40:01.
+
+**Then** `kill -TERM 2502` at 18:46:54, from a script that first asserted all
+ten pids present, then polled each `/proc/PID/stat` every 100 ms for up to
+10 s, a zombie counting as ended.
+
+| | predicted | measured |
+|---|---|---|
+| the log | D-394's two lines | held: "tray: asked to terminate, so stopping the way Quit does" at 18:46:54.099, "protocol: stopped" at .107 |
+| `bridge.json` | gone | held: gone; `liro/`'s mtime 18:46:54.105 |
+| both workers | gone; whether that logs a line not known | held: both gone by 0.1 s. **No line is logged** for closing them |
+| WebKit network process, proxy chain, web process | gone | held: all gone by 0.2 s |
+| least certain: the workers end promptly | within 10 s | within the first 100 ms interval |
+| `ps -C liro-bridge` afterwards | — | empty |
+
+**D-304's questions.** It could fail: a pid present at 10 s prints "STILL
+PRESENT", pid reuse can only fake presence, never absence, and the log check
+failed after the 18:13 death (D-397). The instrument could see what it
+reported absent: all ten were asserted present immediately before the signal,
+and `/proc/PID/stat` is readable for the non-dumpable processes. Resolution:
+100 ms polling against a 10 s prediction is enough for "promptly" and **not
+enough to order** the tray's exit against the workers' — all three went in
+the same interval. The run ran: new timestamps, new log lines.
+
+**What this cannot see, said rather than implied.** *Which path ended the
+workers*: `closePKCS11Modules` is what D-394 built them to go through, but the
+tray was gone in the same 100 ms, and their pipe's end-of-file would read
+identically by pids. The log's two lines show the tray took Quit's path; that
+the workers were shut down by it rather than orphaned onto end-of-file is
+inferred from the code, not observed. *A worker inside `C_Login`* at the
+signal: both were idle. *The tray's exit status*: its parent is
+gnome-session, and systemd records only the scope ending ("Consumed 5.897s
+CPU time").
+
+**D20 closes** on the installed dev.12: a SIGTERM to a tray with its workers
+running and a window open leaves no process of it and no discovery file.
+
+**One line nobody predicted**, recorded and not chased: the web process
+logged "Error releasing name org.webkit.…Sandboxed.WebProcess-…" to the user
+journal at 18:46:54. Once in this boot; **none** in the previous boot, which
+held D-397's windows, a Settings window and the 18:13 death. A fit, not a reading:
+the web process's bus connection went before it could release its own name,
+because the window was still open when the tray ended. The process ended
+either way.
