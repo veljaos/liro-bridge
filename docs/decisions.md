@@ -41059,3 +41059,47 @@ into the entry. Everything this week has turned on that distinction.
   synthetic input, so it is **D-094's question and the owner's to rule on**:
   recorded, not pursued (open-items B25).
 - **The fallback** stays reasoned rather than measured.
+
+## D-403 — Back on Wayland after E9's Xorg login: every read of session 12 §C1 held, and the least certain prediction held — GDM had "Ubuntu on Xorg" already selected at the gear, so it remembers the last session per user; what it stores is readable without root, over AccountsService's D-Bus interface
+
+**Date:** 2026-09-28
+**Phase:** F12; session 12 §C1, taken at the login it planned. Nothing
+measured across a boundary; nothing on the system changed.
+
+The previous boot ended cleanly. The owner shut down; at the greeter chose
+the user, then the gear, found **"Ubuntu on Xorg" already selected**, changed
+it to **"Ubuntu"** and logged in.
+
+| | predicted | measured |
+|---|---|---|
+| `uptime -s` | new; a `shutdown` record for the previous boot in `last -x` | held: boot 20:48:45; `shutdown` 20:48:24 → 20:48:50; session 12's `:0` line ends `down` (00:24), as a shutdown leaves it |
+| logind | — | greeter `c1` 20:48:58.41; `New session 2 of user vboxuser` 20:49:37.52; `Removed session c1` 20:49:44.63. No greeter session after the login |
+| `loginctl show-session 2 -p Type` | `wayland` | held: `wayland`, VT 2 |
+| the display server | `gnome-shell` as the compositor, an Xwayland process, no `Xorg` | held: `gdm-wayland-session` (2048) → `gnome-session`; `gnome-shell` 2225; `Xwayland :0 -rootless` 2655, a child of gnome-shell, started 20:49:42; no `Xorg`, no `gdm-x-session` |
+| the environment | `XDG_SESSION_TYPE=wayland`, `WAYLAND_DISPLAY=wayland-0`, `DISPLAY=:0` | held, all three |
+| the tray | one, started by autostart | held: 2415, 20:49:41, parent `gnome-session-binary` (2191), `app-gnome-liro\x2dbridge-2415.scope` |
+| **least certain**: whether GDM defaults to Xorg | "Ubuntu on Xorg" preselected | **held**, by the owner's eye at the gear |
+| linger | — | `State=active`, `Linger=no` |
+
+### GDM's memory, read
+
+D-400 left GDM's per-user memory as documented behaviour, "not read here",
+because `/var/lib/AccountsService/users/` is root's. The same value is on
+AccountsService's system-bus interface, readable as the user:
+
+```
+busctl get-property org.freedesktop.Accounts /org/freedesktop/Accounts/User1000 \
+  org.freedesktop.Accounts.User Session      → s "ubuntu"
+                                  XSession     → s ""
+```
+
+Read after this login, so it shows what GDM stored for the "Ubuntu" choice.
+It does not show what was stored before; that "Ubuntu on Xorg" was
+remembered rests on the owner seeing it preselected, and nothing else. The
+instrument existed when D-400 was written and was not looked for.
+
+### State at the end
+
+Tray 2415, `Linger=no`; `0bda:0165` absent from `lsusb`, `pcscd` inactive (as
+session 12 left it). Installed `liro-bridge 0.9.9~dev.12`, unchanged. No apt
+packages, no configuration changed.
