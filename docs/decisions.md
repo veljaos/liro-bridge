@@ -40173,3 +40173,136 @@ the MSAA read printed "nothing returned" while discarding the `E_ACCESSDENIED`
 that was the entire finding; and the desktop-wide value row went blank rather
 than saying *one event arrived carrying no string*. A missing row, a dropped
 reason and a blank count all read as a clean absence.
+
+## D-396 — B19 on the fallback path: with `XDG_RUNTIME_DIR` unset the tray starts, writes `~/.local/state/liro/bridge.json`, leaves it after a kill and removes it on SIGTERM; the two-user part not measured, by decision; and two claims nothing tracked — SPEC §6.5.1 still quotes D-380, and SPEC §6.5.2's X11 refusal has no code behind it
+
+**Date:** 2026-09-28
+**Phase:** F12; open-items B19 narrowed to linger; D22 and E9 opened.
+
+### dev.12, before it is installed
+
+`dist/linux/liro-bridge_0.9.9-dev.12_amd64.deb`, SHA-256
+`93b92690691c4652fc5271acb122ee6a52ece307aaa2a4e9c41ae8e7d216fdbb`, built
+clean from `3a1037a` (`vcs.modified=false`). It was built last night and **not
+installed**: dpkg's last `liro-bridge` line is dev.11 at 2026-09-27 20:55:00,
+and the running tray is dev.11. Nothing but documents and `scripts/b22probe`
+has changed since `3a1037a`, so dev.12 is master's code. Against dev.11: the
+same file list, `/etc` (the AppArmor profile, its only file there) byte for
+byte the same, the installed profile the same as both; control fields differ
+in Version and Installed-Size only. The binary carries D-394's "asked to
+terminate" line once, and the installed dev.11 does not, which is the control
+that makes the first count mean something.
+
+### B19, the fallback path: six predictions, written before, all held
+
+dev.12's binary extracted to a scratch path (unprofiled; the tray opens no
+window, so bwrap never starts), `HOME` a fresh scratch home, and
+`XDG_RUNTIME_DIR`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_DATA_HOME`,
+`XDG_CACHE_HOME` removed from its environment. The owner's tray (dev.11, pid
+2542, 17580, `/run/user/1000/liro/bridge.json`) was checked before and after
+and was never a party. One process at a time, exact pids, no input.
+
+| | predicted | measured |
+|---|---|---|
+| start with the variable unset (**least certain**: that nothing at tray start needs it) | starts | alive after 8 s; icon accepted; `protocol: listening` 17581 |
+| the file | `~/.local/state/liro/bridge.json`, 0600, port 17581 | exactly that, `agentVersion 0.9.9-dev.12` |
+| the port | held, answers | held; `/v2/health` HTTP 200 with dev.12's version |
+| directories it creates | all 0755 (MkdirAll 0o755, umask 0002) | `.local`, `.local/state`, `.local/state/liro`, `…/logs`: all `drwxr-xr-x` |
+| SIGKILL | killed, file left, nothing answers | `-9`; file still there naming 17581; port not held; health refused |
+| a second start over that file | "…names a port nobody answers on, so it is stale…", starts | that line once; starts; file rewritten, 17581 again |
+| SIGTERM | 0, file gone, D-394's two log lines | `0` in 0.04 s; file absent; "asked to terminate…", "protocol: stopped" |
+
+**What the fallback path adds to D-325, and what it does not.** A killed
+agent's file on this path is on `/home`: nothing the system does at logout
+or reboot removes it. That is reasoning from where it is, not a reboot; it is
+what D-325 said the fallback path would be. What handles it is what handled it
+here: the next start dials the port and replaces a file nobody answers for
+(`liveAgent`, D-344), and a clean exit — now including SIGTERM — removes its
+own.
+
+**D-325's "not harmless on the fallback path", read against this machine.** The
+agent creates the directories 0755, as D-325 said. But whether another user can
+reach them is decided above them: `/home/vboxuser` is `0750`,
+and the owner's own `~/.local` and `~/.local/state` are `0700`,
+created by something else before this program. **On this machine the parents
+close it; on a home created 0755, or a `~/.local` the agent creates first, they
+do not.** Read from modes, not from a second user's attempt — which is the part
+below.
+
+### The two-user part: not measured, by decision, and why
+
+The owner's ruling, on this session's argument: what a second account would
+measure is **systemd's per-user runtime directory**, already read off the
+running system in D-325 (a 0700 tmpfs per uid, owned by
+`user-runtime-dir@UID.service`), and **the pairing gate on a loopback port any
+local user can reach**, which is the same code on every platform. SPEC §14.1's
+multi-user case is RDP on Windows. A second account is a system change that is
+not reversible the way `disable-linger` is. **Deliberately not measured**, not
+skipped.
+
+One thing the argument has to carry, stated so it is not found later: a stale
+file on a path that outlives the session (Linux's fallback, and Windows'
+`%LOCALAPPDATA%` always) names a port another user's agent may later bind. A
+client that dials it gets a `/v2/health` answer from *a* Liro agent — not its
+own — and `liveAgent`'s test cannot tell them apart. What stops that reaching
+a signature is pairing, the same gate as above, and it is the same on both
+platforms, so it is not a reason to measure on Linux. Reasoning, not a reading.
+
+### The instrument that failed: `ss -p` cannot see this program's sockets
+
+The first run attributed **no listening port** to either tray pid, while each
+tray's log said `protocol: listening 17581`, so the health checks — which
+iterated over that empty list — never ran, and P3's "nothing answers" was
+unmeasured in it. **The cause is this program's own hardening**: the agent
+marks itself not dumpable (D-376), which makes `/proc/PID/fd` root's
+(`stat`: owner root; `ls`: permission denied), so `ss` cannot map a socket to
+the process. The control: a dumpable Python listener in the same `ss` call
+showed `users:(("python3",pid=…))`. The owner's tray at 17580 had shown no
+process column in the morning's check for the same reason. The second run asked
+whether the filed port was held at all and let the kill be the attribution:
+held before, not held after, in both kills. Every row above is from the second
+run.
+
+### D22 opened: SPEC §6.5.1 clause 3 quotes as a measurement what three entries undid
+
+Clause 3's paragraph on reading the PIN while the process lives says, as
+measured: *"every keystroke into this program's PIN dialog was handed to IBus,
+another process on the desktop's own bus, before it reached the entry — 21 key
+events for 20 characters (D-380). The PIN exists there, character by
+character"*, and that Windows' equivalent is unmeasured "(open-items B1)".
+
+- [[D-382]] withdrew D-380's attribution: the sender was an inference the data
+  never supported, and a run with the dialog provably off IBus still had IBus
+  traffic.
+- [[D-383]]: the shipped dialog never talks to IBus.
+- [[D-394]]: in eight consecutive runs of the shipped field, its process was
+  never connected to `ibus-daemon`; B1 closed for the field.
+- B1 was the Linux question; the Windows keystroke path is B4.
+
+**How it survived, which is the finding.** Three entries corrected the finding,
+and none of them corrected the sentence that quoted it. Each was right about the
+reading and silent about where the reading had been copied to — and the place
+it had been copied to is the specification, the one document nothing
+re-measures, which is [[D-369]]'s argument about §6.5.2's table exactly. That is
+a gap in the practice, not in any reading: nothing asks, when a finding is
+withdrawn, *what quotes it*. **The amendment is not written here.** It rewrites
+the same paragraph A3 decides, so both are drafted together and go to the owner
+before either is written.
+
+### E9 opened: "the X11 fallback is refused" has no code behind it
+
+SPEC §6.5.2: *"The X11 fallback is refused. Running under XWayland restores
+always-on-top, and restores with it the ability of any local client to send
+synthetic input to any window — so another program could click Approve."*
+**Nothing in `cmd/` or `internal/` refuses it.** No `GDK_BACKEND` is set, and
+nothing checks which backend GTK chose; the one place that mentions it,
+`internal/ui/window_linux.go:153`, is a comment explaining why `AlwaysOnTop` is
+ignored — the program does not *reach for* X11, which is a different thing from
+refusing it. `ErrNoDisplay` names "no Wayland or X11 display" as the two it
+accepts. So on Ubuntu's own "Ubuntu on Xorg" login session, or wherever the
+Wayland socket cannot be resolved and `DISPLAY` is set — `XDG_RUNTIME_DIR`
+unset in a graphical session is one way, since `WAYLAND_DISPLAY=wayland-0` is
+relative to it — GTK would open the consent window under X11. **Reasoning from
+the code; not measured.** Found while predicting what B19's tray would do with
+a window, and not chased: B19's tray never opens one.
+
