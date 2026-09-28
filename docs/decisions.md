@@ -40887,3 +40887,175 @@ window's being new between the two trees, alongside the log's line.
 After the window closed, the web process was gone and one
 `bwrap → bwrap → xdg-dbus-proxy` chain (5237, 5238, 5239) was still a child
 of the tray: one window, one chain left. Recorded, not chased.
+
+## D-402 — E9 on Xorg: the Settings window is an X11 client carrying the agent's pid, and nothing refused it or logged it; SPEC §6.5.2 amended — on Wayland the agent never chooses X11, on Xorg it says so and records it, and the consent screen stops a caller within the protocol, not code running as the same user; F12 §4.1's "under Wayland it cannot" corrected
+
+**Date:** 2026-09-28
+**Phase:** F12; session 11 §C2 measured; SPEC §6.5.2 and §6.7 amended, F12
+§4.1 corrected; open-items E9 rewritten (decided, not built), D23 updated,
+B25 opened.
+
+### The login, and that it was Xorg
+
+The owner shut the VM down cleanly and chose **"Ubuntu on Xorg"** at the
+greeter. The session's shape was read rather than taken from that account or
+from this terminal's environment:
+
+| | read |
+|---|---|
+| the previous boot's end | `last -x`: a `shutdown` record, 20:21:29 → 20:22:12 — the first clean shutdown record since D-400's two `crash` endings. This boot 20:22:07; the login 20:23:57 (logind "New session 2 of user vboxuser"). A boot, not a logout, as planned |
+| logind | `loginctl show-session 2 -p Type` → `x11`, tty2, `gdm-password` |
+| the display server | `gdm-x-session` (2073) → `/usr/lib/xorg/Xorg vt2 … -novtswitch` (2080), 20:23:58, parent of the session's `gnome-session-binary`. **No Xwayland process** |
+| the display | `xdpyinfo -display :0`: vendor "The X.Org Foundation", exit 0. It reports "X.Org version: 21.1.11" where the package is `2:21.1.12-1ubuntu1.8`; not reconciled, and nothing here depends on it |
+| the environment | `XDG_SESSION_TYPE=x11`, `WAYLAND_DISPLAY` empty, `DISPLAY=:0` — session 11 §C2's unpredicted row |
+
+### A VT switch in the middle of the first read, accounted for
+
+logind showed a second greeter session, `c2` of `gdm`, 20:25:53 → 20:26:11,
+after the login. The journal: at 20:25:52.99 Xorg on vt2 dropped DRM master
+and its input devices; at 20:26:00.79 it resumed them, and at 20:26:00.914
+logged `vmware(0): New layout. 0 0 1920 955`. Nothing restarted — Xorg 2080,
+session 2 and the tray 2601 all predate it — and the tray logged nothing.
+
+The owner's account: the Xorg login came up as **a black screen with an
+X-shaped cursor**, and they switched VTs to see whether it would draw; the
+desktop appeared shortly after. First given as "Ctrl+Alt+F2 and then back";
+the session is on vt2, so F2 alone would not have left it, and the journal
+shows a switch away from vt2 with a greeter starting — what Ctrl+Alt+F1 does
+on GDM. **F1 then F2**, by the owner's agreement. Accounted for, not
+unexplained.
+
+**Worth a line, though not E9's question:** gnome-shell had started at
+20:24:01 and the tray's icon was accepted at 20:24:06, yet the screen stayed
+blank long enough that a person would think it had hung. That is what
+somebody choosing Xorg on this VM's hardware would meet. That the layout
+line at the resume is what made it draw is a fit, not a reading.
+
+### The tray at start
+
+| | predicted (session 9 §C4, session 11 §C2) | measured |
+|---|---|---|
+| the tray | starts and runs normally | held: 2601, `/usr/bin/liro-bridge tray`, 20:24:03, parent `gnome-session-binary --systemd-service` 2404, `app-gnome-liro\x2dbridge-2601.scope`; `bridge.json` 20:24:04.49, dev.12, 17580 |
+| the log | "starting", "secrets are kept…", "listening"; no line naming the backend | held: 20:24:04.449, .479, .495, then the tray-host and icon lines as ever (.716, 06.661). **Nothing names X11 or Wayland** |
+| GTK or WebKitGTK complaining on X11 (least certain) | — | nothing in the agent's log; the window opened and closed normally |
+
+### §C2, by window ids
+
+| step | read |
+|---|---|
+| 1. Settings closed | 20:27:57, `xwininfo -root -tree` exit 0, 45 windows, none "Podešavanja"; `proctree.py 2601` 0 descendants (20:28:07) |
+| 2. the owner opened **Settings** from the tray | "settings: window open" at 20:30:03.432, new; tree at 20:30:30, exit 0, 53 windows; **8 new ids, none gone** |
+| 3. closed with **Zatvori** | "settings: the page sent", `cancel`, 20:36:07.029; `config.json` unchanged since 18:12:48 |
+
+| | predicted | measured |
+|---|---|---|
+| new ids with Settings open | at least one "Podešavanja"; probably two, the window and Mutter's frame | **held**: `0x3400004` "Podešavanja" (`WM_NAME` and `_NET_WM_NAME`), 520×880, viewable, override-redirect no; and its frame `0xe00004` "Podešavanja", `("mutter-x11-frames" "mutter-x11-frames")`, `_NET_WM_PID` 2487 = `/usr/libexec/mutter-x11-frames`, a child of gnome-shell — so the frame client does under Xorg what it did on Xwayland |
+| `_NET_WM_PID` on the window (least certain) | the tray's pid | **held: 2601** |
+| `WM_CLASS` | not predicted | **`"", ""`** — empty. GTK did not take the binary's name. A search for "liro" by class would have missed the window on X11 as well, which is D-401's point confirmed from the other side |
+| one tray | — | 2601 throughout; 7 descendants with the window open (network process 4453, one proxy chain 4454/4456/4457, one web chain 4460/4461/4462 at 74 MB PSS), as on Wayland |
+
+**The other six new ids**, all 1×1 and unnamed: `0x3400002` carries
+`_NET_WM_PID` 2601 and the same empty class (GTK's client leader, by fit);
+`0x3400003` and `0x3400005` are in the tray's range with no properties;
+`0xe00005` and `0xe00009` are in the frame client's range, like D-401's
+`0xa00009`. **`0x3200000` belongs to a different X client** (resource base
+`0x32…`): a child of the root, depth 32, no name, class or pid. The web
+process is one candidate; **not attributed**, not chased.
+
+**D-304's questions.** It could fail: a window elsewhere, or none, or one
+without the pid, were all open outcomes, and on Wayland the same comparison
+found no new window (D-401). The instrument could see what it reported: the
+tree is the X server's own, and the frame's pid is a second client's. The
+run ran: a new log line, new ids.
+
+**E9's fact, measured:** in an Xorg session the agent's window is an ordinary
+X client owned by the agent's process, and nothing in the agent refused X11
+or logged which backend it got. That the consent window does the same is
+inferred — the same process, the same `gtk.InitCheck()` — not measured; the
+card is not attached.
+
+### D23, one more
+
+After Zatvori: the web process gone; the network process (4453) and one
+`bwrap → bwrap → xdg-dbus-proxy` chain (4454, 4456, 4457) left, still there
+at 20:44:48. One window, one chain, as on Wayland.
+
+### The decision
+
+The clause said "the X11 fallback is refused", and F12 §4.1 said that under
+Wayland `xdotool` cannot click Approve. Read closely, both were about the
+agent choosing XWayland inside a Wayland session to get always-on-top back;
+in that sense the clause held by default, because GTK prefers Wayland and
+D-401 saw no X window. Two cases were left: **the fallback itself** — a
+Wayland session whose socket cannot be reached, with `DISPLAY` set, where GTK
+would go to X11 and nothing stops it (**reasoned from the code, not
+measured**, and left so by the owner's decision); and **an Xorg session the
+person chose**, which the clause's reasoning covers and nobody had decided.
+
+What X11 adds against the attacker the clause names — a program running as
+the same user — was set out before deciding. On X11 it can click Approve and,
+by the protocol's design, read what is typed, PIN included, with no file
+changed and no restart. On Wayland it is not stopped: SPEC §6.5.1 clause 3
+names routes open to same-user code — a preloaded library, a changed
+autostart entry, a GTK module — with which it can end the agent and start
+one it controls, and §6.5 says a second process can sign without a PIN while
+a card session lives. That is reasoning, not a measurement. In the words
+that decided it, recorded verbatim at the owner's request:
+
+> X11 turns "replace the agent" into "send a click" — a real difference in
+> effort and in traces left, not a boundary Wayland holds and X11 lacks.
+> F12 §4.1's "under Wayland it cannot" is true of xdotool and false of this
+> attacker, and that is my error being corrected.
+
+The options, each with its cost: **refuse to start** (every Xorg user loses
+the agent — hardware that needs Xorg, and xrdp's remote desktops, which run
+on Xorg, from general knowledge); **refuse only signing** (the same lockout
+for the one thing that matters, but self-explaining); **warn** (a backend
+check after GTK starts — gotk4 v0.3.1 ships `gdkx11` and `gdkwayland` — a
+sentence in the consent window, a log line, an audit field, and a SPEC
+amendment anyway); **amend only**. Plus one not on session 9's list:
+`GDK_BACKEND=wayland` before GTK starts whenever `XDG_SESSION_TYPE` is
+`wayland`, in `PrepareWebKitEnvironment()` (`internal/ui/uithread_linux.go:106`),
+which costs only a Wayland session with a broken socket its window.
+
+**The owner's decision, taking the recommendation whole:** enforce the clause
+in Wayland sessions with `GDK_BACKEND=wayland`; amend it for Xorg; add the
+warning; **do not refuse**. *"Refusing trades a certain cost against an
+attacker who has clause 3's routes on either display server."*
+
+SPEC §6.5.2's bullet is replaced by three, drafted and shown before writing:
+on Wayland the agent never chooses X11; in an Xorg session any program of
+this user can operate the consent window, and the agent says so in the
+window's own text, logs it, and records it in every audit entry on Linux;
+the consent screen stops a caller that stays within the protocol, not code
+running as the same user, on either display server. §6.7's entry list gains
+the display server. F12 §4.1 carries a one-line correction and is otherwise
+left as the record. The amendment's own note says that **none of the three
+mechanisms is built**, so that it cannot become the sentence it replaces.
+
+The owner on what the draft does that the old text did not: naming what a
+same-user program can already do on Wayland, with the two citations, *"is
+the correction of my own reasoning and it should not be softened"*; the
+window saying other programs can press its buttons *"is the honest half and
+it costs us something to say"*; and the audit field — *"a sentence is read
+once; a record can be read years later by somebody asking which signatures
+were made under the weaker arrangement."*
+
+### For the code session
+
+The warning and the audit field are **one piece of work**, with the backend
+request. **The audit field records the backend actually in use — what the
+consent window's display is — not what was configured, requested or found in
+the environment.** `GDK_BACKEND`, `XDG_SESSION_TYPE` and `DISPLAY` are what
+was asked for; the display GTK opened is what was used, and only that goes
+into the entry. Everything this week has turned on that distinction.
+
+### Left, by decision
+
+- **Whether a same-user program can press Approve through the accessibility
+  bus**, on either display server. D-384 showed that bus reaches into this
+  program's windows for text; whether the consent window's buttons are
+  actionable through it is not measured. Measuring it would itself be
+  synthetic input, so it is **D-094's question and the owner's to rule on**:
+  recorded, not pursued (open-items B25).
+- **The fallback** stays reasoned rather than measured.
