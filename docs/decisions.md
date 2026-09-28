@@ -40688,3 +40688,134 @@ held D-397's windows, a Settings window and the 18:13 death. A fit, not a readin
 the web process's bus connection went before it could release its own name,
 because the window was still open when the tray ended. The process ended
 either way.
+
+## D-400 — Two boots ended with no shutdown record, and the person who was there cannot account for either; the login meant to follow a logout followed the second, so C0 is not measured; C0, C3a and C3b unmeasured on this VM, by decision — the retained record holds no logout followed by a login in the same boot; E9 needs a login, not a logout
+
+**Date:** 2026-09-28
+**Phase:** F12; session 10 §C0 not measured; §C3a and §C3b left unmeasured on
+this VM by the owner's decision; open-items B19 and E9 updated.
+
+### The first read, and what it found
+
+Session 10 §B's first read at this login, 19:02, before anything else:
+
+| | predicted (session 10 §C0) | measured |
+|---|---|---|
+| a logout, not a reboot | `uptime -s` 18:39:43; the old tty2 line ends in a time | **failed**: `uptime -s` 18:59:39; `last -x` shows **two** boots since session 10's commit, the tty2 sessions of both ending in `crash` |
+| `/run/user/1000`'s birth time (least certain) | new | 19:00:03.33, the second of this login — **and void**: a boot mounts it new whatever a logout does |
+| old sessions | none left | one session, `2`, the new one |
+
+So by session 10 §B's rule, nothing measured at this login counts for a
+logout, and C0's other reads were not taken as C0. The question C0 exists for
+— whether a logout with `KillUserProcesses=no` ends the user manager and
+mounts `/run/user/1000` again — is **unanswered for the second time**.
+
+### The two boots
+
+| boot | login | the journal stops | next boot | what the journal shows |
+|---|---|---|---|---|
+| 18:39:43 (session 10's) | 18:39:58 | 18:53:56.11 | 18:54:32 | **A logout began** at 18:53:55: GNOME's session-shutdown targets, `gnome-session-restart-dbus.service`, the session bus stopped and started again. logind's "Session 2 logged out" is **not** in it |
+| 18:54:32 | 18:54:52 | 18:58:43.87 | 18:59:44 | **No logout.** Desktop Icons (DING) relaunched **75 times** in about four minutes, one every 3 s; the journal stops inside that loop |
+
+Neither boot has a shutdown record in `wtmp` — that is what `crash` means in
+`last` — so **neither ended in a shutdown that completed**. The kernel's
+journal has nothing near either end, and `/var/lib/systemd/pstore` is empty.
+
+**The person who was there cannot account for either ending**, and says so:
+*"I do not remember. I shut the VM down at some point rather than logging
+out, and I cannot reconstruct which of the two boots that was or what I saw
+before it. Treat both endings as unexplained rather than attributing them to
+me or to anything else."* The record therefore attributes neither ending to
+the owner, to the VM, to GNOME or to this program. *"That is worth more than
+a plausible reconstruction."*
+
+What the journal's end can say, as a fit and not a reading: this VM keeps
+`SyncIntervalSec` at its default (5 min) and the kernel writes dirty pages
+back after 30 s (`dirty_expire_centisecs` 3000), so an unclean end loses
+roughly the last half-minute. The journal stops 36 s and 61 s before the next
+boots, which fits a machine that went down within about half a minute of the
+last line it kept. **The last line is where the record stops, not when the
+machine died.**
+
+This program at each end: the tray had been stopped at 18:46:54 by D20's
+SIGTERM (D-399), so **nothing of it was running at the logout that began at
+18:53:55**. At the second boot's login, autostart started a tray at 18:54:56
+("listening" at .967), and it was running when that boot ended; its log has
+no line after 18:54:58. The same half-minute loss applies to its log, so that
+absence distinguishes nothing. Nothing links either ending to this program,
+and nothing rules it out for the second.
+
+The DING loop, recorded and not chased: 75 relaunches in the second boot; 1,
+1, 1, 3 in the four before it; 1 in this one.
+
+The card reader, which D-399 found attached after a restart, is **not**
+attached at this boot (`0bda:0165` absent from `lsusb`; `pcscd` inactive).
+Why is not known; how this boot came about is not known either.
+
+### The retained record has no logout in it
+
+Checking whether this VM had ever given the check a positive, both records
+since `wtmp` began (2026-09-20 14:00:01, the same second as the journal's
+first boot):
+
+- **`wtmp`**: 18 tty2 sessions of `vboxuser`. 11 end `down`, 6 `crash`, 1 is
+  this one. **None ends in a time.**
+- **logind in the journal**: every "Removed session N" of `vboxuser` is
+  followed by the next "New session" under a **different logind pid** — a new
+  boot every time.
+
+So **no session on this VM, in the retained record, ended in a logout
+followed by a login in the same boot.** Two consequences:
+
+1. **D-304's second question, for session 10 §B's own check**: the check has
+   never seen a positive on this machine. "The old line ends in a time"
+   assumes GDM writes a logout record to `wtmp`; that has not been observed
+   here. The positive confirmation that is independent of `wtmp`:
+   `journalctl -b 0 -o short-precise _COMM=systemd-logind` showing
+   "Removed session N" and then "New session M of user vboxuser". `-b 0`
+   makes both lines this boot's by construction.
+2. **The finding is narrower than "this machine does not survive a logout."**
+   One logout was seen to begin, and the machine then ended with no shutdown
+   record, for reasons nobody can give. None was seen to complete. That is
+   not established either way, and neither is whether C0 can be measured
+   here at all.
+
+### C0, C3a, C3b: unmeasured on this VM, by decision
+
+The owner: *"Do not try again today. Three logins, none of them a logout, and
+I am tired enough that I will get the fourth wrong too. That is its own
+reason."*
+
+| | what it would take | what stands in the way |
+|---|---|---|
+| **C0** — a logout's effect on the user manager and `/run/user/1000` | one GNOME logout and login **within one boot**, nothing of this program running; confirmed by logind in `-b 0`; then `stat -c %w /run/user/1000` against the login's second. Two minutes of the owner's hands | on this VM, never done: no logout in the retained record; the one seen to begin ended with the machine, unexplained |
+| **C3a** — a tray started by a login, at a logout, linger off | C0 first, as its control; then a login-started tray running at a second logout; its end read by D-394's two log lines and its pid | C0's obstacle, and C0 itself |
+| **C3b** — the same with linger on | `loginctl enable-linger vboxuser` (approved, reversible); the same logout and login; then `disable-linger` | C0's obstacle — and one of its own: linger is a file (`/var/lib/systemd/linger/vboxuser`) and survives a reboot, so **if the machine ends uncleanly with linger on, linger is still on at the next boot**. `disable-linger` and a read of `Linger=no` would be the first act of the next login, whatever happened |
+
+What C0 asks is a property of Ubuntu 24.04's logind and
+`user-runtime-dir@.service`, not of this program: any Ubuntu 24.04 desktop
+where a logout followed by a login within one boot can be shown answers it.
+Session 10 §C0's and session 9 §C3's predictions stand, unmeasured, for
+whenever that is.
+
+### E9 needs a login, not a logout
+
+E9 (session 9 §C4) reads which backend GTK gives the agent's windows in an
+Xorg session. Nothing in it is carried across the boundary between sessions,
+so **a shutdown and a boot serve as well as a logout**: at GDM's greeter,
+choose the user, then the gear, then **"Ubuntu on Xorg"**, then enter the
+password. On this machine that choice is offered: `/usr/share/xsessions/ubuntu-xorg.desktop`
+exists, `xserver-xorg-core 2:21.1.12-1ubuntu1.8` and
+`xserver-xorg-video-vmware` are installed, and `/etc/gdm3/custom.conf` sets
+nothing (no `WaylandEnable=false`). Two adjustments to session 9 §C4, neither
+changing what it measures:
+
+- The Wayland control (`xwininfo -root -tree | grep -i -c liro`, predicted
+  0, with Settings open) is taken in the Wayland session before the
+  **shutdown**, not before a logout.
+- GDM remembers each user's last session through AccountsService. That is its
+  documented behaviour, not read here: `/var/lib/AccountsService/users/` is
+  root's. So the login after E9 must choose **"Ubuntu"** explicitly, and its
+  first read includes `echo $XDG_SESSION_TYPE` → `wayland`.
+
+**Kept for the next session.**
