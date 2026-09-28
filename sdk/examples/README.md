@@ -43,8 +43,8 @@ protocol path rather than a fault in the demo.
 
 | Demo | Run against a real agent? |
 |---|---|
-| `demo-a-application-decides.mjs` | **Partly.** Paired with a window on screen, listed the certificates, and reached the approval. A full run through to a written PDF has not been confirmed. |
-| `demo-b-person-places-stamp.mjs` | **No.** Its first run failed at `GET /v2/certificates` against an agent too old to have that route — which is what found [D-264](../../docs/decisions.md), the bare uncoded 404. Not yet re-run against a current agent. |
+| `demo-a-application-decides.mjs` | **Yes, to the end, on Linux** (Ubuntu 24.04, installed `0.9.9~dev.12`, a real Pošta card through SafeSign): paired, chose the certificate, approved, one PIN, three documents signed at B-B, each verified by this project's independent verifier and by `pdfsig` ([D-397](../../docs/decisions.md)). On Windows it has reached the approval and not been confirmed further. |
+| `demo-b-person-places-stamp.mjs` | **Yes, to the end, on Linux** (the same run as demo A): the method screen offered the two corner methods and not placing by eye, the person chose a corner, and the signed document carries the stamp there, verified by both tools ([D-397](../../docs/decisions.md)). Not re-run on Windows since D-264. |
 
 Both need an agent **built from current source**. A stale binary is exactly
 what produced that failure, and the walkthrough says how to build and check one.

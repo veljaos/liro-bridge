@@ -40306,3 +40306,182 @@ relative to it — GTK would open the consent window under X11. **Reasoning from
 the code; not measured.** Found while predicting what B19's tray would do with
 a window, and not chased: B19's tray never opens one.
 
+
+## D-397 — Both demos run to the end on Linux, on a real card through the installed agent; no web process survived nine windows, but a sandbox proxy chain survives about one in two; A12 happens as described; and D21's claim was not a mis-citation but an invention
+
+**Date:** 2026-09-28
+**Phase:** F12; closes open-items C12; narrows C2 and opens D23; adds a
+measurement to A12; D20 and B19's linger half go to the next session, which
+begins with a logout.
+
+### dev.12 installed, and the sandbox on what ships
+
+The owner installed `0.9.9~dev.12` at 17:39:14 (dpkg) and restarted the tray:
+pid 4923, confined `liro-bridge (unconfined)` — the package's profile — its
+discovery file naming 17580 and `0.9.9-dev.12`. `scripts/sandboxcheck/run.sh`
+→ `~/sandboxcheck-7.0.0-34-generic-20260928-174010.txt`. Predicted unchanged
+from D-390's 7.0.0-34 reading, since only the binary changed; **unchanged**:
+the installed agent's sandbox starts, the unprofiled copy fails with
+`bwrap: setting up uid map: Permission denied`, the bare GtkPasswordEntry
+probe's payloads False/True/True as before. The first comparison filtered out
+lines carrying bus names, which were the probe's lines; they were compared
+separately rather than taken as matched.
+
+That tray had been started from a terminal, not by autostart. See the last
+section for what that cost.
+
+### D21, stated properly: there was no measurement to cite
+
+The commit that fixed D21 (`f5c7269`) called it a citation the record had
+corrected wrongly. **The owner's framing is the accurate one, and this entry
+records it: the original claim was not a mis-citation but an invention.**
+Four sentences — in D-350, D-351, D-352 and D-384 — said that the Windows
+edit control's memory had been measured. No entry measured it: [[D-277]]
+chose the control, [[D-279]] §6 named its copy from what the code does,
+[[D-289]] counted it as clause 2's first exception. The first correction
+pointed at D-277, which contains no measurement either, and establishing that
+nothing did took a sweep of every entry before D-350 and every other
+document. A wrong number can be fixed by finding the right one; here there was
+no right one to find, and the sentences have been changed to say so.
+
+### C12: demo A and demo B, run to the end
+
+The owner's hands; the reader passed through again (`0bda:0165`, Realtek)
+after it had been dropped at a reboot; the owner's Pošta card, SafeSign; the
+installed agent, pid 4923. Predictions were written before either demo.
+
+**Demo A** — windows, in the owner's order: pairing (six digits, typed at the
+demo's prompt), certificate chooser (Savka Odžić), approval with the PIN, the
+final screen.
+
+| | predicted | measured |
+|---|---|---|
+| A2: certificates listed through the modules | 2 `pkcs11-worker` children, staying | 5796 OpenSC, 5815 SafeSign, by `/proc/PID/cmdline`, alive to the tray's end |
+| A5: a written PDF (**least certain**: never confirmed on either platform) | yes | **three**, `liro-demo/out/demo-a/Ugovor-00{1,2,3}-signed.pdf`, 104 688 bytes each, B-B |
+| both verifiers | valid | `scripts/verifypdf`: every check true, chain trusted, signer "Savka Odžić 200100123", issuer "Pošta Srbije CA 1", exit 0 on each; `pdfsig`: "Signature is Valid", "Total document signed" on each |
+| the verifiers could fail | — | one byte flipped in a copy of 001: `verifypdf` `ByteRangeDigestOK false`, exit **1**; `pdfsig` "Digest Mismatch" |
+
+`pdfsig`'s "Certificate issuer is unknown" is its own trust store, not a
+verdict on the signature. The first reading of `verifypdf`'s exit status on
+the changed copy printed 0; that was `grep`'s, at the end of a pipe, and the
+verifier's own was read separately: 1 on the changed copy, 0 on the original.
+
+**The owner's line, kept:** the demo's console predicted "about 4 s on a MUP
+card, 12.7 s on a Pošta one" for the card to open, and the run bore it out —
+the card opened once before the first signature, and the next two followed
+about a second apart. That is [[D-297]]'s once-not-per-call reaching a person,
+on real hardware, through the agent's own flow.
+
+**Demo B** — windows: certificate chooser, approval, method screen, card
+preparation with the PIN dialog, final screen.
+
+| | predicted | measured |
+|---|---|---|
+| B1: the method screen | the corners, not "place by looking" (`methodsOffered`, `signflow.go:638`) | exactly two: "Potpiši sa definisanim pozicijama", "Potpiši bez vizuelnog prikaza" |
+| B3: the stamp where chosen | bottom-left, valid | `liro-demo/out/demo-b/Ugovor-signed.pdf`, 104 687 bytes, B-B; widget `/Rect 12 12 202 60` on `MediaBox 0 0 595 842`; both verifiers valid |
+| the final screen | — | "Sačuvano u: vraćeno aplikaciji koja je tražila" — nothing written to a folder of the owner's |
+
+**`handover-next-session.md` §2 is out of date about demo B.** It describes
+choosing "place by looking" and falling back to the corners with
+`place.unavailable`'s warning. On the protocol path the choice is no longer
+offered, and the branch that would post the warning — now its own sentence,
+`place.unavailable_no_file` — is commented as unreachable from the screen.
+The document is a record and is left; this is the correction.
+
+`sdk/examples/README.md`'s table now says both demos have run to the end, on
+Linux, and that Windows has not been re-run.
+
+**C12 closed.**
+
+### A12, measured: a protocol run's corner becomes the person's default
+
+Before demo B, `~/.config/liro/config.json` was sha256 `01e9e37b…`,
+`stampPosition` `top-right`. The owner chose bottom-left, against it,
+deliberately. After: modified 18:09:17, sha256 `17b94f65…`, `stampPosition`
+**`bottom-left`**. `m.saveConfig()` runs unguarded after the method screen
+(`signflow.go:684`), as the handover said from reading the code; this is
+the first reading of it, on Linux, on the installed agent. A12 is still the
+owner's decision; it now has a measurement under it.
+
+The file is back to `top-right`: Settings saved at 18:12:48 (log: "settings:
+action save", "action done, closing"), and the file is byte-for-byte
+`01e9e37b…` again. The owner's account was that it had not yet been put back;
+the file and the log say it had.
+
+### C2: N = 9, no web process survived — and something else grows
+
+`count.py` walks `/proc` for every descendant of the tray's exact pid.
+**Not `ss -p` or anything through `/proc/PID/fd`**: D-396 found those blind to
+this non-dumpable process. Baseline 17:41:14: 0 descendants.
+
+| when | WebKitWebProcess | bwrap → bwrap → xdg-dbus-proxy chains | other |
+|---|---|---|---|
+| 17:41:14, baseline | 0 | 0 | — |
+| 17:52:50, a window open (**the control**) | **1**, 70 832 kB PSS | 1 | network process, 2 workers |
+| 17:56:17, after demo A (4 windows) | **0** | **2** | the same |
+| 18:10:41, after demo B (9 windows) | **0** | **4** | the same |
+
+**The control.** A counter that read 0 with a window open would be blind; it
+read 1. It was labelled "approval window" when taken, on the owner's word;
+the log puts it at 17:52:50, after pairing (17:52:24) and before the signing
+job was accepted (17:53:41), so the window open was the **certificate
+chooser**. Still a window with its own web process, still the control; the
+label was wrong.
+
+**What C2 asked, answered in its narrower form, as the owner set it: none of
+nine windows' web processes survived its window, on the installed package.**
+That is D-355 §4's leak — six web processes of about 31 MB each — and it did
+not recur. **This is not the day-long question.** Nine windows in forty
+minutes is not a day of requests, and it says nothing about what a day adds
+that nine do not.
+
+**The prediction I marked least certain failed.** I predicted the other
+descendants would be the workers and a steady 0 or 1 of WebKit's network
+process and its helpers. **The `bwrap → bwrap → xdg-dbus-proxy` chains grew
+1 → 2 → 4**, started at 17:51:08 (with the network process, the first
+window), 17:53:47 (six seconds after the signing job was accepted),
+18:07:35 and 18:08:05 — about one per two windows, never reaped while the
+tray ran. One chain costs **about 0.86 MB PSS** (122 + 208 + 533 kB, read
+from `smaps_rollup`) and three processes. Small against a web process's
+70 MB; not small in processes across a day. Which windows leave one, and
+why, is not established: the web process is ended by
+`webkit_web_view_terminate_web_process` (D-355), and whatever launched the
+proxy for it is evidently not ended with it. **Opened as D23.** All of the
+chains, the network process and both workers were gone when the tray ended
+at 18:13:00; how it ended is below.
+
+### How the tray ended, which was not D20
+
+D20's remaining half — SIGTERM to a tray with workers running — was next,
+and the tray was gone before it: the owner reported quitting it from its
+menu. The record does not show a Quit:
+
+- **No Quit path in the log.** The last lines are Settings' save at 18:12:48;
+  no "protocol: stopped", no "asked to terminate". **`bridge.json` was left**,
+  dated 17:39, naming 17580.
+- **The journal**: at 18:13:00.715 the terminal tab's scope
+  (`vte-spawn-…scope`) ended, and bash 4780 — the tray's parent — is gone.
+  The tray died with its terminal. SIGHUP is the likely signal, not the
+  observed one; it was not SIGTERM, which dev.12 logs.
+- **At 18:13:31**, an app-grid launch (`app-gnome-liro\x2dbridge-7298.scope`,
+  "launched by gnome-shell") logged "liro-bridge starting" and the stale-file
+  line for that 17:39 file, started a WebKit child, and its scope ended at
+  18:13:34 with nothing more logged. **The app-grid entry runs `liro-bridge
+  open`, not `tray`**: with no agent, it shows the main window alone, with no
+  listener and no discovery file. My advice to "start the tray from the app
+  grid" was wrong; it cannot.
+
+So what the day did observe is the case D-394 left deliberately: **an
+unhandled signal ends the tray without its cleanup and leaves the file**, and
+the next start reads it as stale, as designed. A tray started from a
+terminal is not the shipped path. It is recorded as a reading, not as D20.
+**This session's advice at 17:40, after the install, was to keep that
+terminal open. That was the weaker remedy: the better one was a start not
+tied to a terminal at all, which only a login gives.**
+
+### What the next session starts with
+
+D20 and B19's linger half need a live process watched across logouts, and a
+logout ends this session. They are `docs/f12-linux-session-9.md` §C, with
+their predictions written here, before the logout, so that the next session
+measures against them rather than writing them after the fact.

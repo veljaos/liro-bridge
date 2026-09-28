@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-396, 2026-09-28.** One list, to be read in one sitting and acted
+**As of D-397, 2026-09-28.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -32,7 +32,7 @@ prose of an entry before D-280, outside those words, may be missing.
 9. **A configured module's file name may carry a personal name** into the audit log. — D-319. *Close:* accept the limit, or stop recording configured paths. *Needs:* owner's decision.
 10. **A pairing made while the keyring was locked stays in the file store.** — D-347. *Close:* migrate, or document re-pairing. *Needs:* owner's decision.
 11. **Race-checking the GTK packages is a probe, not a gate** (gotk4 fails `checkptr`). — ci.yml `linux-gui`; D-335. *Needs:* owner's decision, CI.
-12. **The method screen saves a protocol run's corner as the person's default.** — handover-next-session §2; `signflow.go` `saveConfig()`. *Needs:* owner's decision, then code.
+12. **The method screen saves a protocol run's corner as the person's default.** Measured on Linux, dev.12: a protocol run with bottom-left chosen changed `config.json`'s `stampPosition` from top-right to bottom-left (D-397). — handover-next-session §2; `signflow.go:684` `saveConfig()`. *Needs:* owner's decision, then code.
 13. **A deadline on `uiThread.do`'s wait (Windows).** — D-207, D-099. *Needs:* owner's decision, then code.
 14. **Should the audit log travel with ordinary backups?** Decided by implication. — D-340. *Needs:* owner's decision.
 15. **Publishing the package-signing fingerprint somewhere other than the repository's own host.** — session 6 §E; D-356. *Needs:* owner's decision.
@@ -86,7 +86,7 @@ prose of an entry before D-280, outside those words, may be missing.
 ## C. Built, and never watched or never run end to end
 
 1. **The two-window fix on Windows.** It changes the Explorer verb whenever a tray agent is running — the same race existed there since D-344 — and nothing has run it on Windows. — D-355 §3. *Needs:* Windows, owner's hands.
-2. **The web-process leak fix across a day of requests.** — D-355 §4. *Needs:* owner's hands.
+2. **The web-process leak fix across a day of requests.** Measured in its narrower form (D-397): on the installed dev.12, N = 9 windows, **no web process survived its window** — D-355 §4's leak did not recur. Not the day-long question, which stays open: nine windows in forty minutes is not a day. What does grow is D23. — D-355 §4, D-397. *Needs:* owner's hands, a day.
 3. *GNOME and a left-behind autostart entry: nothing reaches the person; gnome-session logs one warning (D-364). Numbering kept.*
 4. *What `remove` and `purge` leave: measured, both (D-363). Numbering kept.*
 5. **Window tests run only when built to the profiled path**; CI never runs them. — D-355 §4. *Close:* a CI job with a display and a profile, or a recorded decision. *Needs:* CI.
@@ -96,7 +96,7 @@ prose of an entry before D-280, outside those words, may be missing.
 9. **The real module that kills its worker, demonstrated** (F12 §2's box). Linux has only a synthetic SIGABRT. — D-294, D-296, D-349. *Needs:* hardware.
 10. **The reap backstop's firing path has no test.** — D-306. *Needs:* code.
 11. **The ported sign flow has only `*_windows_test.go` tests.** — D-338. *Needs:* code.
-12. **Demo A to a written PDF; demo B to the end**, and the README table. — handover-next-session §2; D-265. *Needs:* owner's hands.
+12. *Demo A to a written PDF, demo B to the end: both, on Linux, on a real Pošta card through the installed agent, verified by both tools; the README table updated (D-397). Windows not re-run. Numbering kept.*
 13. **`Sign.java` and `sign.php` never executed.** — sdk/examples README. *Needs:* a JDK and PHP.
 14. *The stamp with the holder's name: read by the owner — "SAVKA ODŽIĆ", Ž and Ć rendered (D-363). Numbering kept.*
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
@@ -130,6 +130,7 @@ prose of an entry before D-280, outside those words, may be missing.
 20. **The tray's `pkcs11-worker` children when a logout's SIGTERM ends it.** The discovery-file half is fixed and measured: SIGTERM now takes Quit's path, the file is removed and the log says so (D-394; D-393 found it). The workers now go through `closePKCS11Modules` rather than their pipe's end-of-file, but a tray with workers running has not been killed and watched. *Close:* that measurement, on a dev build carrying the fix. *Needs:* measurement, owner's hands (a Certificates window opened by hand, so the tray discovers its modules).
 21. *Four entries cited D-290 for a measurement of the Windows edit control: fixed 2026-09-28. The replacement the record proposed, D-277, was wrong too — D-277 chose the control, D-279 §6 named its copy, and no entry measured it — so the four sentences now say that rather than citing anything for a measurement. Numbering kept.*
 22. **SPEC §6.5.1 clause 3 states as a measurement what three entries undid.** It says every keystroke into the PIN dialog was handed to IBus, "21 key events for 20 characters (D-380)", and calls Windows' equivalent B1. D-382 withdrew D-380's attribution, D-383 found the shipped dialog never talks to IBus, D-394 closed B1 for the field; the Windows keystroke path is B4. **How it survived:** three entries corrected the finding and none corrected the sentence that quoted it — a gap in the practice, not in the reading, in the one document nothing re-measures (D-369's argument). — D-396. *Close:* the amendment, drafted with A3 because they rewrite one paragraph, and written only after the owner has read both. *Needs:* owner's decision, then the edit.
+23. **A bubblewrap/`xdg-dbus-proxy` chain survives about one window in two.** On the installed dev.12, the tray's `bwrap → bwrap → xdg-dbus-proxy` chains went 1 → 2 → 4 across nine windows while every web process ended; about 0.86 MB PSS and three processes each, never reaped while the tray runs. Which windows leave one, and why, is not established; D-355's fix ends the web process and evidently not what was launched for it. — D-397. *Close:* find what launches the chain and end it with the window, then count again. *Needs:* code, measurement.
 
 ## E. Promises in documents that nothing does yet
 
