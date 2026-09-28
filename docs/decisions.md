@@ -40819,3 +40819,71 @@ changing what it measures:
   first read includes `echo $XDG_SESSION_TYPE` → `wayland`.
 
 **Kept for the next session.**
+
+## D-401 — E9's Wayland control: with the Settings window open, no X window appeared at all — by window ids, because the planned `grep -i liro` could not have found the window on X11 either; one proxy chain survived the window (D23)
+
+**Date:** 2026-09-28
+**Phase:** F12; session 11 §C1 (session 9 §C4's control), taken at session
+11's own login by the owner's choice; open-items E9 and D23 updated.
+
+The login followed a boot (D-400), which does not matter here. The control
+reads a window in the current session and carries nothing across a boundary.
+The session was Wayland (`loginctl show-session 2 -p Type` → `wayland`,
+`DISPLAY` `:0`, Xwayland), with tray 2400 started by autostart. Predictions
+were written in session 11 §G before step 0. Before writing them, one read
+was taken: `xwininfo` reaches `:0`, exit 0, 19 windows. The `liro` count was
+not taken then.
+
+| step | predicted | measured |
+|---|---|---|
+| 0. no Liro window | `grep -i -c liro` 0; `xwininfo`'s exit checked apart, since `grep -c` prints 0 on an error | held: exit 0, 19 windows, 0 (20:06:31) |
+| 1. positive control — the owner ran `xmessage -name liro-control -title liro-control …` in their own terminal (least certain) | one or more lines naming it | held: 27 windows, two lines — the client `("liro-control" "Xmessage")` and a frame `("mutter-x11-frames" "mutter-x11-frames")` named after its title. **The frame was not predicted** |
+| 2. the owner opened **Settings** from the tray | "settings: window open"; 0; one tray | held: 20:10:50.136; exit 0, 20 windows, 0; tray 2400; 7 descendants, a web process at 73 MB PSS |
+| 3. the owner closed it | `type` `cancel` | held: 20:16:26.705; `config.json` unchanged since 18:12:48 |
+
+**Step 3's instruction named a button that does not exist.** It said
+"Cancel"; the window's buttons are **Zatvori** and Save, with the corner X.
+The owner pressed Zatvori and asked what it sends before the log was read.
+`#close-btn` (`settings.html:212`, `settings.close`) calls
+`liroSend("cancel")` (`settings.js:175`). The corner X reaches the same
+message through `OnClosed` (`settingswindow.go:93`), and one line (`:118`)
+logs both. So the log shows **that** the window was cancelled, not **which**
+control did it. That it was Zatvori is the owner's word.
+
+### The check was weaker than its prediction said
+
+D-304's second question — could the instrument see what it reported absent —
+was asked only after step 2. The positive control showed that `xwininfo`
+sees an X client on this Xwayland and that `grep` finds a window **named**
+"liro". It could not show that the Settings window would have been found had
+GTK put it on X11:
+
+- its title is "Podešavanja" (`settings.window_title`, sr-Latn);
+- nothing in the code sets a program name or application id: `gtk.InitCheck()`
+  (`internal/ui/uithread_linux.go:108`), no `SetPrgname`, no `GApplication`.
+  Whether `WM_CLASS` would carry "liro-bridge" depends on GTK taking the
+  binary's name, which has not been read.
+
+So step 2's 0 is a fact about a name. **The reading that does not depend on a
+name** comes from the three saved trees. The step-2 tree has **no window id
+that the step-1 tree lacked**. Against step 0 the one new window is
+`0xa00009`: 1×1, unnamed, present since step 1, and in the id range of
+Mutter's frame client (`0xa00002`–`0xa00005`), a leftover of framing the
+xmessage window. The range is an inference; the window has no name, class or
+pid. **While the Settings window was open, no X window appeared**, whatever it
+might have been called. That is the control E9 needs: on Wayland the agent's
+window is not an X client.
+
+The Xorg login (session 11 §C2) therefore compares window ids before and
+during, and reads each new window with `xprop`, not `grep -i liro`.
+
+**`_NET_WM_PID` on the control: not found.** Each client sets it itself, and
+xmessage does not. So §C2's plan to attribute the window by `_NET_WM_PID`
+rests on GTK setting it, which is expected and not read. The fallback is the
+window's being new between the two trees, alongside the log's line.
+
+### D23, one more
+
+After the window closed, the web process was gone and one
+`bwrap → bwrap → xdg-dbus-proxy` chain (5237, 5238, 5239) was still a child
+of the tray: one window, one chain left. Recorded, not chased.

@@ -4,11 +4,13 @@
 twelfth. **It measured nothing across a logout.** The login it began at
 followed a boot, not a logout, for the second session running (D-400). The
 owner then decided to stop for the day, and to leave C0, C3a and C3b
-unmeasured on this VM. It ends at no particular boundary. How the machine
-goes down after it is not part of any measurement.
+unmeasured on this VM. Later the same evening, by the owner's choice, it took
+E9's Wayland control at its own login (§G, D-401). **It ends at a shutdown**,
+and the next login is E9's Xorg login (§C2). Nothing is measured across that
+boundary.
 
 **Written:** 2026-09-28, Ubuntu 24.04.5 VM, HWE kernel 7.0.0-34-generic.
-**Entries:** D-400. Master at the end of the session: the commit carrying
+**Entries:** D-400, D-401. Master at the end of the session: the commit carrying
 this document.
 
 ---
@@ -30,10 +32,12 @@ this document.
   machine survives a logout is **not established either way**. One logout was
   seen to begin and none to complete (D-400).
 - **E9 needs a login, not a logout**, and "Ubuntu on Xorg" is offered at this
-  VM's greeter. Kept for the next session (§C).
+  VM's greeter. **Its Wayland control is done** (D-401): with Settings open,
+  no X window appeared at all. The Xorg login is next (§C2).
 - **At the end of this session:** a tray running, pid 2400, started 19:00:06
   by autostart (`app-gnome-liro\x2dbridge-2400.scope`); `bridge.json` live,
-  dev.12, 17580. `Linger=no`. **The card reader is not attached**: `0bda:0165`
+  dev.12, 17580, with one `bwrap → bwrap → xdg-dbus-proxy` chain (5237–5239)
+  left by the Settings window (D23, D-401). `Linger=no`. **The card reader is not attached**: `0bda:0165`
   is absent from `lsusb` and `pcscd` is inactive.
 
 ---
@@ -77,40 +81,51 @@ expected at each, and nothing at them is measured across the boundary. If a
 future session does try a logout, it counts only if `-b 0` shows
 "Removed session N" and then "New session M of user vboxuser".
 
-### C1. The next login: the Wayland control for E9
+### C1. The Wayland control — done at session 11's own login
 
-This session ends in a Wayland session, and GDM keeps the last session
-chosen, so the next login should be Wayland without choosing anything.
+Taken in §G (D-401). **The next login is §C2.**
 
-| | predicted |
-|---|---|
-| `uptime -s` | new: a boot, which is expected |
-| `$XDG_SESSION_TYPE` | `wayland`; `WAYLAND_DISPLAY` `wayland-0`; `DISPLAY` `:0` (Xwayland), as at this session |
-| `Linger` | `no` |
-| a tray | exactly one, `tray`, by autostart |
-
-Then session 9 §C4's control: the owner opens **Settings** from the tray, and
-`xwininfo -root -tree | grep -i -c liro` → predicted **0**. Close Settings.
-
-Before the shutdown, write what the Xorg login needs, as each handover has
-done. Then **shut down** (not log out, not restart) and boot.
-
-### C2. The login after that: E9, on "Ubuntu on Xorg"
+### C2. The next login: E9, on "Ubuntu on Xorg"
 
 At GDM's greeter: choose the user, then the **gear** (bottom right), then
-**"Ubuntu on Xorg"**, then enter the password. The first read, then session
-9 §C4's reads and predictions, **unchanged**: the session is `x11`; the tray
-starts and runs normally; the Settings window is in the X tree, found with
-`xwininfo`, with `xprop` giving `WM_CLASS` and `_NET_WM_PID`; and the least
+**"Ubuntu on Xorg"**, then enter the password. Take the first read. Then
+session 9 §C4's predictions, **unchanged**: the session is `x11`; the tray
+starts and runs normally; the Settings window is in the X tree; and the least
 certain is whether GTK or WebKitGTK complains on X11 in a way the agent turns
 into a failure.
 
-Added here, before either login:
+**The method changes (D-401): not `grep -i liro`.** The Settings window's
+title is "Podešavanja" (`settings.window_title`), and the code sets no
+program name or application id (`gtk.InitCheck()`,
+`internal/ui/uithread_linux.go:108`). So whether "liro" appears anywhere in
+the window's X properties depends on GTK deriving `WM_CLASS` from the
+binary's name, which has not been read. Instead, as the control did:
+
+1. Settings **closed**: `xwininfo -root -tree > tree-before.txt`, with its
+   exit status checked.
+2. The owner opens **Settings** from the tray. Check that the log's
+   "settings: window open" line is new, then `xwininfo -root -tree >
+   tree-open.txt`.
+3. Compare the window IDs:
+
+   ```
+   ids(){ grep -o '^ *0x[0-9a-f]*' "$1" | tr -d ' ' | sort; }
+   comm -13 <(ids tree-before.txt) <(ids tree-open.txt)
+   ```
+
+   For each new id, `xprop -id ID WM_NAME _NET_WM_NAME WM_CLASS _NET_WM_PID`.
+4. The owner closes it with **Zatvori** (there is no "Cancel" button; it
+   sends `cancel`, as the corner X does, and the log cannot tell them apart).
+
+Added here, before the login:
 
 | | predicted |
 |---|---|
 | `$DISPLAY` | `:0` or `:1`. **Not predicted beyond that**: which one GDM gives an Xorg user session next to a Wayland greeter has not been read on this VM |
 | `loginctl show-session ID -p Type`, ID from `list-sessions` (`$XDG_SESSION_ID` is empty in this terminal's environment) | `x11`, agreeing with the environment |
+| new window IDs with Settings open | **at least one** whose `WM_NAME`/`_NET_WM_NAME` is "Podešavanja". Probably **two**, the window and a Mutter frame named after it (`mutter-x11-frames`), as the control's xmessage showed on Xwayland. That the frame client does the same under Xorg is not read |
+| `_NET_WM_PID` on the Settings window | **the new tray's pid**, as `ps -C liro-bridge` gives it at that login. **Least certain of the added rows**: xmessage set none (D-401). GTK is expected to set it, but that was not read. If it is absent, the window is attributed by being new between the two trees, with the log's line |
+| `WM_CLASS` | **Not predicted**: "liro-bridge"/"Liro-bridge" if GTK takes the binary's name, anything else otherwise. Recorded as read |
 | the agent's log at that start | the same three lines as a Wayland start — "starting", "secrets are kept…", "listening" — and **no line naming the backend**, because nothing in the code reads it (D-396) |
 
 The optional consent-window step (demo A, then **refuse**; nothing clicked by
@@ -156,8 +171,68 @@ and survives a crash.
 
 ## F. This machine
 
-Rules unchanged. **No apt packages installed this session.** Nothing written
-to `/tmp` or to the scratch directory. `liro-demo/` untouched. Nothing on the
+Rules unchanged. **No apt packages installed this session.** The control's
+three `xwininfo` trees went to this session's scratch directory under `/tmp`,
+and are gone at the shutdown. `liro-demo/` untouched. Nothing on the
 system changed: no linger, no configuration, no session choice. The one
 change outside the repository is a note to Claude's own memory: the login
 check's third case (`crash`) and the journal's lost half-minute.
+
+---
+
+## G. The Wayland control, taken at this session's own login
+
+The owner chose to take §C1's control **at this login**, not the next. The
+control reads a window in the current session and carries nothing across a
+boundary, so the login it is taken at does not matter. This login is Wayland
+(`loginctl show-session 2 -p Type` → `wayland`, `DISPLAY` `:0`), and the tray
+is pid 2400, started by autostart. Checked before writing this: `xwininfo
+-root -tree` reaches Xwayland on `:0`, exit 0, 19 windows. The count of
+`liro` in it was **not** read.
+
+**Predictions, written before the steps:**
+
+| step | read | predicted |
+|---|---|---|
+| 0. no Liro window open | `xwininfo -root -tree \| grep -i -c liro` | **0**, with `xwininfo`'s own exit 0 checked separately. `grep -c` prints 0 on an error too (D-304, the second question) |
+| 1. positive control: the owner runs `xmessage -name liro-control -title liro-control 'Liro control - close me'` in their own terminal | the same `grep`, without `-c` | **one or more lines naming `liro-control`**. That is an X client on this Xwayland, which is where a GTK window that fell back to X11 would be. This is the step that shows the check can say yes here |
+| 2. the owner closes the xmessage, then opens **Settings** from the tray | the log's last lines; the same `grep -c`; `ps -C liro-bridge` | log: "settings: window open" with a new time; **0**; still one tray, 2400 |
+| 3. the owner closes Settings with **Cancel** | the log | "settings: the page sent", `type` `cancel`. Nothing saved |
+
+**Least certain: step 1.** Whether `xwininfo -tree` prints `xmessage`'s
+`-name` and `-title` as expected. `-tree` prints the window name and the class
+pair, and both are set, so one line at least. If it prints nothing, the
+control has no positive and step 2's 0 counts for nothing.
+
+What this cannot see: the tray's own `DISPLAY` and `WAYLAND_DISPLAY`.
+`/proc/2400/environ` is root's, because the agent is not dumpable (D-376).
+That it was given `:0` and `wayland-0`, like this terminal, is assumed from
+its having been started by the same gnome-session.
+
+**Measured**, 20:06–20:17, tray 2400 throughout:
+
+| step | predicted | measured |
+|---|---|---|
+| 0. no Liro window | 0; exit 0 | held: exit 0, 19 windows, **0** at 20:06:31 |
+| 1. xmessage `liro-control` open (least certain) | one or more lines | held: exit 0, 27 windows, **two** lines: the client `("liro-control" "Xmessage")` and **Mutter's frame**, `("mutter-x11-frames" …)`, named after its title. The frame was not predicted |
+| 2. Settings open | "settings: window open"; 0; one tray | held: the line at 20:10:50.136; exit 0, 20 windows, **0**; tray 2400; 7 descendants, a web process at 73 MB PSS |
+| 3. closed with **Zatvori** | `type` `cancel` | held: 20:16:26.705; `config.json` unchanged since 18:12:48 |
+
+**The check was weaker than its prediction said**, and D-304's second question
+found it only after step 2. The positive control proved that `xwininfo` sees
+an X client on this Xwayland. It did not prove that the Settings window, had
+it been on X11, would match "liro": its title is "Podešavanja", and nothing in
+the code names the program. **The reading that does not depend on a name**:
+the step-2 tree has **no window ID that the step-1 tree lacked**. Against step
+0 the only new window is `0xa00009`, 1×1, unnamed, present since step 1, in
+Mutter's frame client's range (`0xa00002`–`0xa00005`). So while Settings was
+open, no X window appeared at all. The id range is an inference; the window
+has no name, class or pid.
+
+**Not predicted, recorded for D23 and not chased:** after the window closed,
+the web process was gone and one `bwrap → bwrap → xdg-dbus-proxy` chain
+(5237–5239) remained. That is one window, one chain surviving.
+
+**The xprop row, tried on the control:** `WM_CLASS` read `"liro-control",
+"Xmessage"`; `_NET_WM_PID` was **not found**. Each client sets that property
+itself, and xmessage does not.
