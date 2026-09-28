@@ -41103,3 +41103,50 @@ instrument existed when D-400 was written and was not looked for.
 Tray 2415, `Linger=no`; `0bda:0165` absent from `lsusb`, `pcscd` inactive (as
 session 12 left it). Installed `liro-bridge 0.9.9~dev.12`, unchanged. No apt
 packages, no configuration changed.
+
+## D-404 — Ubuntu is done and the VM is kept, for E9's Xorg half and as D23's control; Fedora is checked for an Xorg session before anything is installed; D-400's "unreadable" AccountsService store recorded as an instrument failure, the first found by looking again rather than by a control
+
+**Date:** 2026-09-28
+**Phase:** F12; the owner's decision after D-403. Session 13's handover
+(`docs/f12-linux-session-13.md`) is the Fedora VM's first plan. open-items
+E9 and D23 updated.
+
+### Decided
+
+- **Ubuntu is done.** C0, C3a and C3b stay unmeasured on this VM by decision
+  (D-400). Nothing else there needs doing before Fedora.
+- **The VM is kept, not deleted**, for two things only it can do:
+  1. **E9's Xorg half**: a real signature's audit entry, read on an
+     "Ubuntu on Xorg" login once E9 is built. If Fedora ships no Xorg
+     session, this VM is the only place it can be read.
+  2. **D23's control.** The owner: *"if D23's fix is only ever measured on
+     Fedora and no chain survives, we will not know whether that was the fix
+     or the distribution."* So D23 is counted on Fedora before any fix, and
+     after the fix it is counted on Ubuntu as well.
+- **On Fedora, check whether it still ships an Xorg session**, and if it does
+  not, say so. F12 §11 already assumes "Wayland only" and never read it. The
+  check reads what is installed and what is installable, and installs
+  nothing (session 13 §D1, with its predictions and what each outcome means).
+
+### An instrument failure, found by looking again
+
+D-400 wrote that GDM's per-user memory was "not read here:
+`/var/lib/AccountsService/users/` is root's". D-403 read the same value as a
+property on AccountsService's system-bus interface, as the user, without
+root. The file is root's; the store was never unreadable. One route had
+been tried. The owner:
+
+*"An 'unreadable' that meant 'I tried one way' is the same shape as this
+week's other instrument failures, and it is the first one found by looking
+again rather than by a control."*
+
+From here on, "unreadable" or "not readable here" names the route that was
+tried.
+
+### What the Fedora VM starts with
+
+Session 13 §C carries the working rules, which on the Ubuntu VM lived partly
+in Claude's own memory and do not reach a new machine. §D is the first
+sitting: reads only, then dev.12's `.rpm`, the binary Ubuntu ran, installed
+by the owner if they approve an unsigned dev build against the hash recorded
+there. §E lists what Fedora is for.
