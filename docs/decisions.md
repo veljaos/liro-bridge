@@ -41150,3 +41150,130 @@ in Claude's own memory and do not reach a new machine. §D is the first
 sitting: reads only, then dev.12's `.rpm`, the binary Ubuntu ran, installed
 by the owner if they approve an unsigned dev build against the hash recorded
 there. §E lists what Fedora is for.
+
+## D-405 — Fedora 44's first sitting: no GNOME on Xorg, though GDM can still start an X session and Xorg and Xfce are installable, so the Ubuntu VM stays the only place GNOME on Xorg can be read; GNOME Software had staged 835 packages on its own, which move most of what this VM measures, so they are applied before anything is installed and automatic downloads are turned off for the phase; dev.12 approved unsigned, on the hash
+
+**Date:** 2026-09-29
+**Phase:** F12; session 13 §D, the Fedora VM's first sitting, reads only.
+open-items E9 updated; F10 opened. Nothing of this program installed yet.
+
+### The machine
+
+Fedora Workstation 44 in VirtualBox, built by the owner; hostname `fedora`,
+which does not match "liro" in the journal as `Ubuntu-Liro` did. Predictions
+were written at 23:04:23, before the first read, in a scratch file that
+`/tmp`'s tmpfs will not keep; they are session 13 §D's, with five of mine
+marked below.
+
+| | predicted | read |
+|---|---|---|
+| GNOME | 50 | `gnome-shell-50.0-1.fc44`, `mutter-50.0-1.fc44` |
+| SELinux | `Enforcing` | `Enforcing` |
+| session | `wayland`, `DISPLAY` by Xwayland | session 2 (tty2) `wayland`; `WAYLAND_DISPLAY=wayland-0`, `DISPLAY=:0`. `XDG_SESSION_ID` is empty in Claude's shell, so the type was read from logind by session, not by the variable |
+| `sudo -n` | fails | "a password is required", 1 |
+| `StatusNotifierWatcher` | absent | absent, and no name on the session bus matches `statusnotifier`, `appindicator` or `kde`. **The control**: the same call resolves `org.freedesktop.Notifications` — owned by a `gjs` process (`/usr/bin/gjs-console`), not by gnome-shell. Recorded, not chased |
+| `pcsc-lite`, `pcsc-lite-ccid` | not predicted | both installed: 2.4.1, 1.7.1 |
+| *mine*, least certain of D0: `webkitgtk6.0` on a stock Workstation | installed | 2.52.1 |
+| *mine*: `gtk4`, `bubblewrap`, `xdg-dbus-proxy` | installed | 4.22.1, 0.11.0, 0.1.6; glibc 2.43 |
+| D2: `~/.config/liro`, `~/.local/share/liro`, `~/.local/state/liro`, `/run/user/1000/liro`, `~/.config/autostart` | all absent | all absent; no `liro-bridge` process, package not installed |
+
+### The updates state, and what GNOME Software did by itself
+
+**Not updated.** `dnf history` holds two transactions, both the image's own
+build on 2026-04-22; the kernel is the release's, `6.19.10-300.fc44`.
+
+**But at 22:56–22:57, minutes after the first login, `dnf5daemon-server` —
+GNOME Software's backend — downloaded an update and staged it as an offline
+transaction**: `/usr/lib/sysimage/libdnf5/offline/offline-transaction-state.toml`
+status `download-complete`, 835 packages and 1.6 GB in
+`/var/lib/dnf/offline/packages`, its test transaction 1651 elements. Not armed:
+`/system-update` absent. In the same run it imported the Fedora 44 key into the
+rpm database (`gpg-pubkey-36f612dc…`, 22:56:42) — the only rpm change dated
+that day, and found as a discrepancy against a history that showed nothing,
+not absorbed.
+
+What it would move is most of what this VM is for: gnome-shell and mutter
+50.0 → 50.5, gtk4 4.22.1 → 4.22.5, webkitgtk6.0 2.52.1 → 2.54.0, **bubblewrap
+0.11.0 → 0.12.0 and xdg-dbus-proxy 0.1.6 → 0.1.8 — D23's chain**,
+selinux-policy → 44.10, glibc → 2.43-8, the kernel → 7.2.7-200.
+
+Four third-party repositories are enabled — google-chrome,
+rpmfusion-nonfree-nvidia-driver, rpmfusion-nonfree-steam, a PyCharm copr —
+which fits Workstation's first-run "third-party repositories" choice; not
+read. They are not Fedora, so the Xorg question below was asked of `fedora`
+and `updates` only.
+
+### No GNOME on Xorg — and not "Fedora dropped X11"
+
+| | predicted (session 13 §D1) | read |
+|---|---|---|
+| `/usr/share/xsessions` | absent or empty | exists, **empty** |
+| `/usr/share/wayland-sessions` | GNOME's | `gnome.desktop` and `gnome-classic.desktop`, both Wayland sessions |
+| `gnome-session-xsession` | not installed, not available | not installed; **not in `fedora` or `updates`** |
+| *mine*: `gnome-classic-session-xsession` | not available | not installed, not available |
+| *mine*: `xorg-x11-server-Xorg` | not installed | not installed; `xorg-x11-server-Xwayland` 24.1.9 is |
+| **least certain**: Xorg and an X11 desktop installable | available | **held**: `xorg-x11-server-Xorg` 21.1.21 (`fedora`), 21.1.24 (`updates`); `xfce4-session` 4.20.3 |
+| `/etc/gdm/custom.conf` | — | sets nothing |
+| the gear | none, or no Xorg entry | **not yet read**: the owner looks after the reboot |
+
+The repoquery ran in 1.2 s, too fast to have downloaded anything, so it was
+checked before its silence was believed: the user cache was created by it
+(23:05:57), and the same query resolved `gnome-classic-session` and
+`gnome-session-wayland-session` in both repositories. A wildcard `*xsession*`
+finds `lxsession` and `x2goserver-xsession` and nothing for GNOME.
+
+**Not predicted, and the line worth carrying:** GDM 50 still ships
+`/usr/libexec/gdm-x-session`. **The capability is there and the pieces are
+not** — GDM can start an X session; Fedora ships no Xorg server by default and
+no GNOME session to run on one. That is a different claim from "Fedora dropped
+X11", which is the one usually made; what Fedora 44 dropped is GNOME on Xorg.
+
+So this is §D1's second outcome, in its own words: **no GNOME on Xorg, but an
+X11 desktop is installable, and the Ubuntu VM is the only place GNOME on Xorg
+can be read.** The owner ruled: the Ubuntu VM is kept, and Xfce is not
+installed — *it would measure a desktop nobody in this phase is testing.*
+F12 §11's "Wayland only" held for GNOME, which is what it was about.
+
+### dev.12's `.rpm`
+
+`~/liro-bridge-0.9.9-dev.12.x86_64.rpm`, 11 467 401 bytes: SHA-256
+`9730958307c5e46f0969bbd8cb7622d9054fcc23f04b4115ad1919ab4b1f4542`, equal
+to the owner's and to session 13 §A's. `rpm -Kv`: header and payload SHA-256
+digests OK, **no signature line**. The control, that this instrument prints a
+signature when there is one: a staged Fedora rpm shows "Header OpenPGP V4
+RSA/SHA256 signature, key fingerprint: 36f612dc…: OK".
+
+Every requirement the rpm declares is already provided on this machine
+(GTK 4, WebKitGTK 6.0 and JavaScriptCore, libsoup 3, cairo, pango, graphene,
+gdk-pixbuf, glib, glibc's `GLIBC_2.34`, `pcsc-lite`, `pcsc-lite-ccid`). That is
+read before the update; it is B15's prediction, not its reading.
+
+### Decided by the owner
+
+1. **The staged update is applied before anything is installed**, by the
+   owner's Restart & Install. *"A reading taken before it and a reading taken
+   after it would not be about the same machine, and nobody would know which
+   one a later entry meant."* D0 is repeated after it, and everything from
+   here on is measured on the updated system.
+2. **Automatic downloads off for the phase — a deliberate system change.**
+   `org.gnome.software download-updates` `true` → `false` at 23:13:10, as the
+   user, read back from `gsettings` and `dconf`. The reason: *GNOME Software
+   could otherwise stage another transaction mid-measurement, and this phase
+   turns on knowing what moved and when.* It did not touch the transaction
+   already staged. **Turning it back on is owed when Fedora's work is done**
+   (open-items F10).
+3. **dev.12 is installed unsigned, and this is not the README's rule being
+   ignored.** The README says an rpm with no signature should not be
+   installed; that is written for a release, where the signature is the check
+   a person has. For the owner's own dev build the check is the hash committed
+   in this repository by the session that built it (session 13 §A), and it
+   matches. dev builds have never been signed; the real key has never run
+   (C16).
+
+### D-304's questions, of this sitting's absences
+
+The watcher's absence has a control that resolves a name; the missing GNOME
+X session has a control that resolves known packages from the same query; the
+missing signature has a control that prints one. The run ran: a fresh cache
+directory, today's timestamps. The one reading that is only an absence with no
+control is `/usr/share/xsessions`' emptiness, which `ls` shows directly.
