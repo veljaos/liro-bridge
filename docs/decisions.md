@@ -42175,3 +42175,195 @@ person's hands are not that fast; it is recorded rather than reached.
 Nothing installed or changed. The owner ran `dbus-monitor` and the probes in
 their own terminals; the traces were in `/tmp`, which the next reboot
 clears, and what they say is quoted here.
+
+## D-412 — dev.13 on the Ubuntu VM: the chooser works through the portal, R1 to R4 held; a drag onto the window killed the agent with SIGSEGV, most likely a `GdkContentFormats` that gotk4 hands to GTK as its own and then frees, so the sentence that tells a person to drag sends them to the crash; the binding's ownership errors are a class, audited: no second transfer-full argument, and `load-failed` double-frees WebKit's error; dev.13 must not go to Fedora
+
+**Date:** 2026-09-30
+**Phase:** F12; session 16 §C1 on the Ubuntu VM, dev.13 installed (Wayland).
+open-items D25 updated, D26 opened. **R6 and R7 not taken; R5 failed.**
+dev.14 carries both fixes (below); it is not started, by the owner's
+ruling.
+
+### The boot
+
+dev.13 was the previous boot's one change: apt 21:26:44–46, `Upgrade:
+liro-bridge (0.9.9~dev.12, 0.9.9~dev.13)`, nothing after it in `dpkg.log`;
+a clean `shutdown` 21:27:17, boot 21:27:24 (journal boot `15b9ca43…`),
+session 2 on Wayland at 21:27:49, no greeter after it. `/usr/bin/liro-bridge`
+hashes `9f88b412…5e9b6d`, the binary inside dev.13's `.deb`; dev.12's is
+`a9e642a7…9093f`. The tray was **2467**, started by autostart at 21:27:51.
+`/proc/2467/exe` was refused (non-dumpable), so the process was tied to the
+file by the other route: it started after the file was replaced (ctime
+21:26:46), and `bridge.log`'s next start line says `0.9.9-dev.13 2a46931`
+with `StatusNotifierItem-2467-1` two lines on. A second start line at
+21:29:33 was my `--version` (`main.go:176` logs before the flags are
+parsed).
+
+### The monitor, and its control for an absence
+
+`dbus-monitor` run by the owner (3663, `:1.120`), session 16 §B's rules plus
+`Request` calls and signals, the portal's property reads, and
+`FileTransfer` and `Documents` calls. Before R5, whose sign is an absence, I
+sent one `Documents.GetMountPoint` and one `FileTransfer` call; the monitor
+recorded both. (The second named `RetireTransfer`, which 1.18 does not
+have — `UnknownMethod`; the rule matches the call's interface, so the
+control stands.)
+
+### R1 to R4: held
+
+| | read |
+|---|---|
+| R1 | helper `:1.124` = **3877**, parent 2467: `version` read (**3**), then `OpenFile` with `wayland:…`, "Izaberite PDF dokumente", `modal`, `multiple`, the "PDF dokumenti" filter (`application/pdf`, `*.pdf`, `*.PDF`) and "Sve datoteke" — **answered with a request path in 4.4 ms, no `AccessDenied` anywhere in the trace, and the trace's only `OpenFile` is the helper's**. The dialog as predicted; **modal**: dragging the dialog moved the window with it, and a click on the window was not taken. `Response` 0, `uris` `file:///home/vboxuser/liro-bridge/testdata/pdfs/blank.pdf`, no `Close`; the helper gone; `blank.pdf` listed |
+| R2 | 3877's environment **one line**, `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`; cwd `/`; command line the two words; core limit 0/0; `/proc/3877/root` readable. **`readlink /proc/2467/root`: Permission denied** — D-376 holds for the window |
+| R3 | helper 4246 (`:1.137`), Cancel: `Response` 1, `uris` empty, no `Close`; **the window said nothing**; 4246 gone |
+| R4 | split in three because `outputFolder` was empty and so no `current_folder` is sent: (a) `directory true`, `multiple false`, no filters, no `current_folder`; "Select"; `Response` 0 `file:///home/vboxuser/liro-bridge/testdata/pdfs`, **no trailing slash**, written to `config.json`; (b) helper 4563: `current_folder` `"/home/vboxuser/liro-bridge/testdata/pdfs" + \0` on the wire, the dialog **opened inside it**, Cancel left `config.json` untouched; (c) **Pored svakog dokumenta** put `outputFolder` back to `""` |
+
+`bridge.log` said nothing about any chooser. Two other connections read the
+portal during R1 and are not ours: `:1.123`, 3820, `xdg-dbus-proxy` (WebKit's
+sandbox proxy, `PowerProfileMonitor` and `Realtime`), and `gvfsd-network`.
+
+**Seen and not explained**: the portal's dialog has an "Open files
+read-only" checkbox that dev.12's GTK fallback did not (the owner). I said
+the backend returns the choice in the `Response`; **it does not in any form
+this trace shows** — `choices` is an empty array, and there is no
+`writable`. The monitor does not watch the portal-to-backend call, so where
+the box comes from is not read.
+
+### R5: the agent died on the drag
+
+The owner pressed **Ukloni sve**, opened Files and began dragging `blank.pdf`
+onto the window; **the window vanished.** Read before anything was touched:
+
+- **2467 gone**, and with it every WebKit and sandbox process;
+  `/run/user/1000/liro/bridge.json` left, stale (D-396).
+- The journal, as `liro-bridge.desktop[2467]` (Go's stderr, not
+  `bridge.log`), at **22:02:04.019**: `SIGSEGV: segmentation violation`,
+  `PC=0x79b3fd65d2c3 m=9 sigcode=128 addr=0x0`, `signal arrived during cgo
+  execution`, goroutine 41 — the UI thread — in `g_main_loop_run`
+  (`uithread_linux.go:116`) with **no Go callback above it**: the fault was
+  in C. `sigcode=128` with `addr=0x0` is a general-protection fault, a
+  garbage pointer rather than NULL. The full output is in this boot's
+  journal, `_PID=2467`.
+- **Which library `rip` was in is not readable** by the routes tried: the
+  process's `maps` went with it, the kernel logged nothing (Go handles the
+  signal), and there is no core and no apport report (D-376).
+- `bridge.log`: nothing after the list's own line at 21:50:58. The bus: no
+  `FileTransfer`, `Documents` or `FileChooser` call from anyone.
+
+### Why, from the source — not measured
+
+`connectDrop` connects only `drop` (`drop_linux.go:66`). While a drag only
+hovers, GTK's own `accept` and `drag-enter` handlers read the target's
+formats, and no Go runs — which is the stack. And those formats were very
+likely freed:
+
+- GTK's GIR: `gtk_drop_target_async_new`'s `formats` is
+  **`transfer-ownership="full"`** — GTK keeps the caller's reference.
+- gotk4 v0.3.1's `NewDropTargetAsync` (`gtk/v4/gtk.go:48991`) passes the
+  pointer **without `gdk_content_formats_ref`** and leaves the Go object's
+  finalizer in place; `gdk.NewContentFormats` installs one that calls
+  `gdk_content_formats_unref` (`gdk/v4/gdk.go:18523`).
+
+So once Go's collector finalizes the wrapper, the target holds freed memory,
+and the first thing to read it is the first drag. The window had been open
+from 21:43:12, **18 min 52 s** before the drag; when the collector freed the
+pointer within that is not known, only that nothing used it until then.
+dev.12 never met this: `GtkDropTarget` is made from a GType, not formats.
+**This becomes a finding when dev.14's test goes red on dev.13's code and
+the owner's drag works on dev.14.**
+
+### The owner's three points
+
+1. **The sentence and the drag are coupled.** `chooser.files_failed` tells a
+   person to drag instead, and on dev.13 dragging kills the agent. The
+   owner's ruling that the two ship together (D-410, ruling 3) was right for
+   a reason the owner did not have: *I meant the drop must work, and it
+   turns out the alternative is worse than not working.*
+2. **No test that existed could have found it.** No test drags anything
+   (D-094), and the pointer is freed only when the collector gets to it, in
+   a window that had been open for minutes. It was found by a person doing
+   the ordinary thing the screen told them to do. A test that forces the
+   collector can find it, and that is dev.14's.
+3. **It is a class, not two incidents.** D-385's double free of a CSS parse
+   error and this are both ownership handled wrongly by the same binding at
+   the same pinned version, in opposite directions: there gotk4 freed what
+   GTK still owned; here it frees what it gave GTK.
+
+### The audit the owner asked for
+
+**Method.** Every C function the installed binary imports (`nm -D`, 10,131,
+a superset: gotk4 keeps every method of each type it registers — the
+binary is stripped, so `go tool nm` had no symbols and this was the route),
+crossed with `/usr/share/gir-1.0` (GTK 4.14.5, WebKit 6.0); each hit mapped
+to the gotk4 or gotk4-webkitgtk wrapper that calls it and that wrapper's
+body classified; then which wrappers our non-test code calls; our own C
+shims read separately; the signals we connect read by hand. The classifiers
+are text heuristics, each shown to fire on a known case (`NewDropTargetAsync`
+among the in-arguments; `NewContentFormats`'s finalizer for records).
+
+| | candidates | ours | verdict |
+|---|---|---|---|
+| in-argument `transfer full` | 97 functions, 105 wrappers | `NewDropTargetAsync`, `Widget.AddController` | `AddController` correct (`g_object_ref` first); `NewDropTargetAsync` the crash. **No second one** |
+| return `transfer none` freed by the binding | 1,322 | none of the 2 flagged | clean |
+| our C (`webkitjs_linux.c`, `parenthandle_linux.go`) | 9 GLib/WebKit calls | — | clean |
+| async callbacks, `ReadBytesFinish` | — | the drop | correct |
+| **signals we connect** | 13 connections, 4 with pointers | `drop`, `script-message-received`, `decide-policy`, `load-failed` | the three objects through `coreglib.Take`, correct. **`load-failed` is not** |
+
+**`load-failed` (`window_linux.go:335`), in every window:** WebKit's GIR
+gives its `error` as `transfer none`; gotk4-webkitgtk's marshaller calls
+`gerror.Take`, which `g_error_free`s it (`core/gerror/gerror.go:129`), and
+WebKit frees it again after the signal returns — D-385's double free on a
+signal this program connects. **Never fired in what is kept here**: 0 `ui:
+loading` and 0 `refused a navigation` in `bridge.log`'s 455 lines, 0
+`double free` in the retained journal. When it would fire in this program
+is not read. open-items D26.
+
+**The rule, for the next person adding a gotk4 call.** In gotk4 v0.3.1
+objects are handled by construction: every object in-argument gets a
+reference (51 of 51) and every object signal argument goes through `Take`.
+**Boxed values are where it goes wrong** — a `GdkContentFormats` handed over,
+a `GError` handed in. For any gotk4 call with a boxed argument, a boxed
+return, or a signal carrying one, **read the GIR's `transfer-ownership`
+against the generated body** before relying on it. The heuristic above
+flagged 34 in-arguments the binding hands over with nothing done, nearly
+all boxed (`ContentFormats`, `Gsk.Transform`, `ScrollInfo`, Pango
+attributes); not all are defects — the `GError` ones are built fresh from
+Go's error — and none but `NewDropTargetAsync` is called by us.
+
+### What dev.14 carries (the owner: both)
+
+1. **The drop**: `gtk.NewDropTargetAsync(nil, gdk.ActionCopy)` then
+   `SetFormats` — `transfer none`, and gotk4 keeps the Go object alive across
+   the call, so GTK takes its own reference. **Its test**: in a child
+   process under `MALLOC_PERTURB_`, build the target, drop the Go reference,
+   force the collector and finalizers, and ask the target's formats for
+   `text/uri-list`; on dev.13's code the child should crash or answer
+   false, with the fix it answers true. **Mutation**: the constructor given
+   the formats again must turn it red.
+2. **`load-failed`**: connected in the C shim beside the JavaScript
+   evaluation, a C handler copying the error's domain, code and message and
+   handing only those to Go, so no binding touches WebKit's `GError`. Its
+   test needs a load that fails; if it cannot run under `go test` here
+   (open-items C5), it is recorded as unrun.
+
+### My instrument failures and failed predictions
+
+- **R1's first log read could not match the line it was looking for**: I
+  grepped `21:4[3-9]` and the list's line was at 21:50:58, so I reported
+  "nothing since the start line" wrongly. Corrected in R3's read: the line
+  is the list's (`documents added`, no path), not the chooser's.
+- **R4a's helper was not read**: I gave no pause, and its connection was
+  gone before I mapped it. Its parent is recorded as not read.
+- The `Response` carrying the checkbox's choice: predicted from memory,
+  failed (above).
+- `RetireTransfer`: a method that does not exist, named from memory; the
+  control holds for the reason given.
+
+### This machine
+
+dev.13 installed, **not running**: the tray died at 22:02:04 and nothing
+restarted it; `bridge.json` stale. The next login's autostart starts
+dev.13's tray. `config.json`'s `outputFolder` is back to `""` (R4c).
+**dev.13 must not go to the Fedora VM** — the rpm carries the same drop
+code. The bus trace (`/tmp/s16-bus.log`) goes with the next reboot; what it
+says is quoted here.
