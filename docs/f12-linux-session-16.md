@@ -38,6 +38,13 @@ dev.12's own file, not against what is installed.
 
 ## B. The Ubuntu VM, first, while dev.12 is still installed: B27
 
+**Done (D-411).** Refused as on Fedora; GTK 4.14 calls `OpenFile`
+directly and falls back. The control changed from what is written below:
+`gdbus` is dumpable and could only show an acceptance, so the control was
+`scripts/portalprobe/openfile_control.py`, run non-dumpable and dumpable.
+It also found `Request.Close` failing in the first milliseconds, read
+again with `request_close.py`: timing, the backend's.
+
 **The question:** does Ubuntu's portal refuse the non-dumpable window
 process today, and which chooser does Ubuntu then show? D-408 predicted
 "refused, then GTK 4.14's own dialog". Its log prediction failed (0 of 93
@@ -95,7 +102,7 @@ The same readings on each machine; the table is written once, here, and
 | R3 | cancel | nothing said; the helper gone (`ps`, exact PID) |
 | R4 | **Promeni…** | a folder dialog starting on the current output folder; choosing one changes it |
 | R5 | a PDF dragged from Files | in the list; nothing logged |
-| R6 | **close the window with its corner X while R1's dialog is open** | **least certain**: the dialog goes away (`Request.Close`), the helper is gone within 2 s; the window's process: on Ubuntu the tray stays, on Fedora `open` exits |
+| R6 | **close the window with its corner X while R1's dialog is open** | **least certain**: the dialog goes away (`Request.Close`, which D-411 saw take a dialog down when sent 3 s after the call and fail when sent 20 ms after), the helper is gone within 2 s; the window's process: on Ubuntu the tray stays, on Fedora `open` exits |
 | R7 | Settings → export the audit log | a folder dialog; the export as before |
 
 ### C2. Xorg (the "Ubuntu on Xorg" session)

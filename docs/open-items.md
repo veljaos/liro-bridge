@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-410, 2026-09-30.** One list, to be read in one sitting and acted
+**As of D-411, 2026-09-30.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -84,7 +84,7 @@ prose of an entry before D-280, outside those words, may be missing.
 24. **Whether an MSAA client driven by WinEvents is ever told what is typed into the Windows PIN dialog.** B22's second method, and the only one of its four that D-395 does not close. The hook was installed on the right process over the whole event range and received **no `EVENT_OBJECT_VALUECHANGE` for any phase — including the unprotected control that six other rows read the needle from**, so its silence for the password phases is an instrument that saw nothing anywhere rather than a refusal. Text set with `WM_SETTEXT` raises the event; a person typing, in that run, did not. What bounds it, as reasoning and not as a reading: a WinEvent carries no text, and the callback a client would make is `get_accValue`, measured refused with `E_ACCESSDENIED`. — D-395; D-304's second question. *Close:* a third control that makes the hook fire on typed input for a plain edit, then the same stimulus against the dialog; or an owner's decision that the reasoned bound is enough. *Needs:* Windows, owner's hands, or owner's decision.
 25. **Whether a program running as the same user can press Approve through the accessibility bus**, on either display server. D-384 showed the bus reaches into this program's windows for text; whether the consent window's buttons are actionable through it is not measured. SPEC §6.5.2 says so since D-402. Measuring it would itself be synthetic input, so it is D-094's question. — D-402. *Needs:* owner's decision first.
 26. *Moved to D25 (D-409): it is a measured defect, not an unmeasured claim. Numbering kept.*
-27. **Does Ubuntu's portal refuse the non-dumpable window process, and which chooser does Ubuntu show today?** D-408 predicted the refusal and GTK 4.14's own dialog; its prediction that `bridge.log` carries "Unable to open /proc/…/root" failed — **0 of 93 starts** — which shows only that the line was not logged at the levels the log keeps (D-410). *Close:* a read with a control that can show the line when there is one: portal traffic recorded by a bus monitor, which sees an `AccessDenied` whether or not GTK logs it, against a dumpable run as the control; before dev.13 replaces dev.12 on that VM. *Needs:* owner's hands, measurement.
+27. *Ubuntu's portal refuses the non-dumpable window process as Fedora's does; GTK 4.14 calls `OpenFile` directly, is refused in 2.2 ms and shows its own dialog — read on the bus with a non-dumpable and a dumpable control (D-411). Numbering kept.*
 
 ## C. Built, and never watched or never run end to end
 

@@ -42045,3 +42045,133 @@ could not have failed (session 16 §F).
 
 No packages installed; nothing on the system changed. The dev.12 tray
 (2402, autostart at 20:01) was running throughout and was not touched.
+
+## D-411 — B27: Ubuntu's portal refuses the non-dumpable window process exactly as Fedora's does, GTK 4.14 calls `OpenFile` directly, is refused in 2.2 ms and shows its own dialog, so D-408's reading stands on both distributions; the language of the buttons proved nothing on an English desktop; `Request.Close` fails in the first milliseconds because the backend's object does not exist yet, and an introspection of the request path is not evidence that Close will work
+
+**Date:** 2026-09-30
+**Phase:** F12; session 16 §B, on the Ubuntu VM with dev.12 installed,
+before dev.13. open-items B27 closed. Probes kept in
+`scripts/portalprobe/` (`openfile_control.py`, `request_close.py`).
+
+### The read, and its control
+
+The instrument was the session bus, not GTK's log: `dbus-monitor`, run by
+the owner, watching FileChooser calls, property reads, and every reply and
+error from the portal. It had a control that could show the refusal when
+there was one: the same `OpenFile` from a probe run under `env -i` with only
+the bus address, once non-dumpable and once not. Predictions were written
+first.
+
+| | predicted | read |
+|---|---|---|
+| **C1**, probe non-dumpable (pid 23856, `:1.175`) | refused | `AccessDenied: Portal operation not allowed: Unable to open /proc/23856/root`, 5.7 ms after the call |
+| **C2**, probe dumpable (pid 23863, `:1.176`) | accepted | a request path, `/org/freedesktop/portal/desktop/request/1_176/t` |
+| **R**, Izaberi… in the dev.12 tray | refused, then GTK 4.14's own dialog | **refused**: `:1.187`, which `GetConnectionUnixProcessID` gives as **2402, the tray**, called `OpenFile` (parent `wayland:…`, title "Izaberite PDF dokumente", `multiple`, a `*.[pP][dD][fF]` filter) and was answered `AccessDenied … Unable to open /proc/2402/root` 2.2 ms later. A chooser then appeared that the portal had not drawn |
+| **least certain**: which call GTK 4.14 makes | the `version` read, `OpenFile`, or none | **`OpenFile` directly**; no property read from the tray. The monitor could see one: it caught another process's two property reads (below) seconds earlier |
+
+**Ubuntu's portal refuses a non-dumpable caller the same way Fedora's
+does, and Ubuntu works today only by GTK 4.14's fallback.** D-408's
+reading stands on both distributions. With dev.13 the window process
+makes no chooser call at all.
+
+### What did not prove it
+
+The owner's first reading was that the dialog was GTK's own **because its
+buttons were in English** ("Cancel", "Open", an English sidebar) while the
+desktop's portal would have used the desktop's language. **This desktop is
+English**: `localectl` gives `LANG=en_US.UTF-8`, gnome-shell runs under it,
+and neither GTK's nor the portal's Serbian catalogues are installed. The
+portal's dialog would have had English buttons too. **The refusal in the
+trace is the proof; the language proved nothing here.** The owner agreed.
+
+### The half-translated dialog — a product question, left for the owner
+
+The chooser's title is this program's, in this program's language
+(`"locale": "sr-Latn"` in `config.json`); its buttons and sidebar are the
+desktop's. So a person whose program language differs from their desktop's
+gets a dialog in two languages, and nobody noticed because nobody looked at
+the buttons. **dev.13 does not change it**: the portal's dialog takes our
+title and the desktop's buttons exactly as GTK's does. On a Serbian desktop
+it takes another form, since those usually run `sr`, which is Cyrillic: **a
+Latin title over Cyrillic buttons.** It is a product question, not a
+defect of either dialog, and it is the owner's.
+
+### `Request.Close`, which dev.13 relies on
+
+C2's probe closed its request at once, to leave no dialog on screen. **Close
+was answered `UnknownMethod: Object does not exist at path …/1_176/t`**,
+8 ms after the portal returned that path — and a "B27 dumpable" dialog
+appeared and **stayed until the owner closed it by hand**, after the probe
+had exited. That is the call R6 needs to take a dialog down when a window
+closes. The owner: *treat it as the warning it is — the call dev.13 relies
+on failed in the one run where a dialog actually existed.* So a second read
+came before dev.13, rather than finding out through R6, *where a failure
+would be indistinguishable from a dozen other things.*
+
+Two hypotheses, written first: **(A)** timing — Close arrived in a gap after
+the portal answered; **(B)** the object is never there for a host caller.
+The probe (`request_close.py`) asked with a known `handle_token`,
+introspected the request path right after the reply and again just before
+Close, closed after a delay, and watched for `Response`. Control: an
+introspection of the portal's own object, which exists.
+
+| run | before Close | Close | after Close | the dialog |
+|---|---|---|---|---|
+| delay 0 (`:1.201`) | Request interface **present** (+12 ms, +15 ms) | **`UnknownMethod`**, +20 ms | still present | appeared; went away on its own — when, not read |
+| delay 3 s (`:1.202`) | present | **returned**, +3.035 s | **absent** | appeared; **went away on its own at Close** |
+
+No `Response` signal in either run. **A holds**, and the owner's reading of
+it: R6 stands, because dev.13 closes a request seconds or minutes after the
+call, never milliseconds.
+
+### The two answers that could not both be true
+
+At delay 0 the introspection said the Request interface was there, and
+Close said the object was not, within 5 ms. The owner: *both cannot be
+true of the same instant, so one of them is answering about something
+else.*
+
+**It was Close.** The error's text is `GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: Object does not exist at path …`.
+GDBus writes that `GDBus.Error:<name>:` prefix into an error's text when it
+passes on an error it received from another peer. **The portal's own errors
+in the same traces carry none** (`Portal operation not allowed: …`) — the
+control is in the trace. So the `UnknownMethod` came from another process.
+By the portal's design as I remember it, and **not read on this VM**,
+Close is forwarded to the backend, `xdg-desktop-portal-gnome`, which holds
+its own request object at the same path and had not made it yet. Both
+answers were true, about two objects in two processes.
+
+So A is sharper than it was written: **the portal had registered its
+object; the gap is the backend's.** It also fits the first run's dialog
+that stayed: that probe exited milliseconds after its failed Close, and the
+portal's cleanup for a departed caller would forward Close into the same
+gap. That last sentence is reasoning, not a reading.
+
+**The rule this leaves, for whoever reaches for the instrument next:** an
+introspection of a request path asks the portal, and whether Close works is
+decided by the backend. **It is not evidence that Close will work.** The
+instruments that are: Close itself, and whether the dialog goes; or the
+backend's own object at that path.
+
+**Known for dev.13, and not measured**: a window closed within milliseconds
+of Izaberi… would send Close into that gap, and the helper, exiting, would
+leave the cleanup to land there too — a dialog with nobody behind it. A
+person's hands are not that fast; it is recorded rather than reached.
+
+### Not identified, not chased
+
+- The tray's connection was `:1.187`, assigned after the probes' `:1.176`
+  (21:08:07), and its `OpenFile` carried serial 94. So the tray's GTK did
+  not hold that connection from its 20:01 start. It may be why the settings
+  refusal appears in 0 of 93 starts (D-410): GTK 4.14 may not read the
+  settings portal at start at all. **A lead, not a reading.**
+- `:1.189`, gone before it could be mapped, read the portal's
+  `PowerProfileMonitor` and `Realtime` properties a few seconds before
+  Izaberi… — unanswered by `AccessDenied`, so property reads were served to
+  whatever it was. It is the control that the monitor sees property reads.
+
+### This machine
+
+Nothing installed or changed. The owner ran `dbus-monitor` and the probes in
+their own terminals; the traces were in `/tmp`, which the next reboot
+clears, and what they say is quoted here.
