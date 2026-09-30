@@ -41634,3 +41634,143 @@ with a window open (D-376's installed-package case); nothing asked what else
 reads a process's `/proc` entries to decide whether to serve it, and on
 Ubuntu the one service that does was covered by GTK's fallback, so nothing
 could have shown it there.
+
+## D-409 — D-376 holds on Fedora against systemd-coredump: the flag keeps the kernel from calling it at all; the limit alone keeps the core off disk but puts the process's environment, command line and working directory into the system journal, so "no core" was never the whole claim, and option 1's helper starts with an empty environment and takes paths on stdin only; the Wayland handle export is in the binding; Files offers `text/uri-list`
+
+**Date:** 2026-09-30
+**Phase:** F12; the three reads D-408 put before any code. open-items B26
+updated.
+
+### D-376 against systemd-coredump
+
+Fedora pipes cores to `systemd-coredump` (systemd 259), stock
+configuration; `fs.suid_dumpable = 2`; the session's core limits are
+unlimited/unlimited. D-376 was measured against apport on Ubuntu; this is
+the first reading on the machine we are standing on. Predictions were written
+first; the least certain was the flag alone (predicted: stored, root-only).
+
+Stand-in: `python3` setting the limit (soft and hard 0) and/or
+`prctl(PR_SET_DUMPABLE, 0)` as `ForbidCoreDumps` does, then `os.abort()`.
+The kernel and the handler see only those two states, so the stand-in
+exercises what they decide.
+
+| run | pid | handler | stored | the journal, quoted before it was vacuumed |
+|---|---|---|---|---|
+| nothing | 8835 | called | **core, 777 KB, `(present)`** | `systemd-coredump[8837]: Process 8835 (python3) of user 1000 dumped core.` |
+| limit only | 8851 | called | **none** | `systemd-coredump[8853]: Process 8851 (python3) of user 1000 terminated abnormally without generating a coredump.` |
+| flag only | 8861 | **not called** | none | only `audit[8861]: ANOM_ABEND … sig=6` |
+| both | 8863 | **not called** | none | only `audit[8863]: ANOM_ABEND … sig=6` |
+| installed dev.12 (both) | 9081 | **not called** | none | nothing; see below |
+
+**The flag alone was predicted wrong, in the better direction**: the kernel
+never called the handler. That fits the kernel's rule — `PR_SET_DUMPABLE 0`
+is "never dump", and `suid_dumpable = 2` concerns processes made
+dumpable-for-root by a setuid exec — and it is what D-376 saw with apport.
+The instrument could have seen otherwise: the same journal recorded both
+deaths (`ANOM_ABEND`), and the shell's "(core dumped)" appeared on exactly
+the two runs whose handler ran.
+
+**D-376 holds on Fedora**, for the installed package as for the stand-in.
+
+### The design constraint this sets — not a note
+
+**The limit alone keeps the core off disk and does not keep the process out
+of the journal.** For run 8851, systemd-coredump logged `COREDUMP_CMDLINE`,
+`COREDUMP_CWD`, `COREDUMP_RLIMIT=0` and **the process's whole environment,
+one journal field per variable**, into the system journal, readable by
+`wheel`. So "no core" was never the whole claim a limit makes.
+
+**Option 1's helper is dumpable and relies on the limit alone. It therefore
+starts with an empty environment — nothing inherited, only what the portal
+call needs to reach the session bus and the display — and takes the paths it
+is given, and returns the paths it chose, on stdin and stdout only. Nothing a
+person chose, and nothing of the agent's, ever appears on its command line or
+in its environment.** A crash of the helper then puts in the journal what it
+was started with, and that is nothing.
+
+### My instrument failures in this read
+
+- **The environment leak was mine.** The stand-ins inherited Claude's shell,
+  and run 8851 put that environment — including Claude Code's
+  `CLAUDE_CODE_MESSAGING_TOKEN` — into the system journal; run 8835's stored
+  core holds the same. Not printed. What should have been done: run every
+  stand-in under `env -i`, as every later run was. The owner's view: a
+  session token on a disposable VM, not a credential that reaches anything
+  outside it; they clear both. *"Reporting it yourself, with what you should
+  have done instead, is the right handling and I would rather have that than
+  a clean-looking session."* It is also how the design constraint above was
+  found.
+- **dev.12 needed two attempts, and the first check could not have failed.**
+  A plain SIGABRT to a Go program is caught by the runtime: it prints its
+  stacks and exits. With `GOTRACEBACK=crash` it re-raises — and the process
+  died by **SIGQUIT** (exit status 131), which the kernel's audit hook skips,
+  so the `ANOM_ABEND` chosen as the deciding sign could not appear whatever
+  the handler did. The rerun, with Go's stderr kept (`SIGABRT: abort`, 410
+  lines), read the shell's wait status instead: `Quit`, **without "(core
+  dumped)"**, and no coredump entry. That sign's control is the stand-in
+  table above. The first attempt (8935) is recorded as no reading.
+- **The first drop probe hung, and the hang was the probe's.** It is below.
+
+### The Wayland handle export
+
+gotk4 v0.3.1, `pkg/gdkwayland/v4`: `(*WaylandToplevel).ExportHandle`,
+`DropExportedHandle`, `UnexportHandle`. Read from the source; the program
+does not import the package yet. The helper's dialog can be made modal to
+the window.
+
+### What Files offers on a drop
+
+A non-dumpable PyGObject window with a `GtkDropTargetAsync` accepting
+`text/uri-list` (the portal refused it at start, as it refuses the program),
+dragged onto by the owner: at 21:41:24 Files offered **`GdkFileList GFile
+gchararray text/plain;charset=utf-8 text/uri-list
+application/vnd.portal.filetransfer application/vnd.portal.files`**.
+`text/uri-list` is offered.
+
+**Then the probe hung** ("python3 is not responding"; force-closed by the
+owner). Not the Documents portal: the probe asked for `text/uri-list` only,
+and then read the stream **synchronously on GTK's own thread**, which is the
+thread that must flush the receive request to the compositor before the
+source writes anything. The probe waited on itself. So whether `text/uri-list`
+can be read without the portal is **not yet read**. The real program's drop in
+I1 failed without hanging (GTK logged the portal's error and gave up); "a drop
+onto a non-dumpable window hangs" is not a reading this project has.
+
+### The drop, read again with a probe that cannot hang
+
+The same probe, reading asynchronously (`gdk_drop_read_async` for
+`text/uri-list`, then `splice_async` into memory), with a 10-second cancel,
+`timeout 180` on the process, an empty environment, and `dbus-monitor`
+watching `org.freedesktop.portal.FileTransfer` and `.Documents`. Non-dumpable;
+refused by the portal at start as before. The owner dragged `blank.pdf` from
+Files; the window stayed responsive. The log:
+
+```
+21:43:57 offered: GdkFileList GFile gchararray text/plain;charset=utf-8 text/uri-list application/vnd.portal.filetransfer application/vnd.portal.files
+21:43:57 stream opened for text/uri-list
+21:43:57 read text/uri-list: b'file:///home/velja/liro-bridge/testdata/pdfs/blank.pdf\r\n'
+```
+
+**The prediction held, the least certain part included: the data arrived,
+in the same second, and no FileTransfer or Documents call was made** — the
+only portal errors in the trace are the probe's two refusals at start
+(settings, and GTK's portal monitor), 45 s before the drop. **Option 4 works
+in a non-dumpable process.** The monitor's match rule is the form that
+recorded `FileChooser.OpenFile` in control A; there was no positive
+control for the Documents interface in this run. The process ended at its
+limit (gone at 21:46:37).
+
+### The core file from run 8835: already gone, not removed
+
+The owner rotated and vacuumed the journal (25.8 MB, two archived files) and
+then ran `rm` on the core file; it returned "No such file or directory".
+Read afterwards: sudo's log gives the command as typed, **character for
+character the name from `coredumpctl info 8835`** — so not a different name.
+**Not the vacuum either**: `journalctl --vacuum-*` removes journal files
+only, and `/var/lib/systemd/coredump` last changed at **21:40:46**, four
+minutes before the vacuum (21:44:39) and eight before the `rm` (21:44:54).
+Something removed it at 21:40:46 — the core, and `gnome-session-service`'s
+from 2026-09-29 with it, since the directory is empty. **What did is not
+readable any more**: the journal for that minute went with the vacuum, and
+`systemd-tmpfiles-clean` last ran at 20:32:34. Recorded as **already gone,
+remover unknown** — not as removed by the owner.
