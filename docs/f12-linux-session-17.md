@@ -50,10 +50,12 @@ process running.
    `load-failed` fires in this program — a failed first load, a load
    interrupted by closing the window, a navigation refused by
    `decide-policy`?
-3. **D-407's first-start change: D-410 held it "for dev.14".** Whether it
-   still rides in dev.14 beside two crash fixes, or waits for dev.15, is the
-   owner's — ask before writing it. One change per build is the reason it
-   was held.
+3. **Not D-407's first-start change: held deliberately for dev.15** (the
+   owner, D-412). dev.14 carries two crash fixes and nothing else, so that
+   a failure on Fedora is one of two things, not three. D-407 comes after,
+   with its own read first — a `tray` started from a Shell launch, its
+   window closed, the process still there — which is the owner's hands
+   (open-items D27).
 
 Local green in both views (D-368), each run under `go test -timeout` below
 the tool's limit, output to a file. Lint in both GOOS views. Then

@@ -42367,3 +42367,22 @@ dev.13's tray. `config.json`'s `outputFolder` is back to `""` (R4c).
 **dev.13 must not go to the Fedora VM** — the rpm carries the same drop
 code. The bus trace (`/tmp/s16-bus.log`) goes with the next reboot; what it
 says is quoted here.
+
+### After the handover: the owner's rulings
+
+- **D-407's first-start change is held for dev.15 — deliberately, not
+  deferred by drift.** D-410 had held it for dev.14. The owner, by D-391's
+  rule: dev.14 carries two crash fixes and their readings, *and if anything
+  goes wrong on Fedora I want to know which of two things it was, not which
+  of three.* D-407 is a product change with its own unread premise — that a
+  `tray` started from a GNOME Shell launch outlives its window (session 14
+  §G, option 1) — and that read needs the owner's hands. **Which option is
+  taken is not recorded as decided**: session 14 §G recommended 1, with 3's
+  sentence for an agent that failed to start.
+- **The gap was not in open-items at all**, against the list's own rule
+  that whatever an entry leaves open is added in the same commit. Added now
+  as D27.
+- **The correction taken**: the drag came 18 min 52 s after the window
+  opened; when the collector freed the pointer inside that time is not
+  known. The owner's first sentence gave the interval as though it were
+  the mechanism.
