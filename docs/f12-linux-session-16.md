@@ -19,8 +19,13 @@ from a clean tree at the commit named below; `dist/linux/` is ignored by
 git, so the packages exist only on this VM:
 
 ```
-(hashes recorded after the build — §F)
+322f732998b13cf05b06c950e9e45ef303772fb96481758023a03b4b8471afc1  liro-bridge_0.9.9-dev.13_amd64.deb
+666193b35ab41be1a658b643d2660f1dca86f3f8742c5524103483b84bd66aa5  liro-bridge-0.9.9-dev.13.x86_64.rpm
 ```
+
+One `build.sh` run made both (2026-09-30 20:53), at `2a46931`: the binary
+says `liro-bridge 0.9.9-dev.13 (commit 2a46931, …)` and records
+`vcs.modified=false`. What was read of it here is §F.
 
 **The rpm reaches Fedora on a USB stick**, the owner's route, and its hash
 above is the check at the other end. No Go toolchain on the Fedora VM.
@@ -129,6 +134,23 @@ process, which still asks for settings and still falls back to GSettings.
   when a timeout kills the test binary, and twice a private `dbus-daemon`
   outlived it.
 
-## F. Hashes
+## F. What was read of dev.13 before it leaves this VM
 
-Filled in after the build.
+| | predicted | read |
+|---|---|---|
+| glibc | within the floor, 2.39 | needs 2.34 (`build.sh`'s own check) |
+| **`NEEDED`** (least certain: `gtk4-wayland`'s pkg-config puts `-lwayland-client` on the link line) | **the same 13 libraries as dev.12**, because Ubuntu's linker defaults to `--as-needed` | **identical to the installed dev.12's**, 13 entries; no `libwayland-client`, no `libX11` |
+| new dynamic symbols | all defined by GTK 4.14.5 and its GObject, the floor | 20 new, all defined; a made-up name is not found (the control) |
+| `rpm -K` | digests OK, no signature | **not read**: `rpm` is not installed on this VM. Read on Fedora before the install, as D-405 read dev.12's |
+
+**An instrument failure of mine, in this table's third row**: the first
+symbol check matched names with `nm -D` over `libgtk-4`, which lists the
+library's own undefined references as well as its definitions, so a
+symbol GTK only uses (`g_type_check_instance_is_a`, GObject's) reported
+"defined". That check could not fail. Re-read with `--defined-only`
+against both libraries, with a made-up name as the control.
+
+What GTK 4.22.5 on Fedora exports is not read here. Predicted: all 20;
+the first sign otherwise would be dev.13 refusing to start there at all
+(`liro-bridge --version`), which is the first thing to read after the
+install.

@@ -42018,6 +42018,17 @@ modal, and a window's events queue behind the chooser; past 64 queued, the
 UI thread's `emit` would block until the chooser ends. Recorded, not
 reached in any test.
 
+### The build
+
+`build/linux/build.sh 0.9.9-dev.13 dist/linux` at `2a46931`, one package
+at a time, 26 s (the large cgo packages were cached for `-trimpath` from
+dev.12's build). `vcs.modified=false`. Hashes in session 16 §A.
+**Predicted and held**: the binary links the same 13 libraries as dev.12 —
+`gtk4-wayland`'s `-lwayland-client` did not become a dependency. Its 20
+new dynamic symbols are all defined by GTK 4.14.5 and GObject, read the
+second time: the first check matched GTK's undefined references too and
+could not have failed (session 16 §F).
+
 ### This machine
 
 No packages installed; nothing on the system changed. The dev.12 tray
