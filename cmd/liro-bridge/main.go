@@ -56,9 +56,21 @@ var (
 )
 
 func main() {
-	// Before anything else, in every process this binary becomes — the
-	// agent, the PKCS#11 worker where a PIN meets C_Login, the probe child
-	// a vendor module may crash, the command line: no core image of this
+	// The one exception to what follows, and so it comes first: the
+	// file-chooser helper (Linux, D-410). It must keep its dumpable flag,
+	// because the desktop portal refuses a caller whose /proc/PID/root it
+	// cannot open (D-408), and it holds nothing but what the person
+	// chooses. It is told apart by its whole command line, and it ends
+	// here: the process that skipped the flag never reaches run, so it can
+	// never become the agent, a window, the worker or the probe. It sets
+	// the core limit itself.
+	if chooserHelperRequested(os.Args) {
+		os.Exit(runChooserHelper())
+	}
+
+	// Then, in every other process this binary becomes — the agent, the
+	// PKCS#11 worker where a PIN meets C_Login, the probe child a vendor
+	// module may crash, the command line: no core image of this
 	// process's memory on disk, by this program's own setting rather than
 	// the desktop's (SPEC §6.5.1 clause 3, D-376). In main rather than in
 	// run, so that tests driving run are not made undumpable by it. A
@@ -80,6 +92,7 @@ func main() {
 	// In main rather than in run: run takes the writer it prints to, so
 	// tests drive it with a buffer and have no console in the question.
 	detachAllocatedConsole()
+	enableChooserHelper()
 	os.Exit(run(os.Args[1:], os.Stdout))
 }
 

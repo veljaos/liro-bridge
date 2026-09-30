@@ -848,6 +848,7 @@ func (m *mainWindow) browse() {
 		m.c.T("main.file_filter_all"))
 	if err != nil {
 		slog.Warn("signing window: the file chooser failed", "error", err)
+		m.postChooserFailure(err, "chooser.files_failed")
 		return
 	}
 	if !ok || len(paths) == 0 {
@@ -866,6 +867,7 @@ func (m *mainWindow) chooseOutputFolder() {
 	dir, ok, err := ui.ChooseFolder(m.win.Handle(), m.c.T("main.choose_output_folder"), m.cfg.OutputFolder)
 	if err != nil {
 		slog.Warn("signing window: the folder chooser failed", "error", err)
+		m.postChooserFailure(err, "chooser.folder_failed")
 		return
 	}
 	if !ok {
@@ -1735,6 +1737,7 @@ func (m *mainWindow) exportReport() {
 	if err != nil || !ok {
 		if err != nil {
 			slog.Warn("signing window: the folder chooser failed", "error", err)
+			m.postChooserFailure(err, "chooser.folder_failed")
 		}
 		return
 	}
@@ -1773,6 +1776,15 @@ func (m *mainWindow) reportText(r jobs.Report) string {
 		}
 	}
 	return b.String()
+}
+
+// postChooserFailure says in the window that a chooser failed (D-410).
+// For an error that is not one of the Linux choosers' it says nothing, as
+// before, which is every error on Windows.
+func (m *mainWindow) postChooserFailure(err error, failedKey string) {
+	if text := chooserFailureText(m.c, err, failedKey); text != "" {
+		m.postStatus(text, "negative")
+	}
 }
 
 func (m *mainWindow) postStatus(text, intent string) {

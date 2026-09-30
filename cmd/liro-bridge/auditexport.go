@@ -42,7 +42,13 @@ func exportAuditLogNow(win ui.Window, c *i18n.Catalogue) {
 	target, chosen, err := ui.ChooseFolder(win.Handle(), c.T("settings.export_choose_folder"), "")
 	if err != nil {
 		slog.Warn("settings: choosing an export folder failed", "error", err)
-		postWindowStatus(win, c.T("settings.export_failed"), ui.IntentNegative)
+		// The chooser's own sentence where it has one (Linux, D-410);
+		// otherwise, and always on Windows, the export's.
+		text := chooserFailureText(c, err, "chooser.folder_failed")
+		if text == "" {
+			text = c.T("settings.export_failed")
+		}
+		postWindowStatus(win, text, ui.IntentNegative)
 		return
 	}
 	if !chosen {

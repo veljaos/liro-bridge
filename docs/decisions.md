@@ -41785,3 +41785,240 @@ open-items **B26**, in "Claims not measured"; it is a measured defect and
 is now **D25**, with B26 kept as a moved-to line. And session 13 §E and
 session 14 §J called the a11yprobe's GTK report "B26"; it is **A26**.
 D-408's and this entry's headers keep the number they were written with.
+
+## D-410 — Options 1 and 4 built for dev.13: the chooser is the portal's, asked by a dumpable helper process that holds only what a person chooses and is told everything on stdin; the drop is read as `text/uri-list`; no chooser waits for ever; the owner's rulings on the ceiling, a missing portal and the four sentences; D-407 held for dev.14
+
+**Date:** 2026-09-30
+**Phase:** F12; session 15 §B, on the Ubuntu VM. open-items D25 updated,
+B27 opened. **Built and tested here; not yet run on any desktop.** The
+measurements are session 16's.
+
+### The plan, and what the owner ruled
+
+The plan was brought before any code, as session 15 §B required, and
+approved whole. Five rulings came with it, each recorded with its reason.
+
+1. **The ceiling on a person choosing is 30 minutes — chosen, not
+   measured.** *"No ceiling" means a helper that outlives anything, and
+   this project has spent two weeks learning what unbounded waits do.*
+   When it fires it is logged at error level, loudly, *since nobody will
+   ever see it happen.*
+2. **Where no portal answers FileChooser, the window says so, and the
+   package declares no dependency on `xdg-desktop-portal`.** The owner's
+   reasoning, recorded as asked: xdg-desktop-portal is not something this
+   program can meaningfully require. It was already installed on both
+   machines, and on a desktop where it is missing the person has a
+   stranger system than a missing dependency can fix. **And declaring it
+   would be a claim about what the program needs, when what it actually
+   needs is for the portal to answer — a different thing, as Fedora just
+   showed**: the portal was installed there, and refused.
+3. **The four sentences approved**, with one condition:
+   `chooser.files_failed` tells the person to drag instead, and on Fedora
+   that was broken too, so the sentence is true only if the drop fix ships
+   in the same build. **Both are in dev.13.** `chooser.expired` names the
+   30 minutes, because *a window that closed itself should say why*.
+4. **D-407 is held for dev.14.** One change per boot (D-391), and the
+   option-1 read needs the owner's hands once, not while also carrying a
+   chooser change across two machines.
+5. **The helper's import test is the part to defend hardest**, and its
+   reason is written in the test, not only its rule (below).
+
+### The chooser helper (`internal/chooser`)
+
+A process of this binary, `liro-bridge file-chooser`, started by the
+window process for one chooser and gone after it. It calls
+`org.freedesktop.portal.FileChooser.OpenFile` over D-Bus itself (godbus,
+already a dependency for notifications) and hands back the paths chosen.
+
+**How it is told apart, and why nothing else can reach it.** The first
+statement of `main`, before `ForbidCoreDumps`, is
+`if chooserHelperRequested(os.Args) { os.Exit(runChooserHelper()) }`;
+the test is the whole command line, exactly two words.
+- `main` runs once per exec and the branch ends in `os.Exit`, so the
+  process that skipped the flag never reaches `run` — never the agent, a
+  window, the worker or the probe. Dumpability is per process; the agent
+  cannot borrow it.
+- The only code that execs that command line is the spawner. The desktop
+  entries and the autostart file put `open` or `tray` in `argv[1]`.
+- A person who runs it by hand gets a process that holds what they type
+  into it.
+- It is not in `--help`, as the worker is not.
+
+**What it is given (D-409's constraint).** Command line: the binary and
+the subcommand. Environment: `DBUS_SESSION_BUS_ADDRESS` and nothing else —
+the parent's own value, or `unix:path=$XDG_RUNTIME_DIR/bus` if that socket
+exists, or no chooser at all. Not `DISPLAY` or `WAYLAND_DISPLAY`: the
+helper opens no display, the portal's backend draws the dialog, parented
+by a string. Not `HOME`: godbus authenticates on Linux with EXTERNAL and
+the uid alone (`auth_default_other.go`, read). Not `LANG`: every string
+arrives translated. Not `PATH`: it runs nothing. **Working directory `/`**,
+because systemd-coredump records `COREDUMP_CWD` and the parent's could be
+a folder a person chose. Its files are its three pipes.
+- stdin: one JSON request (kind, title, filters, initial folder, parent
+  window). Then stdin stays open, and **its end means stop**.
+- stdout: one JSON result (outcome, paths, detail). The detail never
+  carries a path, so the parent's log line never does.
+
+It sets `RLIMIT_CORE` to zero through a new leaf package,
+`internal/platform/corelimit`, which `ForbidCoreDumps` now also calls — so
+that the helper need not import `internal/platform`, which holds the
+Secret Service client. It never touches the dumpable flag.
+
+**The recursion D-293 measured** is bounded without an environment marker,
+which the helper's environment must not carry: the spawner has no default
+binary. Only `cmd/liro-bridge`'s `main` sets one
+(`ui.SetChooserExecutable`), so a test binary never spawns itself as a
+helper.
+
+**The portal call.** The helper subscribes to `Request.Response` on the
+path it can predict (its unique name and a random `handle_token`) **before**
+calling, so an answer that outruns the call's reply is not lost. It reads
+FileChooser's `version` first and asks for a folder only from version 3,
+because an older portal ignores `directory` and would return a file. It
+converts `file://` URIs to paths and leaves out anything else, counted.
+It does not use the host Registry (1.18 has none; FileChooser does not
+need it).
+
+**The parent window.** On Wayland, `wayland:` and a handle from
+`WaylandToplevel.ExportHandle` (gotk4 `gdkwayland`), dropped after the
+dialog. On Xorg, `x11:` and the window's X id in hex. **gotk4 v0.3.1 does
+not bind `gdk_x11_surface_get_xid`**, and `gtk4-x11`'s pkg-config would
+put `-lX11` on the link line (read), so the id is taken by `GdkX11Surface`'s
+GType and `dlsym` of the function in the `libgtk-4` already loaded. With
+neither, or no export in 2 s, the dialog opens unparented and not modal,
+and the log says so.
+
+### The drop
+
+A `GtkDropTargetAsync` for `text/uri-list` only, on the window, in the
+capture phase as before, replacing the `GdkFileList` target. The drop is
+read with `gdk_drop_read_async` and the stream in 64 KiB asynchronous
+reads, bounded by 10 s and 1 MiB; RFC 2483 is parsed (CRLF, comments);
+`file://` URIs become paths through the same function the helper uses.
+The drop is always finished, with Copy or with nothing. **Nothing on GTK's
+thread waits** — D-409's first probe hung itself exactly that way.
+Sources that do not offer `text/uri-list` are not accepted.
+
+### The waits
+
+| wait | bounded by |
+|---|---|
+| the handle export | 2 s, then no parent |
+| **the portal answering the call** | `chooser.CallTimeout`, **10 s, chosen**: D-408 measured the refusal in 1 ms; ten allows for D-Bus activation. The phase runs in a goroutine the helper walks away from, so a hang even inside the handshake is bounded |
+| **a person choosing** | the dialog's answer; the portal's name losing its owner; stdin ending (window closed, or parent gone), which closes the dialog with `Request.Close`; `chooser.Ceiling`, **30 min, chosen, not measured**, which closes the dialog and says so |
+| the helper | the parent kills its own child by exact PID at 10 s + 30 min + 5 s; `Pdeathsig` as a second route |
+| the window | `runChooser` returns when its window closes: D-408's "the process outlives its window" is fixed on its own account |
+
+### What the window says, and why Windows does not change
+
+Four keys, in all three catalogues, as approved: `chooser.files_failed`
+(the main window's Izaberi…), `chooser.file_failed` (Settings' stamp
+placement, which has no drop), `chooser.folder_failed` (output folder,
+report, audit export), `chooser.expired`. A dismissal says nothing.
+
+The three call sites are shared code. They show text only for
+`ui.ErrChooserFailed` or `ui.ErrChooserExpired`, which only the Linux
+choosers return (`chooserFailureText`, tested with a Windows-shaped
+error). **Windows' behaviour cannot change; its code did**, in two
+places, both compiled and vetted here with `GOOS=windows`, neither run on
+Windows:
+- `main` calls two functions that are no-ops off Linux.
+- Settings' stamp placement asks for its document before `placeStamp`
+  rather than inside it. A chooser failure could not go through
+  `placeStamp`'s note: a non-empty note switches the page to corners and
+  means "this document cannot be previewed". A cancel behaves as before,
+  statement for statement.
+
+### Tests, and what each could have seen
+
+- **The helper's import guard** (`internal/chooser/guards_test.go`), with
+  the reason at the top of the file: the helper is safe only because it
+  holds nothing worth taking, and that survives only while it cannot reach
+  anything that holds more. It reads `go list -deps` for Linux and allows
+  exactly two packages of this module. **Mutation**: a file importing
+  `internal/config` and `os/exec` made both guards fail, naming `config`
+  and what it pulls in (`platform`, `errs`) and the `os/exec` import.
+  **godbus imports `os/exec`** (it runs `dbus-launch` to autolaunch a
+  session bus); the helper reaches that only through `SessionBus*`, which
+  the guard forbids, and it connects with `dbus.Connect`, whose selector
+  the guard must see (its control).
+- **The real binary** (`cmd/liro-bridge`): started as the helper, its
+  `/proc/PID/root` is readable — the portal's own check — and its core
+  limit is 0/0; **the control** is a child that ran `ForbidCoreDumps`,
+  refused. **Mutation**: `ForbidCoreDumps` moved above the dispatch made
+  this test fail ("permission denied … the portal would refuse it") and
+  the AST test of `main`'s first statement fail.
+- **The fake portal on a private `dbus-daemon`** (no service directories,
+  so nothing is activated): **a refused call comes back as a refusal, not
+  a hang, under the real 10 s bound** — asserted by outcome, not by time
+  (D-201); a refused version read; a silent portal → timeout; no portal;
+  no FileChooser; an old portal asked for no folder; a Response sent
+  before the reply is caught; a choice → local paths only, none in the
+  detail; the call's arguments, **filter types read off the wire by a bus
+  monitor**; folder mode and `current_folder`; cancel; the portal leaving;
+  stop closes the dialog; the ceiling closes it and says so.
+- **The spawner** (`internal/ui`), against a fake helper that is the test
+  binary reporting from Go what it was given: exactly one environment
+  variable (with the parent carrying another as the control), `/` as
+  working directory, the two-word command line, the request intact; a
+  helper that never answers killed at the watchdog and gone by its PID; a
+  window closing stops it, and one that ignores that is killed after
+  2 s; garbage is an error; no binary set is no spawn.
+- The drop's parser; the ceiling's minutes in `chooser.expired` in every
+  catalogue.
+
+Local green, both views (D-368); golangci-lint 2.13.2 clean in both GOOS
+views; vet clean; `checkdeps` OK; the GTK boundary unchanged (the helper's
+package needs no GTK and builds with `CGO_ENABLED=0`).
+
+### Predictions that failed, and my instrument failures
+
+- **D-408's prediction for Ubuntu's log did not hold**: "Unable to open
+  /proc/…/root" appears in **0 of 93 starts** in this VM's `bridge.log`.
+  The log does keep GDK's messages (one `gdkeventsource.c` line is in
+  it), at the levels it records. So this shows the line was not logged —
+  **not** that Ubuntu's portal accepted the process, and not which dialog
+  Ubuntu shows today. The owner: carry it as an open read, and take it
+  *with a control that can show the line when there is one* (open-items
+  B27; session 16).
+- **The refusal's detail lacked the error's name**: godbus's `Error()` is
+  the message alone. Found by the refused-portal test; the name is now in
+  the detail.
+- **The fake portal first read the filters as `aav`.** Not the wire:
+  godbus's `Export` re-wraps each variant it hands a method in
+  `MakeVariant` of the decoded value (`dbus.go` 84–86, 188). Read again
+  off the wire by a monitor connection: `a(sa(us))`. The first reading was
+  the instrument's.
+- **The monitor test hung, ran over five minutes, and was moved to the
+  background by the tool** — a background job, against the owner's rule
+  for this machine. godbus hands every incoming message to an eavesdrop
+  channel once one is set, the reply to `BecomeMonitor` included. I had
+  piped the run through `tail`, so the stacks SIGQUIT printed were lost;
+  the rerun under `go test -timeout 30s` placed it. Stopped by exact PID
+  (SIGQUIT to 7167); **the private `dbus-daemon`s of both runs (7190,
+  7364) had been orphaned** to the user manager and were ended by exact
+  PID, their temporary directories removed. Fixed: monitor first, then
+  eavesdrop; the private bus now has `Pdeathsig`.
+- **No predictions were written before the spawner tests ran.** They are
+  recorded here as not written, not reconstructed.
+
+### Not measured, and known
+
+Everything on a desktop: that the portal's dialog opens for the helper on
+Fedora and on Ubuntu, that it is modal to the window on Wayland and on
+Xorg, that `Request.Close` takes GNOME's dialog down, that the drop
+arrives through `GtkDropTargetAsync`, and that the gotk4 cast yields the
+Wayland toplevel (read from `WalkCast`, which starts at the instance's
+type). All session 16's.
+
+**Known and not fixed**: while a chooser waits, the window's event
+goroutine waits with it, as it did before; a modal dialog keeps the person
+out of the window. If the parent could not be exported, the dialog is not
+modal, and a window's events queue behind the chooser; past 64 queued, the
+UI thread's `emit` would block until the chooser ends. Recorded, not
+reached in any test.
+
+### This machine
+
+No packages installed; nothing on the system changed. The dev.12 tray
+(2402, autostart at 20:01) was running throughout and was not touched.

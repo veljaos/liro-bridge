@@ -234,7 +234,25 @@ func runStampWindow(cfg config.Config, locale string, owner uintptr) (config.Con
 			// folded in first, so a reference typed just before pressing
 			// it is not lost while the placement window is open.
 			cfg = applyStampSettings(cfg, form)
-			next, placed, note := placeStamp(cfg, c, locale, stampWindowDoc{}, win.Handle())
+			// Settings has no document of its own to draw, so it asks
+			// for one. That is not a detour: the point of setting a
+			// position from Settings is to line the stamp up against a
+			// document of the shape you always sign, and there is
+			// nothing to line it up against otherwise.
+			path, failure := chooseStampDocument(c, win.Handle())
+			if path == "" {
+				// Nothing chosen changes nothing, as a cancelled
+				// placement window does; a chooser that could not be
+				// shown also says so (D-410).
+				if !repost(stampMethodOf(cfg)) {
+					return cfg, false
+				}
+				if failure != "" {
+					postWindowStatus(win, failure, ui.IntentNegative)
+				}
+				continue
+			}
+			next, placed, note := placeStamp(cfg, c, locale, stampWindowDoc{path: path}, win.Handle())
 			cfg = next
 			method := stampMethodPlaced
 			if note != "" {
@@ -283,27 +301,13 @@ func runStampWindow(cfg config.Config, locale string, owner uintptr) (config.Con
 // says nothing and changes nothing, while a document that cannot be
 // drawn at all says so and leaves the corners as what is left.
 //
-// Settings has no document of its own to draw, so it asks for one. That
-// is not a detour: the point of setting a position from Settings is to
-// line the stamp up against a document of the shape you always sign,
-// and there is nothing to line it up against otherwise.
+// doc must name a document on disk; Settings, which has none of its own,
+// asks for one first (chooseStampDocument). With no path this changes
+// nothing, as a cancel does.
 func placeStamp(cfg config.Config, c *i18n.Catalogue, locale string, doc stampWindowDoc, owner uintptr) (_ config.Config, placed bool, note string) {
 	path := doc.path
 	if path == "" {
-		// main.choose_files, not place.title: this is the file dialog,
-		// and place.title names the window that opens *after* it. The
-		// signing window's own chooser already uses this string, and
-		// the two filters beside it were already shared.
-		chosen, ok, err := ui.ChooseFiles(owner, c.T("main.choose_files"),
-			c.T("main.file_filter_pdf"), c.T("main.file_filter_all"))
-		if err != nil {
-			slog.Warn("stamp window: the file chooser failed", "error", err)
-			return cfg, false, ""
-		}
-		if !ok || len(chosen) == 0 {
-			return cfg, false, ""
-		}
-		path = chosen[0]
+		return cfg, false, ""
 	}
 
 	saved, ok, previewable := runPlacementWindow(cfg, locale, path, doc.cert, owner)
@@ -317,6 +321,28 @@ func placeStamp(cfg config.Config, c *i18n.Catalogue, locale string, doc stampWi
 	cfg.StampPlacedPage = saved.Page
 	cfg.StampX, cfg.StampY = saved.X, saved.Y
 	return cfg, true, ""
+}
+
+// chooseStampDocument asks for the document Settings lines the stamp up
+// against. path is empty when nothing was chosen; failure is what the
+// window says when the chooser itself failed (D-410), empty otherwise and
+// always empty on Windows.
+//
+// main.choose_files, not place.title: this is the file dialog, and
+// place.title names the window that opens *after* it. The signing
+// window's own chooser already uses this string, and the two filters
+// beside it were already shared.
+func chooseStampDocument(c *i18n.Catalogue, owner uintptr) (path, failure string) {
+	chosen, ok, err := ui.ChooseFiles(owner, c.T("main.choose_files"),
+		c.T("main.file_filter_pdf"), c.T("main.file_filter_all"))
+	if err != nil {
+		slog.Warn("stamp window: the file chooser failed", "error", err)
+		return "", chooserFailureText(c, err, "chooser.file_failed")
+	}
+	if !ok || len(chosen) == 0 {
+		return "", ""
+	}
+	return chosen[0], ""
 }
 
 // buildStampInit is the payload the page renders itself from. Every

@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/veljaos/liro-bridge/internal/platform/corelimit"
 )
 
 // ForbidCoreDumps stops this process — and, for the limit, everything it
@@ -27,10 +29,16 @@ import (
 //
 // Which of the two keeps a core off disk on a given machine depends on the
 // kernel's core_pattern and whoever it pipes to; D-376 measured each alone
-// and both together against apport on Ubuntu 24.04.
+// and both together against apport on Ubuntu 24.04, and D-409 against
+// systemd-coredump on Fedora 44.
+//
+// **One process of this binary does not call this**: the file-chooser
+// helper, which main dispatches before it and which sets the limit alone
+// (corelimit.Set), because the desktop portal refuses a caller whose
+// /proc/PID/root it cannot open and the flag makes that root's (D-408).
 func ForbidCoreDumps() error {
-	if err := unix.Setrlimit(unix.RLIMIT_CORE, &unix.Rlimit{Cur: 0, Max: 0}); err != nil {
-		return fmt.Errorf("platform: setting RLIMIT_CORE to zero: %w", err)
+	if err := corelimit.Set(); err != nil {
+		return fmt.Errorf("platform: %w", err)
 	}
 	if err := unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0); err != nil {
 		return fmt.Errorf("platform: clearing the dumpable flag: %w", err)
