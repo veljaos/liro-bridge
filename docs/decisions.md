@@ -41984,16 +41984,28 @@ package needs no GTK and builds with `CGO_ENABLED=0`).
 - **The refusal's detail lacked the error's name**: godbus's `Error()` is
   the message alone. Found by the refused-portal test; the name is now in
   the detail.
-- **The fake portal first read the filters as `aav`.** Not the wire:
-  godbus's `Export` re-wraps each variant it hands a method in
-  `MakeVariant` of the decoded value (`dbus.go` 84–86, 188). Read again
-  off the wire by a monitor connection: `a(sa(us))`. The first reading was
-  the instrument's.
+- **The fake portal first read the filters as `aav`, and it was the fake
+  that was wrong.** It saw what godbus rebuilt for it, not what went on the
+  wire: `Export` re-wraps each variant it hands a method in `MakeVariant`
+  of the decoded value (`dbus.go` 84–86, 188). Only a bus monitor showed
+  the difference: `a(sa(us))` on the wire. The owner's statement of it:
+  **a fake that agrees with its caller because both are the same library
+  is an instrument that cannot disagree** — and this one could only
+  disagree wrongly. The wire, read by something that is not the caller's
+  library, is the instrument; the fake is a stimulus.
 - **The monitor test hung, ran over five minutes, and was moved to the
   background by the tool** — a background job, against the owner's rule
   for this machine. godbus hands every incoming message to an eavesdrop
   channel once one is set, the reply to `BecomeMonitor` included. I had
-  piped the run through `tail`, so the stacks SIGQUIT printed were lost;
+  piped the run through `tail`, so the stacks SIGQUIT printed were lost —
+  **the third time in this project that `tail` has eaten what a run said**,
+  after D-316 (lint's exit code 7) and D-354 (a failed build reported as a
+  success; D-355 calls it D-322's unread exit code again). D-355 had
+  already made the fix a form — every build and test run writes to a
+  file — and I did not follow it: the rule existed and was not used. The
+  owner's note on the background move: the rule it broke was set after
+  this VM crashed twice; the tool made the move rather than me, and the
+  guard against it is now in Claude's memory on this VM, read first;
   the rerun under `go test -timeout 30s` placed it. Stopped by exact PID
   (SIGQUIT to 7167); **the private `dbus-daemon`s of both runs (7190,
   7364) had been orphaned** to the user manager and were ended by exact
