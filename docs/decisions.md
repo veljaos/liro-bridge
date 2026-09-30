@@ -41277,3 +41277,360 @@ X session has a control that resolves known packages from the same query; the
 missing signature has a control that prints one. The run ran: a fresh cache
 directory, today's timestamps. The one reading that is only an absence with no
 control is `/usr/share/xsessions`' emptiness, which `ls` shows directly.
+
+## D-406 — Across the update: the transaction completed and its unit exited 1 in a race with the reboot; 2002 of 2003 installed packages carry Fedora's signature, which is not "the signatures were checked", and that can no longer be established; dnf prints the same warning for signed packages it did not check and an unsigned one it had nothing to check against; `gh` installed unrecorded; B15 answered — dnf5 installs an unsigned local rpm with nothing typed but the password and `y`
+
+**Date:** 2026-09-30
+**Phase:** F12; session 14 §B and §C, on the far side of the update D-405
+decided. open-items B15 closed, F10 updated. dev.12 installed; not yet run.
+
+### The update, as the journal has it
+
+The owner's account: about 20 minutes, two reboots, no error on screen. The
+record:
+
+| boot | from – to | what |
+|---|---|---|
+| −3 | 09-29 22:59:19 – 23:26:48 | session 14's reads; `gh` installed at 23:21 (below) |
+| −2 | 23:26:59 – 23:36:49 | the offline update, on 6.19.10 |
+| −1 | 23:36:53 – 23:41:57 | first boot on 7.2.7; a 33-second login at 23:41:24 in which the owner read the gear, then a clean shutdown |
+| 0 | 09-30 20:16:56 – | this sitting; login 20:18:13 |
+
+**Predicted two boots after 23:13; there were three.** Explained by the owner:
+they logged in, read the gear, and stopped for the night. `shutdown` and
+`reboot` records throughout, no `crash`.
+
+**Predicted "a completed transaction, no error"; the journal says both.** In
+boot −2, `dnf5[882]` printed `Transaction complete! Cleaning up and
+rebooting...` and `Complete!` at 23:36:48, and in the same second:
+
+```
+systemd-logind: The system will reboot now!
+dnf5-offline-transaction.service: Main process exited, code=exited, status=1/FAILURE
+dnf5-offline-transaction.service: Triggering OnFailure= dependencies.
+Starting dnf5-offline-transaction-cleanup.service - Offline upgrade/transaction using DNF 5 failed...
+systemctl: Call to Reboot failed: ... a concurrent deactivation request is already in progress
+```
+
+The transaction completed and the unit exited 1 in a race on the way out: the
+reboot dnf asked for had already begun when its process ended, and the
+cleanup unit's own reboot was refused because one was in progress. That the
+transaction is whole is read from three places, not inferred from the
+reboot: `dnf history` #4 `Status: Ok` with an end rpmdb, every version §B
+predicted installed, and nothing left in the offline directories. **The
+owner's account said no error, and the record says what the journal says.**
+Nothing was on screen to say otherwise: Plymouth was already showing the
+reboot.
+
+### Signed is not checked
+
+At the offline step, dnf printed:
+
+```
+Warning: skipped OpenPGP checks for 835 packages from repositories: fedora, fedora-cisco-openh264, updates
+```
+
+Every repository file says `gpgcheck=1`, and the Fedora defaults say
+`pkg_gpgcheck=True`. The one other verification seen, during GNOME
+Software's preparation at 23:24, is rpm's own (`RPM callback verify`, 835
+packages, twice), and `%_pkgverify_level` is `digest`: that stage enforces
+digests, not signatures.
+
+What *is* read: 2002 of 2003 installed packages carry a header signature by
+key `dbfcf71c6d9f90a6`, Fedora 44's, the only key imported; the one without
+is that key's own `gpg-pubkey` entry.
+
+**That is "signed", not "the signatures were checked"**, and it is the shape
+this project keeps finding: a property of the thing standing in for the act
+of checking it. The downloaded files were removed with the offline
+directory, so `rpm -K` on what was installed is no longer possible: **whether
+dnf verified the signatures of this update cannot now be established either
+way**, and is recorded as that rather than as either answer.
+
+**The owner's addition, and it belongs here.** The same sentence — `skipped
+OpenPGP checks for N package(s) from repository: …` — was printed for 835
+packages that are signed, and for dev.12, which is not signed at all and had
+nothing to check against. The warning does not distinguish *not checked* from
+*nothing to check*, so a person reading it in a transcript learns nothing
+about which of the two they are looking at.
+
+### An unrecorded change
+
+`dnf history` #3: `dnf install -y gh`, 23:21:00 CEST on 09-29, uid 1000 from
+pts/2 — the GitHub CLI. It is the owner's: `git push` would not authenticate
+with the token, so they installed `gh` and used `gh auth login`. It came after
+session 14's handover recorded its changes at 23:13 and is not among them.
+**A change nobody recorded is a finding regardless of whose hand made it.**
+It touches nothing this phase measures: one package, no dependencies.
+Predicted "a third transaction, from the offline update"; the update is the
+fourth, and the third is this.
+
+### §B's other reads
+
+All held. Kernel `7.2.7-200.fc44.x86_64` (the least certain); gnome-shell and
+mutter 50.5, gtk4 4.22.5, webkitgtk6.0 2.54.0, bubblewrap 0.12.0,
+xdg-dbus-proxy 0.1.8, selinux-policy 44.10, glibc 2.43-8; pcsc-lite 2.4.1 and
+pcsc-lite-ccid 1.7.1 installed (not predicted). `Enforcing`;
+`download-updates` `false`; `/system-update` absent and both offline
+directories empty at 20:20 and 20:21. Session 2, tty2, `Type=wayland`. The
+gear, by the owner's eye at the greeter: **GNOME and GNOME Classic, no Xorg
+entry** — D-405's prediction confirmed from what a person sees, not from the
+package list. D2: all five paths absent, `ps -C liro-bridge` empty.
+
+D0 again: unchanged, including `sudo -n` failing, and
+`StatusNotifierWatcher` absent. Its control: the same `busctl --user status`
+resolves `org.gnome.Shell` (gnome-shell, 2100), and no `StatusNotifier` name
+is owned or activatable. D1's installed half: `xsessions` empty,
+`wayland-sessions` holds `gnome.desktop` and `gnome-classic.desktop`;
+`gnome-session-xsession` and `xorg-x11-server-Xorg` not installed.
+
+### B15
+
+Before: sha256 equal to D-405's; `rpm -K` `digests OK`, no signature; each of
+the fifteen `rpm -qpR` requirements resolved by `rpm -q --whatprovides` to
+an installed package. The owner's install, as pasted:
+
+```
+Installing: liro-bridge x86_64 0:0.9.9~dev.12-1 @commandline 43.3 MiB
+Total size of inbound packages is 11 MiB. Need to download 0 B.
+Is this ok [y/N]: y
+[1/3] Verify package files    100% | 20.0 B/s | 1.0 B | 00m00s
+[2/3] Prepare transaction     100% |  7.0 B/s | 1.0 B | 00m00s
+[3/3] Installing liro-bridge  100% | 27.3 MiB/s | 43.3 MiB | 00m02s
+Warning: skipped OpenPGP checks for 1 package from repository: @commandline
+Complete!
+```
+
+**B15 is answered: on a stock Fedora 44 Workstation, updated, dnf fetched
+nothing but the package itself, asked for the sudo password and `y`, and
+installed in about two seconds.** Every requirement was already satisfied.
+**The least certain prediction is settled: dnf5 accepts an unsigned local rpm
+with no question and no refusal** — only the warning above, afterwards.
+`dnf history` #5, 20:23:57 CEST, one package. **The predicted metadata
+refresh of seven repositories was not printed**: the owner pasted the
+transaction whole, as it appeared. Whether dnf refreshed silently or used
+its cache is not read.
+
+What the package put on disk (`rpm -ql`): `/usr/bin/liro-bridge`, two desktop
+entries (`liro-bridge.desktop`, `Exec=liro-bridge open`; and the PDF handler,
+`NoDisplay=true`), six hicolor icons. **No autostart entry and no
+scriptlets** (`rpm -q --scripts` empty). At 20:24:57 no `liro-bridge`
+process and no Liro path: installing started nothing.
+
+### Instruments that failed, mine
+
+- **The update's journal was read at the wrong boot.** `-b -1` came back
+  empty because the boots had been counted by the prediction, and the
+  prediction was one short. An empty answer from the wrong boot looks exactly
+  like "the unit logged nothing". Found because the empty result did not
+  fit `dnf history`; re-read at `-b -2`.
+- **D0's `loginctl show-session $XDG_SESSION_ID`** cannot work from Claude's
+  shell, where the variable is empty. Session 2 was named from
+  `loginctl list-sessions` instead.
+
+## D-407 — The first start on stock GNOME: a window with no agent behind it, so a person's web application cannot reach Liro until their next login and nothing tells them; D-342 decided how the agent behaves with no tray and never how it first comes to be running; the portal refuses GTK's settings read because the program is not dumpable
+
+**Date:** 2026-09-30
+**Phase:** F12; session 14 §F. A product finding, open for the owner's
+decision; the options are below and none is taken.
+
+### The reads
+
+The owner opened **Liro Bridge** from GNOME Shell at 20:29:53 (the owner's
+hands; D-094). Session 14 §F's predictions against what was read:
+
+| | predicted | read |
+|---|---|---|
+| one process | `liro-bridge open` | pid 5714, `/usr/bin/liro-bridge open`, parent gnome-shell (2100), in `app-gnome-liro\x2dbridge-5714.scope`, "Application launched by gnome-shell" |
+| WebKit under it | NetworkProcess, WebProcess, `bwrap`, `xdg-dbus-proxy` | held: `WebKitNetworkProcess` direct; `bwrap`→`bwrap`→`xdg-dbus-proxy`; `bwrap`→`bwrap`→`WebKitWebProcess` (64 MB PSS). D23 with one window: WebKitWebProcess 1, xdg-dbus-proxy 1, descendants 7, WebKitGTK 2.54.0 |
+| the sandbox under SELinux (least certain) | starts | `bwrap` is running with the web process inside it. Whether SELinux denied anything along the way is in the audit log, root's: **not read** |
+| no X11 window | none | `_NET_CLIENT_LIST` on Xwayland :0 (already running since 20:18, so the read started nothing) present and empty. No positive control this sitting: no X11 window was open to show it listed |
+| autostart written | `Exec=… tray`, enabled | held exactly: `Exec="/usr/bin/liro-bridge" tray`, `X-GNOME-Autostart-enabled=true`, 20:29. **D2's baseline stops being true here** |
+| other paths | not predicted | `~/.local/state/liro/logs/bridge.log` only; no `~/.config/liro`, `~/.local/share/liro`, `~/.cache/liro` |
+| **no agent** | no discovery file, nothing listening | held: no `$XDG_RUNTIME_DIR/liro`; `ss -ltn` (no `-p`) lists only resolved, LLMNR and CUPS. The instrument's control is those listeners themselves |
+
+The window as a person sees it (drawn, Serbian Latin, empty list) is the
+owner's eye and is not yet recorded.
+
+### The product finding
+
+**A person installs the package, opens it, and gets a window with no agent
+behind it.** Their web application cannot reach Liro until their next login,
+and nothing tells them that.
+
+The pieces each do what they were written to do. `open` runs a window, and
+hands over to an agent if one is live (F12 §7.1); it writes the autostart
+entry (F6 §2, F12 §8); the entry starts `tray` at the next login. D-342
+decided that on a desktop with no tray the agent runs and says nothing.
+**It never decided how the agent first comes to be running**, and this is
+where the gap shows. On Windows there is no gap: the MSI's `LaunchAgent`
+runs `tray` after `InstallFinalize` (`build/msi/liro-bridge.wxs`), "so the
+person's first sight of the program is the program". On a tray desktop on
+Linux the gap is the same as here; it is only less likely to be noticed.
+
+The owner's instruction: bring the options once the reads are in, and do not
+decide it before knowing whether the window can start the agent itself,
+whether the package should, or whether the person should simply be told.
+The options, as brought, are in session 14 §G.
+
+### An unpredicted line: the portal refuses GTK's settings read
+
+`bridge.log`, 20:29:53, from GDK's Wayland backend:
+
+```
+Failed to read portal settings: GDBus.Error:org.freedesktop.DBus.Error.AccessDenied:
+Portal operation not allowed: Unable to open /proc/5714/root
+```
+
+**The mechanism is read, not inferred.** `/proc/5714/root` is owned by root
+and `readlink` on it is refused to the user; the control, gnome-shell's
+(2100), is the user's and reads `/`. The program clears its dumpable flag at
+start (`internal/platform/coredump_linux.go`, D-376), and the kernel then
+gives its `/proc` entries to root. xdg-desktop-portal 1.22.1 opens that link
+to identify the calling application, so it refuses. **The consequence is not
+read**: whether GTK falls back to GSettings and the window still follows the
+desktop's appearance, and whether other portal calls the program makes (the
+file chooser) are refused the same way. The desktop's `color-scheme` is
+`'default'`, so this sitting cannot tell a followed setting from an ignored
+one. No earlier record in this project mentions the line; whether Ubuntu's
+portal printed it is not read.
+
+## D-408 — On Fedora 44 there is no way at all to give this program a document: D-376's non-dumpable flag makes the desktop portal and the Documents portal refuse the process, GTK 4.22 never answers a refused chooser so the window hangs, and a drop fails silently; Ubuntu is unbroken only because GTK 4.14 still falls back, and GTK 4.17.1 removed that; the portal has no caller route that avoids `/proc/PID/root`
+
+**Date:** 2026-09-30
+**Phase:** F12; session 14 §F, §H, §I; open-items B26 opened. A product finding; options in session
+14 §J, none taken. **D-376 is not changed.**
+
+### What a person meets
+
+On the empty list the window says "Prevucite PDF dokumente ovde" and "Ili ih
+izaberite pritiskom na dugme Izaberi." **Izaberi…** does nothing: no dialog,
+no error. **Promeni…** does nothing. The corner X closes the window and the
+process stays (pid 5714, alive 8 minutes later). A PDF dragged from Files
+does not appear in the list. **On Fedora 44, with this package, a person
+cannot give the program a document by any route, and the screen tells them
+to press a button that does nothing.**
+
+### Why, measured
+
+- **The hang.** SIGQUIT to pid 5714, exact PID — the only route, since the
+  flag also refuses ptrace and `/proc` stacks. The main goroutine was in
+  `internal/ui.runChooser` (`filedialog_linux.go:125`), waiting for the
+  first **Izaberi…**'s `OpenMultiple` callback. The window's action loop was
+  blocked from that press on: that is **Promeni…** doing nothing and the
+  process outliving its window. One fault, three symptoms.
+- **The cause, control A** (a minimal PyGObject program on the same GTK
+  4.22.5, two runs differing only in `prctl(PR_SET_DUMPABLE, 0)`, portal
+  traffic recorded): non-dumpable, `FileChooser.OpenFile` is answered
+  `AccessDenied: Portal operation not allowed: Unable to open
+  /proc/6647/root` within 1 ms and **GTK never calls back** (it answered
+  only when the script cancelled at 25 s); dumpable, `OpenFile` is accepted
+  and the portal's dialog starts.
+- **The control on the program itself, I2**: dev.12 with
+  `GDK_DEBUG=no-portals`, flag untouched. No portal method calls on the bus,
+  no refusal in the log; **Izaberi…** opened the PDF chooser, **Promeni…** a
+  folder chooser, both cancelled by the owner, and the corner X ended the
+  process. **The cause is the portal refusal and nothing else.**
+- **The drop, I1**: `Failed to receive drop data: …g_2dio_2derror_2dquark.Code0:
+  Unable to open /proc/7675/root` (GTK's `gtkdroptarget.c`). The same check,
+  in a different service: xdg-document-portal's `FileTransfer`
+  (`document-portal/file-transfer.c:530`) returns the check's GError raw,
+  where the desktop portal wraps it as `AccessDenied`. Identified by the
+  error's shape and the source; no bus trace ran during I1. It did not hang:
+  GTK logs it and gives up. Nothing is shown; the program logs nothing.
+- **Settings** are refused too, and GTK falls back to GSettings
+  (`gdksettings-wayland.c`): a log line and nothing else.
+- **Not affected**: notifications (the program calls
+  `org.freedesktop.Notifications` directly); "open folder" (`xdg-open`, a new
+  process, which does not inherit the flag). Not used: OpenURI, Print,
+  Screenshot.
+- **Unrelated, recorded so it is not folded in**: on every window, the portal
+  answers a Realtime request from a caller that is "pid 2" — WebKit's web
+  process inside its `bwrap` pid namespace — with `Could not get pidns for
+  pid 2: PIDFD_GET_PID_NAMESPACE ioctl failed`. That costs WebKit thread
+  priority, not documents, and has nothing to do with the flag.
+
+### Why Ubuntu did not show it
+
+Not the portal: `open_flatpak_info`'s `/proc/PID/root` check and its "fail
+instead of treating this as privileged" are the same in 1.18.4 (Ubuntu
+24.04, `1.18.4-1ubuntu2.24.04.3`), 1.22.1 (Fedora) and upstream `main` on
+2026-09-30. **GTK changed.** 4.14.5 (Ubuntu, `4.14.5+ds-0ubuntu0.10`) shows
+the portal chooser with a `portal_error_handler` that falls back to GTK's own
+dialog; commit `d515311b59` (2024-11-19, "filechoosernative: Make portals
+not fall back … if it fails, show an error instead", first in **4.17.1**)
+removed it, and 4.22.5's `open_file_msg_cb` frees the request under `/*
+FIXME: Show an error dialog here ? */` and never answers. **Ubuntu is not
+fixed; it is unbroken by accident, and the GTK that breaks it has shipped.**
+Prediction for the Ubuntu VM, not read: its `bridge.log` carries the same
+"Failed to read portal settings … Unable to open /proc/…/root", and the
+chooser the owner saw there was GTK's own.
+
+### Is there a route that does not need `/proc`?
+
+**No, for the process that makes the call.** xdg-desktop-portal 1.22.1
+identifies a caller from its D-Bus connection's pid: flatpak first (open
+`/proc/PID/root`, read `.flatpak-info`), then snap, linyaps, host. Any error
+from the flatpak step other than "wrong kind of app" ends the lookup, and the
+one exception is `EACCES` on a FUSE root. The host Registry
+(`org.freedesktop.host.portal.Registry.Register`), which would record an app
+id for a host connection, **runs the same detection first**
+(`registry.c:79`), so a non-dumpable caller cannot register either. No
+document handle or sandbox identifier stands in for it. The refusal is
+deliberate: a caller whose root cannot be read must not be taken for a host
+app, which the portal trusts more than a sandboxed one.
+
+**What the portal checks is the process on the other end of the D-Bus
+connection**, so the route that exists is a different process: one that is
+dumpable, holds nothing, and makes the portal call on the window's behalf.
+That is the shape of session 14 §J's option 1.
+
+### Measured beside it, for the options
+
+- D-376's own table (Ubuntu 24.04, apport 2.28.3): **the limit alone** kept
+  apport from writing a core (apport called, "core limit 0", nothing
+  written); **the flag alone** kept apport from being called at all. The flag
+  is the defence against a core handler that ignores the limit.
+- **Fedora is not what D-376 measured.** `core_pattern` pipes to
+  `systemd-coredump` (systemd 259), not apport; `fs.suid_dumpable = 2`.
+  Neither mechanism has been measured against it. And
+  `kernel.yama.ptrace_scope = 0` here: any process running as the user may
+  ptrace a dumpable one. On Fedora the flag is also what stops that.
+
+### Decided by the owner
+
+**Options 1 and 4** (session 14 §J): a chooser helper that is dumpable, holds
+only the paths the person chose, and calls the portal itself; and drops read
+from `text/uri-list` directly. *"It is the only pair that fixes both
+distributions for real, uses the portal as intended, and asks nothing from
+D-376 for any process that holds a secret. A helper that holds only the
+paths I chose is the right shape — it is the worker arrangement again, one
+level up."*
+
+**Not 3**: *"a debug variable that does what GTK says apps must not do is a
+side door, and it would turn off every portal for WebKit's processes too."*
+**Not 5, either half**: *"(b) is worse than it looks — a drop cannot be
+foreseen, so the hole would have to stay open for the window's life rather
+than the dialog's."*
+
+Taken with it:
+
+- **A chooser that never answers times out and says so**, whichever option
+  is built. That is the defect that turned one refusal into a window the
+  owner could not close, and it is fixed on its own account.
+- **A report to GTK**, drafted by Claude and filed by the owner: commit
+  `d515311b59` promised an error instead of a fallback, and 4.22.5 shows
+  nothing and never answers the caller. Measured, with the reproducer.
+- **Before any code, three reads**: whether Files offers `text/uri-list`;
+  whether the binding exposes the Wayland handle export; and **D-376 against
+  systemd-coredump on this VM**, owed whatever is built.
+
+**The owner, for the record:** this is the first time one of this program's
+own protections has broken something a person uses, and it was found by the
+owner pressing a button, not by any test. *"Every measurement this week said
+the dialog was fine."* D-376 was measured against the thing it protects
+against — a core reaching apport — and against the program's own processes
+with a window open (D-376's installed-package case); nothing asked what else
+reads a process's `/proc` entries to decide whether to serve it, and on
+Ubuntu the one service that does was covered by GTK's fallback, so nothing
+could have shown it there.
