@@ -41774,3 +41774,14 @@ from 2026-09-29 with it, since the directory is empty. **What did is not
 readable any more**: the journal for that minute went with the vacuum, and
 `systemd-tmpfiles-clean` last ran at 20:32:34. Recorded as **already gone,
 remover unknown** — not as removed by the owner.
+
+The owner, afterwards: they ran nothing as root around 21:40 — they were
+waiting for a reply. The bare `rm /var/lib/systemd/coredump/` in sudo's log
+is theirs, a slip while copying, and did nothing (no `-r`). **The core's
+removal stays "remover unknown" and is not attributed to the owner.**
+
+**Two pointers corrected at the handover.** The finding was opened as
+open-items **B26**, in "Claims not measured"; it is a measured defect and
+is now **D25**, with B26 kept as a moved-to line. And session 13 §E and
+session 14 §J called the a11yprobe's GTK report "B26"; it is **A26**.
+D-408's and this entry's headers keep the number they were written with.

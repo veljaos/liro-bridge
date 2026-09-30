@@ -292,7 +292,7 @@ same user out of the agent's memory.
 - **The window must not hang on a callback that may never come.** GTK 4.22
   drops a refused chooser silently (the FIXME above). `runChooser` waiting
   for ever is how one refusal became a window that could not be closed.
-- **A report to GTK**, the owner's to file as with B26: `d515311b59`
+- **A report to GTK**, the owner's to file as with A26: `d515311b59`
   promised "show an error instead of falling back", and 4.22.5 shows nothing
   and never answers the caller.
 
