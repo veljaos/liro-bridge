@@ -42746,3 +42746,192 @@ installed; nothing on the system changed. The bus trace goes with the next
 reboot; what it says is quoted here. **This Claude session runs in
 gnome-terminal under the owner's login, so the logout to Xorg ends it**;
 C2 and Fedora are session 19's.
+
+## D-415 — dev.14 on the Ubuntu VM, Xorg: my least certain prediction failed, and the way it failed is the finding — the chooser's window-closed path, built for a case nobody could produce and still not producible on Wayland, was produced on Xorg first by an accident and then on purpose: the helper sent `Request.Close` 60 ms before the window left the client list and was gone within 37 ms of it; the dialog is attached on Xorg as on Wayland, but mutter's title bar sits above it and the corner X can be reached; the logout ended the Wayland tray by the display going, not by SIGTERM, so Quit's path did not run; the drop holds on X11 and the refused `RetrieveFiles` is there too; the drop outline never clears, and the size is to go, both for dev.15
+
+**Date:** 2026-10-01
+**Phase:** F12; session 19 §B–§C on the Ubuntu VM, dev.14 installed,
+"Ubuntu on Xorg". open-items C19 closed; D23 and D25 updated; D28, D29,
+D30 and B28 opened. **R1, R2, R5 held on Xorg; R6 performed by a person,
+twice.** Fedora not taken: session 20's.
+
+### The logout: a logout, and the first one this VM has recorded
+
+Predictions written first (scratchpad), least certain how the old tray
+would end.
+
+| | read |
+|---|---|
+| boot | `uptime -s` **2026-10-01 20:13:41**, unchanged; `last -x -F`: tty2 20:14:45 – **21:36:37** with an end time (not "down", not "crash"), a new login on `:0` at 21:36:54; no boot or shutdown after 20:13:46 |
+| logind | 21:36:37.111 **"Session 2 logged out"**, "Removed session 2", greeter `c2`; **session 18** at 21:36:53; `c2` removed 21:36:58 |
+| type | `loginctl show-session 18`: **`Type=x11`**, VT 2; this shell `XDG_SESSION_TYPE=x11`, `DISPLAY=:0` |
+| greeter `c3` | 21:37:20 – 21:37:41, after the login. Read first (D-402): Xorg 15401 `drop master for 226:0` and `got pause` at 21:37:20, `got resume` at 21:37:31. **The owner: the Xorg login came up as a black screen, and they pressed Ctrl+Alt+F1 and back**, as in D-402 |
+| new tray | **15968**, parent 15703 `gnome-session-binary --session=ubuntu`, 21:36:56; `bridge.log` `0.9.9-dev.14 27c59d7` 21:36:57.010, listening on 17580, `StatusNotifierItem-15968-1` 21:36:58.890 |
+| **old tray 2453 — failed** | predicted: its last line "tray: asked to terminate, so stopping the way Quit does" (D-393). **Its last line is GDK's Wayland `Error reading events from display: Broken pipe`** (`gdkeventsource.c:116`) at **21:36:36.692** |
+
+**This is the second Xorg login on this VM that needed a VT switch to
+draw.** A person choosing Xorg here meets a black screen and would
+reasonably think it had hung (the owner). It is this VM's, as far as is
+known — the F12 report's list of findings from a VM (F3).
+
+**How 2453 ended.** In order: Shell "Shutting down GNOME Shell"
+21:36:36.391; `gnome-session-wayland@ubuntu.target` stopped .515; 2453's
+GDK line .692; its scope `app-gnome-liro\x2dbridge-2453.scope` "Consumed
+1min 48.162s CPU time" **.757, with no "Stopping" before it** — systemd
+did not stop it, the process left; logind's "logged out" 37.111. The
+phrase the prediction named is in the file three times, the last at the
+20:13:30 shutdown, so the search could find it. **So the compositor going
+ended the tray before any SIGTERM reached it, and `quitOnTerminate` never
+ran**: no ending in the log, and Quit's path — which removes the discovery
+file — did not run. That the file stayed behind is inferred: 15968
+rewrote it at 21:36:57, before anything read it. **Not read**: whether
+GDK calls `exit` or `_exit` after that message; whether an Xorg logout
+ends the tray the same way. `traysignal_other.go` says "SIGTERM is how a
+logout ends the agent"; D-393 measured shutdowns, and this VM had never
+recorded a completed logout. open-items D30.
+
+### The monitor and its controls
+
+Session 17 §D's command, run by the owner (**17815**, 21:42:20), to
+`/tmp/s19-bus.log`. Controls at 21:42:50: `Documents.GetMountPoint` seen;
+`FileTransfer.StopTransfer('s19-control')` seen and answered `AccessDenied`
+"Invalid transfer" by `:1.11`, the Documents portal.
+
+The window opened at **21:43:50**: X window **0x3600004**, `_NET_WM_PID`
+15968, `WM_CLASS` empty, `NORMAL`, no transient-for. 15968's connections:
+`:1.69` and `:1.110`.
+
+### R5 on X11: the drop
+
+`blank.pdf` dragged from Files by the owner, the queue empty.
+
+| | read |
+|---|---|
+| the list | **held**: `documents added` 21:45:24.589, arrived 1, added 1, queueWas 0, queueNow 1; 15968 alive, nothing in its journal |
+| the portal, less certain | **held**: Files (`:1.186`) `StartTransfer` ×2, `AddFiles` ×2 from 21:45:23.925; **`:1.110` `RetrieveFiles` at 21:45:23.950, refused at .955 "Unable to open /proc/15968/root"**; the drop delivered 0.64 s later |
+
+So the refused call is the same on both backends: GDK's common drop code,
+not either backend's, fits that; **still not attributed**.
+
+**The drop outline never clears (the owner).** The blue dashed border stayed
+after the drop, through the chooser opening, until the window closed: the
+window tells a person it is ready for a drop, continuously, from the first
+drag on. **The code**: the page adds `body.drag-over` on every DOM
+`dragover` and removes it only on a DOM `drop` or a `dragleave` whose
+`relatedTarget` is null (`main.js:366–378`, `main.css:62–66`); no timer. It
+was written for WebView2 (D-114). On Linux our `GtkDropTargetAsync` takes
+the drop in the capture phase (`drop_linux.go:97–104`). That WebKit passed
+the motion on is shown by the outline; **that it never gives the page a
+`drop` or a final `dragleave` is my reading, not read**. **The same code
+runs on both backends; on Wayland nobody recorded the outline**, so D-414's
+three drops say nothing either way. open-items D28, for dev.15.
+
+**The size, to be removed in dev.15 (the owner)**: the title reads
+"Broj dokumenata: 1 · 427 B" with "427 B" again beside the file name; it
+tells a person signing nothing they can act on and takes room from the
+name. **Everywhere a person sees it, swept now**: two sites, both in the
+signing window — `main.document_count` "Broj dokumenata: %d · %s"
+(`mainwindow.go:962–978`, with "veličina nepoznata" appended when a size
+is missing) and each row's `file-size` (`main.js:89–92`, from
+`sizeText`, `mainwindow.go:955`). **Not anywhere else**: the consent
+screen, the audit window and the report carry counts only; no other page
+or report payload has a size field; `jobs.FormatSize` has no other caller.
+The CLI's `revocation_too_large` "(… MB)" is a revocation list's, not a
+document's. The Guide's screenshots are not checked. open-items D29.
+
+### R1 and R6, the first time: an accident
+
+| | read |
+|---|---|
+| R1 | `OpenFile` 21:48:27.160 from `:1.189`: **`x11:3600004`**, the window's id exactly; "Izaberite PDF dokumente", `handle_token`, `modal true`, `multiple true`, "PDF dokumenti" (`application/pdf`, `*.pdf`, `*.PDF`) and "Sve datoteke", `current_filter` PDF. Answered with a request path in **12.1 ms — my "under 10 ms" failed in that detail**; Wayland's was 4.4 ms. No `AccessDenied` |
+
+**Then the owner clicked the window's corner X by accident**, with the
+dialog up. It was not a step I had asked for, and the owner touched nothing
+afterwards. The window and the dialog both went.
+
+| | read |
+|---|---|
+| `Request.Close` | **21:48:44.391** from `:1.189` on its own request path `…/request/1_189/liro_29f7365e0a92f3a8`, 17.2 s after `OpenFile`; the portal answered in 27.7 ms; no `Response` after it |
+| `bridge.log` | one line, **21:48:44.428**: INFO "ui: the file chooser", cancelled, **"the window was closed"**; no "killing it" |
+| the helper | **gone by 21:48:44.428**, within 37 ms of its own Close: the line is logged after `spawnChooser` returns (`filedialog_linux.go:124–132`), which returns only after `cmd.Wait()` (`:235–236`); past `StopGrace` the WARN at `:232` would be there |
+| left | 15968 alive; no helper, no dialog window; the WebProcess ended; NetworkProcess 17919 and a `bwrap → bwrap → xdg-dbus-proxy` chain remain — D23, in D-402's Xorg shape |
+
+**Not read**: R2 — the helper was gone before anyone knew it had run, and
+`:1.189` answered "no such name", so **its PID was never read**; the
+instant the window closed — the first trace is the helper's Close.
+
+### R1, R2, R6 again, on purpose: the planned instance follows the unplanned one
+
+The owner agreed to do it deliberately, for the half the accident lost.
+Predictions written first; least certain: **that the dialog carries no
+`WM_TRANSIENT_FOR` naming our window**, which would explain no attachment.
+
+| | read |
+|---|---|
+| window | **0x360005d**, 21:52:10, `NORMAL`. **Failed: "a new window connection"** — 15968 still had `:1.69` and `:1.110`. `:1.110` outlived the first window, so it is the process's GTK connection, not the window's; **D-414's "`:1.133` (from the window)" is corrected to "from the window's process"** |
+| R2 | **held**: helper **19676**, parent 15968, `liro-bridge file-chooser`, 21:52:46; environment one line `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`; cwd `/`; root `/`; core limit 0/0; `/proc/15968/root` Permission denied |
+| R1′ | **held**: `OpenFile` 21:52:46.816 from `:1.276`, **`x11:360005d`**; answered in 19.5 ms |
+| the dialog — **least certain, failed** | **0x2800058**, `WM_CLASS` `xdg-desktop-portal-gnome`, "Izaberite PDF dokumente", **`_NET_WM_WINDOW_TYPE_DIALOG`, `WM_TRANSIENT_FOR` 0x360005d, `_NET_WM_STATE_MODAL`**, `SKIP_TASKBAR`. Everything mutter needs to attach it is there |
+
+**The geometry, before anyone touched it**: our window's client area at
+(66, 69), 560 × 690, with **a 37 px title bar drawn by mutter**
+(`_NET_FRAME_EXTENTS` 0, 0, 37, 0); the dialog client-side decorated
+(`_GTK_FRAME_EXTENTS` 61, 61, 55, 67), its visible box (66, 209)–(885,
+581). Its top is 140 px below our window's client top, so it cannot cover
+the corner X. I read that as "not attached", from memory of mutter placing
+an attached dialog against the parent's title bar. **The owner's drag of
+the dialog decided it** (D-412's test): the two moved together, after the
+window first moved in behind the dialog to centre it. **Attached.** The
+owner first read the settling as "not yet placed when measured"; **the
+geometry after the drag** — window (226, 125), dialog visible (97, 265)–
+(916, 637), centred to half a pixel — **has the same 140 px vertical
+offset**, and the first reading's dialog sat at **x = 66, the work area's
+left edge** (`_NET_WORKAREA` 66, 32, …; the dock takes 66 px): a dialog
+819 px wide on a window 560 px wide, at the screen's edge, centred as far as
+the work area allowed. So **it was attached from the start; the drag moved
+the pair off the edge**. The owner accepted this reading over theirs.
+
+**So the difference between the backends is not attachment.** On Xorg mutter
+draws a title bar above our window and an attached dialog does not reach
+it, so the X can be clicked; on Wayland the dialog covered it (D-414).
+**Not read**: why the offset is 140 px; whether our window has a
+server-side title bar on Wayland — D-414 recorded no geometry. open-items
+B28. **And the accident was not a timing window**: the X was uncovered in
+the first reading too, before anyone moved anything.
+
+**The planned click.** A passive `xprop -spy -root _NET_CLIENT_LIST`,
+foreground, bounded at 120 s; then the owner clicked the corner X
+deliberately.
+
+| | read |
+|---|---|
+| `Request.Close` | **21:55:55.582** from `:1.276` on `…/request/1_276/liro_e8b0df16e3b1a084`; answered in 11 ms |
+| `bridge.log` | **21:55:55.602**: cancelled, "the window was closed"; no "killing it" — 19676 reaped by then |
+| client list | **21:55:55.642**: 0x360005d and 0x2800058 gone **in one update**. The list's previous update, 55.047, kept both; its cause is not read, so the click lies between 54.108 and 55.582 |
+| left | 19676 gone; 15968 alive; **a second chain, 19127**, from the second window — two windows, two chains under this tray, and NetworkProcess 17919: D23 |
+
+The helper sent its Close **60 ms before** mutter published the window's
+departure. **What the path was built for is now watched by a person, twice,
+on Xorg; on Wayland on stock GNOME it still cannot be produced.**
+
+**An instrument failure, mine.** I said the watch would stop when the window
+left; the loop did, but `xprop` stayed blocked on its pipe until the 120 s
+timeout. No reading lost; two minutes were.
+
+### Failed predictions, together
+
+- **The old tray's last line** (L5): the display went before SIGTERM.
+- **R6's mechanism, twice**: "the dialog attaches on Xorg, so not
+  performable" — attached, and performable; then "no transient-for" — it
+  has one.
+- **"Not attached" from geometry**, read from memory of mutter's placement;
+  the owner's drag showed otherwise.
+- **"A new window connection"**: the connection is the process's.
+- **`OpenFile` under 10 ms**: 12.1 and 19.5 ms.
+
+### This machine
+
+dev.14 installed; tray 15968 on Xorg, running, with NetworkProcess 17919
+and chains 17920 and 19127 under it. No packages installed; nothing on the
+system changed. Files written: none outside this commit; the monitor's
+`/tmp/s19-bus.log` is the owner's, quoted here.
