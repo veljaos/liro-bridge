@@ -59,12 +59,15 @@ corrected drop-target window test cannot run there (session 19 §D).
    dev.12 tray is still dev.12 until it is restarted. Say which binary each
    reading came from.
 
-**Before the install, the owner's choice — D23.** D23 asks for the chain
-count on Fedora "with dev.12 **before** any fix". What exists from Fedora is
-one window (D-407: one `xdg-dbus-proxy`, descendants 7). dev.14's two
-changes are the drop target and `load-failed` (D-413), neither of which is
-what D23 names, so a count under dev.14 is still before any fix. Either
-count with dev.12 now, before step 4, or count under dev.14 and say so.
+**D23: count under dev.14, and say so (the owner, after D-416).** D23
+asked for the chain count on Fedora "with dev.12 **before** any fix". What
+exists from Fedora is one window (D-407: one `xdg-dbus-proxy`, descendants
+7). dev.14's two changes are the drop target and `load-failed` (D-413), and
+neither is what D23 names, so a count under dev.14 still comes before any
+fix. Counting with dev.12 first would cost a boot for nothing. Count the
+chains (`bwrap → bwrap → xdg-dbus-proxy`) and the network process under one
+process across the windows R1–R7 open, by exact PID, and record the binary
+as dev.14.
 
 ## D. R1–R7 on dev.14
 
