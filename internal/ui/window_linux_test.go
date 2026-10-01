@@ -337,13 +337,38 @@ func TestCloseIsIdempotentAndLaterCallsSaySo(t *testing.T) {
 }
 
 // Options.OnFilesDropped makes the window a drop target for files: a
-// DropTarget for GdkFileList on the window itself, in the capture phase,
-// so that it answers before the web view's own (drop_linux.go). A window
-// asked for no drops has none — the control, and the reason the test can
-// fail. That a real drag arrives here is not this test's: a drag is a
-// person's hands (D-094, D-371).
+// GtkDropTargetAsync for text/uri-list on the window itself, in the
+// capture phase, so that it answers before the web view's own
+// (drop_linux.go). A window asked for no drops has none of ours — the
+// control, and the reason the test can fail. That a real drag arrives
+// here is not this test's: a drag is a person's hands (D-094, D-371).
+//
+// GTK's own GtkWindow carries a GtkDropTargetAsync too, unnamed, in the
+// bubble phase, from construction (GTK 4.14.5, read in session 18), so
+// ours is counted against a bare GtkWindow's in the same process rather
+// than against zero: D-413's correction counted from zero and was red
+// the first time it ran. What GTK puts on a window can differ by version.
 func TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor(t *testing.T) {
 	requireWebKitCanStart(t)
+
+	if err := theUIThread.start(); err != nil {
+		if errors.Is(err, ErrNoDisplay) {
+			t.Skip("no windowing system on this machine: ", err)
+		}
+		t.Fatalf("starting the UI thread: %v", err)
+	}
+	var gtksTargets, gtksInCapture int
+	if err := theUIThread.do(func() {
+		bare := gtk.NewWindow()
+		gtksTargets, gtksInCapture = dropTargetsOn(&bare.Widget)
+		bare.Destroy()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("a bare GtkWindow: %d drop targets, %d in the capture phase", gtksTargets, gtksInCapture)
+	if gtksInCapture != 0 {
+		t.Fatalf("GTK's own window has %d drop targets in the capture phase, so ours cannot be told from GTK's by phase", gtksInCapture)
+	}
 
 	for _, asked := range []bool{true, false} {
 		opts := Options{
@@ -371,31 +396,40 @@ func TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor(t *testing.T) {
 		// showed it would have failed since dev.13.
 		var targets, inCapture int
 		if err := theUIThread.do(func() {
-			controllers := lw.win.ObserveControllers()
-			for i := uint(0); i < controllers.NItems(); i++ {
-				dt, ok := controllers.Item(i).Cast().(*gtk.DropTargetAsync)
-				if !ok {
-					continue
-				}
-				targets++
-				if dt.PropagationPhase() == gtk.PhaseCapture {
-					inCapture++
-				}
-			}
+			targets, inCapture = dropTargetsOn(&lw.win.Widget)
 		}); err != nil {
 			t.Fatal(err)
 		}
 		_ = win.Close()
+		t.Logf("drops asked for: %v: %d drop targets on the window, %d in the capture phase", asked, targets, inCapture)
 
 		want := 0
 		if asked {
 			want = 1
 		}
-		if targets != want || inCapture != want {
-			t.Errorf("drops asked for: %v: %d drop targets on the window, %d in the capture phase; want %d of each",
-				asked, targets, inCapture, want)
+		if targets != gtksTargets+want || inCapture != want {
+			t.Errorf("drops asked for: %v: %d drop targets on the window, %d in the capture phase; want %d (GTK's %d and %d of ours), %d in the capture phase",
+				asked, targets, inCapture, gtksTargets+want, gtksTargets, want, want)
 		}
 	}
+}
+
+// dropTargetsOn counts the GtkDropTargetAsyncs on w, and those of them in
+// the capture phase. On the UI thread. It does not ask any of them for
+// its formats (TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor says why).
+func dropTargetsOn(w *gtk.Widget) (targets, inCapture int) {
+	controllers := w.ObserveControllers()
+	for i := uint(0); i < controllers.NItems(); i++ {
+		dt, ok := controllers.Item(i).Cast().(*gtk.DropTargetAsync)
+		if !ok {
+			continue
+		}
+		targets++
+		if dt.PropagationPhase() == gtk.PhaseCapture {
+			inCapture++
+		}
+	}
+	return targets, inCapture
 }
 
 // The real bridge.js, not a page written from the same description the

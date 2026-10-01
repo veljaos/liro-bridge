@@ -42588,3 +42588,161 @@ for P4's.
   with a description, and where the description is wrong the rule is
   blind. There is no route that does not rest on somebody's description
   somewhere.
+
+## D-414 — dev.14 on the Ubuntu VM, Wayland: three real drags from Files reach the list and the agent lives, the last 21 minutes after the window opened, so D-412's crash is fixed on a person's drag; on every drop the window's process asks the Documents portal for the files and is refused, and our drop does not need it; the corrected drop-target window test was wrong a second time, because GTK's own window carries a drop target of the same type; R6 cannot be performed by a person on stock GNOME, because an attached modal dialog leaves no route to close its window
+
+**Date:** 2026-10-01
+**Phase:** F12; session 18 §C on the Ubuntu VM, dev.14 installed (Wayland).
+open-items D25 updated, C19 opened. **R1–R3, R5, R7 held; R6 not
+performable by a person; C2 (Xorg) and Fedora not taken** — the logout
+to Xorg ends this session, so they are session 19's.
+
+### The boot
+
+dev.14 was the previous boot's one change: apt 20:02:38–41, `Upgrade:
+liro-bridge (0.9.9~dev.13, 0.9.9~dev.14)`, the last lines of `dpkg.log` its
+own triggers; a clean `shutdown` 20:13:32, boot 20:13:46, session 2 on
+Wayland at 20:14:45, the greeter `c1` removed after it. `/usr/bin/liro-bridge`
+hashes `df7bedd5…6f61`, equal to the binary extracted afresh from dev.14's
+`.deb` (`f41006ed…`), not dev.13's `9f88b412…`. The tray **2453**, from
+`gnome-session-binary` at 20:14:47, after the file's ctime 20:02:40;
+`/proc/2453/exe` refused; `bridge.log` `0.9.9-dev.14 27c59d7`, then
+`StatusNotifierItem-2453-1`. No `--version` was run.
+
+**An instrument failure, mine, explained.** The first search of
+`bridge.log` for the start line printed nothing. `grep` in this shell is a
+function running a bundled `ugrep` with `-I`, which skips a file with binary
+bytes **silently**; GNU grep said "binary file matches". **Line 456 holds
+765 NUL bytes**, between dev.13's last line (09-30 21:50:58) and its start
+at 10-01 19:34:21. Boot `e9e601bb` (19:32:50) stops mid-login at 19:33:14
+with no shutdown in its journal, and `last -x` says crash: the likeliest
+reading is a few lines that boot's dev.13 autostart wrote and lost (765
+bytes is about a tray's first five lines). Likely, not measured. From here
+the log is read with `command grep -a`.
+
+### Step 1: the drop-target window test, sandbox off on its process only
+
+Predictions written first. **W1, the test as D-413 left it: failed** —
+drops asked for, 2 `GtkDropTargetAsync` on the window, 1 in capture; not
+asked, 1 and 0. Least certain had been whether `Cast()` finds the type; it
+did. **B1, a bare `GtkWindow` with no WebKit, predicted to carry none:
+failed** — 9 controllers, one of them a `GtkDropTargetAsync`, unnamed, in
+the bubble phase, at construction and after `Present`. **The product is as
+designed; the test was wrong a second time.** dev.12's test counted
+`GtkDropTarget`, which GTK's own is not; D-413 switched the type and counted
+from zero, and nobody ran it.
+
+Corrected, test only: a bare `GtkWindow`'s count, in the same process, is
+the baseline; ours is baseline + 1 with exactly one in capture; the test
+stops if GTK's own window has any in capture. GTK 4.22 may differ, so no
+fixed number. **W1′ held** (bare 1/0, asked 2/1, not asked 1/0); **W2**,
+`SetPropagationPhase` removed: red on the asked half only, 2/0; **W3**,
+`connectDrop` called unconditionally: red on the not-asked half only, 2/1.
+Each run `-count=1`; mutated files restored and compared with `cmp`.
+Local green afterwards: untagged 37 ok, softtoken 38 ok, no FAIL;
+golangci-lint 0 issues in both GOOS views.
+
+### The monitor, and its controls
+
+Session 17 §D's command, run by the owner (5204, `:1.129`), to
+`/tmp/s18-bus.log`. Controls before any drag: `Documents.GetMountPoint` and
+`FileTransfer.StopTransfer('s18-control')` — both recorded; the second
+existed this time and was answered `AccessDenied` "Invalid transfer".
+2453's connections: `:1.74` (the tray's) and `:1.133` (from the window).
+Seen and not ours: `:1.135` = 5380 `xdg-dbus-proxy`, WebKit's sandbox
+proxy, reading `PowerProfileMonitor` and `Realtime`, as in D-412; and
+`xdg-permission-store` (2152) answering `xdg-desktop-portal` (2811)
+`NotFound` "No entry for background" every 5 s from 20:32:42 — the
+portal's background check; which app's entry it asks for is not shown.
+**Another instrument failure, mine**: mapping names to PIDs with
+`tr -dc '0-9'` kept the digits of gdbus's `uint32` and gave 322152 for
+2152; caught because no such process existed, redone with the prefix
+stripped.
+
+### R5: the drag, on dev.14
+
+The window opened at 20:32:41 (the `open` start line). Predictions
+written first, least certain **that a drop delivers at all** — no drop of
+`text/uri-list` from Files had ever reached the list in the real program.
+
+| | when | read |
+|---|---|---|
+| D-A, `blank.pdf` | 20:36:00, t0+3:19 | **held**: in the list, no sentence; `documents added` arrived 1, added 1, queueWas 0, queueNow 1; 2453 alive, nothing in its journal |
+| D-B, the same file again | 20:37:30 | **held**: "blank.pdf je već na spisku."; arrived 1, added 0, duplicates 1, queueNow 1; 2453 alive |
+| D-C, `local/drag-late.pdf` (a copy; the queue dedups by path) | 20:54:02, **t0+21:21** | **held**: added 1, queueWas 1, queueNow 2; 2453 alive; nothing in its journal, the kernel's or `/var/crash` |
+
+**Failed: "no `FileTransfer` call from the window's process".** On each
+drop Files (`StartTransfer` ×2, `AddFiles` ×2; Files by its
+`NautilusPreviewer` lookups, gone from the bus before a PID was read) and
+then **`:1.133` — 2453 — called `RetrieveFiles` with one of Files' keys,
+refused in about 1 ms: "Unable to open /proc/2453/root"** — D-408's
+mechanism, D-376's flag. D-A used the first key, D-B the second, D-C the
+first. Our drop does not need the portal (it reads `text/uri-list`,
+D-409/D-410) and delivered each time, 0.8 s after the refusal. **Which code
+in 2453 makes the call is not attributed**: our code never names the
+portal's format; GTK's own window target (step 1), WebKit's target on the
+view and GDK itself share the connection. It bears on Fedora, where D-408
+saw a drop fail silently by this route.
+
+**What R5 shows**: with D-413's test, red 3/3 on dev.13's constructor
+reading the perturbation byte, D-412's cause is a finding and dev.14's fix
+holds on a person's drag. **What it does not**: that the 21 minutes mean
+anything — the collector runs by allocation and its two-minute timer, not
+the clock (D-412's own correction); the forced-collector test is the
+evidence for the timing. Nothing here says anything about GTK 4.22.
+
+### R1, R2, R3 again, R7
+
+| | read |
+|---|---|
+| R1 | helper **7671** (`:1.151`), parent 2453: `OpenFile` 20:55:59.075, `wayland:…`, "Izaberite PDF dokumente", `modal`, `multiple`, the PDF filter and "Sve datoteke"; answered with a request path in 4.4 ms, no `AccessDenied` |
+| R2 | 7671's environment one line, `DBUS_SESSION_BUS_ADDRESS=…`; cwd `/`; `root` `/`; core limit 0/0; **`/proc/2453/root` Permission denied** |
+| R3 (after R6) | Cancel: `Response` **1**, `uris` empty, 21:14:47.554; **no `Request.Close`** in the trace; 7671 gone; the window silent; 2453 alive |
+| R7 | tray → Podešavanja → **Izvezi dnevnik revizije**: helper **8753** (`:1.173`), `OpenFile` 21:22:22.714, "Izaberite fasciklu za izvoz dnevnika revizije", `directory true`, `multiple false`, `modal true`, no filters, no `current_folder`; 4.7 ms; `testdata/pdfs/local` chosen; `settings: audit log exported` 21:23:29.379 naming both files; on screen "Dnevnik revizije je izvezen u …", 7 zapisa, "provera ispravnosti: u redu" |
+
+`settings: the page sent type approve` before the action is D-373's
+trace: every Settings action leaves the page as `approve`
+(`settings.js:131,157,173`).
+
+**R7's least certain prediction held for an empty reason.** I named the
+risk that the abrupt boot had damaged the audit log as it had `bridge.log`.
+The log's only file was last written **2026-09-28 18:09:26** (0 NUL
+bytes): nothing wrote to it on 10-01, so the check could not have failed
+the way I said (D-304's first question). Reading the file's time first
+would not have spoiled the prediction and would have shown there was no
+risk. **It is not evidence that the audit log survives an abrupt end.**
+
+### R6: not performable by a person here
+
+With R1's dialog open, the owner could not click the window's corner X:
+**the click could not be made** — the dialog covers it — which is not "the
+click was refused" (the owner's distinction). `attach-modal-dialogs` is
+**true** (GNOME's default, Shell 46.0), so moving the dialog moves the
+window (D-412). Options put: the overview's close; detaching dialogs with
+`gsettings` (a desktop nobody has, the owner); recording it. **The
+overview: no × at all** — Shell's `windowPreview.js:253–255` shows the
+close button only when `can_close() && !this._hasAttachedDialogs()`, read
+from `libshell-14.so`. **My option A rested on a × being there: a failed
+prediction** — I had read what `_deleteAll` does, not when its button
+shows. **The dock**: right-click offered an item to close the dialog and
+nothing for the window (the owner). Tray → Izađi ends the process
+(`trayExitGrace` is 0 on Linux) and the helper by `Pdeathsig`: a different
+path, and it stops the agent.
+
+**R6 assumed a window could be closed behind an attached dialog; on stock
+GNOME it cannot** (the owner). The case the helper's stop path was built
+for — the window going while a chooser is open — can still happen, not by
+that gesture, and no person has watched it (C19). On Xorg, where the
+dialog's modality through `x11:` was already C2's least certain point, it
+may be reachable.
+
+### This machine
+
+dev.14 installed and running, tray 2453; the Settings and main windows as
+the owner left them. `config.json` unchanged by this session (R4 not
+taken). Files written: `testdata/pdfs/local/drag-late.pdf` and the two
+`liro-audit-20261001-212329*` exports, all git-ignored. No packages
+installed; nothing on the system changed. The bus trace goes with the next
+reboot; what it says is quoted here. **This Claude session runs in
+gnome-terminal under the owner's login, so the logout to Xorg ends it**;
+C2 and Fedora are session 19's.
