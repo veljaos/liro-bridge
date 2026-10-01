@@ -61,11 +61,18 @@ Two crash fixes and nothing else; D-407 is held for dev.15 (open-items D27).
    `ps -C liro-bridge`, tied to the file by start time after its ctime and
    by `bridge.log`'s start line saying `0.9.9-dev.14 27c59d7`.
    `liro-bridge --version` writes a start line; say so.
-3. **R5 first**, with session 17 §C's predictions and the monitor of
+3. **The corrected drop-target window test**,
+   `TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor`, with
+   `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` on that `go test` process
+   only (the owner's ruling, D-413), predictions first. It tests the tree,
+   not the installed package. Before the monitor starts, so its windows are
+   not in R5's trace. **A test nobody runs is not a test**: this one was
+   wrong for all of dev.13.
+4. **R5**, with session 17 §C's predictions and the monitor of
    session 17 §D (its positive control before the drag). **Let the window
    stay open a while, and drag more than once**: dev.13's crash needed the
    collector to have run.
-4. R1 once; R6; R7; then C2 on Xorg; then session 16 §D on Fedora with
+5. R1 once; R6; R7; then C2 on Xorg; then session 16 §D on Fedora with
    dev.14's rpm, its hash checked there and `rpm -K` read first.
 
 ## D. Rules added in session 17
@@ -75,6 +82,11 @@ Two crash fixes and nothing else; D-407 is held for dev.15 (open-items D27).
   takes no reference. For a boxed value from a getter, read the C — the
   machine code of the installed library when the source is not here
   (`nm -D` for the address, `objdump -d` from it) — before trusting either.
+  **This is a limit of the method, not an oversight** (the owner, D-413):
+  the rule compares the binding with a description, and where the
+  description is wrong the rule is blind. There is no route that does not
+  rest on somebody's description somewhere; machine code read by a person
+  is the last of them, not proof.
 - **A test of a failure path reads every guard in front of it first.** The
   first `load-failed` test asked for a missing page, and the navigation
   policy refused it before any load (D-413).

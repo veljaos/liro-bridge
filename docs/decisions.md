@@ -42571,3 +42571,20 @@ No packages installed; nothing on the system changed. A dev.13 tray,
 read at 19:50 and was not touched. Windows from the `load-failed` test's
 children appeared on the desktop five times: about a second each, and 30 s
 for P4's.
+
+### After the build: the owner's rulings
+
+- **D26 closes when dev.14 has run on both machines.** I had written that
+  condition, stricter than the one D26 had, and kept it open to meet it;
+  the owner kept it as the condition.
+- **The corrected drop-target window test is to be run with WebKit's
+  sandbox off**, the same ruling as `load-failed`, at the next chance
+  (session 18 §C). The owner's line: **a test nobody runs is not a test** —
+  this one asserted dev.12's target type for the whole of dev.13 and would
+  have gone red the moment anyone ran it, and nobody did.
+- **The GIR disagreeing with GTK's machine code is the sharpest finding
+  here**, and session 18 §D's extension stays, stated as **a limit of the
+  method rather than an oversight**: the audit rule compares the binding
+  with a description, and where the description is wrong the rule is
+  blind. There is no route that does not rest on somebody's description
+  somewhere.
