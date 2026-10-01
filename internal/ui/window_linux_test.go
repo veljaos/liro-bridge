@@ -9,13 +9,17 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
+	"os"
+	"os/exec"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"testing/fstest"
 	"time"
 
-	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -218,6 +222,103 @@ func TestTheWindowRefusesToLeaveItsOwnPages(t *testing.T) {
 	}
 }
 
+const loadFailedChildEnv = "LIRO_TEST_LOAD_FAILED_CHILD"
+
+// loadFailedAnswer is the line the child prints once the UI thread is past
+// the signal; the parent believes nothing else.
+const loadFailedAnswer = "load-failed reached Go and the UI thread went on: "
+
+// A start page that fails its load must be reported without freeing
+// WebKit's error (D-412). Through the binding, the error was freed by the
+// marshaller and again by WebKit after the signal returned: D-385's double
+// free, which glibc aborts on. In a child, because an abort would take
+// every other test in the binary with it.
+//
+// The page passes the navigation check and is gone when the scheme handler
+// reads it, as a scratch file deleted in between would be. A page missing
+// from the start never loads at all: connectNavigationPolicy refuses it,
+// and no load-failed came within 30 s (D-413).
+//
+// It prints the domain and code WebKit gave, which is the record of one
+// case of when load-failed fires in this program.
+func TestAFailedFirstLoadIsReportedWithoutFreeingWebKitsError(t *testing.T) {
+	if os.Getenv(loadFailedChildEnv) == "1" {
+		os.Exit(loadFailedChild())
+	}
+	requireWebKitCanStart(t)
+
+	cmd := exec.Command(os.Args[0],
+		"-test.run=^TestAFailedFirstLoadIsReportedWithoutFreeingWebKitsError$", "-test.timeout=90s")
+	cmd.Env = append(os.Environ(), loadFailedChildEnv+"=1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+	out, err := cmd.CombinedOutput()
+	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 3 {
+		t.Skip("no windowing system")
+	}
+	if err != nil {
+		t.Fatalf("child: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), loadFailedAnswer) ||
+		!strings.Contains(string(out), "liro://liro.invalid/vanishing.html") {
+		t.Fatalf("the child did not report the failed load:\n%s", out)
+	}
+	t.Logf("child:\n%s", out)
+}
+
+// loadFailedChild exits 0 if NewWindow failed with WebKit's copied error
+// and the UI thread then ran something else, 1 if not, 3 with no display.
+func loadFailedChild() int {
+	assets := testAssets()
+	assets["vanishing.html"] = &fstest.MapFile{Data: []byte(testPage)}
+	_, err := NewWindow(Options{
+		Assets:      &vanishingFS{FS: assets, name: "vanishing.html"},
+		VirtualHost: "liro.invalid",
+		StartPage:   "/vanishing.html",
+		Width:       200,
+		Height:      200,
+	})
+	if errors.Is(err, ErrNoDisplay) {
+		return 3
+	}
+	var le *loadError
+	if !errors.As(err, &le) {
+		fmt.Println("NewWindow did not fail with a load error:", err)
+		return 1
+	}
+	// WebKit frees its error after the signal's handlers return, on the
+	// UI thread. A round trip through that thread's loop comes after the
+	// emission has returned, so a double free has happened by then.
+	if err := theUIThread.do(func() {}); err != nil {
+		fmt.Println("the UI thread:", err)
+		return 1
+	}
+	fmt.Printf("%s%v (domain %q, code %d)\n", loadFailedAnswer, err, le.domain, le.code)
+	return 0
+}
+
+// vanishingFS serves name once: every later open of it fails as a file
+// that is not there.
+type vanishingFS struct {
+	fs.FS
+	name string
+
+	mu     sync.Mutex
+	opened bool
+}
+
+func (v *vanishingFS) Open(name string) (fs.File, error) {
+	if name == v.name {
+		v.mu.Lock()
+		gone := v.opened
+		v.opened = true
+		v.mu.Unlock()
+		if gone {
+			return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+		}
+	}
+	return v.FS.Open(name)
+}
+
 func TestCloseIsIdempotentAndLaterCallsSaySo(t *testing.T) {
 	w := newTestWindow(t, Options{})
 
@@ -260,18 +361,23 @@ func TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor(t *testing.T) {
 			t.Fatalf("NewWindow (drops asked for: %v): %v", asked, err)
 		}
 		lw := win.(*linuxWindow)
-		var targets, forFiles, inCapture int
+		// The target's formats are not read here: gotk4 v0.3.1's
+		// DropTargetAsync.Formats drops one of GTK's references when its
+		// wrapper is collected (newDropTarget's comment), and this process
+		// goes on to other tests. That newDropTarget's target accepts
+		// text/uri-list is TestTheDropTargetKeepsItsFormatsAfterTheCollectorRuns',
+		// in a child. This test looked for dev.12's GtkDropTarget until
+		// D-413; it skips under go test here (open-items C5), so nothing
+		// showed it would have failed since dev.13.
+		var targets, inCapture int
 		if err := theUIThread.do(func() {
 			controllers := lw.win.ObserveControllers()
 			for i := uint(0); i < controllers.NItems(); i++ {
-				dt, ok := controllers.Item(i).Cast().(*gtk.DropTarget)
+				dt, ok := controllers.Item(i).Cast().(*gtk.DropTargetAsync)
 				if !ok {
 					continue
 				}
 				targets++
-				if dt.Formats().ContainGType(gdk.GTypeFileList) {
-					forFiles++
-				}
 				if dt.PropagationPhase() == gtk.PhaseCapture {
 					inCapture++
 				}
@@ -285,9 +391,9 @@ func TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor(t *testing.T) {
 		if asked {
 			want = 1
 		}
-		if targets != want || forFiles != want || inCapture != want {
-			t.Errorf("drops asked for: %v: %d drop targets on the window, %d for files, %d in the capture phase; want %d of each",
-				asked, targets, forFiles, inCapture, want)
+		if targets != want || inCapture != want {
+			t.Errorf("drops asked for: %v: %d drop targets on the window, %d in the capture phase; want %d of each",
+				asked, targets, inCapture, want)
 		}
 	}
 }

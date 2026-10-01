@@ -37,4 +37,8 @@ void liro_eval_start(unsigned long long view, const char *script,
 char *liro_eval_finish(unsigned long long view, unsigned long long res,
                        char **errmsg);
 
+/* Connects view's load-failed to a C handler that hands Go the error's
+ * domain, code and message, and never the GError itself (D-412). */
+void liro_connect_load_failed(unsigned long long view);
+
 #endif

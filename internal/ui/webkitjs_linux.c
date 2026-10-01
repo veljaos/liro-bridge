@@ -60,3 +60,29 @@ char *liro_eval_finish(unsigned long long view, unsigned long long res,
     }
     return json;
 }
+
+/* load-failed, connected here and not through the binding (D-412).
+ * WebKit passes its GError transfer none and frees it after the signal
+ * returns; gotk4-webkitgtk's marshaller gives it to gerror.Take, which
+ * frees it first -- D-385's double free, on a signal every window
+ * connects. So the GError stays WebKit's: its domain, code and message
+ * go to Go as strings Go copies before this returns. FALSE lets
+ * WebKit's own handling go on, as the Go handler's false did. */
+static gboolean liro_load_failed_cb(WebKitWebView *view,
+                                    WebKitLoadEvent load_event,
+                                    char *failing_uri, GError *error,
+                                    gpointer user_data) {
+    (void)load_event;
+    (void)user_data;
+    liroLoadFailed((unsigned long long)(uintptr_t)view, failing_uri,
+                   error != NULL ? (char *)g_quark_to_string(error->domain)
+                                 : NULL,
+                   error != NULL ? error->code : 0,
+                   error != NULL ? error->message : NULL);
+    return FALSE;
+}
+
+void liro_connect_load_failed(unsigned long long view) {
+    g_signal_connect((WebKitWebView *)(uintptr_t)view, "load-failed",
+                     G_CALLBACK(liro_load_failed_cb), NULL);
+}

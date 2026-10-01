@@ -42386,3 +42386,167 @@ says is quoted here.
   opened; when the collector freed the pointer inside that time is not
   known. The owner's first sentence gave the interval as though it were
   the mechanism.
+
+## D-413 — dev.14's two fixes built: the drop target is given its formats after construction, and its test, which forces the collector in a child process, dies of SIGSEGV with dev.13's constructor put back, three times of three, reading a pointer made of the perturbation byte; `load-failed` is connected in C, and its test, run with WebKit's sandbox off by the owner's ruling, dies with the binding's handler put back; GTK 4.14's GIR calls `gtk_drop_target_async_get_formats` transfer full and its machine code takes no reference, a member of D-412's class that D-412's rule cannot see
+
+**Date:** 2026-10-01
+**Phase:** F12; session 17 §B, on the Ubuntu VM. open-items D25 and D26
+updated. **Built and tested here; dev.14 not yet installed anywhere.**
+
+### Read before writing
+
+- **Whether a GTK event controller can be made without `gtk_init`: not
+  read, and not needed here.** This shell has a Wayland display; the test's
+  child brings GTK up through `gtk_init_check`, as the PIN stylesheet test
+  already did, and exits 3 for a skip without one. **CI's `linux-gui` job has
+  no display, so both new tests skip there.**
+- **When `load-failed` fires in this program.** WebKit's GIR says only "an
+  error during a load operation"; WebKit's source is not on this VM. From
+  our code: a start page or a `Navigate` target that the asset scheme
+  refuses with `FinishError`. **Measured below**: a page that the navigation
+  check passes and the scheme handler then cannot read fires it; **a
+  navigation that `decide-policy` refuses did not, within 30 s** — one
+  instance, the start page. **Not read**: a load interrupted by closing the
+  window, or replaced by a newer load. The marshaller frees the error on
+  every firing, whether or not the handler uses it.
+- **The fix's premise, read in machine code, not only in the GIR.** In the
+  installed `libgtk-4.so.1` (`objdump`), `gtk_drop_target_async_set_formats`
+  calls `gdk_content_formats_unref` on the old formats and
+  `gdk_content_formats_ref` on the new; `gtk_drop_target_async_new` calls
+  `g_object_new` and then `gdk_content_formats_unref` on the caller's — a
+  real transfer full, D-412's mechanism.
+
+### A fourth member of the class, and the limit of D-412's rule
+
+**GTK 4.14.5's GIR gives `gtk_drop_target_async_get_formats` a
+`transfer-ownership="full"` return. Its machine code, after the type check,
+returns the field at offset `0x18` and calls nothing: no reference is
+taken.** gotk4 v0.3.1 follows the GIR — no `gdk_content_formats_ref`, an
+unref finalizer — so **every call to `DropTargetAsync.Formats()` drops one
+of GTK's references when its wrapper is collected.** (v0.4.1's body takes a
+reference; its generator read a different GIR.) **Our product code never
+calls it**: `connectDrop` asks the *drop* for its formats,
+`gdk_drop_get_formats`, `transfer none` in the GIR, and the binding takes a
+reference. Only a test would call the target's — and the new test does,
+keeping the wrapper alive until its child exits.
+
+**D-412's rule compares the binding with the GIR, and here the two agree;
+the GIR is what is wrong.** So the rule is extended: for a boxed value
+returned by a getter, read the C — the machine code of the library this
+program links, when the source is not here — before trusting either.
+newDropTarget's comment says the target's `Formats()` must not be called.
+
+### The drop (open-items D25)
+
+`newDropTarget`, the window's drop target, built in one function the window
+and the test both call: `gtk.NewDropTargetAsync(nil, gdk.ActionCopy)` then
+`SetFormats(gdk.NewContentFormats(…))`. `connectDrop` adds it to the window.
+
+**The test**, `TestTheDropTargetKeepsItsFormatsAfterTheCollectorRuns`: a
+child process of the test binary, under `MALLOC_PERTURB_=165` and
+`GLIBC_TUNABLES=glibc.malloc.tcache_count=0`, builds the target through
+`newDropTarget`, forces three collections — each waited for until a
+finalizer of its own has run, so everything queued before it has run —
+and asks the target whether it accepts `text/uri-list`. The parent believes
+only the child's answer line, which it logs.
+
+Predictions written before each run (scratchpad, quoted):
+
+| | predicted | read |
+|---|---|---|
+| **P1**, the fix | PASS, not SKIP; the child answers true | **held** — `drop target accepts text/uri-list after the collector: true`. The first run could not show that line: the parent printed the child's output only on failure. Changed to log it, and rerun |
+| **P2**, dev.13's constructor put back inside `newDropTarget`, three runs | FAIL 3/3: SIGSEGV in `gdk_content_formats_contain_mime_type`, a pointer of `0xa5a5…`, `sigcode=128 addr=0x0` as in D-412; less likely, false | **held, 3 of 3**: `SIGSEGV`, `sigcode=128 addr=0x0`, `signal arrived during cgo execution`, the faulting frame `_Cfunc_gdk_content_formats_contain_mime_type`; **`rcx` and `rsi` `0xa5a5a5a5a5a5a5a5`** — the perturbation byte, so the formats read were the freed ones |
+| **P3**, least certain: the same, `MALLOC_PERTURB_` only | still red, by another route: glibc's per-thread cache does not perturb a free (glibc's source as remembered, not read here) | **held, 3 of 3** red; `rcx` `0x1` — the count still read as it was — and `rsi` a different value each run, never `0xa5…`. Consistent with the cache leaving the chunk unperturbed and its own bookkeeping in the pointer's place: **red by luck of the layout, not by the overwrite.** So the tunable is what makes `MALLOC_PERTURB_` reach the freed formats |
+
+**This is not dev.13's file**: dev.13 had no function the test could call.
+It is dev.13's constructor line, in the function the window uses. With
+D-412's journal (`sigcode=128 addr=0x0`, C on the UI thread, no Go frame
+above it) it makes D-412's cause a finding rather than a reading of the
+source, **for the target's formats**; that the drag on dev.14 works is
+still R5's, the owner's hands.
+
+A comment written before P3 said that without the tunable the freed
+formats "could still read true". That was a possibility from memory, not
+shown; the comment now says what was read.
+
+**A stale test found:** `TestADropTargetIsAttachedOnlyWhenDropsAreAskedFor`
+still looked for dev.12's `GtkDropTarget` with `GdkFileList`. It needs
+WebKit, so it skips under `go test` here (open-items C5), and nothing
+showed that it would have failed since dev.13. It now counts
+`GtkDropTargetAsync`s in the capture phase and does not ask them for their
+formats (above). **It has not run**: the owner's sandbox ruling below
+covered the `load-failed` test only.
+
+### `load-failed` (open-items D26)
+
+`liro_connect_load_failed` in `webkitjs_linux.c`: a C handler copies the
+`GError`'s domain (`g_quark_to_string`), code and message and hands them,
+with the view's address and the failing URI, to an exported Go function,
+which copies them before anything else and finds the window by the view's
+address in `liveWindows`, as the asset scheme does. It returns `FALSE`, as
+the Go handler's `false` did. The error's text is the message alone, as
+gotk4's `GError` was, so what a caller logs does not change. No binding
+touches WebKit's `GError`.
+
+**The owner's ruling: run its test with
+`WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`, on that `go test` process
+only, for the test and its mutation.** Nothing on the system changed, and
+**these runs say nothing about WebKit's sandbox.** `requireWebKitCanStart`
+honours the variable; D-327 ran a probe the same way.
+
+| | predicted | read |
+|---|---|---|
+| **P4**, a start page missing from the assets | PASS: `NewWindow` fails with our error | **failed — the test was wrong.** `connectNavigationPolicy` refused the navigation (`WARN ui: refused a navigation`), no load started, `NewWindow` timed out at 30 s. **No `load-failed` arrived** — the read above |
+| **P4′**, a page served to the navigation check and gone at the scheme handler — a scratch file deleted between the two | PASS; our message; a domain naming a Go type containing `wrapError`; code 0 | **held, but for the domain**: `ui: loading liro://liro.invalid/vanishing.html: ui: reading asset "vanishing.html": open vanishing.html: file does not exist (domain "", code 0)`. **The domain was `""`**: gotk4 names a quark `PkgPath + "." + Name`, and for a pointer type (`*fmt.wrapError`) both are empty (`core/gerror/gerror.go` 53–58, read). So WebKit passed our `GError` through unchanged |
+| **P5**, the binding's `ConnectLoadFailed` put back, three runs | FAIL 3/3: most likely SIGABRT `free(): invalid pointer`, else a tcache double free, else SIGSEGV | **red 3 of 3, by SIGSEGV** — my third alternative. `sigcode=128 addr=0x0`, on the UI thread in C **with no Go frame above `g_main_loop_run`**, so after the handler returned; `rdi` `0x1a062412898098bb`, non-canonical. That fits WebKit's second free of a pointer the cache had overwritten, the read faulting before glibc could check it; **which function faulted is not read** — the process and its maps were gone |
+
+The child waits for a round trip through the UI thread's loop before it
+answers, so the emission, and WebKit's free after it, have happened.
+
+### Local green, and the rest
+
+Both views (D-368), each under `go test -timeout 480s` inside a 570 s
+`timeout`, output to files: **untagged 37 packages ok, softtoken 38**, no
+FAIL. golangci-lint 2.13.2: **0 issues in both GOOS views**. Because the
+linux view took 18 s, a control: a file in `internal/ui` with a variable
+declared and not used was reported (`typecheck`, exit 1) — the package and
+its test variant are loaded; it does not show every linter's rules fired.
+The file removed. `go vet -unsafeptr=false` clean untagged, softtoken and
+`GOOS=windows`; `checkdeps` OK (56 packages). Every mutation's file was
+restored from a copy and compared byte for byte.
+
+### My failures
+
+- **P1's first run could not show the answer it passed on** (D-304's
+  fourth question); found before the mutation, fixed.
+- **P4's test was designed without reading `connectNavigationPolicy`**,
+  which I had read earlier in the session; it ran 31 s and showed nothing about the
+  fix.
+- **P4′'s domain and P5's mode**, predicted from memory, both wrong in the
+  detail; both explained above, not absorbed.
+- **A claim about glibc from memory written into a test comment before it
+  was measured**; corrected before commit.
+
+### Not measured, and known
+
+- **The drag on dev.14**: R5, the owner's hands, with session 17 §C's
+  predictions.
+- `load-failed` for a load interrupted by closing the window or replaced
+  by a newer one; and whether `decide-policy`'s refusal never fires it, past
+  one instance.
+- WebKit's sandbox with the new handler: unchanged by construction (the
+  handler runs in the UI process), not run.
+- Both new tests skip in CI (no display), and the `load-failed` test skips
+  under `go test` here without the owner's variable (C5).
+- **Navigate to a page the scheme handler refuses returns nil**: it waits
+  for `LoadFinished`, which WebKit's documentation says always follows
+  `load-failed`. Read in the code and the GIR, not run; not a change in
+  dev.14, recorded.
+
+### This machine
+
+No packages installed; nothing on the system changed. A dev.13 tray,
+**2472**, started at 19:34:20 by this login's autostart, was running when
+read at 19:50 and was not touched. Windows from the `load-failed` test's
+children appeared on the desktop five times: about a second each, and 30 s
+for P4's.

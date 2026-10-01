@@ -61,21 +61,49 @@ const (
 // The Windows host switches WebView2's own drop handling off for the same
 // reason and registers its own target (droptarget_windows.go).
 func (w *linuxWindow) connectDrop(onDropped func(paths []string)) {
-	target := gtk.NewDropTargetAsync(gdk.NewContentFormats([]string{uriListMIME}), gdk.ActionCopy)
+	w.win.AddController(newDropTarget(func(paths []string) {
+		// Through the window's own ordered channel, like every other
+		// callback: the handler may block, and the UI thread must not.
+		w.emit(func() { onDropped(paths) })
+	}))
+}
+
+// newDropTarget is the window's drop target for text/uri-list, calling
+// deliver with the local paths of each drop. On the UI thread.
+//
+// **The formats are set after construction and never given to the
+// constructor** (D-412). gtk_drop_target_async_new takes its formats
+// transfer full — GTK keeps the caller's reference — and gotk4 v0.3.1
+// hands it the pointer without taking one and leaves
+// gdk.NewContentFormats' finalizer in place. Once Go's collector had run,
+// the target held freed memory, and the first drag over the window read
+// it: dev.13's agent died of SIGSEGV in GTK's code (D-412).
+// gtk_drop_target_async_set_formats takes a reference of its own (read
+// in libgtk-4's machine code, not only in the GIR), so the finalizer
+// drops only Go's.
+//
+// **Nothing here may call the target's Formats().** GTK 4.14's GIR says
+// gtk_drop_target_async_get_formats returns transfer full; the C returns
+// its own field without a reference (read in libgtk-4's machine code),
+// and gotk4 v0.3.1 follows the GIR, so each call's finalizer drops one of
+// GTK's references. The drop's own formats, gdk_drop_get_formats, are
+// transfer none in both and the binding takes a reference: below is safe.
+//
+// drop_linux_test.go builds the target through this function and forces
+// the collector before asking it for its formats.
+func newDropTarget(deliver func(paths []string)) *gtk.DropTargetAsync {
+	target := gtk.NewDropTargetAsync(nil, gdk.ActionCopy)
+	target.SetFormats(gdk.NewContentFormats([]string{uriListMIME}))
 	target.SetPropagationPhase(gtk.PhaseCapture)
 	target.ConnectDrop(func(dropper gdk.Dropper, _, _ float64) bool {
 		drop := gdk.BaseDrop(dropper)
 		if !drop.Formats().ContainMIMEType(uriListMIME) {
 			return false
 		}
-		readDrop(drop, func(paths []string) {
-			// Through the window's own ordered channel, like every other
-			// callback: the handler may block, and the UI thread must not.
-			w.emit(func() { onDropped(paths) })
-		})
+		readDrop(drop, deliver)
 		return true
 	})
-	w.win.AddController(target)
+	return target
 }
 
 // readDrop reads drop's text/uri-list and calls deliver with the local

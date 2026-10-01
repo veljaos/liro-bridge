@@ -142,3 +142,39 @@ func liroEvalDone(res C.ulonglong, token C.ulonglong) {
 	C.g_free(C.gpointer(unsafe.Pointer(cJSON)))
 	p.done <- evalResult{json: json}
 }
+
+// connectLoadFailed connects view's load-failed in C (webkitjs_linux.c),
+// so that no binding touches WebKit's GError: gotk4-webkitgtk's
+// marshaller frees an error WebKit frees again (D-412). The window is
+// found again by the view's address, as the asset scheme finds it.
+func connectLoadFailed(view *webkit.WebView) {
+	C.liro_connect_load_failed(C.ulonglong(coreglib.BaseObject(view).Native()))
+}
+
+// loadError is WebKit's GError for a failed load, copied. Its text is the
+// message alone, as gotk4's GError's was, so what a caller logs did not
+// change when the signal moved to C.
+type loadError struct {
+	domain  string
+	code    int
+	message string
+}
+
+func (e *loadError) Error() string { return e.message }
+
+//export liroLoadFailed
+func liroLoadFailed(view C.ulonglong, uri, domain *C.char, code C.int, message *C.char) {
+	// Copied before anything else: every pointer here is WebKit's and
+	// valid only until the C handler returns.
+	failing := C.GoString(uri)
+	err := &loadError{domain: C.GoString(domain), code: int(code), message: C.GoString(message)}
+
+	liveWindows.Lock()
+	w := liveWindows.m[uintptr(view)]
+	liveWindows.Unlock()
+	if w == nil || w.loadFailed == nil {
+		// A view whose window has closed.
+		return
+	}
+	w.loadFailed(failing, err)
+}

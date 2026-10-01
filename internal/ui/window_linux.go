@@ -58,6 +58,11 @@ type linuxWindow struct {
 	// binding for the address of an object it is destroying.
 	viewAddr uintptr
 
+	// loadFailed is called on the UI thread for each load-failed on the
+	// view, with WebKit's error copied (liroLoadFailed). Set once, on the
+	// UI thread, before the first load starts.
+	loadFailed func(uri string, err error)
+
 	// hosts is what this window's pages may reach, by hostname.
 	hosts map[string]fs.FS
 
@@ -332,10 +337,13 @@ func (w *linuxWindow) connectLoad(first chan<- error) {
 			once.Do(func() { first <- nil })
 		}
 	})
-	w.view.ConnectLoadFailed(func(_ webkit.LoadEvent, uri string, err error) bool {
+	// Not w.view.ConnectLoadFailed: the binding double-frees WebKit's
+	// error (D-412), so the signal is connected in C and arrives here as
+	// a copy. On the UI thread, as the binding's handler was.
+	w.loadFailed = func(uri string, err error) {
 		once.Do(func() { first <- fmt.Errorf("ui: loading %s: %w", uri, err) })
-		return false
-	})
+	}
+	connectLoadFailed(w.view)
 }
 
 // dispatchEvents delivers every caller callback for this window, one at
