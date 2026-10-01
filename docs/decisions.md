@@ -42935,3 +42935,135 @@ dev.14 installed; tray 15968 on Xorg, running, with NetworkProcess 17919
 and chains 17920 and 19127 under it. No packages installed; nothing on the
 system changed. Files written: none outside this commit; the monitor's
 `/tmp/s19-bus.log` is the owner's, quoted here.
+
+## D-416 — The logout back to Wayland was a logout, and the Xorg tray's end is read: 15968 wrote no line at all, and the finding is why — GTK 4.14's X11 backend reports the lost display at DEBUG and then calls `_exit(1)`, and gotk4's log writer drops DEBUG from a named domain, so my check could never have seen the line it predicted, read in machine code and in the writer's source; GDK's Wayland path is MESSAGE then `_exit(1)`, so on both backends a logout ends the tray inside GDK and nothing of ours runs after it; the comment in `traysignal_other.go` that "SIGTERM is how a logout ends the agent" is false on both, D22's shape in code; and the system unmounts `/run/user/1000` ten seconds after each logout, so without linger the discovery file did not outlive either session — D-415's "inferred left behind" corrected
+
+**Date:** 2026-10-01
+**Phase:** F12; session 20 §B on the Ubuntu VM, dev.14 installed, back on
+"Ubuntu" (Wayland) after "Ubuntu on Xorg". open-items D30 updated. **The
+Ubuntu VM's dev.14 readings are complete on both backends; nothing more is
+built or measured here.** Fedora is session 21's.
+
+### The logout: proven before anything was measured across it
+
+Predictions L1–L4 written first (scratchpad).
+
+| | read |
+|---|---|
+| L1 boot | **held**: `uptime -s` 2026-10-01 20:13:41, unchanged; `last -x -F` shows no boot or shutdown after 20:13:46 |
+| L2 `last` | **held**: `:0` 21:36:54 – **22:12:50** with an end time (not "down", not "crash"); tty2 22:13:04 "still logged in" |
+| L3 logind | **held**: 22:12:50.259 **"Session 18 logged out"**, .267 "Removed session 18"; **session 25** at 22:13:04.216; `loginctl show-session 25`: **`Type=wayland`**, VT 2; this shell `XDG_SESSION_TYPE=wayland`, `WAYLAND_DISPLAY=wayland-0` |
+| L4 greeter | **held**: `c4` new at 22:12:50.448, **before** the login, removed 22:13:08.152 — the login screen itself; no session created after 22:13:04 and no `drop master`/`got pause` after it, so no VT switch (D-402's case did not arise) |
+| T5 new tray | **held**: **21491**, parent 21283 `gnome-session-binary --systemd-service --session=ubuntu` (22:13:04), started 22:13:05, scope `app-gnome-liro\x2dbridge-21491.scope`; `bridge.log` `0.9.9-dev.14 27c59d7` 22:13:06.691, `StatusNotifierItem-21491-1` 22:13:08.067 |
+
+### 15968's end — open-items D30's Xorg half
+
+Predictions written first; **least certain T1**, that 15968's last line
+would be GDK's X11 loss of the display rather than D-393's "asked to
+terminate, so stopping the way Quit does".
+
+| | read |
+|---|---|
+| **T1 — failed** | **15968 wrote no line at all at its end.** Its last is the chooser's 21:55:55.602 ("the window was closed", D-415); the next line is 21491's start. Lines 480–489 hold **0 NUL bytes** (D-414's lost-lines case does not apply); read with `command grep -a`; the file's mtime 22:13:08.068 is 21491's last line. The journal has no `Fatal IO` line either |
+| T2 — held | `app-gnome-liro\x2dbridge-15968.scope`: **one** journal line in the window, "Consumed 24.664s CPU time" at **22:12:50.091530**, **no "Stopping" before it** — systemd did not stop it; the cgroup emptied |
+| T3 — held | Shell "Shutting down GNOME Shell" 22:12:49.558; `org.gnome.Shell@x11.service` stopped .890; Xorg (15401) removing its input devices from .960; **15968's scope empty 50.092**; Xorg "Server terminated successfully (0)" 50.174; logind "logged out" 50.259 |
+| T4 — held | 17919 (NetworkProcess), 17920 and 19127 (the two chains) gone; they were in 15968's scope, so gone by 50.092 |
+
+### The level is the finding, not the absence
+
+D-304's second question — could the instrument see what it reported
+absent — answered by reading, not by reasoning. GTK 4.14.5
+(`libgtk-4-1 4.14.5+ds-0ubuntu0.10`, `libgtk-4.so.1` sha256
+`cdc58477…3c46`), disassembled:
+
+| backend | string, at | the call | then |
+|---|---|---|---|
+| X11 | `"%s: Fatal IO error %d (%s) on X server %s."`, 0x5f8f00, one reference | `g_log_structured_standard` at 0x44e8bc, **level `0x80` = `G_LOG_LEVEL_DEBUG`** | **`_exit(1)`** at 0x44e8ca |
+| Wayland | `"Error reading events from display: %s"`, 0x5f5e00, one reference | `g_log_structured_standard` at 0x41ac0a, **level `0x20` = `G_LOG_LEVEL_MESSAGE`** | **`_exit(1)`** at 0x41ac14 |
+
+The X11 function has one message and no `EPIPE` branch. gotk4's writer
+(`gotk4/pkg@v0.3.1/glib/v2/glib.go:33859–33862`) returns
+`LogWriterHandled` for any DEBUG message whose `GLIB_DOMAIN` is set and
+not named in `G_MESSAGES_DEBUG` — before `slog`, and to nowhere else, so not
+to stderr and not to the journal. GDK's domain is `Gdk`. **So the line I
+predicted could not reach `bridge.log` or the journal whatever happened**;
+the Wayland line, a MESSAGE, is why D-415 saw one.
+
+**What the absence does and does not say.** It says nothing either way.
+What excludes SIGTERM is two other readings: D-393's handler logs at INFO
+when SIGTERM arrives (measured on shutdowns, D-393, D-399), and systemd
+never stopped the scope. **My reading**: Xorg closed the connection as it
+went down, Xlib called GDK's IO error handler, and GDK called `_exit(1)`.
+Every reading fits it; **not read**: the exit status, and that this handler
+was the path taken rather than another death with nothing logged.
+
+**On both backends, then, a logout ends the tray inside GDK, by `_exit(1)`
+right after its log call** — no `atexit`, no Go deferred calls, no signal
+for `quitOnTerminate` to catch. D30's "whether GDK exits with `exit` or
+`_exit`" is read: `_exit`, both.
+
+**A pair, the owner's point.** This is the second time this week that a
+prediction met an instrument that could not fire. The first is D-409: the
+`ANOM_ABEND` chosen as the deciding sign of a core dump could not appear for
+a Go program that died by SIGQUIT, because the kernel's audit hook skips
+that signal. In both a filter sat between the event and the record — the
+kernel's audit hook, gotk4's writer — that the prediction did not name, and
+in both it was found by reading the filter. The sign is opposite: D-409's
+check could not have failed, this one could not have held. **The rule:
+before predicting that a line will appear in a log, read the level it is
+written at and what the writer between it and the file keeps.**
+
+### `traysignal_other.go:15` is false on both backends
+
+The comment above `quitOnTerminate` begins "SIGTERM is how a logout ends
+the agent." On this VM a logout has ended the tray twice, once per backend
+(D-415, D-416), and neither was by SIGTERM. SIGTERM is how a **shutdown**
+ends it (D-393). This is the shape of the SPEC sentence D22 corrected: the
+finding was made, and the sentence stating the earlier understanding stayed
+where the next reader meets it first — here, above the handler a person
+would extend to fix D30. Not edited now, since nothing more is built on this
+VM. **Its correction belongs to D30**, in the same change as the code that
+answers D30, so the comment states what was measured.
+
+### `/run/user/1000` is unmounted at a logout: the file did not stay behind
+
+`docs/phases/F12.md:171` asks to establish, not assume, whether the system's
+clearing of `$XDG_RUNTIME_DIR` at logout does some of the discovery file's
+work. Read in the journal, `-b 0`:
+
+| logout | logind "logged out" | `user@1000.service` stopping | `run-user-1000.mount` deactivated | the next tray |
+|---|---|---|---|---|
+| Wayland (D-415) | 21:36:37.111 | 21:36:47.371 | **21:36:47.543** | 15968, 21:36:56 |
+| Xorg (here) | 22:12:50.259 | 22:13:00.375 | **22:13:00.552** | 21491, 22:13:05 |
+
+`UserStopDelaySec` is the default 10 s (commented out in `logind.conf`),
+`Linger=no`, and `/run/user/1000` is a tmpfs. Unmounting a tmpfs discards
+its files, so **each tray's `bridge.json` went with the mount, before the
+next tray started**. The present file is 21491's (mtime 22:13:06.744). I did
+not read the directory between the two, so this is the mount's going plus
+what a tmpfs is, not a listing. **D-415's "that the file stayed behind is
+inferred" is wrong for that logout**: the mount went 8.5 s before 15968
+started.
+
+So D-393's harm — a discovery file naming a port nobody answers — does not
+arise at a logout on this VM. It would arise if the user lingers (B19), has
+another session open, or logs in again within those 10 s. **What remains of
+D30** is Quit's path not running: no ending in the log (on X11 not even
+GDK's line), no deferred call, nothing of runTray's teardown. Since GDK
+calls `_exit` inside its own call, nothing that runs after the display is
+lost can help.
+
+### Predictions, together
+
+L1–L4 and T2–T5 held. **T1 failed**, and for the reason above, not because
+the process ended some third way.
+
+### This machine
+
+dev.14 installed; tray **21491** on Wayland, from this login's autostart.
+No packages installed; nothing on the system changed. Files written outside
+this commit: the predictions and a disassembly of `libgtk-4.so.1`, both in
+the session's scratchpad. The rpm for Fedora re-hashed:
+`dist/linux/liro-bridge-0.9.9-dev.14.x86_64.rpm`, 11 525 575 bytes,
+`f5b1ecdbc22f63673af18ee2b3d13f0864705bceee2ad45aecf8274f6e88c022`, equal
+to session 18 §A.
