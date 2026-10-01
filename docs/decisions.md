@@ -42543,6 +42543,27 @@ restored from a copy and compared byte for byte.
   `load-failed`. Read in the code and the GIR, not run; not a change in
   dev.14, recorded.
 
+### The build
+
+`build/linux/build.sh 0.9.9-dev.14 dist/linux` at `27c59d7`. **The first
+attempt stopped at `nfpm: not found`** (exit 127) after building the binary
+and before writing any package: `nfpm` is in `~/go/bin`, not on this
+shell's PATH. Rerun with `NFPM=$HOME/go/bin/nfpm`, 9 s. Hashes in session 18
+§A. Predictions written first:
+
+| | predicted | read |
+|---|---|---|
+| P6 | builds; `vcs.modified=false` | **held** — `vcs.revision=27c59d7…`, `vcs.modified=false`; glibc 2.34 needed, under the 2.39 floor |
+| P7 | NEEDED the same 13 libraries as dev.13 | **held**; `Depends` identical too |
+| P8 | no new undefined symbol: `g_signal_connect_data` and `g_quark_to_string` already imported through gotk4; least certain the second | **half failed**: `g_quark_to_string` was there, **`g_signal_connect_data` is new** — gotk4 connects through closures. It is defined in `libgobject-2.0.so.0`, in NEEDED |
+
+**An instrument failure in that last read**: the NEEDED list kept
+`readelf`'s brackets, so the first lookup of where the symbol is defined
+resolved no library and found nothing — and its negative control was
+silent for the same reason. Rerun with the brackets stripped, every library
+resolved, a positive control (`g_quark_to_string` in GLib) and the
+negative one.
+
 ### This machine
 
 No packages installed; nothing on the system changed. A dev.13 tray,
