@@ -209,7 +209,7 @@ func run(args []string, out io.Writer) int {
 		if !requireWebView2(i18n.Load(cfg.Locale)) {
 			return 1
 		}
-		return runOpen(context.Background(), args[1:], out, cfg)
+		return runOpen(context.Background(), args[1:], out, cfg, version)
 	}
 	// F6 §2: one invocation per selected file, from Explorer. Every
 	// invocation hands its file over; exactly one of them opens a

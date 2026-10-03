@@ -11,7 +11,6 @@
 package jobs
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -61,15 +60,6 @@ type Item struct {
 	// DisplayName — a path is no more trustworthy than a file name —
 	// and shown only where it is needed (see NeedsFolder).
 	Folder string
-
-	// Size is the file's size in bytes at the time it was added, and
-	// SizeKnown says whether it could be read at all. A file that has
-	// disappeared or cannot be stat'd is still listed, with SizeKnown
-	// false: F6 §1 is explicit that a file the user chose deliberately
-	// is not silently dropped, and the signing step is what names the
-	// problem.
-	Size      int64
-	SizeKnown bool
 
 	State State
 
@@ -135,22 +125,6 @@ func (q *Queue) Items() []Item {
 
 // Len is the number of documents in the queue.
 func (q *Queue) Len() int { return len(q.items) }
-
-// TotalSize is the sum of every known file size, and whether every
-// size was known. A queue with one unreadable file reports the sum of
-// the rest, and false — better than reporting a confident total that
-// is quietly missing a document.
-func (q *Queue) TotalSize() (total int64, complete bool) {
-	complete = true
-	for _, it := range q.items {
-		if !it.SizeKnown {
-			complete = false
-			continue
-		}
-		total += it.Size
-	}
-	return total, complete
-}
 
 // Add puts every path in the queue, expanding folders, and reports how
 // many documents were added and anything worth saying about it.
@@ -219,9 +193,6 @@ func (q *Queue) appendItem(path string) bool {
 		DisplayName: displayNameOf(path),
 		Folder:      folderNameOf(path),
 		State:       StateWaiting,
-	}
-	if info, err := os.Stat(path); err == nil {
-		item.Size, item.SizeKnown = info.Size(), true
 	}
 	q.items = append(q.items, item)
 	return true
@@ -473,29 +444,4 @@ func NeedsFolder(items []Item) []bool {
 		out[i] = counts[strings.ToLower(it.DisplayName)] > 1
 	}
 	return out
-}
-
-// FormatSize renders a byte count for display: whole units, one
-// decimal place below 10 units, so a list of documents reads as
-// "1.2 MB" and "340 kB" rather than seven-digit byte counts.
-//
-// Units are decimal (kB = 1000 bytes), matching what Explorer's own
-// "Size" column reports for the same file, because the person reading
-// this window has that column open beside it.
-func FormatSize(bytes int64) string {
-	const unit = 1000
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit && exp < 3; n /= unit {
-		div *= unit
-		exp++
-	}
-	value := float64(bytes) / float64(div)
-	suffixes := [...]string{"kB", "MB", "GB", "TB"}
-	if value < 10 {
-		return fmt.Sprintf("%.1f %s", value, suffixes[exp])
-	}
-	return fmt.Sprintf("%.0f %s", value, suffixes[exp])
 }

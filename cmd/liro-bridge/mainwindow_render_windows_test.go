@@ -137,9 +137,15 @@ func TestMainWindowRendersTheFileListWithSizes(t *testing.T) {
 	}
 
 	text := evalText(t, m.win, "document.getElementById('file-list').textContent")
-	for _, want := range []string{"Ugovor o radu.pdf", "Račun 2026-114.pdf", jobs.FormatSize(1234), jobs.FormatSize(4321)} {
+	for _, want := range []string{"Ugovor o radu.pdf", "Račun 2026-114.pdf"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the list does not show %q: %q", want, text)
+		}
+	}
+	// D29: no size beside a name.
+	for _, gone := range []string{"1.2 kB", "4.3 kB"} {
+		if strings.Contains(text, gone) {
+			t.Errorf("the list still shows a size, %q: %q", gone, text)
 		}
 	}
 	count := evalText(t, m.win, "document.getElementById('files-count').textContent")

@@ -78,6 +78,33 @@ type remoteBatch struct {
 	// expired is closed when the deadline passes with no answer.
 	expired chan struct{}
 	expiry  sync.Once
+
+	// delivered is closed when a run has ended — every outcome settled
+	// and the audit entry written — and final holds what the caller is
+	// told. From then on the window is showing the report to a person,
+	// and the caller has no reason to wait for them to close it (D33:
+	// on Fedora a caller waited 11 min 58 s for a click nobody asked
+	// for, D-420). final is a copy taken on the window's goroutine
+	// before delivered is closed, so nothing the window does afterwards
+	// can reach what was handed over.
+	delivered   chan struct{}
+	deliverOnce sync.Once
+	final       api.SignResult
+}
+
+// deliver hands the caller its answer at the end of a run. Once: a
+// window runs at most one batch for a caller (newBatch is refused on
+// it), and a second call would be a second answer to one request.
+func (b *remoteBatch) deliver() {
+	b.deliverOnce.Do(func() {
+		b.final = api.SignResult{
+			Outcomes: append([]api.SignOutcome(nil), b.outcomes...),
+			Code:     b.code,
+		}
+		if b.delivered != nil {
+			close(b.delivered)
+		}
+	})
 }
 
 // endCountdown stops the countdown. Safe to call more than once and

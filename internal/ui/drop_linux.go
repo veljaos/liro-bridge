@@ -22,6 +22,7 @@ package ui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -60,13 +61,37 @@ const (
 //
 // The Windows host switches WebView2's own drop handling off for the same
 // reason and registers its own target (droptarget_windows.go).
+//
+// **The page is told when the drag is over, by this target** (D28). The
+// page draws its "drop here" outline on DOM dragover and clears it on a DOM
+// drop or a final dragleave — but this target takes the drop before the
+// view sees it, so the page's drop never fires, and whether WebKit sends a
+// final dragleave varies: on Ubuntu's Xorg it did not, and the outline
+// stayed until the window closed (D-415); on Fedora's Wayland something
+// cleared it (D-417). So on the target's own drop and drag-leave the page
+// is told, whatever WebKit does.
 func (w *linuxWindow) connectDrop(onDropped func(paths []string)) {
 	w.win.AddController(newDropTarget(func(paths []string) {
 		// Through the window's own ordered channel, like every other
 		// callback: the handler may block, and the UI thread must not.
 		w.emit(func() { onDropped(paths) })
-	}))
+	}, w.tellPageDragEnded))
 }
+
+// tellPageDragEnded runs the page's drag-ended hook. Through the window's
+// ordered channel, so it is ordered with the drop, and off the UI thread,
+// because Eval waits for the page's answer.
+func (w *linuxWindow) tellPageDragEnded() {
+	w.emit(func() {
+		if _, err := w.Eval(dragEndedScript); err != nil && !errors.Is(err, ErrWindowClosed) {
+			slog.Warn("ui: telling the page the drag is over failed", "error", err)
+		}
+	})
+}
+
+// dragEndedScript calls the page's own hook, if it has one. Only the main
+// page takes drops; any other page simply has no hook.
+const dragEndedScript = `window.__liroDragEnded && window.__liroDragEnded(); void 0`
 
 // newDropTarget is the window's drop target for text/uri-list, calling
 // deliver with the local paths of each drop. On the UI thread.
@@ -91,11 +116,19 @@ func (w *linuxWindow) connectDrop(onDropped func(paths []string)) {
 //
 // drop_linux_test.go builds the target through this function and forces
 // the collector before asking it for its formats.
-func newDropTarget(deliver func(paths []string)) *gtk.DropTargetAsync {
+//
+// ended is called, on the UI thread, when a drag over the window is over —
+// dropped, whatever came of reading it, or left — so the page can stop
+// saying it is a target (D28).
+func newDropTarget(deliver func(paths []string), ended func()) *gtk.DropTargetAsync {
 	target := gtk.NewDropTargetAsync(nil, gdk.ActionCopy)
 	target.SetFormats(gdk.NewContentFormats([]string{uriListMIME}))
 	target.SetPropagationPhase(gtk.PhaseCapture)
+	// The drop argument is not used: it is wrapped as the drop signal's
+	// is, coreglib.Take on a transfer-none GdkDrop (gotk4 v0.3.1, read).
+	target.ConnectDragLeave(func(gdk.Dropper) { ended() })
 	target.ConnectDrop(func(dropper gdk.Dropper, _, _ float64) bool {
+		ended()
 		drop := gdk.BaseDrop(dropper)
 		if !drop.Formats().ContainMIMEType(uriListMIME) {
 			return false

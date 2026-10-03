@@ -89,13 +89,6 @@ body.drag-over #file-list {
   overflow-wrap: anywhere;
 }
 
-.file-size {
-  flex: 0 0 auto;
-  font-size: var(--liro-font-size-small);
-  color: var(--liro-color-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
 .file-remove {
   flex: 0 0 auto;
 }
@@ -242,6 +235,14 @@ body.drag-over #file-list {
   justify-content: flex-end;
   gap: var(--liro-space-2);
   margin-top: var(--liro-space-2);
+}
+
+/* The program's doors sit at the left, on a row of their own above the
+   batch's actions (D31): seven buttons do not fit the window's 560 points
+   on one line, and the two kinds of action read apart. */
+.agent-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
 /* The report's two action rows are one block: the second follows the

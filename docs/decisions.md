@@ -43836,3 +43836,114 @@ dev.14 installed. **Tray 7577 running**, started from the D27 entry, not by
 autostart, with its network process and one chain. The temporary entry is
 removed. `~/d32probe` for carrying. No package installed; nothing on the
 system changed.
+
+## D-422 — dev.15's five built without the owner, D32 not among them: the caller is answered when the run ends and the window keeps its slot until it goes (D33); Podešavanja, Sertifikati and Prikaži dnevnik revizije in the main window on every platform (D31); no document size anywhere a person sees it (D29); the drop target tells the page the drag is over (D28); and on Linux `open` with no agent becomes the agent, with a sentence for one that cannot be reached (D27) — each tested, each control failing, none watched
+
+**Date:** 2026-10-03
+**Phase:** F12; dev.15, D-421's rulings. The Ubuntu VM. **D32's fix is not
+in dev.15** (the owner: find the cause before proposing one); the D32 runs
+and dev.15's walk-through are one Fedora sitting.
+
+### D33: answered at the run's end
+
+`remoteBatch.deliver` (`protocolflow.go`), called once at the run's end
+after `settleRemoteOutcomes` and `recordAudit` and before the report is
+drawn (`mainwindow.go`), copies the outcomes and code into `final` and
+closes `delivered`. `runProtocolFlow` runs the window on a goroutine of its
+own and returns `final` when `delivered` closes, or what the window left
+when it closes without a run, as before. **`Sign` returns at once and keeps
+the one-window mutex until the window has gone**, so a second request's
+window cannot open over a report a person is reading. A panic in the window,
+which `runJob`'s recover used to catch on the same goroutine, is caught on
+the new one and answered `INTERNAL` unless the run had already been
+answered. `newBatch` is refused in Go on a window whose documents were
+supplied: the page already hides it, and after an early answer a second run
+would be a second answer. `finishRemote` cannot record a refusal after a
+run, because `signedAnything` is set when the card session opens (read).
+`jobs.Job.Publish` ignores a terminal job (read), so nothing the window does
+afterwards moves a completed job back.
+
+The documents: `DEMO-WALKTHROUGH.md` step 5 lists the buttons a protocol
+window has — **no Potpiši još dokumenata**, a third mismatch found on the
+way (`canSignMore: !documentsSupplied`) — and step 6 says the files arrive
+with the report still on screen; `PROTOCOL.md` §6.2's `signing` is "while
+it is being made" and `completed` says the window may still be showing the
+report, and §6.3's 202 row says the batch is not yet finished.
+
+### D31: the three doors
+
+`windowDoors` (`doors.go`): the agent builds its three once in `runAgent`,
+and the tray's menu items and the agent's window both call them, so Settings
+revokes through the agent's one pairing store (D-182); a window with no
+agent opens its own, as `sign`'s Settings does. In the page, a row of its
+own above the batch's actions — **Podešavanja · Sertifikati · Prikaži
+dnevnik revizije · Izađi**, quiet, at the left, never hidden — because seven
+buttons do not fit the documents step's 560 points. Each door opens on a
+goroutine with a guard against a second copy; Settings is opened over the
+main window, and when it closes the window re-reads the configuration and
+redraws the document step, so a changed output folder shows. **What this
+costs is not measured**: about one document row of list height against
+D-106's eight.
+
+### D29: the size gone
+
+The count line and each row's size, and with them `jobs.FormatSize`,
+`Queue.TotalSize`, `main.size_unknown` in three catalogues and `.file-size`
+— and `Item.Size`/`SizeKnown` with their `os.Stat`, which D-415's sweep did
+not list but which nothing read once the display went. The source sweep,
+repeated: one hit, `placeholder.go`'s comment about "file-size cost",
+unrelated.
+
+### D28: the drag's end, told by the window
+
+`newDropTarget` takes an `ended` callback and calls it on the target's own
+`drop` and `drag-leave`; the window runs the page's `__liroDragEnded`
+through its ordered channel; `main.js` defines it to clear `drag-over`. The
+`drag-leave` trampoline in gotk4 v0.3.1 is the `drop` signal's —
+`coreglib.Take` on a transfer-none `GdkDrop`, read against the generated
+code (D-385, D-412's rule) — and the argument is not used.
+
+### D27: `open` becomes the agent, on Linux
+
+`runTray` is now `runAgent(cfg, version, withWindow)`; `open` on Linux
+(`open_linux.go`) runs it with the window, and if the agent cannot be
+started at all, opens the window alone with option 3's sentence. Every
+window of an agent whose protocol did not start carries the sentence too:
+sr-Latn "Veb aplikacije za sada ne mogu da pošalju dokumente programu Liro
+Bridge. Ovde možete da potpisujete i dalje." — no promise about the next
+login, because the cause of such a failure is not known and autostart can be
+off. Windows' `open` is unchanged (`open_other.go`): its installer starts the
+agent, and option 1 was measured only on GNOME.
+
+### The tests, and their controls
+
+| | test | control | control result |
+|---|---|---|---|
+| D33 | `TestTheCallersAnswerIsACopyTakenOnce`, `TestSignAnswersAtTheRunsEndAndKeepsTheWindowSlot` (`-race`) | `Sign` waits for the window | **failed**: "Sign did not return while the first window was still up" |
+| | | `Sign` gives the slot back at once | **failed** |
+| D31 | `TestTheMainWindowOpensTheTrayMenusThreeWindows` (`-race`), `TestTheDoorsAreOnTheMainPageAndNotConditional` | no `openSettings` route | **failed**: "Settings was opened over 0x0" — after the test was changed to name the door; at first it failed only with a timeout |
+| D29 | `TestTheDocumentListShowsNoSize` (three catalogues) | the size put back in `en`'s count line | **failed** |
+| D28 | `TestTheWindowTellsThePageTheDragIsOver`; `TestTheMainPageClearsItsOutlineWhenTold` | — | the window test **skips here** (bwrap, D-324) and runs in CI; not run with the sandbox off, which D-413 needed the owner's ruling for |
+| D27 | `TestAWindowNoWebApplicationCanReachSaysSo` | — | `open` → agent is not reachable by a unit test; the walk-through reads it |
+
+Both test views green: untagged 37 packages, `-tags softtoken` 38; `go vet`
+untagged, softtoken and `GOOS=windows` clean but for two `unsafe.Pointer`
+warnings in `dropdelivery_windows_test.go`, untouched here. Windows' render
+of the new row is untested (`mainwindow_render_windows_test.go` was updated
+for D29 and compiles; it runs only on Windows).
+
+**An instrument failure on the way**: the first `-race` run was started
+while D31's files were being written; `go test` had taken its file list
+first, compiled the edited files without the new `doors.go`, and failed to
+build after 16 minutes of dependency compilation (D-421, "My failure").
+
+### The build — predicted
+
+- **B1**: builds at the commit carrying this entry; `vcs.modified=false`; glibc
+  needed ≤ 2.34.
+- **B2**: NEEDED the same 13 libraries as dev.14; `Depends` identical.
+- **B3**: D29's sweep against the package's binary: none of "veličina
+  nepoznata", "величина непозната", "size unknown", and no `· %s` after
+  "Broj dokumenata"; "Veb aplikacije za sada ne mogu" present.
+  **Least certain: B2** — nothing added links anything new, but D-413's P8
+  found a new symbol where none was expected.

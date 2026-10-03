@@ -113,6 +113,23 @@ type mainWindow struct {
 	// told so and shows no Quit at all (F12 §6).
 	quitAgent func()
 
+	// doors are Settings, the certificates and the audit log, reached
+	// from this window on every platform (D31). The agent's own when this
+	// is the agent's window; this window's own otherwise (ownDoors).
+	doors windowDoors
+	// doorsOpen keeps a door from opening its window twice.
+	doorsOpen doorsOpen
+	// settingsClosed tells the loop that a Settings window opened from
+	// here has closed, so what this window shows from the configuration
+	// is read again rather than left as it was before the person changed
+	// it.
+	settingsClosed chan struct{}
+	// unreachable says that no web application can reach this program
+	// while this window is up: the agent's protocol did not start, or no
+	// agent could be started at all (D27, option 3's sentence). Shown
+	// above the document list as a problem.
+	unreachable bool
+
 	// waiting is the desktop notification posted alongside a window
 	// nobody in this room asked for (SPEC §6.5.2), held so that it can
 	// be taken down when the request it announced has been answered.
@@ -308,6 +325,9 @@ func newMainWindow(cfg config.Config, locale string) *mainWindow {
 		method:     stampMethodOf(cfg),
 		auditStore: newAuditStore,
 		gather:     interactiveGather,
+		doors:      ownDoors(cfg),
+
+		settingsClosed: make(chan struct{}, 1),
 	}
 }
 
@@ -353,14 +373,16 @@ func exitFor(reason errs.Code) int {
 // list already on screen, exactly as a dropped file does. Nothing is
 // stranded and nothing is signed that the person did not select.
 func runMainWindowWatching(ctx context.Context, cfg config.Config, locale string, initialPaths []string, inbox *jobs.Inbox) int {
-	return runAgentWindow(ctx, cfg, locale, initialPaths, inbox, nil)
+	return runAgentWindow(ctx, cfg, locale, initialPaths, inbox, nil, ownDoors(cfg), false)
 }
 
 // runAgentWindow is runMainWindowWatching with the agent's own stop
 // behind it, for the window the agent opens for itself (F12 §6).
-func runAgentWindow(ctx context.Context, cfg config.Config, locale string, initialPaths []string, inbox *jobs.Inbox, quitAgent func()) int {
+func runAgentWindow(ctx context.Context, cfg config.Config, locale string, initialPaths []string, inbox *jobs.Inbox, quitAgent func(), doors windowDoors, unreachable bool) int {
 	m := newMainWindow(cfg, locale)
 	m.quitAgent = quitAgent
+	m.doors = doors
+	m.unreachable = unreachable
 	if len(initialPaths) > 0 {
 		_, notices := m.queue.Add(initialPaths)
 		m.notices = notices
@@ -672,6 +694,16 @@ func (m *mainWindow) loop(ctx context.Context) {
 				continue
 			}
 			m.addPaths(paths)
+		case <-m.settingsClosed:
+			// The person may have changed what this window shows — the
+			// output folder above all — in the Settings they opened from
+			// it. The configuration on disk is the standing answer, so it
+			// is read again, and the document step redrawn if that is
+			// where the window is.
+			m.cfg = currentConfig(m.cfg)
+			if m.step == stepDocuments && !m.showingReport && !m.failed && m.runner == nil {
+				m.postFiles()
+			}
 		case msg := <-m.messages:
 			switch msg.Type {
 			case ui.MessageTypeSelectCertificate:
@@ -768,6 +800,13 @@ func (m *mainWindow) handleAction(ctx context.Context) bool {
 	case "exportReport":
 		m.exportReport()
 	case "newBatch":
+		if m.documentsSupplied {
+			// The page does not offer it here (canSignMore), and on a
+			// protocol window a second run would be a second answer to a
+			// caller that has already had one (D33).
+			slog.Warn("signing window: newBatch on a window whose documents were supplied, ignored")
+			break
+		}
 		m.queue.Clear()
 		m.notices = nil
 		m.report = nil
@@ -776,6 +815,12 @@ func (m *mainWindow) handleAction(ctx context.Context) bool {
 		m.collisions = 0
 		m.auditNotice = ""
 		m.show(stepDocuments)
+	case "openSettings":
+		openDoor("settings", &m.doorsOpen.settings, func() { m.doors.settings(m.win.Handle()) }, m.settingsClosed)
+	case "openCertificates":
+		openDoor("certificates", &m.doorsOpen.certificates, m.doors.certificates, nil)
+	case "openAuditLog":
+		openDoor("auditLog", &m.doorsOpen.auditLog, m.doors.auditLog, nil)
 	case "finish":
 		// The expected end of a batch, and the report screen's primary
 		// action: the work is done, so the window closes. Signing more
@@ -908,7 +953,6 @@ type jsFile struct {
 	// identify it in this list (jobs.NeedsFolder). Empty for every
 	// other row, which is nearly all of them.
 	Folder    string `json:"folder,omitempty"`
-	SizeText  string `json:"sizeText"`
 	State     string `json:"state,omitempty"`
 	StateText string `json:"stateText,omitempty"`
 	Reason    string `json:"reason,omitempty"`
@@ -924,7 +968,7 @@ func (m *mainWindow) filesPayload(kind string) map[string]any {
 	needsFolder := jobs.NeedsFolder(items)
 	files := make([]jsFile, 0, len(items))
 	for i, it := range items {
-		f := jsFile{Name: it.DisplayName, SizeText: m.sizeText(it)}
+		f := jsFile{Name: it.DisplayName}
 		if needsFolder[i] {
 			f.Folder = it.Folder
 		}
@@ -952,34 +996,29 @@ func (m *mainWindow) filesPayload(kind string) map[string]any {
 	return payload
 }
 
-func (m *mainWindow) sizeText(it jobs.Item) string {
-	if !it.SizeKnown {
-		return m.c.T("main.size_unknown")
-	}
-	return jobs.FormatSize(it.Size)
-}
-
 func (m *mainWindow) countText() string {
 	n := m.queue.Len()
 	if n == 0 {
 		return ""
 	}
-	total, complete := m.queue.TotalSize()
-	size := jobs.FormatSize(total)
-	if !complete {
-		size += " " + m.c.T("main.size_unknown")
-	}
+	// No size beside the count, nor beside each name (D29, the owner):
+	// a byte count tells a person signing nothing they can act on, and
+	// takes room from the names they are reading.
+	//
 	// One form for every number. Serbian inflects the noun after 2-4
 	// differently from 5+, so a "%d dokumenata" line is wrong for two
 	// and a separate singular is a second string to keep in step;
 	// "Broj dokumenata: %d" is correct for all of them and needs no
 	// rule. The same recasting is applied to every count a person
 	// reads -- see the catalogue's other "Broj ...: %d" lines.
-	return fmt.Sprintf(m.c.T("main.document_count"), n, size)
+	return fmt.Sprintf(m.c.T("main.document_count"), n)
 }
 
 func (m *mainWindow) noticeTexts() []jsNotice {
-	out := make([]jsNotice, 0, len(m.notices))
+	out := make([]jsNotice, 0, len(m.notices)+1)
+	if m.unreachable {
+		out = append(out, jsNotice{Text: m.c.T("main.agent_unreachable"), Problem: true})
+	}
 	for _, n := range m.notices {
 		switch n.Kind {
 		case jobs.NoticeFolderScanned:
@@ -1013,9 +1052,10 @@ func (m *mainWindow) staticStrings() map[string]string {
 		"main.report_failures_title", "main.report_output_label",
 		"main.report_level_label", "main.open_output", "main.export_report",
 		"main.new_batch", "main.finish", "consent.per_signature_pin_warning",
-		// The tray's own word for it, because it is the same action and
-		// a second wording for one thing is how two of them drift.
-		"tray.quit",
+		// The tray's own words for them, because they are the same
+		// actions and a second wording for one thing is how two of them
+		// drift.
+		"tray.quit", "tray.settings", "tray.certificates", "tray.audit_log",
 		// The questions asked between the approval and the first
 		// signature live on this page now, so its static labels do too.
 		"consent.tsa_choice_title", "consent.tsa_choice_explain",
@@ -1382,6 +1422,11 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 	m.report = &report
 	m.settleRemoteOutcomes(report)
 	m.recordAudit(d, report)
+	if m.remote != nil {
+		// The caller's answer is final here, before the report is drawn
+		// (D33): a person looking at it is not something to wait for.
+		m.remote.deliver()
+	}
 	m.postReport(report)
 }
 

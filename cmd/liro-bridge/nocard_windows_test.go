@@ -327,7 +327,7 @@ func TestAProtocolRequestIsToldWhichKindOfNothingThisIs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			swapGather(t, tc.listing)
 			req := digestRequest(1, "")
-			got := runProtocolFlow(context.Background(), config.Default(), "sr-Latn", req, testJob(t, 1))
+			got, _ := runProtocolFlow(context.Background(), config.Default(), "sr-Latn", req, testJob(t, 1))
 			if got.Code != tc.want {
 				t.Errorf("the caller was told %q, want %q", got.Code, tc.want)
 			}

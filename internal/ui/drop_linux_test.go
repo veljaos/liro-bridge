@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -116,7 +117,7 @@ func dropTargetChild() int {
 		return 3
 	}
 	var target *gtk.DropTargetAsync
-	if err := theUIThread.do(func() { target = newDropTarget(func([]string) {}) }); err != nil {
+	if err := theUIThread.do(func() { target = newDropTarget(func([]string) {}, func() {}) }); err != nil {
 		return 3
 	}
 	if !collectAndFinalize(3) {
@@ -160,4 +161,55 @@ func collectAndFinalize(n int) bool {
 		}
 	}
 	return true
+}
+
+// TestTheWindowTellsThePageTheDragIsOver is D28's plumbing: what the drop
+// target calls on its drop and drag-leave reaches the page's hook. The drag
+// itself is a person's (D-094), watched on both backends; this is the half
+// a test can reach.
+func TestTheWindowTellsThePageTheDragIsOver(t *testing.T) {
+	page := `<!doctype html><body><script>
+  window.__liroDragEnded = function () { window.__ended = (window.__ended || 0) + 1; };
+</script>`
+	w := newTestWindow(t, Options{Assets: fstest.MapFS{"index.html": {Data: []byte(page)}}})
+
+	w.(*linuxWindow).tellPageDragEnded()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got, err := w.Eval("window.__ended || 0")
+		if err != nil {
+			t.Fatalf("Eval: %v", err)
+		}
+		if got == "1" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the page's drag-ended hook ran %s times, want 1", got)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestTheMainPageClearsItsOutlineWhenTold checks the main page's half of
+// D28: it defines the hook, and the hook clears the outline the page's
+// dragover draws.
+func TestTheMainPageClearsItsOutlineWhenTold(t *testing.T) {
+	js, err := os.ReadFile("assets/pages/main.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(js)
+	i := strings.Index(src, "window.__liroDragEnded = function")
+	if i < 0 {
+		t.Fatal("main.js defines no __liroDragEnded, so the window's drop handling cannot clear the outline")
+	}
+	body := src[i:]
+	body = body[:strings.Index(body, "};")]
+	if !strings.Contains(body, `classList.remove("drag-over")`) {
+		t.Errorf("__liroDragEnded does not clear drag-over: %s", body)
+	}
+	if !strings.Contains(dragEndedScript, "__liroDragEnded") {
+		t.Errorf("the script the window runs does not call the page's hook: %s", dragEndedScript)
+	}
 }

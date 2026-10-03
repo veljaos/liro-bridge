@@ -17,7 +17,7 @@ func writeFile(t *testing.T, dir, name string, n int) string {
 	return path
 }
 
-func TestAddFilesKeepsOrderAndReadsSizes(t *testing.T) {
+func TestAddFilesKeepsOrder(t *testing.T) {
 	dir := t.TempDir()
 	a := writeFile(t, dir, "a.pdf", 10)
 	b := writeFile(t, dir, "b.pdf", 20)
@@ -33,13 +33,6 @@ func TestAddFilesKeepsOrderAndReadsSizes(t *testing.T) {
 	items := q.Items()
 	if items[0].DisplayName != "a.pdf" || items[1].DisplayName != "b.pdf" {
 		t.Fatalf("order not preserved: %q, %q", items[0].DisplayName, items[1].DisplayName)
-	}
-	if !items[0].SizeKnown || items[0].Size != 10 {
-		t.Fatalf("size = %d (known %t), want 10", items[0].Size, items[0].SizeKnown)
-	}
-	total, complete := q.TotalSize()
-	if total != 30 || !complete {
-		t.Fatalf("TotalSize = %d, %t; want 30, true", total, complete)
 	}
 }
 
@@ -275,27 +268,6 @@ func TestOutputPathUsesChosenFolder(t *testing.T) {
 	want := filepath.Join("D:", "out", "ugovor-potpisan.pdf")
 	if got != want {
 		t.Fatalf("OutputPathFor = %q, want %q", got, want)
-	}
-}
-
-func TestFormatSize(t *testing.T) {
-	cases := []struct {
-		in   int64
-		want string
-	}{
-		{0, "0 B"},
-		{999, "999 B"},
-		{1000, "1.0 kB"},
-		{9999, "10.0 kB"},
-		{10000, "10 kB"},
-		{340000, "340 kB"},
-		{1200000, "1.2 MB"},
-		{673111, "673 kB"},
-	}
-	for _, tc := range cases {
-		if got := FormatSize(tc.in); got != tc.want {
-			t.Errorf("FormatSize(%d) = %q, want %q", tc.in, got, tc.want)
-		}
 	}
 }
 

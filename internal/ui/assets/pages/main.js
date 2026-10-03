@@ -86,11 +86,6 @@
       window.liroSetText(name, f.name);
       row.appendChild(name);
 
-      var size = document.createElement("span");
-      size.className = "file-size";
-      window.liroSetText(size, f.sizeText);
-      row.appendChild(size);
-
       var remove = document.createElement("button");
       remove.className = "liro-btn liro-btn-quiet liro-btn-compact file-remove";
       window.liroSetText(remove, window.liroT("main.remove_file"));
@@ -319,6 +314,9 @@
 
   on("browse-btn", "browse");
   on("clear-btn", "clear");
+  on("settings-btn", "openSettings");
+  on("certificates-btn", "openCertificates");
+  on("auditlog-btn", "openAuditLog");
 
   // This is the one action with a wait behind it. Not the window any
   // more — a step is a navigation now, measured in tens of milliseconds
@@ -376,6 +374,14 @@
     ev.preventDefault();
     document.body.classList.remove("drag-over");
   });
+  // The window's own drop handling says when the drag is over, whatever
+  // the engine sends the page (D28): on Linux the native drop target takes
+  // the drop before the page sees it, and on Ubuntu's Xorg the page was
+  // never given a final dragleave, so the outline stayed until the window
+  // closed.
+  window.__liroDragEnded = function () {
+    document.body.classList.remove("drag-over");
+  };
 
   // Escape closes, matching every other window (F5 §5.6).
   document.addEventListener("keydown", function (ev) {

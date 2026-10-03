@@ -682,8 +682,8 @@ data: {"state":"signing","completed":37,"total":100,"failed":0,"etaMs":26000}
 | `awaiting_consent` | The agent's window is up and the person has not answered. Carries `consentRemainingMs`. |
 | `awaiting_pin` | They approved. The agent is opening the card, where the operating system may ask for a PIN. |
 | `preparing_card` | The first signature is in flight. Measured at about 4.0 s on a MUP card and 12.7 s on a Pošta one — expected, not stalled. |
-| `signing` | Every signature after the first. |
-| `completed` | Finished, with a result waiting to be collected. |
+| `signing` | Every signature after the first, while it is being made. |
+| `completed` | Finished, with a result waiting to be collected. The batch is finished when its last document is — the agent's window may still be showing the person its report, and nothing waits for them to close it. |
 | `failed` | Nothing was signed. Carries `code`. |
 
 `etaMs` appears only once a first signature has actually been measured;
@@ -706,7 +706,7 @@ the device secret belongs anyway (§2.4).
 
 | While | Answer |
 |---|---|
-| the job is running | `202` with the same body an event carries |
+| the job is running — the window is up and the batch not yet finished | `202` with the same body an event carries |
 | it finished with signatures | `200` with the result of §5.1 or §5.2 |
 | it finished with none | the failure's own code — `403` for a refusal, `422` for the card |
 | any time after that | `404 JOB_NOT_FOUND` |

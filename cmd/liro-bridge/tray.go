@@ -74,6 +74,22 @@ func (o *oneWindow) run(f func()) bool {
 }
 
 func runTray(cfg config.Config, version string) int {
+	code, _ := runAgent(cfg, version, false)
+	return code
+}
+
+// runAgent is the agent, and withWindow is D27's option 1: `open` on a
+// desktop where no agent is running becomes the agent, and opens the
+// agent's own window at once rather than a window with nothing behind it.
+// On stock GNOME that was a window whose web applications could not reach
+// Liro until the next login, and nothing said so (D-407). A tray launched
+// from the Shell outlives its window (D-421), so the agent it becomes keeps
+// serving after the person closes the window, as it would after a login.
+//
+// started is false when the agent itself could not be brought up — the
+// one case option 3's sentence is kept for — so that the caller can still
+// give the person a window, and say what is missing.
+func runAgent(cfg config.Config, version string, withWindow bool) (code int, started bool) {
 	// F12 §7.1: one agent per user session. A second one would take a
 	// second port, write its own discovery file over the first one's,
 	// and leave the first running and unreachable by the only mechanism
@@ -83,11 +99,11 @@ func runTray(cfg config.Config, version string) int {
 		if err := handOver(); err != nil {
 			slog.Warn("tray: an agent is already running and this launch could not reach it", "error", err)
 			fmt.Println(c.T("startup.handover_failed"))
-			return 1
+			return 1, true
 		}
 		slog.Info("tray: an agent is already running, so this launch handed it the request and stopped")
 		fmt.Println(c.T("startup.already_running"))
-		return 0
+		return 0, true
 	}
 
 	// One pairing store for the life of the process (see openPairings):
@@ -104,6 +120,29 @@ func runTray(cfg config.Config, version string) int {
 	defer quitOnTerminate(quitOnce)()
 	openedAWindow := false
 	windows := &oneWindow{}
+
+	// The tray menu's three windows, as one set of doors: the menu opens
+	// them, and so does the main window, on every platform (D31).
+	doors := windowDoors{
+		settings: func(owner uintptr) {
+			openedAWindow = true
+			if err := runSettingsWindow(cfg, owner, pairings, secretStore); err != nil {
+				slog.Warn("tray: settings window failed", "error", err)
+			}
+		},
+		certificates: func() {
+			openedAWindow = true
+			if err := runCertificatesWindow(currentConfig(cfg).Locale); err != nil {
+				slog.Warn("tray: certificates window failed", "error", err)
+			}
+		},
+		auditLog: func() {
+			openedAWindow = true
+			if err := runAuditLogWindow(currentConfig(cfg).Locale); err != nil {
+				slog.Warn("tray: audit log window failed", "error", err)
+			}
+		},
+	}
 
 	// F6 §2: the entry is on by default, so it is registered when the
 	// agent starts rather than only when Settings is opened and saved.
@@ -126,6 +165,10 @@ func runTray(cfg config.Config, version string) int {
 		slog.Error("tray: the protocol could not be started", "error", protocolErr)
 	}
 	defer protocol.stop()
+	// Option 3's sentence (D27): every window of an agent whose protocol
+	// did not start says that web applications cannot reach it, which
+	// nothing else would tell a person on a desktop with no tray.
+	unreachable := protocolErr != nil
 
 	t, err := ui.NewTray(ui.TrayOptions{
 		Version: version,
@@ -144,33 +187,18 @@ func runTray(cfg config.Config, version string) int {
 			// pointing at one (F6 §1). Opened empty: the drop zone and
 			// Browse are how documents get in from here.
 			openedAWindow = true
-			if !windows.run(func() { openAgentWindow(cfg, nil, quitOnce) }) {
+			if !windows.run(func() { openAgentWindow(cfg, nil, quitOnce, doors, unreachable) }) {
 				slog.Debug("tray: Open was clicked while the window was already up")
 			}
 		},
-		OnSettings: func() {
-			openedAWindow = true
-			if err := runSettingsWindow(cfg, 0, pairings, secretStore); err != nil {
-				slog.Warn("tray: settings window failed", "error", err)
-			}
-		},
-		OnCertificates: func() {
-			openedAWindow = true
-			if err := runCertificatesWindow(currentConfig(cfg).Locale); err != nil {
-				slog.Warn("tray: certificates window failed", "error", err)
-			}
-		},
-		OnAuditLog: func() {
-			openedAWindow = true
-			if err := runAuditLogWindow(currentConfig(cfg).Locale); err != nil {
-				slog.Warn("tray: audit log window failed", "error", err)
-			}
-		},
-		OnQuit: func() { quitOnce() },
+		OnSettings:     func() { doors.settings(0) },
+		OnCertificates: doors.certificates,
+		OnAuditLog:     doors.auditLog,
+		OnQuit:         func() { quitOnce() },
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "liro-bridge: tray:", err)
-		return 1
+		return 1, false
 	}
 	defer func() { _ = t.Close() }()
 
@@ -178,7 +206,13 @@ func runTray(cfg config.Config, version string) int {
 	// its request over, and for documents the Explorer verb or a second
 	// launch left in the inbox. Without this the handover would be a
 	// message nobody reads.
-	go watchForHandovers(cfg, windows, quit, &openedAWindow, quitOnce)
+	go watchForHandovers(cfg, windows, quit, &openedAWindow, quitOnce, doors, unreachable)
+
+	if withWindow {
+		openedAWindow = true
+		slog.Info("tray: started by a launch that asked for the window, so it opens it (D27)")
+		go windows.run(func() { openAgentWindow(cfg, nil, quitOnce, doors, unreachable) })
+	}
 
 	// SPEC §15.2's daily check. It runs for the life of the tray, it
 	// never installs anything, and the only thing it can do on its own
@@ -189,15 +223,15 @@ func runTray(cfg config.Config, version string) int {
 	if openedAWindow {
 		time.Sleep(trayExitGrace)
 	}
-	return 0
+	return 0, true
 }
 
 // openAgentWindow shows the agent's own window, with any documents that
 // came with the request.
-func openAgentWindow(cfg config.Config, paths []string, quitAgent func()) {
+func openAgentWindow(cfg config.Config, paths []string, quitAgent func(), doors windowDoors, unreachable bool) {
 	now := currentConfig(cfg)
 	box := jobs.NewInbox(shellInboxDir())
-	if code := runAgentWindow(context.Background(), now, now.Locale, paths, box, quitAgent); code != 0 {
+	if code := runAgentWindow(context.Background(), now, now.Locale, paths, box, quitAgent, doors, unreachable); code != 0 {
 		slog.Warn("tray: the main window returned an error", "code", code)
 	}
 }
@@ -216,7 +250,7 @@ func openAgentWindow(cfg config.Config, paths []string, quitAgent func()) {
 // own (runShellVerb), and the window this opens takes the documents from the
 // inbox while it is up, so they reach the window already on screen rather
 // than a second one.
-func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct{}, opened *bool, quitAgent func()) {
+func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct{}, opened *bool, quitAgent func(), doors windowDoors, unreachable bool) {
 	box := jobs.NewInbox(shellInboxDir())
 	ticker := time.NewTicker(inboxPollInterval)
 	defer ticker.Stop()
@@ -234,7 +268,7 @@ func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct
 				continue
 			}
 			*opened = true
-			if !windows.run(func() { openAgentWindow(cfg, nil, quitAgent) }) {
+			if !windows.run(func() { openAgentWindow(cfg, nil, quitAgent, doors, unreachable) }) {
 				slog.Debug("tray: a launch handed over while the window was already up")
 			}
 		}

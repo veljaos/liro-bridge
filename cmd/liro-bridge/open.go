@@ -37,7 +37,7 @@ import (
 // What is left is two commands that do not overlap: `open` is the
 // window with nothing in it, and `sign --in` is a batch. There is no
 // third way to say either.
-func runOpen(ctx context.Context, args []string, out io.Writer, cfg config.Config) int {
+func runOpen(ctx context.Context, args []string, out io.Writer, cfg config.Config, version string) int {
 	if len(args) > 0 {
 		fprintln(out, "liro-bridge: open takes no arguments; to sign named documents use: liro-bridge sign --in <file or pattern>")
 		return 2
@@ -68,9 +68,7 @@ func runOpen(ctx context.Context, args []string, out io.Writer, cfg config.Confi
 		return 0
 	}
 
-	applyStartupRegistrations(cfg)
-
-	return runMainWindow(ctx, cfg, cfg.Locale, nil)
+	return openWithoutAgent(ctx, cfg, version)
 }
 
 // runShellVerb handles one invocation of the Explorer context menu.

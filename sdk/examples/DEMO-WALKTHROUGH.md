@@ -126,10 +126,14 @@ demo being fast, not a step being skipped. A real card spends about 4 s
 - **Otvori folder** is therefore **disabled** (greyed, not hidden).
 - **Nivo potpisa**: `B-B`, with the warning line `Nivo B-B — bez
   vremenskog žiga` under it.
-- Buttons: **Sačuvaj izveštaj...**, **Otvori folder** (disabled),
-  **Potpiši još dokumenata**, **Završi**.
+- Buttons: **Sačuvaj izveštaj...**, **Otvori folder** (disabled), and
+  **Završi**. There is no **Potpiši još dokumenata**: a batch that brought
+  its own documents has no document list to go back to.
 
-**6 — Terminal.** Three signed PDFs written under
+**6 — Terminal**, with the report still on screen. The application is
+answered when the run ends — the moment the window says `Završeno` — not
+when you press **Završi**, which only closes the window. Three signed
+PDFs written under
 `liro-demo\out\demo-a\`, with their sizes and the level each actually
 reached. Open one: the stamp is in the **bottom-right** corner, because
 the application said so.

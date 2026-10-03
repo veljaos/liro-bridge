@@ -34,14 +34,24 @@ func (b *remoteBatch) result() api.SignResult {
 }
 
 // runProtocolFlow shows the agent's own window for one accepted job and
-// returns what came of it.
+// returns what came of it, and a channel closed when the window has gone.
 //
 // It runs on its own goroutine, one at a time (protocolSigner
 // serialises them), because the agent shows one consent window at a
 // time and a second request arriving mid-decision must wait rather than
 // stack a window on top of the one a person is reading.
-func runProtocolFlow(ctx context.Context, cfg config.Config, locale string, req api.SignRequest, job *jobs.Job) api.SignResult {
+//
+// **The result is returned when the run ends, not when the window
+// closes** (D33, the owner's ruling): the signatures exist the moment
+// they are made and written to the audit log, and everything after that
+// is showing them to a person. The report stays on screen and Završi or
+// the corner X only close it. The window itself runs on a goroutine of
+// its own so that this function can return while it is still up; a
+// window that ends without a run — refused, expired, closed — answers
+// when it closes, as before.
+func runProtocolFlow(ctx context.Context, cfg config.Config, locale string, req api.SignRequest, job *jobs.Job) (api.SignResult, <-chan struct{}) {
 	m := newProtocolWindow(cfg, locale, req, job)
+	gone := make(chan struct{})
 
 	if err := m.gatherCertificatesBeforeOpening(ctx); err != nil {
 		// The caller is told what happened, not INTERNAL. This used to
@@ -53,7 +63,8 @@ func runProtocolFlow(ctx context.Context, cfg config.Config, locale string, req 
 		code := codeOfInteractive(err)
 		slog.Info("protocol: the certificate listing failed for a request",
 			"jobId", job.ID, "code", string(code))
-		return api.SignResult{Code: code}
+		close(gone)
+		return api.SignResult{Code: code}, gone
 	}
 	certs, err := certificatesOfferedFor(m.certInfos, req.Thumbprint)
 	if err != nil {
@@ -62,13 +73,50 @@ func runProtocolFlow(ctx context.Context, cfg config.Config, locale string, req 
 		// no certificate on this machine can sign.
 		slog.Info("protocol: no certificate to offer for a request",
 			"jobId", job.ID, "code", string(codeOfInteractive(err)))
-		return api.SignResult{Code: codeOfInteractive(err)}
+		close(gone)
+		return api.SignResult{Code: codeOfInteractive(err)}, gone
 	}
 	m.certInfos = certs
 
-	m.open(ctx, nil, stepCertificate)
-	return m.remote.result()
+	// A panic in the window used to reach runJob's recover on this
+	// goroutine and fail the job INTERNAL. On a goroutine of its own it
+	// would end the agent instead, so it is caught here and answered the
+	// same way — unless the run had already ended, in which case the
+	// caller has its answer and the report is all that was lost.
+	var panicked any
+	go func() {
+		defer close(gone)
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Error("protocol: the signing window panicked", "jobId", job.ID, "panic", p)
+				panicked = p
+			}
+		}()
+		m.open(ctx, nil, stepCertificate)
+	}()
+
+	select {
+	case <-m.remote.delivered:
+		slog.Info("protocol: the run ended, so the caller has its result; the report stays on screen",
+			"jobId", job.ID)
+		return m.remote.final, gone
+	case <-gone:
+		select {
+		case <-m.remote.delivered:
+			return m.remote.final, gone
+		default:
+		}
+		if panicked != nil {
+			return api.SignResult{Code: errs.CodeInternal}, gone
+		}
+		return m.remote.result(), gone
+	}
 }
+
+// protocolFlow is runProtocolFlow, as Sign reaches it. A variable for the
+// same reason newUIWindow is one: so that a test can stand in for the
+// window and ask what Sign does around it.
+var protocolFlow = runProtocolFlow
 
 // newProtocolWindow builds the flow for one protocol request: what the
 // batch is made of, and every way this run differs from a person's own.
@@ -113,6 +161,7 @@ func newProtocolWindow(cfg config.Config, locale string, req api.SignRequest, jo
 		outcomes:      make([]api.SignOutcome, len(req.Digests)),
 		stopCountdown: make(chan struct{}),
 		expired:       make(chan struct{}),
+		delivered:     make(chan struct{}),
 	}
 	if req.Level != "" {
 		// A caller that named a level gets that level; one that did not
@@ -190,16 +239,23 @@ func newProtocolSigner(fallback config.Config) *protocolSigner {
 }
 
 // Sign implements api.Signer.
+//
+// It returns when the run ends (D33) and keeps the one-window slot until
+// the window has actually gone: the report a person is reading is still
+// a window, and the next request's must not open over it.
 func (s *protocolSigner) Sign(ctx context.Context, req api.SignRequest, job *jobs.Job) (api.SignResult, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// The configuration is read here rather than captured when the
 	// listener started: the agent outlives every window and every save
 	// those windows make, and a copy handed down from startup is how a
 	// setting saved a moment ago comes back as the old one (D-134).
 	cfg := currentConfig(s.fallback)
-	result := runProtocolFlow(ctx, cfg, cfg.Locale, req, job)
+	result, gone := protocolFlow(ctx, cfg, cfg.Locale, req, job)
+	go func() {
+		<-gone
+		s.mu.Unlock()
+	}()
 	return result, nil
 }
 
