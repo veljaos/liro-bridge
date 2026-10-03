@@ -43947,3 +43947,24 @@ build after 16 minutes of dependency compilation (D-421, "My failure").
   "Broj dokumenata"; "Veb aplikacije za sada ne mogu" present.
   **Least certain: B2** — nothing added links anything new, but D-413's P8
   found a new symbol where none was expected.
+
+### The build — read
+
+`NFPM=$HOME/go/bin/nfpm build/linux/build.sh 0.9.9-dev.15 dist/linux` at
+`9950197`, 18 s.
+
+| | read |
+|---|---|
+| B1 — held | `vcs.revision=99501971…`, `vcs.modified=false`; glibc 2.34 needed, under the 2.39 floor |
+| B2 — held | NEEDED the same 13 libraries as dev.14 (brackets stripped, D-413's lesson); `Depends` identical; **no undefined dynamic symbol new or gone** against dev.14 |
+| B3 — held for every string of ours; **the check had a false positive** | 0 of "veličina nepoznata", "величина непозната", "Broj dokumenata: %d · %s", "Documents: %d · %s"; "Veb aplikacije za sada ne mogu" 1, `__liroDragEnded` 2, `openSettings` 1. **"size unknown" 1** — Go's own string table, "crypto/des: invalid key size " running into "unknown certificate authority"; dev.14's count of 2 was that and our catalogue's, which is how the control showed it |
+
+| | sha256 |
+|---|---|
+| `liro-bridge_0.9.9-dev.15_amd64.deb` (11 504 096 B) | `50ff3236…6167` |
+| `liro-bridge-0.9.9-dev.15.x86_64.rpm` (11 533 304 B) | `e7f3420c…813b` |
+| `/usr/bin/liro-bridge` in both | `44f448f7…5ec7` |
+
+The rpm's binary was read with the Python standard library (gzip payload,
+cpio): `rpm2cpio` is not on this VM, and installing it needs a password
+`sudo -n` does not have — **nothing was installed**.
