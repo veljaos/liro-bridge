@@ -72,7 +72,10 @@ look at it with eight documents in the list.
 
 ## E. Rules added in session 23
 
-- **A guard, proposed and not installed (the owner's to decide, D-422)**:
+- **A guard, approved by the owner, to be installed when they are back
+  (D-422)** — not before: "a note that depends on somebody remembering is not
+  a control." **Its refusal must say why**, so that a future session can tell
+  the guard from a broken build. What was proposed:
   the "no background jobs" rule was broken twice, D-410 and D-421, both
   times by the Bash tool moving an over-long command into the background on
   its own — not by a decision. A memory note does not stop a tool. The

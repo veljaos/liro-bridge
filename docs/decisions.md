@@ -43995,3 +43995,12 @@ runs commands, so it is the owner's: a project `PreToolUse` hook on Bash that
 refuses a command running `go test` or `go build` unless it begins with
 `timeout` and a bound below the tool's limit, with the refusal saying why.
 Session 23 §E.
+
+**The guard, decided (the owner):** install it when the owner is back, not
+before. "A rule that two sessions have broken through a tool's own timeout
+rather than anyone's decision is one that needs a mechanism … a note that
+depends on somebody remembering is not a control." **Its refusal must say
+why it refused**, so that a future session can tell a guard from a broken
+build. **D27 last** on the variable-off route, confirmed: run first, its
+relaunch would put everything after it under different conditions from
+everything before.
