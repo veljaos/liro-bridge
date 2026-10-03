@@ -43654,3 +43654,185 @@ dev.14 and SafeSign installed. Agent **12473** running, with network process
 `2afcb9c2…` left, as above.
 `~/s22-card/`: `ugovor.pdf`, `ugovor-signed-1.pdf` (the verified file).
 Screenshots in `~/Pictures/Screenshots/`, the owner's.
+
+## D-421 — Session 23 on the Ubuntu VM: what coincides with an agent's first window is four things, not two, and one of them is ours — `WEBKIT_DISABLE_DMABUF_RENDERER=1`, set on every window since D-329 and never measured, which on WebKitGTK 2.54 selects a non-composited path rewritten in January, with an upstream fix for "GTK loses its displayed image" released in 2.54.1; three windows painted under one dev.14 agent here, which shows 2.52 lacks the defect and nothing about the program; a tray started from a Shell launch outlives its window, D27's premise; the owner's rulings on D33, D31 and D27
+
+**Date:** 2026-10-03
+**Phase:** F12; dev.15, session 22 §B. The Ubuntu VM (GNOME Shell 46.0,
+GTK 4.14.5, WebKitGTK 2.52.6, mutter 46.2), dev.14 (27c59d7) installed,
+Wayland, boot 14:27:40. D32 narrowed, not closed; D27's premise read; D33,
+D31 and D27 decided. Predictions in the session's scratchpad
+(`d32-predictions.md`, `d27-predictions.md`), written before each reading.
+
+### D32: what happens at the first window, read in the code
+
+The tray is D-Bus only and touches no GTK (`tray_linux.go`); GTK starts in
+`NewWindow` through `theUIThread.start` (`uithread_linux.go`). So an agent's
+first window is the moment of four things, not the two session 22 §C names:
+
+| | what | only at the first window? |
+|---|---|---|
+| G | `gtk_init`, the display opened, the Settings portal's refusal (B29), GDK's renderer set up | yes |
+| V | the default `WebKitWebContext`'s first view, and liro:// registered on it (`registerAssetSchemeOnce`) | yes |
+| T | no `TerminateWebProcess` before it — every later window follows one (`window_linux.go`, the close-request handler and `Close`, D-355) | yes |
+| D | **`WEBKIT_DISABLE_DMABUF_RENDERER=1`, set by this program** (`webkitenv_linux.go`, D-329) | no — set for every window; but see below |
+
+Against "GDK's setup breaks later surfaces": on Fedora, 12473's PIN dialog
+— `CollectPIN`, native GTK, no web view — opened after its first web window
+and painted; the owner typed the PIN into it (D-420). GSK draws later
+surfaces; what is white is a web view's area.
+
+### Lead D, read first-hand
+
+A read-only research agent found it; every claim below was then read by me
+in the source, not taken from its summary (D-304):
+
+- **The switch is the same in both versions**: `AcceleratedBackingStore.cpp`,
+  `webkitglib/2.52` line 87 and `webkitglib/2.54` line 86 — the variable set
+  and not `"0"` returns before any buffer transport is added, so the view is
+  not accelerated.
+- **What it falls back to is not the same.** `SourcesGTK.txt` on 2.52 builds
+  `UIProcess/cairo/BackingStoreCairo.cpp`; on 2.54 it builds
+  `WebProcess/WebPage/CoordinatedGraphics/NonCompositedFrameRenderer.cpp`.
+  The change is commit `7fe0220dda` (2026-01-30, bug 305391), "[GTK][WPE]
+  Unify GTK's non-composited mode with WPE".
+- **Upstream has fixed a defect in that path since 2.54.0**: `99fe659f25`
+  (2026-09-22, bug 323978), "[GTK] skip non-composited frames without
+  damage", whose message says the change "exposes cases where GTK loses its
+  displayed image without any WebCore damage" and adds
+  `DidDiscardBackingStore` so that "the missing picture requires full
+  recovery". Cherry-picked onto `webkitglib/2.54` as `d88d1024d3`
+  (2026-09-23); 2.54.1's NEWS lists "Skip non-composited frames when damage
+  is empty". **Whether it is D32's cause is not established**; that the line
+  is in 2.54.1 and the branch file has `DidDiscardBackingStore` is read.
+- **A third-party report with the same two variables**: Handy issue 2166
+  (Fedora 44, WebKitGTK 2.54.0, the variable forced by the application): "A
+  WebKit page snapshot contains the complete indicator, while the GTK widget
+  snapshot and screen capture show the broken output"; preventing the
+  override restored it. GTK 3, a partial picture with flicker — not D32's
+  symptom, the same combination.
+
+So lead D would explain why Ubuntu, on 2.52.6, has never shown D32. **It
+does not by itself explain why the first window paints**, and the runs
+below are what would say.
+
+**The owner's framing, held until the runs measure it:** if it holds, the
+finding is that our own workaround caused it, and it is an argument about
+the variable itself — set unconditionally, on hardware that may not need
+it. **A correction to that framing, from the record:** D-329 is dated
+2026-09-20, and the variable did not go in to make this VM work; it went in
+on F12 §3.2's advice against *blank windows* on KWin, NVIDIA and some Mesa
+stacks, and `webkitenv_linux.go` says that neither variable was measured —
+D-324 records that this VM never took the DMABUF path at all. If D holds,
+the sentence is: **a workaround against blank windows, set unconditionally
+and never measured, produced blank windows on a stock desktop when the
+library under it changed.** What to do about the variable is not decided
+(the owner): measure first.
+
+### The Ubuntu baseline under dev.14
+
+Agent 2620 (autostart, 14:33:06), no window opened since login and no child
+process; three main windows from the tray (**Otvori Liro Bridge**), each
+closed with the corner X; the owner's eyes.
+
+| window | opened | on screen | processes under 2620 while open | after the X |
+|---|---|---|---|---|
+| 1 | 14:55:15 | painted, normal | network 5127; chain 5128→5129→5130; web 5133→5134→5136 | web gone; network and chain 5128 left |
+| 2 | 14:56:00 | normal | + chain 5290→5292; web 5295→5297 | web gone; chain 5290 left |
+| 3 | 14:56:39 | normal | + chain 5400→5402; web 5405→5408 | web gone; chain 5400 left |
+
+**U1 held**: three of three painted. The log wrote no line for any of them;
+the main window's opening is not logged at INFO.
+
+**What it is evidence of (the owner):** D-397's nine painted windows were
+under **dev.12** — not dev.5, as the session's brief had it — so they were
+measured before dev.14's drop fix and on a WebKit without path D. **Ubuntu's
+clean record is not evidence that the program is fine; it is evidence that
+2.52 does not have the defect.** Today's three windows are the same kind of
+evidence, under dev.14.
+
+**D23 here, unpredicted:** every window left its proxy chain — three of
+three, not D-397's "about one in two" — and each window launches one with its
+web process. Fedora's count (D-420) and this one now agree. Not chased.
+
+### The instrument for Fedora
+
+`scripts/d32probe` (new): opens windows through `ui.NewWindow` and `Close`
+— the agent's own host, D-350's rule — and the native PIN dialog through
+`ui.CollectPIN`; asks the person in its terminal what each window showed
+and records the answer with the descendants alive at each step; makes
+itself non-dumpable as the agent does unless `-dumpable`. On Ubuntu it is
+not covered by the package's AppArmor profile and runs only with WebKit's
+sandbox off (D-324); on Fedora it runs sandboxed. Built at `4450830` plus
+this session's tree: `~/d32probe` sha256 `02b87318…1e56`, source
+`b02d7705…c321`, needing GLIBC 2.34. Build 14 s, vet clean.
+
+The runs, agreed by the owner, **on 2.54.0** — "I would rather have the four
+readings against the version that showed the defect than confirm it against
+a version that might hide it" — each in a fresh process:
+
+| run | how | separates | predicted |
+|---|---|---|---|
+| R0 | `-seq "w w"` | control | 1 painted, 2 white |
+| RA | `-seq "p w w"` | G against V/T | V/T: 1 painted, 2 white · G: 1 white |
+| RB | `-seq "o o c w"` | V against T | T: 2 painted, 3 white · V: 2 white |
+| RE0 | the agent started from a terminal | how the agent starts | 1 painted, 2 white |
+| RE | the agent with `WEBKIT_DISABLE_DMABUF_RENDERER=0` | D | every window painted |
+
+RE0 is added to the four: a terminal-started agent differs from D-420's
+autostarted ones, and without it RE would change two things at once.
+**Least certain: that R0 reproduces at all outside the agent**; if it does
+not, RA and RB mean nothing. The WebKit update is a system change and is
+not part of them (the owner).
+
+### D27's premise: a tray started from a Shell launch outlives its window
+
+Session 14 §G option 1 rests on it, and it had been read from the code only.
+The owner's hands; a temporary user entry,
+`~/.local/share/applications/liro-bridge-d27.desktop`
+(`Exec=/usr/bin/liro-bridge tray`, `desktop-file-validate` clean), with the
+owner's agreement, removed at 16:10.
+
+| | predicted | read |
+|---|---|---|
+| P1 | 2620 gone after the tray's Izađi | held: "protocol: stopped" 16:06:54; its network process and three chains gone; `/run/user/1000/liro/` empty |
+| P2 | one tray from the launch, in its own app scope; parent least certain | held: **7577**, 16:07:48, parent **gnome-shell** (2417), `app-gnome-liro\x2dbridge\x2dd27-7577.scope`, listening 17580 |
+| P3 | **Liro Bridge** from Activities hands over | held: `open` 7630 in its own scope printed "Liro Bridge već radi. Zatraženo je da se njegov prozor prikaže." and exited; the window 7577's (network 7650 at 16:08:24); painted |
+| P4 | after the corner X, 7577 alive at +30 s and +60 s | **held**: closed between 16:08:43 and 16:09:11; alive at ten reads to 16:10:17, the same scope, no scope stop in the user journal |
+
+**Option 1's premise holds on GNOME 46**: a process gnome-shell launched
+outlives its window. Fedora's GNOME 50 is read again in the walk-through.
+
+### The owner's rulings
+
+- **D33: the caller is given its result when the run ends** — outcomes
+  settled and the audit entry written. In the owner's words: "the signature
+  exists the moment it is made and written to the audit. Everything after
+  that is showing it to a person, and the caller has no reason to wait for a
+  click. Correcting the documents to describe the old behaviour would have
+  been documenting the defect."
+- **D31: Podešavanja, Sertifikati and Prikaži dnevnik revizije**, all three,
+  in the main window's footer, at the left, quiet, on every platform. "That
+  is an extension of my D-419 decision, not a departure from it. When I
+  decided 'Settings only', nobody had established that Sertifikati and
+  Prikaži dnevnik revizije sit behind the same door. They do, so leaving two
+  of the three unreachable would mean coming back to this screen next week."
+- **D27: option 1**, with option 3's sentence for an agent that failed to
+  start; the premise read first, above.
+- **The order of the sitting**: dev.15's other five built here first, so that
+  one Fedora sitting takes D32's runs and dev.15's walk-through together.
+
+### My failure
+
+A targeted `go test -race` passed the tool's 300 s limit while still
+compiling gotk4 and became a background job — the rule in D-410 ("bound test
+runs below the tool limit"), which bounded the test and not the build. One
+process still; nothing else was started while it ran. From here every run is
+under `timeout` around the whole command, the build first as its own step.
+
+### This machine
+
+dev.14 installed. **Tray 7577 running**, started from the D27 entry, not by
+autostart, with its network process and one chain. The temporary entry is
+removed. `~/d32probe` for carrying. No package installed; nothing on the
+system changed.
