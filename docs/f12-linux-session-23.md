@@ -37,15 +37,23 @@ check compares against (D-391).
 ## C. The walk-through, and what D32 does to it
 
 **D32 is not fixed in dev.15.** On Fedora every window after an agent's
-first has been white (D-420), and the walk-through opens many. If RE showed
-every window painted with `WEBKIT_DISABLE_DMABUF_RENDERER=0`, the
-walk-through can be taken under an agent started that way — **a deviation
-from what ships, to be named as one** — or the Fedora half waits for D32's
-fix. The owner's decision, at the time.
+first has been white (D-420), and the walk-through opens many. **Decided
+(the owner, D-422):** if RE showed every window painted with
+`WEBKIT_DISABLE_DMABUF_RENDERER=0`, the walk-through is taken under a dev.15
+agent started that way from a terminal — `WEBKIT_DISABLE_DMABUF_RENDERER=0
+/usr/bin/liro-bridge tray`, after quitting the autostarted one with its
+window's **Izađi** — **recorded as a deviation from what ships**. If RE did
+not, it is taken under the agent as installed, and every white window is
+recorded as D32's, not as a finding about the item being walked. Not a third
+crossing either way.
+
+**D27 under that deviation**: its first step quits the agent and launches
+from Activities, which starts an agent *without* the variable. So on the
+variable-off route, take D27 last, and read its window as D32 predicts.
 
 | item | what a person does | what is read |
 |---|---|---|
-| D27 | quit the agent (window's **Izađi**); launch **Liro Bridge** from Activities; close the window with the corner X; launch it again | one `liro-bridge open` that becomes the agent (log: "started by a launch that asked for the window"); the process alive after the X, discovery file present; the second launch hands over. GNOME 50's half of D-421's premise |
+| D27 | quit the agent (window's **Izađi**); launch **Liro Bridge** from Activities; close the window with the corner X; launch it again. The sentence, if it appears, is the owner's approved wording (D-422) | one `liro-bridge open` that becomes the agent (log: "started by a launch that asked for the window"); the process alive after the X, discovery file present; the second launch hands over. GNOME 50's half of D-421's premise |
 | D31 | in that window, **Podešavanja**, then **Izvezi dnevnik revizije**; **Sertifikati**; **Prikaži dnevnik revizije** | each opens; the export writes a file — **R7, and "a person on Fedora can reach Settings and export the audit log" (D-419)** |
 | D29 | add a document | no size beside its name; the count line is "Broj dokumenata: 1" |
 | D28 | drag a PDF from Files onto the window | the outline clears on the drop (it already did on Fedora's Wayland, D-417 — the reading that matters is Ubuntu's Xorg, §D) |
@@ -63,6 +71,14 @@ look at it with eight documents in the list.
   precedent); CI runs it.
 
 ## E. Rules added in session 23
+
+- **A guard, proposed and not installed (the owner's to decide, D-422)**:
+  the "no background jobs" rule was broken twice, D-410 and D-421, both
+  times by the Bash tool moving an over-long command into the background on
+  its own — not by a decision. A memory note does not stop a tool. The
+  proposal: a project `PreToolUse` hook on Bash that refuses `go test` or
+  `go build` unless the command begins with `timeout` and a bound below the
+  tool's limit, and says why when it refuses.
 
 - **Bound the build, not only the test**: `timeout` around the whole
   `go test`, with a build first as its own step; a `-race` build of gotk4

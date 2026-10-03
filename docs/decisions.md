@@ -43968,3 +43968,30 @@ build after 16 minutes of dependency compilation (D-421, "My failure").
 The rpm's binary was read with the Python standard library (gzip payload,
 cpio): `rpm2cpio` is not on this VM, and installing it needs a password
 `sudo -n` does not have — **nothing was installed**.
+
+### The owner's rulings after the build
+
+- **D27's sentence stands as written**: "Veb aplikacije za sada ne mogu da
+  pošalju dokumente programu Liro Bridge. Ovde možete da potpisujete i
+  dalje." — "It says what is true and promises nothing about a later login,
+  which was the point."
+- **The Fedora walk-through is taken under an agent started with
+  `WEBKIT_DISABLE_DMABUF_RENDERER=0` if RE shows every window painted**,
+  recorded as a deviation from what ships. Waiting for D32's fix would mean a
+  third crossing, and the five other fixes are what the walk-through is for;
+  D32 has its own five runs ahead of it. If RE does not show every window
+  painted, the walk-through is taken under the agent as installed and every
+  white window is recorded as D32's, not as a finding about the item.
+
+### The background run was a timeout, not a decision
+
+The owner's point, recorded as theirs: **the rule "no background jobs" was
+broken twice — D-410 and D-421 — and neither time by a decision.** Both
+times the Bash tool moved a command that outlived its limit into the
+background on its own. A memory note asks the next session to remember;
+it does not stop the tool. **A rule a tool can breach on its own needs a
+guard.** Proposed, not installed — it changes how every session on this VM
+runs commands, so it is the owner's: a project `PreToolUse` hook on Bash that
+refuses a command running `go test` or `go build` unless it begins with
+`timeout` and a bound below the tool's limit, with the refusal saying why.
+Session 23 §E.
