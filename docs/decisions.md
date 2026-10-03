@@ -43335,3 +43335,64 @@ session's steps: `~/.config/liro/config.json` (R4; `outputFolder`
 system changed. The monitor's `/tmp/s21-bus.log` is the owner's, quoted
 here, and goes with the next reboot. The predictions and readings are in
 the session's scratchpad.
+
+## D-418 — F3: the F12 report is written, with what was never taken given the same weight as what was measured; writing it found that D-342 closed F12 §6 on a sentence nobody measured and D-417 measured false, so the checklist item "Settings, certificates and the audit log reachable without a tray" is not met; and that `pkcs11reach_test.go` was removed with no entry saying so
+
+**Date:** 2026-10-03
+**Phase:** F12; open-items F3. `docs/f12-report.md` written. open-items F3
+closed; D31 updated.
+
+### How it was compiled
+
+The F12 entries, D-287 to D-417, with F11's D-311, D-313 and D-315–D-317
+where they bear on F12, were read in full by five read-only extraction
+passes, one per range of about twenty-six entries. Each listed every
+finding with where it was taken, what kind of evidence it is (measured,
+read, reasoned, decided, not taken), its dependence on llvmpipe, timing, a
+synthetic stand-in or hardware passed through to a guest, and what the
+entry says was not taken. The passes ran as agents of this session, not as
+processes on the VM (the owner).
+
+**I checked every "measured on" in the report against the lines of its own
+entry**, not against the extraction. That is what makes the extraction
+evidence rather than a summary of summaries (the owner). Where an entry
+does not name the machine, the report says so rather than inferring it.
+D-367's lock measurement is the one row where that applied: the entry names
+"ext4, `/dev/sda2`" and no machine. The method's limit, stated in the
+report: a reading whose entry did not record where it ran cannot be placed
+by reading the record.
+
+### How it is written (the owner)
+
+- **The "never taken" table has the prominence of the measured one**,
+  because it is the one that stops a false claim later (report §9).
+- **What a VM cannot prove is written as a limit on this phase's claims, not
+  as a caveat** (report §1): llvmpipe everywhere, timings that are the
+  guest's, a real card behind a virtual USB stack, harnesses that are not the
+  installed agent, containers in CI, and a Ubuntu VM that was never stock.
+
+### What writing it found
+
+- **D-342's sentence is false.** It decided F12 §6 with: on a trayless
+  desktop a person reaches Settings, the certificate list and the audit log
+  from "the main window, which is where [they] are reached from anyway".
+  Nobody measured it. D-417 measured the main window and found none of the
+  three. **D22's shape again**: a mechanism stated as fact, left where the
+  next reader meets it, and quoted as F12 §6's answer. **F12's checklist
+  item "Settings, certificates and the audit log reachable without a tray" is
+  not met.** D31 now names the sentence and the item.
+- **`pkcs11reach_test.go` was removed, and no entry says so.** The checklist
+  asks for both. The file is gone (commit `3ae0b86`); "pkcs11reach" appears
+  in no entry from D-287 on, and D-293, the entry building D-275's remedy,
+  does not mention it. The removal is done; the record of it is not. The
+  report marks the item unmet for that reason, and this entry is now the
+  record of it.
+- **The exit condition is not met.** The Ubuntu half held in a VM with the
+  reader passed through (D-361, D-397); the Fedora half has never been
+  taken (F1).
+
+### Not done here
+
+- The boxes in `docs/phases/F12.md` are left as they are. The report's
+  checklist is the item-by-item reading, and F12.md is a phase document.
+- The Pošta card on Fedora is the owner's decision, not started.
