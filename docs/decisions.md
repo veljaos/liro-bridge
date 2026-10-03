@@ -43438,3 +43438,200 @@ work, shown to the owner before it is built.
 3. **Only then is Linux done.** The owner will not call the platform
    finished while a person on Fedora cannot reach Settings or export the
    audit log.
+
+## D-420 — The Pošta card on Fedora 44: it signs, and the signature verifies, through a request whose window was its agent's first; on Fedora a person pairs an application once — that is the first window — and then every signing request they make, until they log out, comes up white; and on every platform the caller gets nothing until a person presses Završi on a window that already said Završeno
+
+**Date:** 2026-10-03
+**Phase:** F12; D-419's step 1, the Pošta card on Fedora as a confirmation.
+The Fedora VM (GNOME Shell 50.5, GTK 4.22.5, WebKitGTK 2.54.0), dev.14
+(27c59d7) installed, Wayland; SafeSign Identity Client 4.6.0.0-AET.000
+installed this day; the reader (0bda:0165) passed through from the host.
+Three sittings across two logouts, one boot (14:45:58). open-items D32 and
+D33 opened; F1, D23 and D30 updated. Predictions written before each
+measurement, in the owner's `~/s22-predictions.md` and `~/s21-predictions.md`.
+
+### The install
+
+From session 21's reads before it: the zip from `ca.posta.rs`
+(`SafeSign_4600_Linux.zip`, 14 000 411 B, sha256 `2027d6d1…8a27`), its rpm
+`safesign-identity-client-4.6.0.0-AET.000` built for RHEL 10, unsigned,
+digests OK. 65 `Requires:` — 61 met by installed Fedora packages, 4 by the
+rpm itself; controls (a made-up soname, `GLIBC_2.99`) reported missing. No
+scriptlets, no triggers, no setuid, nothing under `/etc` or `/var`, no file
+collision. dnf transaction 7, 14:43:34–40, one package, `@commandline`.
+**D-419's "a refusal for a named dependency is an answer" did not arise:
+there was none.** The reboot session 21 planned did not happen at 14:44 and
+happened at 14:45:58.
+
+### The card
+
+`liro-bridge certs` (14:48): one certificate offered — Savka Odžić,
+Pošta Srbije CA 1, signing, qualified, on a QSCD, 2025-10-08..2030-10-08,
+thumbprint `…5BA2AA54`, through `/usr/lib64/libaetpkss.so` only — and one
+hidden, **Pošta Srbije CA Root** (`F2E88F59…`, `CERT_NOT_USABLE`), which
+the card itself carries. The prediction I was least sure of, pcscd's polkit
+check on a process outside a logind session scope, did not bite: this
+boot's journal has `access_pcsc`/`access_card` refusals only for the
+greeter's users (60578–60580), none for 1000.
+
+### The fit: an agent's first web window paints, every later one does not
+
+| agent | window, in order | on screen |
+|---|---|---|
+| 2312 (14:46 login) | pairing, 14:49 | painted — "Uspešno povezano" |
+| | request, 14:52 | white; timed out 14:54:39 |
+| | request, 14:56 | white — the owner's screenshot 14:57:21: GTK header with minimize and close, view area white; timed out 14:58:58 |
+| | Activities launch, 15:00:01 | no window at all; a bwrap → xdg-dbus-proxy chain and no web process. Unexplained |
+| | Activities launch, 15:00:50 | white, "as if still loading" |
+| 8413 (15:22 login) | request, 15:23 | **not a reading** — see below |
+| 12473 (15:32 login, nothing opened) | request, 15:44 — its **first** | **painted** (the owner; screenshot); signed |
+| | request, 16:06 — its second | **white** (the owner; two screenshots ten seconds apart); timed out 16:08:29 |
+
+D-417's 2321, whose first and only web window was the main window, painted.
+**On this machine, under dev.14, every first window painted and every later
+one was white — seven windows seen, three agents** (and one launch that showed none). The second half rests on two
+agents of one boot; the fit was written before 12473's two requests, which
+tested both halves and held.
+
+**What it means for a person**, the owner's sentence and the headline of
+D32: a person pairs an application once — that is the first window — and
+then every signing request they make comes up white; the pairing is the
+only thing that works. **"Until they log out"** is added because the record
+shows it: after a login, the first request is the agent's first window and
+paints (12473) — if nothing else has opened a window first, Settings or a
+launch from Activities included.
+
+**What is not established**: the cause. What happens once per process at
+its first window is visible — the Settings portal refusing the process
+(`Unable to open /proc/PID/root`, D-417's B29) and GDK's Vulkan device
+setup on llvmpipe — and coincides with the window that paints, so it cannot
+separate "the first window" from "the process's first-time setup". The
+network process outlives each window and is reused (12473: 14595 for both);
+the web process does not. A request window differs from an Activities one
+only in its first step (`stepCertificate`), and both kinds were white, so
+it is not the step. **Not seen on Ubuntu**: D-397's nine windows under one
+tray, the pairing first, were all worked through to signatures. Whether Fedora, GTK 4.22, WebKitGTK 2.54 or
+something else is the variable is not read.
+
+**The instrument, corrected (D-304 Q2).** For the first two requests I read
+AT-SPI's `SHOWING` state on the page's `document web` as "painted". It is
+not: the 15:00:50 window, white on screen, had the document `SHOWING`; the
+request windows did not; the pairing window, painted, had both it and its
+children. The tree established that the page was built — content,
+buttons, a running countdown — and nothing about the screen. **The only
+evidence of white or painted in this entry is the owner's eyes and their
+screenshots.**
+
+### The Završi wait: the window says Završeno and the caller gets nothing
+
+12473's first request: Odobri, the top-right corner, Potpiši, the PIN in
+**this program's own field — no SafeSign window at any point** (the
+owner). The window said **Završeno**, "Sačuvano u: vraćeno aplikaciji koja
+je tražila", B-B, "bez vremenskog žiga". The agent logged the signature
+through `libaetpkss.so` at 15:45:32.85 and the expected AIA `ldap://`
+failure at 15:45:32.94 (A2), and **then nothing**. The caller's `GET
+resultUrl` went on answering 202, `signing`, 1 of 1, every second. At
+15:46:41 the agent held no TCP connection. Still so at 15:55:00, the owner's
+five minutes.
+
+**It is how the program is built, on every platform.** `runProtocolFlow`
+(`protocolserver.go`) returns `m.remote.result()` — "what the caller is
+told, once the window is done with" — only after `m.open` returns; the run's
+end (`mainwindow.go:1382`) settles the outcomes, writes the audit entry and
+shows the report, and nothing gives the API its answer while the report is
+on screen. Završi closes the window (D-147). The owner pressed it at
+15:57:30: "a signing job finished", signed 1, failed 0, at .61; the caller
+saved `ugovor-signed.pdf` at B-B at .92. **The caller waited 11 min 58 s
+after the signature for a click nobody asked for.** The LDAP line was last
+only because nothing else is logged while the report waits — the owner's
+caution was right: on Ubuntu the same fetch fails and the job completes,
+because somebody always clicked. Not Fedora's, not GTK's, not LDAP's.
+
+**What a person meets**: the window tells them they are done; the
+application waits — and nothing times out after approval: `ConsentTimeout`
+(120 s) covers only the unanswered window. A person who walks away leaves
+the application waiting until the agent ends. **The documents describe
+behaviour the program does not have**: `sdk/examples/DEMO-WALKTHROUGH.md`
+goes from step 5, "Završeno", to step 6, "three signed PDFs written" in the
+terminal, with no click in between; and `docs/PROTOCOL.md` §6.3 says
+`signing` is "every signature after the first", where here it meant 1 of 1
+done and the window waiting. Whether closing with the corner X releases it
+the same way is read in the code (the same return), not watched. open-items
+D33.
+
+### The signed file, verified both ways
+
+`ugovor-signed.pdf`, 104 690 B; `/ByteRange [0 38667 104205 485]`, ending
+at the file's end.
+
+| | the file | controls |
+|---|---|---|
+| `pdfsig` (poppler) | "Signature is Valid."; signer Savka Odžić 200100123; ranges [0–38667], [104205–104690], "Total document signed"; SHA-256, `ETSI.CAdES.detached`; signing time 15:45:32. Certificate: **"Certificate issuer is unknown"** — no Serbian root in NSS (the prediction said "isn't Trusted"; the wording differs) | byte 500, inside a stream, `i` → `I`: **Digest Mismatch**, exit 1. Byte 100 (`]`) also: Digest Mismatch, but it broke the syntax too, so 500 is the clean one |
+| OpenSSL `cms -verify -binary` over the span, `-noverify` | **CMS Verification successful** | one content byte changed: **content verify error**; an unrelated certificate as signer (`-nointern -certfile`): **signer certificate not found** |
+
+The signer is D-361's: SHA-1 `AF5063BB…5BA2AA54`, serial `54849CDCD4415E3BCA`.
+
+**Not checked** — recorded as not checked, not as checked another way:
+
+- **The chain to Pošta Srbije CA Root.** The signature carries the signer
+  and CA 1, not the root, and no Pošta root is on this VM. I ran `cms
+  -verify` with CA 1 as the only anchor (`-partial_chain`) — successful;
+  control, an unrelated certificate as the anchor: "unable to get local
+  issuer certificate" — **but the CA 1 there is the signature's own copy**,
+  so it shows the signer certificate was issued by the certificate the
+  signature brought with it, and nothing about whether that is Pošta's.
+  That is weaker evidence than D-361's, and is not offered in its place.
+- **`scripts/verifypdf`'s check against the Trusted List** (D-361:
+  `SignerChainTrusted`). It needs Go, which this VM does not have.
+
+The card carries the root (above); the Ubuntu VM has `verifypdf`. Either
+closes it; neither was done.
+
+### D23 on Fedora
+
+Under 2312, a bwrap → bwrap → xdg-dbus-proxy chain was left after each of
+the five launches (4366, 4887, 5624, 5963, 6029/6034). Under 12473: after
+the first window, the network process 14595 and one chain (14596 → 14598);
+after the second, **a second chain** (16478 → 16482) — two windows, two
+chains; the web processes ended. **On Fedora, every window has left one**;
+Ubuntu's "about one in two" (D-397) is not this machine's count.
+
+### The logouts, against D30
+
+Both logouts on this machine ended the tray through SIGTERM: 2312 at
+15:21:53.093 and 8413 at 15:31:55.521 each wrote "tray: asked to
+terminate, so stopping the way Quit does", "protocol: stopped" and WARN
+"pkcs11: a module did not shut down cleanly" (signal: terminated). D-416
+measured a logout ending the tray inside GDK with no such line, on Ubuntu,
+both backends. **On Fedora's Wayland, twice, Quit's path ran.** Also:
+the 15:31 logout restarted the user manager (`systemd --user` 1889 →
+12046, a new logind session of class `manager`); the 15:21 one did not.
+Neither chased.
+
+### My failure
+
+**The request of 15:23 (job `900e1291…`, agent 8413) is not a reading**: I
+sent it in the same turn as saying I would, without the owner's go; the
+owner was not watching, there is no screenshot, and my message had told
+them to wait before Odobri, so even a timeout could decide nothing — and it
+spent 8413's first window. From then on the owner's rule: say "ready to
+send" and stop; send on "go". The last two requests followed it.
+
+### Failed predictions, together
+
+- **Session 22's Q2**: the overlap with the pairing window did not cause
+  the white window.
+- **M2's detail**: the tray's parent was a new `systemd --user`, not 1889.
+- **K3's wording**: "issuer is unknown", not "isn't Trusted".
+- **K4**: the Pošta chain as `CAfile` — not done; the root is not here.
+- **My "stuck" reading**: the job was not stuck; it was waiting by design.
+
+### This machine
+
+dev.14 and SafeSign installed. Agent **12473** running, with network process
+14595, two chains and its two `pkcs11-worker`s (D8's design). The pairing
+`2afcb9c2…` remains (keyring item and `pairings.json`) — removing it is the
+owner's call, as in D-361. The pairing secret is in a session scratchpad's
+`client.log` (mode 644), to be shredded with `client2.log` at the end.
+`~/s22-card/`: `ugovor.pdf`, `ugovor-signed-1.pdf` (the verified file).
+Screenshots in `~/Pictures/Screenshots/`, the owner's.
