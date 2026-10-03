@@ -43381,6 +43381,17 @@ by reading the record.
   next reader meets it, and quoted as F12 §6's answer. **F12's checklist
   item "Settings, certificates and the audit log reachable without a tray" is
   not met.** D31 now names the sentence and the item.
+
+  **The pattern, stated (the owner): a decision closes on a sentence about
+  what a person can do, and nobody opens the window to look.** The owner
+  counts this the third of the shape. The record shows two others:
+  - D-414's R6, which "assumed a window could be closed behind an attached
+    dialog; on stock GNOME it cannot";
+  - D-417's Izađi, a step I wrote naming a button as closing the window when
+    it quits the agent.
+
+  The check that answers each of them is the same: open the window, as a
+  person would, and look before the sentence is written.
 - **`pkcs11reach_test.go` was removed, and no entry says so.** The checklist
   asks for both. The file is gone (commit `3ae0b86`); "pkcs11reach" appears
   in no entry from D-287 on, and D-293, the entry building D-275's remedy,
@@ -43396,3 +43407,34 @@ by reading the record.
 - The boxes in `docs/phases/F12.md` are left as they are. The report's
   checklist is the item-by-item reading, and F12.md is a phase document.
 - The Pošta card on Fedora is the owner's decision, not started.
+
+## D-419 — The owner's rulings after D-418: the Settings button goes in the main window on every platform, not only where there is no tray, because "is there a tray here" is not a question the program can answer reliably; the order from here is the Pošta card on Fedora as a confirmation, then dev.15, and Linux is not done until a person on Fedora can reach Settings and export the audit log
+
+**Date:** 2026-10-03
+**Phase:** F12; open-items D31 decided; dev.15's scope fixed.
+
+### D31: decided, not designed
+
+**The main window gets a Settings button on every platform** (the owner).
+Not a conditional on whether a tray exists. **"Is there a tray here" is not
+a question the program can answer reliably.** Ubuntu's tray comes from an
+extension a person can turn off. The agent follows the watcher appearing
+and going (D-342), but a watcher being present says nothing about whether
+the person can see or use it. A conditional would be guessing. **No design
+is recorded here**: what the button opens and where it sits is dev.15's
+work, shown to the owner before it is built.
+
+### The order from here (the owner)
+
+1. **The Pošta card on Fedora 44**, as a confirmation rather than a
+   requirement. It starts with reading the vendor rpm's `Requires:` and
+   scripts before anything is installed. A refusal for a named dependency is
+   an answer: F1 stays open with that reason.
+2. **dev.15**, carrying four things and only these:
+   - D31, the Settings button in the main window;
+   - D29, the document size removed everywhere a person sees it;
+   - D28, the drop outline;
+   - D27, D-407's first start.
+3. **Only then is Linux done.** The owner will not call the platform
+   finished while a person on Fedora cannot reach Settings or export the
+   audit log.
