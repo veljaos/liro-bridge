@@ -43439,7 +43439,7 @@ work, shown to the owner before it is built.
    finished while a person on Fedora cannot reach Settings or export the
    audit log.
 
-## D-420 — The Pošta card on Fedora 44: it signs, and the signature verifies, through a request whose window was its agent's first; on Fedora a person pairs an application once — that is the first window — and then every signing request they make, until they log out, comes up white; and on every platform the caller gets nothing until a person presses Završi on a window that already said Završeno
+## D-420 — The Pošta card on Fedora 44: it signs, and the signature verifies, through a request whose window was its agent's first; after each login the first window paints and every window after it is white, so a person who signs twice in a session sees the second one blank; and on every platform the caller gets nothing until a person presses Završi on a window that already said Završeno
 
 **Date:** 2026-10-03
 **Phase:** F12; D-419's step 1, the Pošta card on Fedora as a confirmation.
@@ -43493,13 +43493,15 @@ one was white — seven windows seen, three agents** (and one launch that showed
 agents of one boot; the fit was written before 12473's two requests, which
 tested both halves and held.
 
-**What it means for a person**, the owner's sentence and the headline of
-D32: a person pairs an application once — that is the first window — and
-then every signing request they make comes up white; the pairing is the
-only thing that works. **"Until they log out"** is added because the record
-shows it: after a login, the first request is the agent's first window and
-paints (12473) — if nothing else has opened a window first, Settings or a
-launch from Activities included.
+**What it means for a person**, the headline of D32 in the owner's words:
+**after each login the first window paints, and every window after it is
+white — so a person who signs twice in a session sees the second one blank.
+Measured on Fedora; on Ubuntu nine windows under one agent all painted.**
+The owner's first sentence was stronger — a person pairs once and every
+request after it is white — and was not what was measured: after a login
+the first request is the agent's first window and paints (12473), if
+nothing else has opened a window first, Settings or a launch from
+Activities included. The owner took the correction.
 
 **What is not established**: the cause. What happens once per process at
 its first window is visible — the Settings portal refusing the process
@@ -43626,12 +43628,29 @@ send" and stop; send on "go". The last two requests followed it.
 - **K4**: the Pošta chain as `CAfile` — not done; the root is not here.
 - **My "stuck" reading**: the job was not stuck; it was waiting by design.
 
+### The owner's rulings after the entry
+
+- **Fedora is done** for F12: the card signs here, and the two defects that
+  matter are recorded.
+- **dev.15 carries six things, and D32 is first among them**: D32, the
+  white window; D33, the Završi wait; and D-419's four — D31, D29, D28,
+  D27. D-419's "four things and only these" is superseded.
+- **The pairing is left deliberately, not forgotten**: app id
+  `2afcb9c236e41d7443e572a7c077450d`, in the Login keyring and
+  `~/.config/liro/pairings.json` on the Fedora VM. It costs nothing.
+- **The pairing secret was shredded** (`shred -u -z`) with the logs that
+  held it — `client.log` and `client2.log`, mode 644 in a session
+  scratchpad, and the scratchpad's `code.fifo` removed: a pairing secret
+  world-readable on disk is what this program exists to avoid, and it was
+  ours, not the program's. A search of `~` and `/tmp/claude-1000` found the
+  value nowhere else. **So no client holds the secret any more: the pairing
+  is in the agent and cannot be used.** dev.15 will pair afresh — which is
+  D32's first window, and its test.
+
 ### This machine
 
 dev.14 and SafeSign installed. Agent **12473** running, with network process
 14595, two chains and its two `pkcs11-worker`s (D8's design). The pairing
-`2afcb9c2…` remains (keyring item and `pairings.json`) — removing it is the
-owner's call, as in D-361. The pairing secret is in a session scratchpad's
-`client.log` (mode 644), to be shredded with `client2.log` at the end.
+`2afcb9c2…` left, as above.
 `~/s22-card/`: `ugovor.pdf`, `ugovor-signed-1.pdf` (the verified file).
 Screenshots in `~/Pictures/Screenshots/`, the owner's.
