@@ -43067,3 +43067,271 @@ the session's scratchpad. The rpm for Fedora re-hashed:
 `dist/linux/liro-bridge-0.9.9-dev.14.x86_64.rpm`, 11 525 575 bytes,
 `f5b1ecdbc22f63673af18ee2b3d13f0864705bceee2ad45aecf8274f6e88c022`, equal
 to session 18 §A.
+
+## D-417 — dev.14 on the Fedora VM, Wayland: the program can be given a document on Fedora 44 — the chooser opens through the helper and a drop from Files lands, where dev.12 had neither; the chooser's 30-minute ceiling fired for the first time outside a test, by accident, and its sentence went unread; the attached dialog leaves the window's corner X uncovered and the click still does nothing, so R6 is not performable on either Wayland, coverage ruled out here and not on Ubuntu; the drop outline clears here, cause unattributed; and on stock GNOME a person has no route to Settings, the certificates or the audit log at all
+
+**Date:** 2026-10-03
+**Phase:** F12; session 21 §C–§D on the Fedora VM (GNOME Shell 50.5,
+GTK 4.22.5, WebKitGTK 2.54.0, xdg-desktop-portal 1.22.1,
+xdg-desktop-portal-gnome 50.0, Nautilus 50.3), dev.14 installed, Wayland.
+open-items D25 and D26 closed; B28, D23, D28 and F8 updated; B29, B30,
+C20 and D31 opened. **R1–R5 held; R6 not performable; R7 not performable on stock
+GNOME** (the owner's ruling, below).
+
+### The boot
+
+The install was the previous boot's one change: dnf transaction 6,
+2026-10-03 12:37:42–44, `dnf install /home/velja/liro-bridge-0.9.9-dev.14.x86_64.rpm`,
+Upgrade `liro-bridge-0:0.9.9~dev.14-1` (@commandline), Replaced
+`0.9.9~dev.12-1`, nothing else. The owner says no scriptlets ran and
+nothing was fetched; the transaction they offered to paste did not arrive,
+so it was read from `dnf history info 6`. Predictions written first
+(scratchpad), least certain B4.
+
+| | read |
+|---|---|
+| B1 boot — held | `uptime -s` 12:38:19; `last -x -F`: the boot of 12:22:16 ended with `shutdown system down` 12:38:11, not "crash"; tty2 12:38:47 still logged in. Also in the list: a boot 10-02 00:36–01:09 with no login line; not chased |
+| B2 package — held | `liro-bridge-0.9.9~dev.14-1.x86_64`, installed 12:37:42 |
+| B3 binary — held | `/usr/bin/liro-bridge` **`df7bedd5…6f61`**, equal to the binary extracted from dev.14's rpm with `rpm2cpio`; **dev.12's own rpm's binary is `a9e642a7…093f`** (D-391: against the predecessor's file). The rpm: 11 525 575 bytes, `f5b1ecdb…c022`, as session 18 §A |
+| B4 tray — **failed in a detail** | one tray, **2321**, `tray`, 12:38:46, scope `app-gnome-liro\x2dbridge-2321.scope`; **its parent is 1885 `systemd --user`, not `gnome-session-binary`** as on Ubuntu; `/proc/2321/exe` Permission denied (`readlink -v`; plain `readlink` says nothing on failure) |
+| B5 log — **failed in a detail** | `0.9.9-dev.14 27c59d7` 12:38:48.671, listening on 17580; **no `StatusNotifierItem` line**. That line is INFO only when a host accepts the item; with no `StatusNotifierWatcher` (D-405) it is `slog.Debug` (`tray_linux.go`, `registerWithWatcher`), which the log drops. **Session 20 §F's rule, broken by me the first time it applied**: I predicted a line without reading its level. The name `org.kde.StatusNotifierItem-2321-1` is owned |
+
+dev.12's tray ended at the shutdown with "tray: asked to terminate, so
+stopping the way Quit does" (12:38:09.154), D-393's path.
+
+**A slip in the handover**: session 21 §A gives Fedora's GTK as 4.22.1
+(D-405). D-405 itself records 4.22.1 → 4.22.5; 4.22.5 has been installed
+since 2026-09-29 23:30.
+
+### The monitor and its controls
+
+Session 17 §D's command, run by the owner (**4667**, 12:53:58), to
+`/tmp/s21-bus.log`. Controls at 12:54:10: `Documents.GetMountPoint`
+answered `/run/user/1000/doc`; `FileTransfer.StopTransfer('s21-control')`
+answered `AccessDenied` "Invalid transfer" by `:1.60`. Both recorded.
+
+### The window, and a refusal nobody predicted
+
+The owner launched **Liro Bridge** from Activities at 13:00:38: **4814**
+`open`, which printed "Liro Bridge već radi. Zatraženo je da se njegov
+prozor prikaže." and exited — **held**: the window is 2321's. 2321's
+connections: `:1.67` (the tray's) and **`:1.112`** (the process's GTK
+connection, D-415's naming).
+
+**Unpredicted: at 13:00:38.773 `:1.112` asked the Settings portal and was
+refused, "Portal operation not allowed: Unable to open /proc/2321/root"** —
+on the bus, and `bridge.log` line 211 (GDK WARN, `gdksettings-wayland.c:468`,
+"Failed to read portal settings"). D-376's flag again. **The control**:
+at 13:56:24 Nautilus (`:1.160`) made the same `GetAll` and `ReadAll` and was
+answered, so the refusal is of 2321, not a broken portal. **What it costs is
+not read.** One sign consistent with it: the window's header bar shows
+minimize and close, while the desktop's `button-layout` is `'appmenu:close'`
+and Nautilus's dialog shows close only — GTK not given the layout. GDK
+4.22's fallback when the portal refuses is not read. Whether the same
+refusal happens on Ubuntu, with GTK 4.14, is not in the record. open-items
+B29.
+
+### R1, R2
+
+| | read |
+|---|---|
+| R1 — held | helper **5061** (`:1.120`), parent 2321, 13:02:57; `OpenFile` 13:02:58.325, `wayland:…`, "Izaberite PDF dokumente", "PDF dokumenti" (`application/pdf`, `*.pdf`, `*.PDF`) and "Sve datoteke", `current_filter` PDF, `modal true`, `multiple true`; request path back in **3.5 ms**, no `AccessDenied`. **New against Ubuntu: the dialog is drawn by Nautilus**, 5071 `nautilus --gapplication-service`, started by `systemd --user` in the same second as the helper |
+| R2 — held | 5061's environment one line, `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`; cwd `/`; root `/`; core limit 0/0; `/proc/2321/root` Permission denied |
+
+### The ceiling, by accident: it ran in front of a person, and the person did not notice it
+
+The chooser was left open while I measured and wrote. **At 13:32:58 the
+30-minute ceiling closed it**: 5061 sent `Request.Close` at 13:32:58.343,
+answered at .367; `bridge.log` 250, ERROR "ui: THE FILE CHOOSER WAS CLOSED
+BY ITS CEILING", `ceiling` 1 800 000 000 000; 251, WARN "signing window:
+the file chooser failed … open for longer than 30m0s and was closed".
+Between the two, Nautilus (`:1.121`) was answered `NameHasNoOwner`
+"Destination does not exist" at .350; not attributed. **This is the first
+time the ceiling has run outside a test**, and how it came about is mine:
+the dialog sat open for 30 minutes because I was slow.
+
+**The owner came back to find the dialog gone, and did not see the
+sentence** the window should then show (`chooser.expired`, "Prozor za izbor
+je zatvoren jer je bio otvoren duže od 30 minuta. Ništa nije izabrano.").
+**Recorded as unread by the owner, not as absent** (the owner): whether it
+was there and missed, or never shown, is not known. The owner then clicked
+**Izaberi…** again at 13:38, to have a dialog open for the step I had asked
+for — which may also have replaced the sentence, so a later look would not
+have settled it. **The one time this path has run in front of a person, the
+person did not notice it** (the owner's words). D-410 built it loud in the
+log because nobody would watch it; somebody did, and the window's half of
+it is still unwatched. open-items C20.
+
+So from here on the dialog is **chooser #2**: helper **6044** (`:1.144`),
+13:38:25; `OpenFile` 13:38:26.686, answered in 6.5 ms; Nautilus **6054**.
+The attachment test, the second screenshot and R6's click were all on #2;
+I found #1's end only at 13:43, when checking that R6's click had left no
+trace.
+
+### R6: the X is uncovered and the click does nothing
+
+`attach-modal-dialogs` **true**; `button-layout` `'appmenu:close'`.
+Geometry read from the owner's screenshots (Shift+Print, 1920 × 955,
+scaling 1), by pixel edges:
+
+| | window (visible) | dialog (visible) |
+|---|---|---|
+| 13:03:07, chooser #1 | x 273–833 (560 wide), y 192–921 | x 108–997 (890 wide), y 281–830 |
+| 13:38:35, chooser #2, after the owner's drag | x 379–939, bottom 830 | x 214–1104, y 190–740 |
+
+The dialog is centred on the window to half a pixel and its top is 89 px
+below the window's top edge; **the window's corner X (about (814, 211), then
+about (920, 119)) is above the dialog and uncovered**. My prediction, "the
+X covered, as on Ubuntu's Wayland", **failed on geometry**. **Attached**:
+the owner dragged the dialog and the two moved together, and the screenshots
+agree — both moved by exactly (+106, −91).
+
+**The click.** Predicted, least certain: that the click reaches the window
+at all. **It does not: the owner clicked the uncovered X and nothing
+happened.** Checked at 13:43:57: no `Request.Close` after 13:32:58, no
+`bridge.log` line after 251, 6044 alive. Kept as the owner ruled, with three
+limits:
+
+- **Fedora**: the X is uncovered and the click has no effect, so coverage is
+  ruled out **here**.
+- **Ubuntu's Wayland: not ruled out there.** Ubuntu runs mutter 46, Fedora
+  50; on Ubuntu the X was covered, so refusal was never tested. **Ubuntu's
+  reason stays coverage, with refusal unread** — not testing something is
+  not testing it and finding nothing (the owner).
+- **"The compositor refuses" is an inference.** The window is drawn dimmed,
+  mutter's treatment of a window with an attached modal dialog; where the
+  input stopped is not read.
+
+**R6 is not performable by a person on either Wayland, and on Xorg it is**
+(D-415). The chooser's window-closed path stays watched on Xorg only. B28's
+Wayland geometry is read on Fedora; Ubuntu's Wayland geometry is not.
+
+### R3, R4
+
+| | read |
+|---|---|
+| R3 — held | the dialog's own × (it has no Cancel button): `Response` **1**, `uris` empty, 13:51:48.661; no `Request.Close`; 6044 gone; no `bridge.log` line; 2321 alive. Nautilus 6054 stays, as GNOME's service |
+| R4 — held | **Promeni...**: `OpenFile` 13:56:24.200 from `:1.159`, "Izaberite gde se čuvaju potpisani dokumenti", `modal true`, `directory true`, `multiple false`, **no `current_folder`** (no `config.json` existed), no filters; answered in 5.3 ms; `Response` 0 at 13:56:28.210; **`~/.config/liro/config.json` created** at 13:56:28.214, `outputFolder` `/home/velja/Documents`; the window reads "Sačuvaj potpisane u /home/velja/Documents" (the owner). The helper's PID was not read — gone before I looked |
+
+### R5: a drop lands on Fedora
+
+`blank.pdf` (`testdata/pdfs/blank.pdf`, 427 bytes, `b9749fdb…6fda`) dragged
+from Files by the owner. Least certain, as on Ubuntu: **that a drop
+delivers at all** — D-408 saw one fail silently here. Before predicting the
+line, its level read: "documents added" is INFO (`mainwindow.go:823`), and a
+drop our code cannot read is a WARN (`drop_linux.go:122`), so the only
+silent failure left is GTK never calling us.
+
+| | read |
+|---|---|
+| the list — **held** | `documents added` 13:57:51.309, arrived 1, added 1, duplicates 0, unreadable 0, queueWas 0, queueNow 1; in the list (the owner); 2321 alive |
+| the portal — held | Files (`:1.166`) `StartTransfer` ×2, `AddFiles` ×2 from 13:57:50.631; **`:1.112` — 2321 — `RetrieveFiles` with Files' second key at 13:57:50.640, refused at .643, "Unable to open /proc/2321/root"**; the drop delivered 0.67 s later |
+
+So the refused call is the same on Fedora's GTK 4.22.5 as on both of
+Ubuntu's backends with 4.14.5, and harmless on all three. **Still not
+attributed**; one narrowing: dev.12's failed drop here logged GTK's WARN
+"Failed to receive drop data … Unable to open /proc/7675/root" from
+`gtk_drop_target_load_done` (`bridge.log` line 81, 2026-09-30), and this
+refusal logged nothing, so this caller is not a `GtkDropTarget` load
+reporting through that line.
+
+**With R1 and R4, on Fedora 44 dev.14 gives the program both ways in: the
+chooser opens and a drop lands. On dev.12 there was neither** (D-408). D25
+closes.
+
+### D28 on Fedora: the outline clears
+
+Predicted: it does not clear. **Failed: the dashed outline cleared when the
+owner let go** — it stayed on until the window closed on Ubuntu's Xorg
+(D-415). The page clears it only on a DOM `drop` or a final `dragleave`
+(`main.js:366–378`), so here WebKit gave the page one of them; which, not
+read. **Three variables separate this reading from Xorg's**: the backend
+(Wayland here), GTK (4.22.5 against 4.14.5) and WebKitGTK (2.54.0 against
+Ubuntu's). **The one reading that separates the backend from the versions
+is Ubuntu's Wayland, never looked at.** Cause unattributed.
+
+**D28 stays, by the owner's ruling**: on Ubuntu's Xorg, a desktop people run
+today, the outline stays on, and the page relies on WebKit sending events it
+demonstrably does not always send. A fix that tells the page the drag is
+over works whichever of the three is the cause.
+
+### R7: not performable, and the finding underneath it
+
+Settings opens only from the tray's menu (`traymenu_linux.go`: Otvori Liro
+Bridge, Podešavanja, Sertifikati, Prikaži dnevnik revizije, Izađi), and
+stock Fedora GNOME has no tray host (D-405; B5 above). The signing window's
+actions do not include any of them (`mainwindow.go:744–779`). Making R7
+reachable would mean installing an AppIndicator extension — a change to how
+the desktop behaves — so **R7 is recorded as not performable on stock
+Fedora** (the owner).
+
+**The finding (the owner): on a stock GNOME desktop a person has no route
+to Settings, to the certificates window or to the audit log, and so none to
+exporting the audit log.** Not a missing tray; a missing door. What is
+unreachable: **Podešavanja** (everything in it, including **Izvezi dnevnik
+revizije**), **Sertifikati**, **Prikaži dnevnik revizije** (which also
+offers the export). What is reachable: the signing window, from Activities;
+and quitting, from the window's **Izađi**. Not a route for a person:
+`liro-bridge certs` in a terminal, or `config.json` edited by hand. **A
+dev.15 item, the owner's to decide; not designed here.** open-items D31.
+
+### Closing the window: Izađi quits the agent
+
+I gave **Izađi** as the way to close the window. It is `tray.quit`: at
+13:59:38.732 "signing window: the person quit the agent from its own
+window", then "protocol: stopped"; 2321's scope ended at .787 (1 h 20 min
+51 s, 325.2 MB peak). Quit's path ran — `/run/user/1000/liro/` is empty —
+and nothing of ours is left: no web process, network process, `bwrap` or
+`xdg-dbus-proxy` (the two `bwrap`s still running are gnome-shell's
+`glycin` loader, parent 2059). **No agent runs on this machine until the
+next login** (D27).
+
+**The mistake has D22's shape** (the owner): D-414 had recorded what that
+button does — "Tray → Izađi ends the process" — and the record did not reach
+the step I wrote. The finding was there; the thing quoting it was not
+updated. The rule this adds is session 13 §C's own, applied to the button's
+effect and not only its label: **read what a button does before naming it
+as a step.**
+
+### D23 under dev.14, as taken
+
+Counted under one tray across the one window R1–R5 used, binary dev.14 (the
+owner's ruling after D-416): at 13:00:49 and again at 13:58:46, **NetworkProcess
+4837, one chain 4838 → 4839 → 4840 (`bwrap → bwrap → xdg-dbus-proxy`),
+WebProcess 4845** — 7 descendants, unchanged through three choosers and a
+drop; D-407's shape. **The count after the window closed was not taken**:
+Izađi ended the process that owned it. **Not taken this sitting, by the
+owner's decision**: the handover asked for the count while R1–R7 were open,
+and that is done; one window settles nothing about "one in two" either way,
+so a second sitting would buy a number that still means nothing.
+
+### D26
+
+`load-failed` is connected in C in dev.14 (D-413). Here: the window loaded,
+the agent ran 1 h 20 min, and the journal of this boot holds 0 `double
+free`. What the log could not show: a `load-failed` after the first load
+reaches only a `sync.Once` (`window_linux.go:343–345`) and writes nothing.
+**D26 closes by the owner's ruling (D-413): dev.14 has now run on both
+machines.**
+
+### Failed predictions, together
+
+- **B4**: the tray's parent is `systemd --user`, not gnome-session.
+- **B5**: the `StatusNotifierItem` line is DEBUG without a host — the level
+  not read.
+- **R6, twice**: "the X covered" (it is uncovered), and then my least certain
+  — the click does not reach the window.
+- **D28**: the outline clears here.
+- **The close**: Izađi quits the agent.
+
+R1–R5's other predictions, the controls and the attachment test held.
+
+### This machine
+
+dev.14 installed; **no agent running** (quit at 13:59:38). Written by this
+session's steps: `~/.config/liro/config.json` (R4; `outputFolder`
+`/home/velja/Documents`), two screenshots in `~/Pictures/Screenshots/`
+(13:03:07 and 13:38:35, the owner's). No packages installed; nothing on the
+system changed. The monitor's `/tmp/s21-bus.log` is the owner's, quoted
+here, and goes with the next reboot. The predictions and readings are in
+the session's scratchpad.
