@@ -44351,3 +44351,260 @@ question for it**: Ubuntu's portal refuses the non-dumpable process too
 (D-411) and Ubuntu does not show D32 — so either its GTK 4.14 / WebKit 2.52
 survive −1, or it gets a real value some other way. **Read `gtk-xft-dpi` on
 Ubuntu** before its next GTK brings this with it.
+
+## D-425 — Session 25 on the Ubuntu VM: at 21:36:47 the log said "the person quit the agent from its own window", the person says nobody did, and nothing in the code, the previous session's transcript or the journal's timeline accounts for it — unresolved, the most important thing in this entry, and the reason dev.17 makes the quit and Settings' cancel say how they were triggered; D28 fixed on Ubuntu's Xorg, where it was broken, with GTK and WebKitGTK unchanged since; dev.16 walked on both of Ubuntu's sessions; GTK 4.14 never asks the Settings portal outside a sandbox, and WebKitGTK 2.52.6 has D32's defect, unexposed; the audit export's entries file is 0664, to be 0600
+
+**Date:** 2026-10-04
+**Phase:** F12; session 25 on the Ubuntu VM (GTK 4.14.5+ds-0ubuntu0.10,
+WebKitGTK 2.52.6-0ubuntu0.24.04.1, kernel 7.0.0-34), dev.14 installed at the
+start, dev.16 (df27b59, 33ae58d) built and installed during it; Wayland, then
+"Ubuntu on Xorg" after a logout. Three Claude sessions: before the reboot,
+after it, and after the logout. Every prediction and reading is in the
+owner's `~/s25-predictions.md`, each written before its measurement unless
+marked otherwise there.
+
+### The 21:36:47 quit: the log asserted what no person did
+
+**What the log says.** `bridge.log`, agent 5501 (started 21:34:28 by a launch
+from Activities, its window open since 21:34:29):
+
+    21:36:47.720898 INFO "signing window: the person quit the agent from its own window"
+    21:36:47.731516 INFO "protocol: stopped" port 17580
+
+and systemd's "app-gnome-liro\x2dbridge-5501.scope: Consumed 5.857s CPU time"
+at 21:36:47.779. **The owner: "I never pressed Izađi"**; they did not click
+anything in that window and never saw it. The quit is not theirs.
+
+**What can write that line** (read in the code): `mainwindow.go:731`, on a
+`quit` message, in a window that owns an agent. A `quit` reaches Go only
+through the page's script-message handler (`window_linux.go:283`,
+`ParseMessage`); nothing on the Go side injects one (the main window's
+`OnClosed` closes a channel, `mainwindow.go:444`). The only sender in the
+page is `#quit-btn`'s `click` listener (`main.js:403–405`). A `click` on a
+button is fired by a mouse click, by Enter or Space with the button
+focused, or by an accessibility "press" on it — whether a same-user
+program can do the last is B25, unmeasured. **The log cannot tell which of
+the three; it says "the person" for all of them.**
+
+**What it was not, read:**
+- **Not the logout.** The owner's go 21:36:42; the quit 21:36:47.72; the
+  terminal's server ended 21:36:59; "Shutting down GNOME Shell"
+  21:37:02.55; "Session 2 logged out" 21:37:03. The quit came 12 s before
+  the logout began to end anything.
+- **Not the previous Claude session.** Its transcript has two commands near
+  it, 21:36:41.6 and 21:36:49.8, both `echo … >> ~/s25-predictions.md`. It
+  ran nothing between 21:15 and 21:19:55 either (the 21:18:02 cancel below).
+  No probe, no D-Bus call, no AT-SPI, no input tool in this sitting (D-094).
+- **Not another window of ours**: 5501 logged no door after its start, so
+  its window was its only one; and a window not owning an agent cannot quit
+  one (`mainwindow.go:726`).
+
+**Not reconciled, kept as written.** At 21:35:05 the owner wrote "Izađi
+closed it. I opened Liro Bridge from Activities and the window is normal:
+the dashed outline and 'Prevucite PDF dokumente ovde'…" — that window was
+5501's. Asked, the owner said they never saw it. Both statements stay in
+the record as the owner gave them; I do not choose between them.
+
+**The same shape, earlier the same evening.** `bridge.log` 21:18:02.03
+"settings: the page sent" type=cancel: Podešavanja closed, and the owner
+does not remember closing it. The previous session placed it on Zatvori's
+click (settings.js:174), "the corner X goes through close-request →
+OnClosed, not a page message". **That reading was wrong**: Settings'
+`OnClosed` (`settingswindow.go:93`) puts a `cancel` on the same channel,
+and the loop logs it as "the page sent" (`settingswindow.go:118`). So the
+line has two routes: Zatvori (mouse, keyboard, or an accessibility press),
+and GTK's close-request — the title bar's ×, Alt+F4, a close from the
+Shell. Settings has no Escape handler. D-373 put that line there so that "a
+press" would be placed by the log; it places a cancel, not a press. And
+D18 already holds a third of the same shape: on dev.9, a Settings window
+"cancelled 0.39 s after it opened" that the owner did not remember (D18,
+D-370–D-374).
+
+**Why it matters beyond debugging (the owner).** The quit line is phrased
+"the person quit the agent from its own window". If it can be written when
+no person did, the phrasing is a claim the code cannot support — and the
+whole audit story rests on the log saying what happened rather than what it
+assumes. Logging less would be better than logging an assumption. Two in
+one sitting where the record says a person acted and the person says
+otherwise is a pattern, not an anecdote.
+
+**What follows, the owner's ruling — dev.17, because of this, not as
+tidying-up:** both lines say how they were triggered. Izađi: mouse or
+keyboard (and whatever else the event can tell — an accessibility press is
+not yet known to be distinguishable; to read before writing). Settings:
+Zatvori or closed from outside. The quit line's wording stops asserting a
+person. **The quit itself stays unexplained**: dev.17 can only place the
+next one. open-items D34.
+
+### D28 on Ubuntu's Xorg: fixed
+
+The owner, after a logout into "Ubuntu on Xorg" (agent 7242, its window
+from a launch at 21:43:46): a drag of `~/Desktop/ugovor-signed-2026-09-26.pdf`
+from Files — grey dashed outline before, blue while held, and **after the
+drop no outline at all**; one row, no size; `bridge.log` 21:51:38.61
+"documents added" arrived 1 added 1. D-415 saw the outline stay on this
+VM's Xorg under dev.14 until the window closed. **Nothing below our build
+changed between**: GTK 4.14.5+ds-0ubuntu0.10 and WebKitGTK
+2.52.6-0ubuntu0.24.04.1 installed 2026-09-14/20 (dpkg.log), D-415 on
+2026-10-01. In `main.js` the only drag change from before dev.14 to dev.16
+is `__liroDragEnded` (D-422). Not separated: the other page changes in that
+range (the footer's layout), none of which touches `drag-over`; and the
+call itself is not logged, so "it ran" is read from the outcome. Could it
+have failed: yes, a blue dashed border round the list (`main.css:63`).
+
+On Ubuntu's Wayland (W4, 21:32:01) the outline was also gone after the drop
+— the owner's corrected reading: present before, blue while held, "not back
+to normal, gone". There dev.14 was never looked at, so W4 shows no harm, not
+the fix. **D28 closed**: cleared under dev.15+ on Fedora's Wayland (D-423),
+Ubuntu's Wayland and Ubuntu's Xorg, and on Xorg against the version that
+did not.
+
+### D32 on Ubuntu: unexposed, not safe
+
+**GTK sources read first** (gitlab.gnome.org, raw; sha256 of each as fetched;
+the files went with the reboot's `/tmp`):
+`4.22.5-gdk.c` `ee3c658d…c36c`, `4.22.5-gdkdisplay.c` `d2d24825…32d2`,
+`4.22.5-gdksettings-wayland.c` `ad6c10a9…de73`, `4.14.5-gdk.c`
+`5c90a7a0…9b42`, `4.14.5-gdkdisplay-wayland.c` `833aeefa…4c75`. GTK 4.22.5
+uses the Settings portal unsandboxed whenever the environment has one
+(`gdk_display_should_use_portal`), and a refused `ReadAll` leaves GtkSettings
+at −1; its portal path computes `(int)(factor*65536)` then `96 × v/65536 ×
+1024`. **GTK 4.14.5 does not ask the portal unless sandboxed or
+`GDK_DEBUG=portals`** (`gdk.c:379`): its Wayland display reads GSettings
+directly, `96 × text-scaling-factor × 1024`, and follows "changed".
+
+**X1** (a non-dumpable Python GTK host, no window): `gtk-xft-dpi` 98304; no
+portal line of any kind with `G_MESSAGES_DEBUG=all` while dconf's
+`watch_fast` on `/org/gnome/desktop/interface/` showed the channel working;
+control, an override schema defaulting the factor to 1.25 under the memory
+backend: 122880; dumpable: the same. **So Ubuntu's answer to D-424's
+question is neither "survives −1" nor "refused, then a fallback": GTK 4.14
+never asks.** D-411's refusal was the file chooser's `OpenFile`. B29 updated.
+
+**X2** (`ctxprobe --dumpable --xft-dpi -1 --geometry`, "w w", sandbox off by
+the owner's ruling — it says nothing about the sandbox): view 1 zoom 1.0,
+page 560×420; **view 2 born NaN, `innerWidth`/`innerHeight` 0, every rect
+0×0 — K2's numbers**. Control, GDK's own 98304: both 1.0. **WebKitGTK 2.52.6
+has the defect; Ubuntu is unexposed only because GTK 4.14 has a value** —
+and T4's side reading below shows it has −1 too where the schema is
+missing. A later GTK that asks the portal unsandboxed would bring −1 to
+Ubuntu while D-376 stands; where that began, not read. X2b was the least
+certain prediction (about 60 % that 2.52 survives) and it failed — the
+finding. The upstream report's 2.52.6 paragraph is this run;
+`docs/reports/webkitgtk-xft-dpi-unset-zoom.md` committed here, "never has −1"
+narrowed to "has a value wherever the schema is installed".
+
+**The first X2 attempts crashed, and that was mine.** Run dumpable from my
+shell, not under `env -i`: `bwrap: setting up uid map: Permission denied`
+(AppArmor's unprivileged userns, D-324; python3 has no profile),
+"Failed to fully launch dbus-proxy", SIGTRAP, "dumped core". **Correction of
+my first account**: no core and no report, not because of D-376 — the
+probe was dumpable — but because apport ignored an executable that belongs
+to no package, with the core limit 0. **X2's window 2 was not watched**: I
+announced the windows and ran the probe in the same turn, instead of
+"ready" and the owner's go (session 22 §E). Recorded as unwatched.
+
+### dev.16, built and tested before the walk
+
+D32's workaround (df27b59): T1–T4 held, T4 the least certain (GTK starts
+with `XDG_DATA_DIRS` at an empty directory and has no schema); each control
+failed as predicted — the formula without its 16.16 step ("1.1: 108134,
+want 108133"), `v <= 0` ("gtkLacksXftDPI(0) = true"), `ConnectChanged`
+removed ("followed = 98304, want 122880" — so GTK 4.14's own watch does not
+override an application-set value, and T3 is not blind here), the schema
+check removed (the child aborts, "No GSettings schemas are installed").
+Footer A (33ae58d): its control — the old audit label put back — failed
+"auditlog-btn is not labelled auditwindow.title", **predicted after the
+run, not before**: mine, small. Both full test views on df27b59's tree
+(untagged 37 packages ok, `-tags softtoken` 38); after the footer,
+`cmd/liro-bridge` and `internal/ui` in both.
+
+Build at 33ae58d: not modified, GLIBC_2.34 the highest needed, the same 13
+NEEDED libraries, Depends and undefined dynamic symbols as dev.15; the
+string "taken from the desktop's text-scaling-factor" in dev.16 and not in
+dev.15 (the control, D-422's own file `50ff3236…6167`). deb `8805f486…12ef`,
+rpm `07c72123…a54c`, `/usr/bin/liro-bridge` `44bb9720…738c` in both.
+
+### The walk-through
+
+| | what | read |
+|---|---|---|
+| W0 | the install and the boot after it | the install (20:47:52, the only package change since 10-03, md5sums equal the deb's) held; **two boots, not one** — boot −1 hung starting (RCU stall 20:49:44, service timeouts, no login) and the owner, not clearly remembering, reset it; the boot after it clean; one tray 2504, dev.16 33ae58d |
+| W1 | the first window's DPI line | "GTK has gtk-xft-dpi from the desktop, left as it is" 98304 — the workaround does not act on Ubuntu, as X1 predicted |
+| W2 | footer A, drawn | the owner: "Footer A as I chose it" — one line, quieter, Izađi at the right |
+| W3 | R7: Podešavanja → Izvezi dnevnik revizije | performed; "Dnevnik revizije je izvezen u /home/vboxuser/Documents", 7 entries, "provera ispravnosti: u redu"; the .jsonl byte-identical to the store's chain; the chooser the portal's (helper, D-417), not GTK's; Sertifikati and Dnevnik revizije opened and painted, five web views under one agent at 98304 |
+| W4 | D28 on Wayland | the outline gone after the drop (above) |
+| W5 | D27 on GNOME 46 | Izađi ended 2504 and every child (two workers, network, two web processes, five bwrap chains); a launch from Activities became the agent (5501, "started by a launch that asked for the window"), painted, no sentence |
+| W6 | D33 with the card | not this sitting (the owner) |
+| W7 | the logout, Xorg, D28 | a logout (same boot, "Session 2 logged out" 21:37:03, session 12 `Type=x11`); one tray 7242; the window "left as it is" 98304 from XSETTINGS; D28 fixed (above) |
+
+D31's R7 is performed and footer A is watched on Ubuntu; D27 watched on GNOME
+46. **D30 on Ubuntu's Wayland was not read**: 5501 had already quit at
+21:36:47 when the logout came, so no agent was there to end inside GDK.
+
+**After the Xorg login the greeter came up for seven seconds** (session c3
+21:37:38–21:37:55; Xorg "drop master" 21:37:38, "got resume" 21:37:45): the
+owner — the Xorg login came up black, Ctrl+Alt+F1 and back. The third time on
+this VM (D-402's shape).
+
+### The audit export's entries file is 0664
+
+W3's export: the report `0600`, the entries `.jsonl` **`0664`** —
+`internal/audit/export.go:58` `os.Create` (0666 less the umask 002), since
+F5 (f78d468, 2026-09-03); the report is `os.WriteFile(…, 0o600)`
+(`export.go:86`) and the store's own files are 0600. Here `~` is 0750; a
+person chooses the folder, and in a shared folder or on a stick anyone
+reading it gets the entries: thumbprint, application, module, backend,
+outcome, document count — no document names (module paths may carry a
+personal name, A9). Windows' ACL inheritance not read. **The owner's ruling:
+0600, as the store and the report** — "an audit export is evidence of what
+somebody signed". dev.17, with a test that reads the mode and a control that
+fails with `os.Create` back. open-items D35.
+
+### The predictions that failed
+
+Eight readings failed by the file. The owner counted six; as far as I can
+tell the difference is X2b and W7b, which I list with the rest:
+
+- **X2b** (least certain): 2.52.6 has the defect — the finding above.
+- **W0a**: one boot after the install — there were two.
+- **W3b**: GTK's own chooser — it is the portal's since dev.14. The previous
+  session wrote "GTK's own (D-411)" and I carried it without reading
+  `filedialog_linux.go`.
+- **W4a**: "the dashed outline appears while over the window" — the empty
+  state is dashed at rest; drag-over turns it blue (`main.css:54, 62–66`).
+  I had not read the CSS.
+- **W4d**: "a good drop logs nothing" — it logs "documents added"
+  (`mainwindow.go:868`); I grepped for "drop" only.
+- **W7b**: 5501 ending inside GDK at the logout — its premise gone, it had
+  quit 15 s before.
+- **W1's addendum and W7d: the handover line, twice.**
+
+**The handover line, as its own line (the owner).** At W1 I predicted "one
+handover line in 2504's log"; a bare handover writes none (`open.go:61–67`
+prints to stdout and returns), and the launch process's own "liro-bridge
+starting" is what appears. It failed and was recorded. At W7d I predicted
+"handed over (no log line)" — the same wording, copied forward from my own
+W7 section written before W1's reading, and it failed the same way: line 575
+"liro-bridge starting" from the `open` process. **A prediction carried over
+from an earlier section or session is not a prediction, it is a quotation,
+and it fails for the reason quotations fail**: nothing was read when it was
+written down the second time. W3b is the same failure across sessions.
+
+**And the section times I wrote by estimate** ("21:2x", "21:4x", "read
+21:32–21:40") were guesses, several later than the clock; corrected in the
+file at 21:36:4x. The log's and journal's stamps are the record.
+
+### The owner's rulings this session
+
+- Footer A, definitively; the audit door named "Dnevnik revizije" (its
+  window's title), overriding the tray-wording rule for that door, for text
+  scaling 1.5.
+- X2 with the sandbox off.
+- D33 with the card: not this sitting (watched on Fedora under dev.15, code
+  unchanged).
+- The export's entries file 0600, in dev.17.
+- The quit and Settings' cancel say how they were triggered, in dev.17; the
+  21:36:47 quit left unexplained.
+- dev.17's code and this record on the Ubuntu VM, the record first; the next
+  sitting Fedora, D32's close under the real agent.
