@@ -111,6 +111,10 @@ func (t *uiThread) run() {
 		return
 	}
 
+	// Before any web view exists: WebKitGTK reads the DPI as each view
+	// is made (D32, D-424).
+	supplyMissingXftDPI()
+
 	t.loop = glib.NewMainLoop(glib.MainContextDefault(), false)
 	close(t.ready)
 	t.loop.Run()
