@@ -44675,3 +44675,48 @@ real click. That needs WebKit, and the window tests skip on this VM
 then Enter, Podešavanja's Zatvori and its title bar's ×, the log read after
 each — the owner's hands, not synthetic input (D-094). An accessibility
 press is expected as `neither-pointer-nor-key` and is not produced.
+
+### dev.17 built and walked on this VM (the owner: here, not carried into Fedora's sitting)
+
+**Build** at `e87974a` (20 s): not modified, GLIBC_2.34 the highest needed,
+the same 13 NEEDED libraries, undefined dynamic symbols and Depends as
+dev.16. The strings in dev.17 and dev.16's binary (the control): the new
+quit line 1 and 0; "the person quit the agent from its own window" 0 and
+1; Settings' close-from-outside line 1 and 0; `liroClickFacts` 4 and 0.
+deb `8fb0ceb0…31e9`, rpm `6952c6a6…e7cc`, `/usr/bin/liro-bridge`
+`dc778885…633e`.
+
+**The one change, without a reboot.** dev.16's agent 7242 was ended by
+SIGTERM to its exact PID ("asked to terminate", "protocol: stopped", every
+child gone, `bridge.json` removed), so no line of the old wording was
+written. The owner installed dev.17. dpkg showed only that upgrade since
+dev.16, and its md5sums were the deb's own, every file matching. Every
+agent after it was a new process from the installed file, started from
+Activities (D27's path). So nothing that ran had a different predecessor
+than the package, which is what D-391's rule protects.
+
+**The walk, Xorg, the owner's hands, no synthetic input:**
+
+| | the owner | `bridge.log` |
+|---|---|---|
+| Wc | Liro Bridge from Activities | 18438 `open`: dev.17 e87974a, D27, "left as it is" 98304; painted |
+| Wd | Izađi with the mouse | 22:23:20.673 "Izađi in the agent's own window sent quit, so the agent stops" **`trigger: pointer`** |
+| We | relaunched; no mouse; Tab ×6 (Promeni, Izaberi, Podešavanja, Sertifikati, Dnevnik revizije, Izađi), Enter | 22:25:01.183 the same line, **`trigger: key`**, the least certain prediction, held |
+| Wf | relaunched (18837); Podešavanja, Zatvori with the mouse | 22:26:06.218 "settings: Zatvori sent cancel" **`trigger: pointer`** |
+| Wg | Podešavanja, the title bar's × | 22:27:06.164 "settings: the window was closed from outside the page, not by Zatvori" |
+| Wh | Podešavanja → Izvezi dnevnik revizije → ~/Documents, Zatvori | 22:27:52.60 exported, both files **0600**, the 21:12 export's `.jsonl` still 0664 beside them (umask 0002); byte-identical entries, 7, "provera ispravnosti: u redu" |
+
+**What it settles: on the real build the log tells a mouse from a key,
+and Zatvori from a close from outside.** It also settles that WebKitGTK
+2.52.6 hands the button Enter's `keypress` before its simulated click, as
+read. Not produced: an accessibility press, expected as
+`neither-pointer-nor-key`; and WebKitGTK 2.54 and Windows, not walked.
+**D35 closed. D34 stays open: the 21:36:47 quit is still unexplained, and
+that is why the logging exists.**
+
+The owner's note, for whenever the footer is looked at again (not now): six
+Tab presses to reach Izađi, with the doors before it. Whether that order is
+right goes under D31.
+
+**Next, and its one job:** Fedora, D32's close under the real agent, with
+dev.17 installed there as that boot's one change.
