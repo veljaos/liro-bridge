@@ -44194,3 +44194,160 @@ rather than described, when dev.16 is written.**
 
 D28 on Xorg (where the outline stayed, D-415) and on Ubuntu's Wayland; D31's
 export and R7; D31, D33 and D27 on GNOME 46; dev.15 installed there.
+
+---
+
+## D-424 — D32 found, as far as this program can reach: when GTK has no `gtk-xft-dpi` (−1), WebKitGTK 2.54.0 gives the first web view of a process zoom 1.0 and every later one NaN — a 0×0 viewport and the page drawn at an enormous scale; GTK has none because the Settings portal refuses our non-dumpable process (B29), and the DPI value alone decides it, both ways (K5, K6), so D-376's protection stays; the fix proposed is a workaround — GTK's missing value taken from the desktop's own `text-scaling-factor`, read directly, followed live — and why view 1 survives −1 is the defect still open
+
+**Date:** 2026-10-04
+**Phase:** F12; session 24 continued on the Fedora VM after D-423 was pushed,
+dev.15 installed, WebKitGTK 2.54.0, GTK 4.22.5. Every prediction and reading
+is in the owner's `~/s24-predictions.md`; reports and snapshots in
+`~/s24-d32/`. The probe is `scripts/ctxprobe/ctxprobe.py` (`b58ef17f…63ba` at
+the last run), a Python host built to resemble `internal/ui` — C0 showed it
+reproduces D32 (D-423).
+
+### How it was found
+
+An independent model's reply to everything D-423 had measured (the owner
+asked it) named a hole — no run had two views sharing one web process — and
+a cheaper reading: the colour of what window 2 shows. Read against our own
+record, three of its claims did not hold as stated: S0 as a no-op rests on
+EGL being refused, and whether it ends refused under `=1` is unread either way
+(G0's stderr shows the dri2 refusal under `=1` too, which corrected my own
+correction — recorded against both of us, the owner's word); F0 did not only
+repeat a topology, it was built to test #53's mechanism; and RA does not show
+that a later surface can show a WebKit frame (the owner: "our ruled-out item 1
+does not exclude what I said it did"). One reading nobody had: **GTK's own
+header bar drew on every white agent window**, so later surfaces render GTK's
+widgets.
+
+| run | what | read | prediction |
+|---|---|---|---|
+| G0 | `GSK_RENDERER=cairo`, `GSK_DEBUG=renderer` | "Using renderer 'GskCairoRenderer'" for both surfaces; window 2 background only | held — **GTK's renderer out** |
+| G1 | `ngl` | not run (the owner): cairo uses neither GL nor Vulkan and did not fix it | — |
+| K0 | gradient page, magenta view background, snapshots | default renderer **read**: `GskVulkanRenderer` ("Not using Vulkan: device is CPU", "Not using GL: renderer is llvmpipe"); window 2 on screen the gradient, no text, never magenta; **its snapshot the gradient only, 0 % near-white**; hover, minimize, restore changed nothing | K0c held; **K0d failed** — I predicted a full snapshot |
+| K1 | three non-text markers and an image above the text | window 2: **thin scrollbars on both axes**, red at the top-left; **its snapshot one colour, #ff0000** — the 10 px border magnified to fill 560×420 | K1b failed; the canvas separator could not decide — outside the visible region |
+| K2 | the page's and the view's geometry, both sides of the boundary | window 1: 560×420, DPR 1, view zoom 1.0. **Window 2: view zoom NaN; page `innerWidth`/`innerHeight` 0, DPR NaN (JSON `null`), every rect 0×0**; allocated 560×420, scale factor 1, surface scale 1.0 | K2a held; **K2b failed** (the view side is wrong); K2c failed as worded |
+| K3 | `gtk-xft-dpi` after init, at each view's creation, every change; zoom at creation | **−1 throughout, never moved**; view 1 born 1.0, **view 2 born NaN** — before its load, before it has a web process | K3b held; **K3c failed** (least certain): the DPI does not move |
+| K4 | K3 with `--dumpable` | no portal warning; **`gtk-xft-dpi` 98304**; view 2 born 1.0; **window 2 full** | held |
+| K5 | non-dumpable (portal still refused), the probe sets `gtk-xft-dpi` 98304 after `Gtk.init` | view 2 born 1.0; **window 2 full** | held, least certain one included |
+| K6 | dumpable, the probe sets −1 | view 2 born NaN; **window 2 red and blue** | held |
+
+**What it establishes.** The cause in the UI process: GTK has no
+`gtk-xft-dpi` (−1) because the Settings portal refuses a non-dumpable
+process (B29), and **with −1 WebKitGTK 2.54.0 builds the first view with
+zoom 1.0 and every later view with NaN** — the page then lays out in a 0×0
+viewport and is drawn at an enormous scale, so the window shows one corner of
+whatever is biggest: the page's background on a plain page, white on the
+agent's `#ffffff` page, the red border in K1. **K5 and K6 together: the DPI
+value alone decides it, both ways; dumpability as such does not.** WebKit
+takes the DPI from GtkSettings (K5 is the reading — had it read GDK's own
+copy, K5 would have stayed NaN; the caveat was written before the run).
+
+**It explains, in hindsight:**
+- why no WebKit variable moved it (D, Skia CPU) and no renderer (G0): the
+  zoom is set before any of them;
+- **the agent's "white" windows (D-420, D-421): its page background is
+  `#ffffff` and the view's default is white**, so "white" and "background
+  only" could not be told apart — every agent window called white may have
+  been a magnified corner of a white page, and nobody could have told;
+- K0's gradient looking normal: under a page zoom the root background still
+  spans the window while everything else is magnified (a gradient itself
+  magnified would show one corner of it);
+- the owner's selection cursor over K0's window 2: the page was there, laid
+  out at 0×0, and hit-testing found text.
+
+**Not explained — the actual defect, kept open:** why the first view copes
+with −1 and every later one gets NaN. It is inside WebKit 2.54.0 and was not
+read; everything below works around it.
+
+**Corrections on the way, recorded as found:** my K1 image marker was broken
+by my own template — `serve()` replaced every capital N, inside the image's
+base64 too (`…AAAA1SU`, `…AAAA2SU` for `…AAAANSU`); fixed before K3, where
+the image loaded. The owner's "not drawn anywhere" in K1 was scrolling the
+edges and the corner, not the middle, where a centred page in a huge box puts
+its content (the owner's correction of their own reading).
+
+### D-376, a second time, and the pattern (the owner)
+
+This is the second time D-376's hardening has broken something a person
+uses: the file chooser on Fedora (D-408), and now every window after the
+first. **It is not an argument against the protection** — K5 showed it can
+stay — but two in one week is a pattern worth naming: **a process that hides
+itself from the desktop gets answered "nothing" by things that assume they
+can see it, and the failures land far from the cause.** Here the answer
+"nothing" was a refused portal, the value was −1, and the symptom was a white
+window two layers away, in WebKit.
+
+**What the protection is on this Fedora, read**: `kernel.yama.ptrace_scope`
+is 0, so **the non-dumpable flag is the only thing stopping any program
+running as the same user from attaching to the agent and reading its
+memory** — not core-dump hygiene. Option (a) below is stated with that
+weight.
+
+### What could be done, and what each costs
+
+- **(a) Stop making the agent non-dumpable** (undo D-376's flag). Fixes this
+  and every portal refusal (D-408's chooser, B29, B30). Costs the protection
+  whole: core dumps of a process that has held PINs and pairing secrets, and,
+  with `ptrace_scope` 0, **any same-user program attaching to the agent and
+  reading its memory**. A much larger concession than it looks.
+- **(b) Set the flag only after GTK has started.** In the agent GTK starts at
+  the first window, after the pairing secrets are read from the keyring, so
+  the agent would be attachable for that stretch unless startup is
+  reordered; later portal calls stay refused.
+- **(c) Keep the flag and give GTK the value it is missing — chosen (the
+  owner), as a workaround.** Below.
+- **(d) Set each view's zoom to 1.0.** Masks the symptom, overrides a
+  person's text scaling, untested; not taken.
+
+### (c), the proposal for dev.16 — a workaround, and called one
+
+In `internal/ui/uithread_linux.go`, after `gtk.InitCheck()` succeeds and
+before any view exists:
+
+1. **Only if GTK's `gtk-xft-dpi` is −1** — a value GTK got (a portal that
+   answered, X settings, a dumpable process, Ubuntu if it has one) is left
+   alone.
+2. Read **`org.gnome.desktop.interface` `text-scaling-factor` directly
+   through GSettings** — dconf's own file, no portal, no `/proc` check — the
+   schema looked up first so that a desktop without it does not abort.
+   **The value comes from the desktop's own setting, not a constant** (the
+   owner: "a number we invent is a number that is wrong on someone's machine").
+3. Set `gtk-xft-dpi` from it **as GDK computes it** — **the formula is not
+   read**: `gdksettings-wayland.c` is not on this VM. On this desktop the
+   factor is 1.0 and the portal's value was 98304 = 96 × 1024 × 1.0, which
+   **confirms the shape and not the multiplication**. Read the source on the
+   Ubuntu VM before writing; if it does not settle it, say so rather than
+   carry 96 × 1024 as though it were read.
+4. **Follow live changes** (the owner): listen on the key and set it again,
+   so the agent is not correct until a person changes their text scaling and
+   silently wrong for the rest of the session.
+5. **No schema: leave −1, and log it** (the owner) — that desktop keeps the
+   defect and a line in `bridge.log` saying why; "every later window works" is
+   not worth shipping a guess at what a person's text scaling is.
+6. One log line when it acts: unset, the factor read, the value set.
+
+**It is a workaround**: it rests on WebKit 2.54.0 turning −1 into NaN on a
+second view, which we cannot explain and which an update can change or
+remove; the code's comment and this entry say so. It leaves B29's other
+losses (colour scheme, fonts) as they are — **their own decision, not settled
+under D32's pressure** (the owner).
+
+**What it costs**: about 30–40 lines of Go and a unit test of the rule ("only
+when −1", the computation, no schema → unchanged), each with a failing
+control; written and built on the Ubuntu VM in dev.16. **Proven** on Fedora
+by the agent's log line and D32's own close: a pairing and three requests
+under one agent, each drawn, watched by the owner.
+
+### The upstream report, to be drafted for the owner to file
+
+"WebKitGTK 2.54.0, GTK 4.22.5: with `gtk-xft-dpi` = −1 the first
+`WebKitWebView` has zoom level 1.0 and every later one NaN — a 0×0 viewport
+and the page drawn at an enormous scale." Attached: `ctxprobe.py` and K3/K6 as
+a reproducer, K5/K6 as the two directions, K2's numbers. **And the owner's
+question for it**: Ubuntu's portal refuses the non-dumpable process too
+(D-411) and Ubuntu does not show D32 — so either its GTK 4.14 / WebKit 2.52
+survive −1, or it gets a real value some other way. **Read `gtk-xft-dpi` on
+Ubuntu** before its next GTK brings this with it.
