@@ -55,7 +55,11 @@ func (s *Store) Export(dstEntries, dstReport string) (ExportReport, error) {
 	}
 	verification := VerifyChains(chains)
 
-	f, err := os.Create(dstEntries)
+	// 0600, as the report below and the store's own files: an export is
+	// evidence of what somebody signed, and a person may choose a shared
+	// folder or a stick for it. os.Create left it 0666 less the umask —
+	// 0664 on Ubuntu (D-425).
+	f, err := os.OpenFile(dstEntries, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return ExportReport{}, err
 	}

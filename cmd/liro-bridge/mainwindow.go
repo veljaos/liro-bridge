@@ -728,7 +728,11 @@ func (m *mainWindow) loop(ctx context.Context) {
 					slog.Debug("signing window: a quit was asked for by a window that does not own an agent")
 					continue
 				}
-				slog.Info("signing window: the person quit the agent from its own window")
+				// Not "the person quit": this line said so at 21:36:47 on
+				// the Ubuntu VM when no person had (D-425, D34). It says
+				// what sent the message and what fired the button, as far
+				// as the page could see.
+				slog.Info("signing window: Izađi in the agent's own window sent quit, so the agent stops", "trigger", msg.Trigger)
 				m.quitAgent()
 				return
 			}

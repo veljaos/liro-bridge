@@ -63,6 +63,26 @@ func settingsOnOpening(fallback config.Config, pairings *api.Pairings, secrets p
 	return c, cfg, buildSettingsInit(c, cfg, listPairings(pairings), secrets)
 }
 
+// settingsClosedFromOutside is the cancel Settings' window sends itself
+// when it is closed by anything but Zatvori — its title bar, a key the
+// desktop handles, the desktop. It used to be a bare cancel, which the
+// log then wrote as "the page sent cancel" (D-425, D34).
+var settingsClosedFromOutside = ui.Message{Type: ui.MessageTypeCancel, Trigger: ui.TriggerClosedFromOutside}
+
+// logSettingsMessage is where a message gets to, in the log (D-373), and
+// since D34 how a close came about: Zatvori — the page's only cancel —
+// with what fired it, or the window closed from outside.
+func logSettingsMessage(msg ui.Message) {
+	switch {
+	case msg.Trigger == ui.TriggerClosedFromOutside:
+		slog.Info("settings: the window was closed from outside the page, not by Zatvori")
+	case msg.Type == ui.MessageTypeCancel:
+		slog.Info("settings: Zatvori sent cancel", "trigger", msg.Trigger)
+	default:
+		slog.Info("settings: the page sent", "type", msg.Type)
+	}
+}
+
 // owner is the window Settings was opened from, or zero when it was
 // opened from the tray and stands on its own.
 //
@@ -90,7 +110,7 @@ func runSettingsWindow(fallback config.Config, owner uintptr, pairings *api.Pair
 		VirtualHost: liroVirtualHost,
 		StartPage:   "/pages/settings.html",
 		OnMessage:   func(m ui.Message) { messages <- m },
-		OnClosed:    func() { messages <- ui.Message{Type: ui.MessageTypeCancel} },
+		OnClosed:    func() { messages <- settingsClosedFromOutside },
 	})
 	if err != nil {
 		return err
@@ -115,7 +135,7 @@ func runSettingsWindow(fallback config.Config, owner uintptr, pairings *api.Pair
 	slog.Info("settings: window open")
 	for {
 		msg := <-messages
-		slog.Info("settings: the page sent", "type", msg.Type)
+		logSettingsMessage(msg)
 		switch msg.Type {
 		case ui.MessageTypeCancel:
 			return nil

@@ -400,8 +400,9 @@
     if (!btn) {
       return;
     }
-    btn.addEventListener("click", function () {
-      window.liroSend("quit");
+    var facts = window.liroClickFacts(btn);
+    btn.addEventListener("click", function (ev) {
+      window.liroSend("quit", { trigger: facts(ev) });
     });
     var previous = window.__liroOnMessage;
     window.__liroOnMessage = function (payload) {

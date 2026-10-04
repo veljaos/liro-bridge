@@ -95,6 +95,30 @@
     post(msg);
   };
 
+  // liroClickFacts watches one button and returns a function that says,
+  // for a click on it, what the page could see of what fired it (D34):
+  // the click count, whether the browser made the event, and whether
+  // Enter or Space reached the button in the same task. Go decides what
+  // that was (internal/ui/messages.go, Trigger) so the rule is tested.
+  // A button turns Enter's keypress and Space's keyup into a simulated
+  // click inside that same event's handling, so a flag set here and
+  // cleared on the next task is still set when the click arrives.
+  window.liroClickFacts = function (el) {
+    var byKey = false;
+    function sawKey(ev) {
+      if ((ev.type === "keypress" && ev.key === "Enter") ||
+          (ev.type === "keyup" && ev.key === " ")) {
+        byKey = true;
+        setTimeout(function () { byKey = false; }, 0);
+      }
+    }
+    el.addEventListener("keypress", sawKey, true);
+    el.addEventListener("keyup", sawKey, true);
+    return function (ev) {
+      return { detail: ev.detail, trusted: ev.isTrusted, byKey: byKey };
+    };
+  };
+
   // setText inserts untrusted or trusted text via textContent, never
   // innerHTML (SPEC §6.6 / F5 §5.3).
   window.liroSetText = function (el, text) {

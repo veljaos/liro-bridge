@@ -37,10 +37,12 @@ this.** Read D-425's first section before anything else in this list.
 
 ## D. Next
 
-1. **dev.17, on this VM, before Fedora** (the owner): the audit export's
-   entries file 0600 (D35); the quit and Settings' cancel say how they were
-   triggered, the quit line no longer asserting a person (D34). Each with a
-   test whose control fails; both test views, each under `timeout`.
+1. **dev.17's code is committed, not built** (D-425's last section): the
+   audit export's entries file 0600 (D35); the quit and Settings' closes say
+   how they were triggered, the quit line no longer asserting a person
+   (D34); every control failed, both views green. **Next**: build dev.17,
+   install it here, and the owner watches Izađi by mouse and by Tab then
+   Enter, Zatvori and Settings' ×, and an export's mode on disk.
 2. **Fedora: D32's close under the real agent** with dev.16 (or dev.17):
    a pairing and three requests under one agent, each drawn, the agent's
    DPI line read ("GTK had no gtk-xft-dpi, so it is taken from the

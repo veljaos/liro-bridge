@@ -172,8 +172,10 @@
   document.getElementById("save-btn").addEventListener("click", function () { act("save"); });
   document.getElementById("export-audit-btn").addEventListener("click", function () { act("exportAuditLog"); });
   document.getElementById("check-updates-btn").addEventListener("click", function () { act("checkUpdatesNow"); });
-  document.getElementById("close-btn").addEventListener("click", function () {
-    window.liroSend("cancel");
+  var closeBtn = document.getElementById("close-btn");
+  var closeFacts = window.liroClickFacts(closeBtn);
+  closeBtn.addEventListener("click", function (ev) {
+    window.liroSend("cancel", { trigger: closeFacts(ev) });
   });
   document.getElementById("copy-version-btn").addEventListener("click", function () {
     var text = document.getElementById("version").textContent;

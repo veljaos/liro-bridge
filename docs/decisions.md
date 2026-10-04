@@ -44608,3 +44608,64 @@ file at 21:36:4x. The log's and journal's stamps are the record.
   21:36:47 quit left unexplained.
 - dev.17's code and this record on the Ubuntu VM, the record first; the next
   sitting Fedora, D32's close under the real agent.
+
+### dev.17's code, after the record (the owner's rulings above)
+
+**The export (D35).** `export.go` opens the entries file with
+`os.OpenFile(…, O_CREATE|O_TRUNC|O_WRONLY, 0o600)`, as the report and the
+store. A file already there keeps its own mode, as the report's
+`os.WriteFile` always has. `TestExportedFilesAreReadableOnlyByTheirOwner`
+(not on Windows): both files 0600; control, `os.Create` back — **failed**,
+"export.jsonl is 0664, want 0600". The first try at that control did not
+run: my `sed` used `|` as its delimiter with `|` in the pattern, the edit
+was not made, and the "ok" after it was the unmodified code. Caught by the
+grep count before it was read as a result, and redone.
+
+**The trigger (D34). WebKitGTK 2.52.6 read first** (github.com/WebKit/WebKit
+at `webkitgtk-2.52.6`, raw): every click WebKit simulates has `detail` 0
+(`SimulatedClick.cpp`, sha256 `c622eb5b…`); a button turns Enter's
+`keypress` and Space's `keyup` into one, inside that event's handling
+(`HTMLButtonElement.cpp`, `2051dbe2…`); an accessibility press simulates
+one with no key before it (`AccessibilityObject::press`, `0bec01aa…`); a
+script's `.click()` is untrusted. So the page can tell a pointer (a click
+count), a key (Enter or Space on the button in the same task), neither (an
+accessibility press, an access key, or something not yet known), and its
+own script — and **cannot** tell a person from no person, which is why no
+line now says one.
+
+- `bridge.js` `liroClickFacts(el)`: watches the button's two keys and
+  returns, per click, `{detail, trusted, byKey}`; Izađi (`main.js`) and
+  Zatvori (`settings.js`) send it as `trigger`.
+- `ui.Trigger` (`messages.go`): Go classifies the facts — `pointer`, `key`,
+  `neither-pointer-nor-key`, `script`; a trigger in an unread shape is
+  `unreadable` and the message still taken (a cancel dropped for a bad
+  report would leave a window that cannot close); nothing reported logs
+  `not-reported`. `closed-from-outside` is set only by Go: the page cannot
+  claim it.
+- The quit line: "signing window: Izađi in the agent's own window sent
+  quit, so the agent stops" `trigger=…` — no person.
+- Settings: `OnClosed` sends `settingsClosedFromOutside`, logged "settings:
+  the window was closed from outside the page, not by Zatvori"; Zatvori's
+  cancel "settings: Zatvori sent cancel" `trigger=…`. Zatvori's trigger
+  was not in the ruling's words; it is the same helper and the same claim,
+  so it is in.
+
+Tests: the classification table (nine cases), the log value for nothing
+reported, the pages sending the facts (read as source, as D28's page test
+is), the quit line (three triggers, no "person", the agent asked to quit),
+Settings' two closes. Controls, each **failed as predicted**: no
+`!Trusted` case, no `detail` case, no `byKey` case, the old quit line, a
+bare `OnClosed` cancel, `main.js` back to `liroSend("quit")`, no
+`LogValue`. Both views: untagged 37 ok, `-tags softtoken` 38 ok, under
+`env -i`, `-count=1`. Windows: `GOOS=windows go vet` on the three packages
+gives the same 28 `unsafe.Pointer` warnings as HEAD in a clean worktree and
+nothing else — after a first comparison through `git stash` that left the
+untracked tests behind, failed to type-check at HEAD, and printed a 0 that
+was not a count.
+
+**Not shown, and the limit of all of it**: what the page's facts are on a
+real click. That needs WebKit, and the window tests skip on this VM
+(D-324). To be watched on an installed dev.17: Izađi by mouse and by Tab
+then Enter, Podešavanja's Zatvori and its title bar's ×, the log read after
+each — the owner's hands, not synthetic input (D-094). An accessibility
+press is expected as `neither-pointer-nor-key` and is not produced.
