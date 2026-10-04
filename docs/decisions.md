@@ -44426,7 +44426,10 @@ no person did, the phrasing is a claim the code cannot support — and the
 whole audit story rests on the log saying what happened rather than what it
 assumes. Logging less would be better than logging an assumption. Two in
 one sitting where the record says a person acted and the person says
-otherwise is a pattern, not an anecdote.
+otherwise is a pattern, not an anecdote. **It is the second unexplained
+action in one sitting and the third of its shape with D18, and in all three
+the log asserted a person. The pattern is not "a click we cannot place"; it
+is "the log says who, and it does not know"** (the owner).
 
 **What follows, the owner's ruling — dev.17, because of this, not as
 tidying-up:** both lines say how they were triggered. Izađi: mouse or
@@ -44563,8 +44566,9 @@ fails with `os.Create` back. open-items D35.
 
 ### The predictions that failed
 
-Eight readings failed by the file. The owner counted six; as far as I can
-tell the difference is X2b and W7b, which I list with the rest:
+Eight readings failed by the file; the owner counted six. **Both counts
+are kept** (the owner): we differ on X2b and W7b — I count them, the
+owner's six do not include them. All eight are listed:
 
 - **X2b** (least certain): 2.52.6 has the defect — the finding above.
 - **W0a**: one boot after the install — there were two.
@@ -44648,7 +44652,9 @@ line now says one.
   the window was closed from outside the page, not by Zatvori"; Zatvori's
   cancel "settings: Zatvori sent cancel" `trigger=…`. Zatvori's trigger
   was not in the ruling's words; it is the same helper and the same claim,
-  so it is in.
+  so it is in — kept by the owner: "leaving one of the two unfixed would
+  mean the next person reading the log still cannot tell a press from a
+  close".
 
 Tests: the classification table (nine cases), the log value for nothing
 reported, the pages sending the facts (read as source, as D28's page test
