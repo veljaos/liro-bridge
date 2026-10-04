@@ -44004,3 +44004,193 @@ why it refused**, so that a future session can tell a guard from a broken
 build. **D27 last** on the variable-off route, confirmed: run first, its
 relaunch would put everything after it under different conditions from
 everything before.
+
+---
+
+## D-423 — Session 24 on the Fedora VM: dev.15's five walked and each held — D29, D27, D31, D28, D33 — with D33 read on disk while the report still said Završeno; and D32, taken through eight more runs, is a narrower unknown and nothing more: five candidates out, none of them the cause, the defect reproduced by a Python host with none of our Go code in it; GSK_RENDERER is the next thing to try, ahead of the WebKit update; the footer's doors to be made quieter (the owner)
+
+**Date:** 2026-10-04
+**Phase:** F12; session 23's sheet (`docs/f12-linux-session-23.md`), taken on
+the Fedora VM in two boots: dev.14 for D32's runs, then dev.15 installed as
+the boot's one change. Every prediction and reading, with the times, is in
+the owner's `~/s24-predictions.md`; this entry is its summary and cites it.
+Probe reports in `~/s24-d32/`.
+
+### D32: what the honest headline is
+
+**Five candidates are now ruled out, and none of them was it** (the owner's
+wording, and the point of this section). This is not progress toward a fix;
+it is a narrower unknown. The defect is unchanged: on Fedora 44 with
+WebKitGTK 2.54.0 and GTK 4.22.5, a process's first web view comes up whole
+and every later one shows the page's background and nothing else — the load
+finished, the content in the page, not on the screen.
+
+| out | how | its limit |
+|---|---|---|
+| G — GTK's first-time setup | RA: the PIN dialog first (GTK up), then web window 1 full, 2 background only | — |
+| T — no `TerminateWebProcess` before it | RB `o o c w`: window 2 opened beside a live window 1, no terminate before it, background only; window 1 kept painting | — |
+| D — our `WEBKIT_DISABLE_DMABUF_RENDERER=1` | RE: the agent with `=0` (read in the network and web processes' environ): window 2 white | under `=0` device EGL was refused ("VMware: No 3D enabled", "DRI2: failed to create screen"); the path WebKit fell back to was not read and may be the same one |
+| the shared `WebKitWebContext`, and `liro://` registered once at it (webviewjs/webview#53, the owner's find) | F0: a new context per view, the scheme registered on each: window 2 background only | — |
+| Skia's GPU rasteriser (block/buzz#2643) | S0: `WEBKIT_SKIA_ENABLE_CPU_RENDERING=1`, present in the web and network processes' environ, the name present in `libwebkitgtk-6.0.so.4` (a made-up control name absent): window 2 background only | its presence is readable, its effect is not: "no effect" and "not honoured" look the same |
+
+**And one narrowing of scope, not a candidate**: C0 reproduced R0 in a
+Python host (`scripts/ctxprobe/ctxprobe.py`, PyGObject 3.56.3 over the
+installed WebKit-6.0 typelib — nothing installed) — **so Go, gotk4 and
+`internal/ui`'s code are not needed for the defect.** What C0 does *not*
+remove is the choices copied from them: the DMABUF variable,
+non-dumpable, `liro://` local and secure, terminate then destroy.
+
+**What is left** — what F0 and S0 still shared between their two windows:
+the default `WebKitNetworkSession` (and, likely, one network process —
+not read); GTK/GDK's per-process setup, **including the GSK renderer**; WebKit's
+UI-process display state; and WebKitGTK 2.54.0 itself.
+
+### D32's runs, in order
+
+dev.14 installed, boot 2026-10-04 12:36 (B1–B5 held: dev.14 `df7bedd5…6f61`,
+tray 2396 autostarted alone, WebKitGTK 2.54.0, no dnf transaction since
+SafeSign). The probe is `~/d32probe` (`02b87318…1e56`); its UI thread sets
+DMABUF=1, so the variable's absence from a report's env lines means "set by
+the program", not unset.
+
+| run | sequence | read (the owner's eyes) | prediction |
+|---|---|---|---|
+| R0 | `w w` | 1 full; 2 **blue background only**, no text, no clock; 2's load finished in 0.25 s (1: 1.33 s) | "white" FAILED as worded — a third state; its point held |
+| R0b | `w w` | the same; 0.22 s vs 0.92 s | held |
+| RA | `p w w` | PIN dialog full; web 1 full; web 2 background only | held (G out) |
+| RB | `o o c w` | 1 full, unchanged when 2 appeared; 2 background only; 3 background only | **T failed, V held** — the defect is per view |
+| Q0 | Izađi on 2396 | "protocol: stopped", nothing left | held |
+| RE0 | agent 6585 from a terminal, as installed | 1 full; 2 white | held; ~5 s spinner over each, not separating |
+| RE | agent 7494 with `=0` | 1 full; **2 white** | **failed — lead D out**, with RE's limit above |
+
+On the agent's windows "background only" and "white" cannot be told apart:
+its page background is `#ffffff` (`tokens.css`). `/proc/<agent>/environ` is
+unreadable (non-dumpable, D-376); the WebKit processes' environ is the route.
+RE's window 3 was not taken (2 decides).
+
+After the reboot into dev.15 the owner's lead from the webviewjs issue, then
+from block/buzz, were taken in the Python host, default context `w w` unless
+said:
+
+| run | read | prediction |
+|---|---|---|
+| C0 (control) | 1 full (0.86 s); 2 background only (0.20 s) | held — **least certain, that a Python host reproduces at all**; the stop rule (2 full → stop, F0 not run) not hit |
+| F0 | new context per view: 1 full (0.90 s); 2 background only (0.20 s) | my lean held (weakly): the context is out |
+| S0 | Skia CPU rendering: 1 full (0.85 s); 2 background only (0.22 s) | held |
+
+The three reasons I gave against #53 before F0, kept because F0 bore them
+out: its blank never fires load-finished and ours does; in RB no window had
+died; and it is on 2.52.6, the series Ubuntu runs nine default-context
+windows on, all painted. F1 (RB's shape with fresh contexts) not run — F0
+settled it (the owner). The "context 0x…" the probe prints is Python's
+`hash()` of the wrapper, not the C pointer: a label.
+
+### D32: what is next, in this order (the owner)
+
+1. **GSK_RENDERER, two probe runs, no system change** — the owner's lead,
+   from an Arch thread (bbs.archlinux.org, id=294177) that solved a class of
+   GTK4 rendering failures with it; another person's report, not a reading
+   here. Every probe report says `GSK_RENDERER=(unset)`, and the agent's log
+   shows GDK creating a Vulkan device on llvmpipe (`libvulkan_lvp.so`). If a
+   second window fails to get a surface, "the background arrives and the
+   content does not" is what that would look like — and it would explain why
+   no WebKit variable moved it: the fault would be under WebKit, not in it.
+   `ctxprobe.py --context default --seq "w w"` with **`GSK_RENDERER=cairo`
+   first, as the control**, then a GPU renderer (`ngl`). Mine, to propose
+   when it is run: `GSK_DEBUG=renderer` on both, so the renderer that drew is
+   read rather than assumed — **which renderer GSK uses by default here has
+   not been read**; the Vulkan lines show a device created, not what drew.
+2. **The WebKit update** (2.54.1 carries `99fe659f25`, "GTK loses its
+   displayed image", D-421) — a system change, the owner's approval.
+3. A fresh `WebKitNetworkSession` per view — not written.
+
+### dev.15's walk-through
+
+Installed 2026-10-04 14:36:03 (dnf #8, one package) while 7494 ran; the boot
+after it (C1–C4) held: `liro-bridge-0.9.9~dev.15-1`, `44f448f7…5ec7`,
+autostarted tray 2463 alone, "liro-bridge starting" 0.9.9-dev.15 `9950197`.
+
+**Route**: RE's window 2 was white under `=0`, so by D-422's ruling the
+walk-through was taken under the agent as installed, every white window
+recorded as D32's, each item on some agent's first window. Agents restarted
+between items by Izađi where its window painted, by SIGTERM to the exact PID
+where it did not — each sent on the owner's go.
+
+| item | read | limit |
+|---|---|---|
+| **D29** | under 2463's first window: a document by **Izaberi...** — row "ugovor.pdf", no size; "Broj dokumenata: 1"; no size anywhere, no tooltip (the owner) | — |
+| **D27** | Izađi on 2463 (W2a); a launch from Activities: one process 5435 `/usr/bin/liro-bridge open`, parent gnome-shell, its own `app-gnome-liro\x2dbridge-5435.scope`, "tray: started by a launch that asked for the window, so it opens it (D27)", discovery file present, painted, **no** "Veb aplikacije…" sentence (W2b); corner X: 5435 alive, discovery file present, its web process gone (W2c); a second launch handed over — only 5435 left — and its window was white (W2d, D32's) | the sentence's own path (a protocol that did not start) not produced; GNOME 50's half of D-421's premise is now read |
+| **D31** | agent 6505: the footer present; each door opened its window — `opening from the main window` with door `settings`/`certificates`/`auditLog`, "settings: window open", a web process each; titles "Podešavanja", "Sertifikati", "Dnevnik revizije"; content white (D32's) | the export and R7 not performable on white windows — Ubuntu |
+| **D28** | agent 7089's first window: a drop from Files landed ("documents added" arrived 1); afterwards no dashed border; control — a second drag of the same file: the blue dashed outline appeared and was gone on release, refused as a duplicate (the owner) | **cannot fail for dev.15's reason here**: it cleared on Fedora's Wayland under dev.14 too (D-417). No harm shown; Ubuntu's Xorg decides it |
+| **D33** | agent D 9771's first window: job `2f9a19cb…` accepted 19:17:56.48; Odobri, the PIN, stamp top-right; 19:18:45.698 "protocol: the run ended, so the caller has its result; the report stays on screen"; `~/s22-card/ugovor-signed.pdf` (104 690 B) mtime 19:18:46.554; the caller's terminal "saved ugovor-signed.pdf at B-B"; read at 19:19:37 with the report up and the window's web process alive, nobody having pressed Završi | Završi writes no log line, so the ordering rests on that read, not on a Završi timestamp. The file is the size of D-420's `ugovor-signed-1.pdf`: same input, card and level; a fixed-size signature slot would explain it — not read |
+
+**D33's route was a deviation, accepted by the owner**: four agents started
+from the owner's terminal (`/usr/bin/liro-bridge tray`, a `ptyxis-spawn`
+scope), because a pairing window and a request window under one agent would
+be its first and second, and the second white. A paired (`fffb83a5…`); B's
+client paired again because its shell had no `LIRO_` variables — read by
+name, not value — which spent B's first window; the first secret was lost
+when the terminal was cleared; C paired (`b654c2e6…`) with the exports
+eval'd into the shell; D took the request.
+
+### D31: the owner's ruling on the footer
+
+What is on screen: the three doors on one line and **Izađi** alone on the
+line below — four items over two lines, a large block above the batch's
+buttons. **"It reads like a menu dropped into the middle of the screen
+rather than a footer."** Smaller and quieter: smaller text, tighter spacing,
+one line if it fits, Izađi not stranded on a row of its own; doors a person
+opens rarely must not compete with **Izaberi...** and **Dalje**, which are
+the work. **Not rebuilt now: a proposal shown to the owner, to be seen
+rather than described, when dev.16 is written.**
+
+### Found on the way
+
+- **Agent B ended with no line and left its discovery file.** No "asked to
+  terminate", no "protocol: stopped"; `bridge.json` left, and agent C found
+  it stale ("names a port nobody answers on") and replaced it — D-396's
+  path, held. I first said a closed terminal's SIGHUP did it; **contradicted**:
+  C's parent was the same shell, 7930, still alive. A Ctrl+C there (SIGINT —
+  the tray handles only SIGTERM, `traysignal_other.go:29`) would leave the same
+  trace. **How B ended: not read.** It reaches a person only for an agent
+  started from a terminal, but it is D30's shape: an ending that skips Quit's
+  path.
+- **The VM's clock, twice.** At boot the hardware clock read about 2 h 27 min
+  low and chronyd stepped it at 17:22:38 ("Forward time jump detected"); `last`
+  and the journal stamp the boot 14:55:02 for that reason. Later the guest's
+  clock stopped for about 41 minutes between 18:09 and 19:03 (uptime puts the
+  boot at 18:03:43) and was stepped again at 19:03:35. **`ps` start times read
+  after that are off by the gap**; the log's wall-clock stamps were used.
+  Why, in either case: not read. Boot −1's journal ends 14:41:16 with no
+  shutdown; `last` marks it "crash"; how it ended: not read.
+- 7494 (dev.14) logged "asked to terminate" at 14:38:11; nothing in the
+  journal says who sent it — not attributed.
+- **The chooser attached and moved with its window** (B28's shape, as on
+  Ubuntu and in D-417): what the owner first reported as "the audit window
+  and the main window stuck together" was the file chooser from Izaberi...
+  (the owner's correction). Files opened as its own application does not
+  stick. The log cannot confirm or deny a chooser under 6505: a cancelled one
+  with no detail writes nothing (`filedialog_linux.go:130–133`).
+- **D23 on dev.15**: every window left its `xdg-dbus-proxy` chain again — four
+  under 6505 for four windows — and the network process stays after the
+  corner X.
+- The orphan pairings `2afcb9c2…` (session 22) and `fffb83a5…` (this
+  session; its secret lost), and `b654c2e6…` (this session's, its secret only
+  in a terminal since closed): **the owner's to revoke, left for now**.
+
+### My failures in this sitting
+
+- **A busy loop**, bounded at 5 s, to wait for 5435 to exit — session 1's
+  rule. Its duration was not measured.
+- **The secret on screen.** The pairing one-liner sent `pair()`'s own prints,
+  the export lines included, to the terminal; I knew, and said "nothing to
+  copy" without saying "nothing hidden". It never passed through my tools.
+- **Two predictions written from an incomplete reading of the code**: the
+  D27 log line's order (the protocol starts before the D27 line), and "no log
+  line" when Sertifikati and the audit log open — `openDoor` logs one; said
+  before those windows were read, and failed as said.
+
+### Left for the Ubuntu VM
+
+D28 on Xorg (where the outline stayed, D-415) and on Ubuntu's Wayland; D31's
+export and R7; D31, D33 and D27 on GNOME 46; dev.15 installed there.
