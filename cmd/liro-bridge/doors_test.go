@@ -116,7 +116,8 @@ func TestTheMainWindowOpensTheTrayMenusThreeWindows(t *testing.T) {
 }
 
 // TestTheDoorsAreOnTheMainPageAndNotConditional checks the page: the three
-// buttons are in main.html with the tray's own words, and nothing hides
+// buttons are in main.html with the tray's own words (the audit log's with
+// its window's title, D-425), and nothing hides
 // them the way Izađi is hidden for a window that is not the agent's
 // (D-419: not conditional on a tray, on every platform).
 func TestTheDoorsAreOnTheMainPageAndNotConditional(t *testing.T) {
@@ -131,7 +132,9 @@ func TestTheDoorsAreOnTheMainPageAndNotConditional(t *testing.T) {
 	for id, key := range map[string]string{
 		"settings-btn":     "tray.settings",
 		"certificates-btn": "tray.certificates",
-		"auditlog-btn":     "tray.audit_log",
+		// Named as its window is titled, so the footer stays one line
+		// at text scaling 1.5 (D-425).
+		"auditlog-btn": "auditwindow.title",
 	} {
 		i := strings.Index(string(html), `id="`+id+`"`)
 		if i < 0 {
@@ -141,7 +144,7 @@ func TestTheDoorsAreOnTheMainPageAndNotConditional(t *testing.T) {
 		tag := string(html[i:])
 		tag = tag[:strings.Index(tag, ">")]
 		if !strings.Contains(tag, `data-i18n="`+key+`"`) {
-			t.Errorf("%s is not labelled %s, the tray's own word for it", id, key)
+			t.Errorf("%s is not labelled %s", id, key)
 		}
 		if strings.Contains(tag, "hidden") {
 			t.Errorf("%s starts hidden; D-419 makes it unconditional", id)
@@ -152,7 +155,7 @@ func TestTheDoorsAreOnTheMainPageAndNotConditional(t *testing.T) {
 	}
 	m := newMainWindow(config.Default(), "sr-Latn")
 	got := m.staticStrings()
-	for _, key := range []string{"tray.settings", "tray.certificates", "tray.audit_log"} {
+	for _, key := range []string{"tray.settings", "tray.certificates", "auditwindow.title"} {
 		if got[key] == "" || got[key] == key {
 			t.Errorf("staticStrings does not resolve %s, so the button would be blank", key)
 		}

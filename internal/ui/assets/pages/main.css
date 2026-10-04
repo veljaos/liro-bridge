@@ -237,12 +237,25 @@ body.drag-over #file-list {
   margin-top: var(--liro-space-2);
 }
 
-/* The program's doors sit at the left, on a row of their own above the
-   batch's actions (D31): seven buttons do not fit the window's 560 points
-   on one line, and the two kinds of action read apart. */
+/* The program's doors are the window's footer (D31): one line of compact
+   quiet buttons under a hairline, below the batch's actions, Izađi at the
+   right. In dev.15 they were full-size buttons above the batch, wrapping
+   to two lines, and read "like a menu dropped into the middle of the
+   screen" (the owner, D-423). One line in all three languages at text
+   scaling 1.0 and 1.5, seen in a browser with these stylesheets (D-425);
+   past that it wraps rather than overflowing. */
 .agent-actions {
   justify-content: flex-start;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--liro-space-1);
+  margin-top: 0;
+  padding-top: var(--liro-space-2);
+  border-top: 1px solid var(--liro-color-border);
+}
+
+.agent-actions #quit-btn {
+  margin-left: auto;
 }
 
 /* The report's two action rows are one block: the second follows the

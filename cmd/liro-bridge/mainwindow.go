@@ -1054,8 +1054,10 @@ func (m *mainWindow) staticStrings() map[string]string {
 		"main.new_batch", "main.finish", "consent.per_signature_pin_warning",
 		// The tray's own words for them, because they are the same
 		// actions and a second wording for one thing is how two of them
-		// drift.
-		"tray.quit", "tray.settings", "tray.certificates", "tray.audit_log",
+		// drift — but for the audit log, whose door is named as its
+		// window is titled: the tray's "Prikaži dnevnik revizije" pushed
+		// Izađi onto a line of its own at text scaling 1.5 (D-425).
+		"tray.quit", "tray.settings", "tray.certificates", "auditwindow.title",
 		// The questions asked between the approval and the first
 		// signature live on this page now, so its static labels do too.
 		"consent.tsa_choice_title", "consent.tsa_choice_explain",

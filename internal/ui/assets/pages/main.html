@@ -54,25 +54,6 @@
       <span class="liro-text-small" id="output-folder"></span>
     </div>
 
-    <!-- The tray menu's doors, on every platform (D31, D-419): on a stock
-         GNOME there is no tray, and whether a tray exists is not
-         something the program can know, so Settings, the certificates
-         and the audit log are reached from here wherever this window
-         runs. Their own row, at the left and quiet, because they are
-         about the program and not about this batch. -->
-    <div class="actions agent-actions">
-      <button id="settings-btn" class="liro-btn liro-btn-quiet" data-i18n="tray.settings"></button>
-      <button id="certificates-btn" class="liro-btn liro-btn-quiet" data-i18n="tray.certificates"></button>
-      <button id="auditlog-btn" class="liro-btn liro-btn-quiet" data-i18n="tray.audit_log"></button>
-      <!-- Quit is here for the desktop that has no tray to put it in
-           (F12 §6): on a stock GNOME the agent has no icon and no menu,
-           and this window is the only thing a person can reach it
-           through. Hidden unless this window belongs to a running
-           agent — in every other case the window *is* the process and
-           closing it is quitting. -->
-      <button id="quit-btn" class="liro-btn liro-btn-quiet" data-i18n="tray.quit" hidden></button>
-    </div>
-
     <div class="actions">
       <button id="clear-btn" class="liro-btn liro-btn-quiet" data-i18n="main.clear"></button>
       <button id="browse-btn" class="liro-btn liro-btn-secondary" data-i18n="main.browse"></button>
@@ -80,6 +61,28 @@
            and a method still have to be chosen, and in Sign only when
            nothing else is being asked. -->
       <button id="sign-btn" class="liro-btn liro-btn-primary" disabled></button>
+    </div>
+
+    <!-- The tray menu's doors, on every platform (D31, D-419): on a stock
+         GNOME there is no tray, and whether a tray exists is not
+         something the program can know, so Settings, the certificates
+         and the audit log are reached from here wherever this window
+         runs. The window's footer, below the batch's actions, small and
+         on one line: they are about the program, opened rarely, and must
+         not compete with Izaberi... and Dalje, which are the work (the
+         owner, D-423). The audit log's door is named as its window is
+         titled, which keeps the line whole at text scaling 1.5. -->
+    <div class="actions agent-actions">
+      <button id="settings-btn" class="liro-btn liro-btn-quiet liro-btn-compact" data-i18n="tray.settings"></button>
+      <button id="certificates-btn" class="liro-btn liro-btn-quiet liro-btn-compact" data-i18n="tray.certificates"></button>
+      <button id="auditlog-btn" class="liro-btn liro-btn-quiet liro-btn-compact" data-i18n="auditwindow.title"></button>
+      <!-- Quit is here for the desktop that has no tray to put it in
+           (F12 §6): on a stock GNOME the agent has no icon and no menu,
+           and this window is the only thing a person can reach it
+           through. Hidden unless this window belongs to a running
+           agent — in every other case the window *is* the process and
+           closing it is quitting. -->
+      <button id="quit-btn" class="liro-btn liro-btn-quiet liro-btn-compact" data-i18n="tray.quit" hidden></button>
     </div>
   </div>
 </main>
