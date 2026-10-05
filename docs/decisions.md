@@ -44720,3 +44720,83 @@ right goes under D31.
 
 **Next, and its one job:** Fedora, D32's close under the real agent, with
 dev.17 installed there as that boot's one change.
+
+## D-426 — Session 26 on the Fedora VM: D32 closed — under one dev.17 agent started by autostart, a pairing and three requests, four windows, every one drawn, watched by the owner, where on dev.15 every window after the first was white; the agent's one DPI line says GTK had none and 98304 was taken from the desktop's text-scaling-factor; no prediction failed; the defect itself is WebKitGTK's and stays open, worked around
+
+**Date:** 2026-10-05
+**Phase:** F12; session 26 on the Fedora VM (Fedora 44, kernel
+7.2.7-200.fc44, GNOME Shell 50.5, GTK 4.22.5-2.fc44, WebKitGTK
+2.54.0-2.fc44, Wayland, text-scaling-factor 1.0). dev.15 installed at the
+start, dev.17 (`e87974a`) installed by the owner's hands as the boot's one
+change, then a reboot. Every prediction and reading is in the owner's
+`~/s26-predictions.md`, each written before its measurement unless marked
+otherwise there. One Claude session before the reboot, one after.
+
+### Before the install: dev.15 against its own file (D-391)
+
+`rpm -q` dev.15; `/usr/bin/liro-bridge` `44f448f7…5ec7`, equal to the
+binary extracted from dev.15's own rpm in the owner's home (`e7f3420c…b813b`);
+`rpm -V` silent, exit 0; dnf's last transaction 8, dev.15, nothing since.
+dev.17's rpm `6952c6a6…e7cc`, its binary `dc778885…633e` — session 25's
+record, both.
+
+### The install and the reboot (I1–I4, each held)
+
+| | predicted | read |
+|---|---|---|
+| I2 | one new transaction, liro-bridge only | transaction 9, 18:33:03 UTC: Upgrade dev.17 `@commandline`, Replaced dev.15; nothing else |
+| I3 | new boot; `rpm -V` clean; the binary `dc778885…633e`; one `tray` from autostart, dev.17 `e87974a`, listening | boot `8eee1feb…` (the previous one ended 20:33:13, ten seconds after the transaction); `/proc/uptime` agrees with `uptime -s`, no clock jump; 2330 `tray`, parent `systemd --user`; "liro-bridge starting" 0.9.9-dev.17 `e87974a`; listening 17580 |
+| I4 | no DPI line before the first window (`supplyMissingXftDPI` runs on the UI thread after `gtk.InitCheck`, `uithread_linux.go:108–116`) | none; the grep would have matched either of the function's INFO lines, both contain "gtk-xft-dpi" |
+
+### D32's close: one agent, a pairing and three requests
+
+The pairing's secret went from `~/s26-pair.py` into the owner's shell by
+`eval` and was printed nowhere (session 24 §E); the requests were
+`sdk/examples/sign.py ugovor.pdf` from that shell, each refused with
+**Otkaži** once the owner had looked.
+
+| | window | the owner | `bridge.log` (agent 2330) |
+|---|---|---|---|
+| D1 | 1, pairing | painted, six digits, typed, "Uspešno povezano"; the terminal printed the appId and nothing else; `LIRO_` count 2 | 20:39:58.946 GDK WARN "Failed to read portal settings: … Unable to open /proc/2330/root" (B29); **20:39:58.975 "ui: GTK had no gtk-xft-dpi, so it is taken from the desktop's text-scaling-factor (D32's workaround, D-424)" text-scaling-factor 1, gtk-xft-dpi 98304**; 20:40:04.640 "api: an application was paired" |
+| — | none | the reader was not attached: the owner's slip | job `479f7225…` accepted 20:44:48, "no certificate to offer" CERT_NOT_FOUND 20:44:53; no window — `protocolserver.go:69–77` returns before `m.open`, and the owner saw none |
+| D2 | 2, consent | **drawn**: the application and the certificate shown, not white; Otkaži | job `c9cc4d85…` 20:46:27, CONSENT_DENIED 20:47:46 |
+| D3 | 3, consent | **drawn**; Otkaži; the client "HTTP 403 CONSENT_DENIED" after five `queued` and four `awaiting_consent` | job `5cc1f734…` 20:48:48, CONSENT_DENIED 20:48:57 |
+| D4 | 4, consent | **drawn**; Otkaži; the same | job `93e52769…` 20:56:36, CONSENT_DENIED 20:56:47 |
+
+After the first: no second DPI line and no "text scaling changed" line,
+and the portal's WARN the only WARN. One agent throughout, with its two
+`pkcs11-worker`s from the first request on. The least certain prediction
+was D2 — the first second window under the real agent with 98304 set from
+Go — and it held. **No prediction failed.**
+
+**D-304's questions, of the deciding sign (the owner's eyes on windows
+2–4).** It could have failed: on dev.15, on this machine and this
+WebKitGTK, the owner saw windows 2 onwards white (D-420, D-423). The same
+instrument saw white then, so it could see it now. The run ran: four job
+IDs, one per window, each answered in the client's terminal and the log.
+Every line after the agent's start was read; the only count that moved,
+the Vulkan loader's INFO lines at the first window, is GDK's, in the log
+since 2026-09-30 (760 before this boot).
+
+### What this closes, and what it does not
+
+**D32 is closed** by its own condition — on Fedora, a pairing followed by
+three requests under one agent, each drawn, watched by the owner — with
+the agent's DPI line read. Ubuntu's half was settled in D-425: GTK 4.14
+has 98304 from GSettings and the workaround leaves it.
+
+Not closed with it:
+- **The defect is WebKitGTK's** (D-424): with `gtk-xft-dpi` −1 the first
+  view gets zoom 1.0 and every later one NaN. WebKitGTK 2.52.6 has it too
+  (D-425, X2). Why view 1 survives is still unread. The report
+  (`docs/reports/webkitgtk-xft-dpi-unset-zoom.md`) is drafted, its
+  reproducer not yet run on Fedora as written, and not filed. Open-items D36.
+- **Where the workaround cannot act**: a desktop with no
+  `org.gnome.desktop.interface text-scaling-factor` leaves −1 and logs a
+  WARN that says windows after the first may be blank. Not met on either VM.
+- **Following a change live** ("the desktop's text scaling changed") was
+  not exercised here; text scaling stayed 1.0.
+- Footer A and dev.17's trigger lines were not seen on Fedora: the main
+  window was not opened, as the handover said (not this sitting's job).
+
+**Next:** the F12 report brought up to date (open-items F3, the owner).
