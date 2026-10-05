@@ -46,8 +46,12 @@ watched; footer A and dev.17's trigger lines not seen on Fedora.
 
 ## C. Next
 
-1. **The F12 report** (`docs/f12-report.md`, open-items F3) brought up to
-   date from D-417 to D-426 — the owner's last item for F12.
+1. **Done after the sitting: the F12 report** brought up to date through
+   D-426 (D-427). Its exit-condition box for Fedora is left to the owner.
+   Writing it found **D-419's condition for Linux being done not shown**: on
+   Fedora, under dev.17, Podešavanja → Izvezi dnevnik revizije, Sertifikati
+   and Dnevnik revizije, each drawn, watched by the owner (open-items F8) —
+   one short sitting, if the owner wants it.
 2. **The upstream WebKit report** (D36): its reproducer run once on
    Fedora as written, then filed by the owner.
 3. **When Fedora's work is done** (F10): `download-updates` back to `true`,

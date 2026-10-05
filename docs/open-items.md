@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-426, 2026-10-05.** One list, to be read in one sitting and acted
+**As of D-427, 2026-10-05.** One list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -172,11 +172,11 @@ the checklist wants updating against D-354 and D-355.
 
 1. **A real card on Fedora 44.** The Ubuntu half is done on this VM with the real reader passed through (D-361) — the OS a VM, the reader and card hardware. **The Pošta card signed on the Fedora VM** through SafeSign 4.6.0.0 and a protocol request, the PIN in this program's field and no SafeSign window, B-B; `pdfsig` and OpenSSL `cms` both valid, their controls failing (D-420) — the reader passed through, as on Ubuntu. **Not checked**: the chain to Pošta Srbije CA Root (the signature carries only CA 1, the root is not on the VM; anchoring at the signature's own CA 1 is weaker than D-361 and not offered in its place), and `scripts/verifypdf`'s Trusted List check (no Go on the VM). — D-361, D-420. *Close:* the root taken from the card (it carries it, `F2E88F59…`) or from Pošta, and `verifypdf` run on the Ubuntu VM over `ugovor-signed-1.pdf`. *Needs:* those two checks (and E3 for a MUP card).
 2. *The soft token signs on Ubuntu 24.04, Debian 13 and Fedora 44 in CI, both verifiers agreeing (D-386). Numbering kept.*
-3. *Which findings came from a VM, stated: `docs/f12-report.md` (D-418) — every "measured on" checked against its entry, and what was never taken in a table of its own. Numbering kept.*
+3. *Which findings came from a VM, stated: `docs/f12-report.md` (D-418; updated through D-426 in D-427) — every "measured on" checked against its entry, and what was never taken in a table of its own. Numbering kept.*
 4. **A module that kills its worker becomes a `Failure`, with the real module** — C9.
 5. **DMABUF and NVIDIA** — B6.
 6. *The sandbox on stock 24.04 — B7, closed (D-390). Numbering kept.*
 7. *The "marked trusted" box: struck and replaced by the owner (D-363). Numbering kept.*
-8. **What a stock GNOME user sees** — only an empty bus so far (D-342). On Fedora with dev.14 (D-417): no tray icon, and no route to Settings, the certificates or the audit log — D31. *Needs:* Fedora machine.
+8. **What a stock GNOME user sees** — only an empty bus so far (D-342). On Fedora with dev.14 (D-417): no tray icon, and no route to Settings, the certificates or the audit log — D31. **Since dev.15** (D-422, D-423): a launch from Activities becomes the agent (D27) and the three doors are in the main window (D31); no tray icon, none intended. **Not shown on Fedora** (D-427): a door's window drawn and the audit export made there — under dev.15 they opened white (D32), and they have not been opened since D32's close (D-426). *Close:* on Fedora, Podešavanja → Izvezi dnevnik revizije, Sertifikati and Dnevnik revizije, each drawn, watched by the owner — D-419's condition for Linux being done. *Needs:* Fedora machine, owner's hands.
 9. **Package signing** — built (D-356); the real-key run is C16.
 10. **The Fedora VM left as found: GNOME Software's automatic downloads back on.** Turned off for the phase as a deliberate change (`org.gnome.software download-updates` `false`, 2026-09-29 23:13:10), so that nothing is staged mid-measurement. — D-405. *Close:* `gsettings set org.gnome.software download-updates true` when Fedora's work is done, and uninstall what the phase installed, listed in the entries: `liro-bridge` (D-406); `gh`, the owner's, is theirs to keep or remove (D-406). *Needs:* the end of Fedora's work.

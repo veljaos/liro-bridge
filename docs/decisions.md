@@ -44800,3 +44800,61 @@ Not closed with it:
   window was not opened, as the handover said (not this sitting's job).
 
 **Next:** the F12 report brought up to date (open-items F3, the owner).
+
+## D-427 — The F12 report brought up to date through D-426: Fedora's card signature in the exit condition, D32 from its first white window to its close, dev.15 to dev.17 against what a stock GNOME desktop showed, and the provenance and "never taken" tables redrawn; writing it found that D-419's condition for Linux being done — a person on Fedora reaches Settings and exports the audit log — has not been shown, because the doors' windows were white when they were opened there and have not been opened since
+
+**Date:** 2026-10-05
+**Phase:** F12; open-items F3 (the owner: "update it rather than leaving it
+as of D-417"). `docs/f12-report.md` updated; open-items F3 and F8 updated.
+Written on the Fedora VM, after D-426; nothing was run.
+
+### How
+
+D-418 to D-426 read in full by me, no extraction pass. Every "measured on"
+added to the report was checked against its entry's lines. The section
+numbers are kept, because D-418 and open-items cite them: D32 and the three
+builds went into §7 as subsections. Where a finding changed after
+2026-10-03, the report says what it was and what it is, rather than
+rewriting it as though it had always been so (§7's first subsection is
+D-418's text with its tails brought up to date; §10 lists "§7 as written on
+2026-10-03" as a correction).
+
+### What changed in the report
+
+- **The exit condition** is no longer "Fedora never": the Pošta card signed
+  on Fedora and two tools accept the signature, each control failing
+  (D-420). What Ubuntu's half has and Fedora's lacks — the chain to the root
+  and `verifypdf`'s Trusted List check — is stated, with the owner's ruling
+  that Fedora is done for F12. **The box is left for the owner**: D-420's
+  ruling and F1's open checks are both in the record, and choosing between
+  them is not the report's.
+- **§1**: Fedora also llvmpipe; the guest's clock stepping (D-423); the
+  reader passed to Fedora too; D32's cause found in harnesses and its effect
+  read on the installed agent.
+- **§7**: D32 — what a person met, what it was not, the cause, Ubuntu
+  unexposed not safe, the workaround, the close, and what the close does not
+  reach; dev.15 to dev.17 in one table, each with where it was watched.
+- **§8**: sixteen rows added, one annotated ("no route" is dev.14's), the
+  machine rows extended.
+- **§9**: two rows replaced — a real card on Fedora (taken) by the chain
+  to its root, and "no route" (built) by the doors' windows on Fedora —
+  five narrowed, nine added: 22 rows to 29, counted against D-418's table.
+- **§10**: seven corrections added, D-421's "2.52 does not have the defect"
+  first.
+- **The checklist**: `pkcs11reach_test.go` ticked — D-418 is the entry that
+  says so; the doors' item "met on Ubuntu, not shown on Fedora".
+
+### What writing it found
+
+**D-419's condition for Linux being done is not shown.** The owner would not
+call the platform finished "while a person on Fedora cannot reach Settings
+or export the audit log". Since dev.15 the doors exist; on Fedora they
+opened their windows under dev.15 and the content was white (D-423, D32);
+D32 was closed in D-426 on the pairing and consent windows, and the main
+window was not opened. R7 — the export — was performed on Ubuntu only
+(D-425). So the step that would show it is one sitting's work under the
+installed dev.17: Podešavanja → Izvezi dnevnik revizije, Sertifikati and
+Dnevnik revizije, each drawn, watched by the owner. Open-items F8 now says
+so; it still described dev.14.
+
+**Not done here**: `docs/phases/F12.md`'s boxes, as in D-418.
