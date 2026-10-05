@@ -1,6 +1,6 @@
 # F12 — the phase report
 
-**Date:** 2026-10-03; **updated 2026-10-05**, through [[D-426]].
+**Date:** 2026-10-03; **updated 2026-10-05**, through [[D-428]].
 **Exit condition: not ticked here.**
 - **The Ubuntu half holds.** The installed package, approval in the window
   and a real card in a real reader signed a PDF that the independent
@@ -39,7 +39,9 @@ did not mention the machine is listed as unstated.
 with no extraction pass; nine entries are small enough to read whole. Every
 "measured on" added was checked against its entry's lines, as before. Where
 a finding changed after 2026-10-03, the section says what it was and what it
-is now, rather than rewriting it as though it had always been so.
+is now, rather than rewriting it as though it had always been so. [[D-427]]
+recorded that update. [[D-428]], taken the same evening on the strength of
+what the update found, was added after it.
 
 ---
 
@@ -394,7 +396,7 @@ is" on every window ([[D-425]]).
 |---|---|---|
 | **dev.15** (`9950197`, [[D-422]]) | D33: the caller answered when the run ends, not at Završi · D31: Podešavanja, Sertifikati and Prikaži dnevnik revizije in the main window on every platform · D29: no document size anywhere a person sees it · D28: the drop target tells the page the drag is over · D27: on Linux, `open` with no agent becomes the agent | Fedora ([[D-423]]), each held: D33 with the Pošta card, the caller's file on disk 0.86 s after the run ended, the report still up and Završi not pressed; D31's three doors opened their windows, content white (D32); D29; D27; D28, which cannot fail there for dev.15's reason |
 | **dev.16** (`df27b59`, `33ae58d`, [[D-425]]) | D32's workaround · footer A: the doors and Izađi on one quiet line under the batch's buttons | Ubuntu, Wayland and Xorg ([[D-425]]): "left as it is"; footer A confirmed by the owner; R7 performed; D27 on GNOME 46; D28 fixed on Xorg against dev.14. **Never installed on Fedora** |
-| **dev.17** (`dd87a71`, built at `e87974a`, [[D-425]]) | D35: the audit export's entries file 0600 · D34: Izađi and Zatvori say what fired them (`pointer`, `key`, `neither-pointer-nor-key`, `script`), a close of Settings from outside is logged apart, and the quit line no longer says "the person" | Ubuntu's Xorg ([[D-425]]): pointer and key, Zatvori and the ×, the export 0600. Fedora ([[D-426]]): D32's close |
+| **dev.17** (`dd87a71`, built at `e87974a`, [[D-425]]) | D35: the audit export's entries file 0600 · D34: Izađi and Zatvori say what fired them (`pointer`, `key`, `neither-pointer-nor-key`, `script`), a close of Settings from outside is logged apart, and the quit line no longer says "the person" | Ubuntu's Xorg ([[D-425]]): pointer and key, Zatvori and the ×, the export 0600. Fedora ([[D-426]]): D32's close; ([[D-428]]): footer A, the three doors drawn, the export 0600, Settings' × logged as a close from outside |
 
 **So, against what was found:**
 - **The door** has existed on every platform since dev.15.
@@ -402,15 +404,21 @@ is" on every window ([[D-425]]).
     revizije, with the export verified; Sertifikati and Dnevnik revizije
     drawn.
   - **On Fedora** the doors opened their windows under dev.15, and the
-    windows were white ([[D-423]]). Nobody has opened them there since D32
-    was closed, and no export has been made on Fedora.
+    windows were white ([[D-423]]). **Under dev.17** ([[D-428]]), with the
+    same agent that drew [[D-426]]'s four windows, each was drawn and
+    watched by the owner: Podešavanja; Izvezi dnevnik revizije through the
+    portal's folder chooser to `~/Documents`, both files 0600, nine
+    entries, "provera ispravnosti: u redu"; Sertifikati, with the Pošta
+    certificate; and Dnevnik revizije, with the same nine entries.
   - So [[D-419]]'s condition, that a person on Fedora can reach Settings
-    and export the audit log, is not shown.
+    and export the audit log, **is met**. That makes eight web windows
+    under one agent, every one drawn.
 - **The first start**: `open` becomes the agent, watched on GNOME 50 and 46.
   The sentence for an agent whose protocol did not start has never been
   produced (D27).
 - **The tray icon**: still none on stock GNOME, and none is intended.
-- **Footer A** has been seen on Ubuntu only.
+- **Footer A** has been seen on Ubuntu ([[D-425]]) and on Fedora
+  ([[D-428]]).
 
 ---
 
@@ -479,6 +487,9 @@ means source, binary, package or documentation, with nothing run.
 | every window leaves an `xdg-dbus-proxy` chain (D23) | Fedora VM and Ubuntu VM | measured | [[D-420]], [[D-421]], [[D-423]] |
 | the audit export's entries file 0664, then 0600 | Ubuntu VM, dev.16 and dev.17 | measured | [[D-425]] |
 | the log tells a mouse from a key, and Zatvori from a close from outside | Ubuntu VM Xorg, installed dev.17 | measured | [[D-425]] |
+| the doors from the main window: Settings, the export (0600, chain intact), Sertifikati, Dnevnik revizije — each drawn | Fedora VM, installed dev.17, the agent of [[D-426]] | measured, the owner's eyes | [[D-428]] |
+| the chooser helper's folder mode: the portal's dialog | Fedora VM | measured | [[D-428]] |
+| Settings' title-bar × logged as a close from outside | Fedora VM, dev.17 | measured | [[D-428]] |
 
 ---
 
@@ -492,7 +503,9 @@ supports**.
 taken in [[D-420]], and its row is now the chain to the root. "No route"
 was built in dev.15, and its row is now the doors' windows on Fedora. Five
 rows are narrowed. The rows added cover what D32's close does
-not reach and what dev.15 to dev.17 were not watched doing.
+not reach and what dev.15 to dev.17 were not watched doing. Two of the
+rows added that day, the doors' windows on Fedora and footer A on Fedora,
+were taken in [[D-428]] and removed.
 
 | never taken | why it matters | where it stands |
 |---|---|---|
@@ -503,8 +516,7 @@ not reach and what dev.15 to dev.17 were not watched doing.
 | **A real module killing the held worker, on Linux** | F12 §2's box | synthetic SIGABRT only (open-items C9); Windows saw a real module crash a probe child ([[D-315]]) |
 | **MUP's card signing on Linux** | the other Serbian card | neither SafeSign nor OpenSC reads it ([[D-365]]); `ubavic/srb-id-pkcs11` not tried (E3) |
 | **Halcom** | a third issuer | no signature ever verified (C15) |
-| **The doors' windows drawn on Fedora, and the audit export there** | [[D-419]]'s condition for Linux being done | opened under dev.15 and white (D32, [[D-423]]); not opened since D32's close ([[D-426]]); R7 performed on Ubuntu only ([[D-425]]) |
-| **Footer A on Fedora** | the owner confirmed it on Ubuntu | dev.17 is installed there; the main window was not opened in [[D-426]] |
+| **Settings' Zatvori on Fedora** | dev.17's `Zatvori sent cancel` line | Settings was closed there with the title bar's ×, logged as a close from outside ([[D-428]]); Zatvori was pressed on Ubuntu only ([[D-425]]) |
 | **Why WebKit's first view survives `gtk-xft-dpi` −1** | the defect under D32, in 2.52.6 and 2.54.0 | not read; the upstream report drafted, its reproducer not run on Fedora as written, not filed (D36) |
 | **A desktop with no `text-scaling-factor`** | the workaround cannot act there, and later windows may be blank | met on neither VM; the WARN is tested, not seen (D36) |
 | **Text scaling changed while the agent runs, on screen** | the workaround follows it live | unit-tested under GSettings' memory backend ([[D-425]]); never watched |
@@ -608,9 +620,9 @@ Added on 2026-10-05:
 - [x] Every window on GTK4 and WebKitGTK 6.0 ([[D-331]]–[[D-338]]), on the
       Ubuntu VM under llvmpipe. On Fedora: the signing, pairing and consent
       windows. Every one after a process's first was white until D32's
-      workaround, and four were drawn under one agent in [[D-426]]. The
-      doors' windows opened under dev.15, white ([[D-423]]), and have not
-      been opened since (§7)
+      workaround, and four were drawn under one agent in [[D-426]]. The main
+      window and the three doors' windows were drawn under the same agent
+      ([[D-428]]): eight in all (§7)
 - [ ] The DMABUF and NVIDIA variables: set before GTK initialises, user values
       respected ([[D-329]], unit-tested); **never exercised** (§9)
 - [x] The sandbox measured rather than assumed, on 6.8 and 7.0
@@ -640,15 +652,14 @@ Added on 2026-10-05:
 
 **The desktop**
 
-- [ ] **What a stock GNOME user sees, decided rather than defaulted**: decided
+- [x] **What a stock GNOME user sees, decided rather than defaulted**: decided
       in [[D-342]] and measured on Fedora. Since dev.15 a launch becomes the
       agent (D27) and the doors are in the main window (D31). There is no
-      icon, and none is intended (§7). Left unticked while open-items F8 is
-      open
-- [ ] **Settings, certificates and the audit log reachable without a tray**:
-      **met on Ubuntu** (R7, [[D-425]]). **Not shown on Fedora**: the doors
-      open (dev.15), but their windows were white then and have not been
-      opened since D32's close (§7, §9)
+      icon, and none is intended. Open-items F8 closed in [[D-428]] (§7)
+- [x] **Settings, certificates and the audit log reachable without a tray**:
+      on Ubuntu (R7, [[D-425]]) and on Fedora ([[D-428]]): from the main
+      window's footer, the export made and verified, every window drawn and
+      watched by the owner. [[D-419]]'s condition (§7)
 - [x] Secret Service where present, a protected file where not, PIN in
       neither ([[D-343]], [[D-347]])
 
@@ -675,4 +686,4 @@ Added on 2026-10-05:
 - [x] The soft token signs on Ubuntu 24.04, Debian 13 and Fedora 44 in CI,
       both verifiers agreeing ([[D-386]], [[D-387]])
 - [x] Which findings came from a VM, stated: this report, updated through
-      [[D-426]]
+      [[D-428]]

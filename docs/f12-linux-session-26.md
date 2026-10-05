@@ -17,7 +17,7 @@ questions before believing any check.
 | agent | 2330 `tray` from autostart (parent `systemd --user`), dev.17 `e87974a`; its `pkcs11-worker`s 4531 (opensc) and 4543 (libaetpkss) |
 | card | the Pošta card in the passed-through reader, attached during the sitting |
 | pairings | `12c4e8b03bdb68a0f14814b1cdf19571`, this sitting's; its secret only in the environment of the owner's open terminal, printed nowhere. With session 24's three (`2afcb9c2…`, `fffb83a5…`, `b654c2e6…`) all test pairings, **the owner's to revoke** |
-| files | `~/s26-predictions.md` (every prediction and reading); `~/s26-pair.py` (the pairing helper: the secret to `eval` only); `~/s22-card/` unchanged — every request was refused |
+| files | `~/s26-predictions.md` (every prediction and reading); `~/Documents/liro-audit-20261005-212209.jsonl` and `-report.json` (0600, D-428); `~/s26-pair.py` (the pairing helper: the secret to `eval` only); `~/s22-card/` unchanged — every request was refused |
 | still as the phase set it | GNOME Software's `download-updates` `false` (open-items F10) |
 
 ## B. What this sitting showed (D-426)
@@ -48,10 +48,12 @@ watched; footer A and dev.17's trigger lines not seen on Fedora.
 
 1. **Done after the sitting: the F12 report** brought up to date through
    D-426 (D-427). Its exit-condition box for Fedora is left to the owner.
-   Writing it found **D-419's condition for Linux being done not shown**: on
-   Fedora, under dev.17, Podešavanja → Izvezi dnevnik revizije, Sertifikati
-   and Dnevnik revizije, each drawn, watched by the owner (open-items F8) —
-   one short sitting, if the owner wants it.
+   Writing it found D-419's condition for Linux being done not shown.
+   **Taken the same evening (D-428)**: under agent 2330, the main window,
+   Podešavanja with the export (`~/Documents/liro-audit-20261005-212209*`,
+   both 0600, nine entries, chain intact), Sertifikati and Dnevnik
+   revizije, each drawn, watched by the owner — eight web windows under one
+   agent. Open-items F8 closed; the report updated through D-428.
 2. **The upstream WebKit report** (D36): its reproducer run once on
    Fedora as written, then filed by the owner.
 3. **When Fedora's work is done** (F10): `download-updates` back to `true`,

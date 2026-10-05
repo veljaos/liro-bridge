@@ -44858,3 +44858,68 @@ Dnevnik revizije, each drawn, watched by the owner. Open-items F8 now says
 so; it still described dev.14.
 
 **Not done here**: `docs/phases/F12.md`'s boxes, as in D-418.
+
+## D-428 — D-419's condition met on Fedora: under the same dev.17 agent, a person reached Settings, exported the audit log, and opened Sertifikati and Dnevnik revizije from the main window's footer, each window drawn and watched by the owner — eight web windows under one agent tonight, every one drawn; the export's two files 0600, nine entries, the chain intact; the title bar's × on Settings logged as a close from outside, the first time that branch ran on Fedora
+
+**Date:** 2026-10-05
+**Phase:** F12; session 26 continued on the Fedora VM after D-427 was
+pushed, the same boot and agent as D-426 (2330, dev.17 `e87974a`,
+autostart), the card in the reader. Predictions R0–R5 written before the
+steps, in the owner's `~/s26-predictions.md`. Asked by the owner: "I would
+rather finish the condition I set than tick a box I did not earn."
+
+### The steps
+
+| | the owner | read |
+|---|---|---|
+| R0 | **Liro Bridge** from Activities: the main window painted; footer A on one line, quiet, Izađi at the right — the first time on Fedora | 21:19:59.383 the launch's own "liro-bridge starting", the process gone (handover, `open.go:59–66`); the window itself logs nothing at INFO (D-421); 2330's fifth web window |
+| R1 | **Podešavanja**: painted | 21:21:04.863 "opening from the main window" door=settings; 21:21:05.133 "settings: window open" |
+| R2 | **Izvezi dnevnik revizije**: the portal's folder chooser, "Izaberite fasciklu…", Select; Documents. Settings: "Dnevnik revizije je izvezen u /home/velja/Documents", `liro-audit-20261005-212209.jsonl` — 9 zapisa, the report, "provera ispravnosti: u redu" | 21:22:09.868 "settings: audit log exported"; **both files 0600** (umask 0022 here, so `os.Create` would have given 0644 — could fail); the report `entryCount` 9, one chain, OK, `BrokenAt` −1 |
+| R3 | Settings closed with the **title bar's ×** | 21:23:23.558 "settings: the window was closed from outside the page, not by Zatvori" |
+| R4 | **Sertifikati**: painted — the Pošta signing certificate, CA 1, …5BA2AA54, "kvalifikovan"; closed with its Zatvori | 21:23:27.718 door=certificates; the certificates window logs no close |
+| R5 | **Dnevnik revizije**: painted, nine entries matching the export | 21:25:37.785 door=auditLog |
+
+**The least certain prediction was R2's chooser** — the helper's folder
+mode had never run on Fedora (D-417 took `OpenFile` only) — and it held.
+No DPI line after the first window's, one WARN since the agent's start (the
+portal's at the first window), the agent and its two workers unchanged
+throughout.
+
+**The nine entries are this machine's whole store**, 2026-10-03 to
+tonight: D-420's and D-423's six (four refusals and timeouts, the two
+signatures at B-B) and D-426's three Otkaži, at the log's times. The
+CERT_NOT_FOUND request wrote none: no window, nothing to consent to.
+Ubuntu's seven (D-425) are another store and not a comparison.
+
+### R3, recorded in the order it happened
+
+The step said Zatvori and predicted "Zatvori sent cancel". The owner's first
+message said Zatvori; the log said "closed from outside". I read the code —
+Settings' loop logs every message it takes, the page's only cancel is
+Zatvori's listener, the "outside" line comes only from GTK's close-request
+— and wrote it down as a failure of D34's shape, the log and the person
+disagreeing. **The owner then corrected their account: the title bar's ×,
+not Zatvori.** The log was right; the first account of the act was not. The
+"D34's shape" reading is withdrawn, kept in the predictions file beside the
+correction. The prediction was about a step not taken, so it neither held
+nor failed. **What it shows**: the close-from-outside branch, written in
+dev.17 for D34, ran on Fedora for the first time and said what happened.
+Zatvori on Fedora's Settings: not exercised. gnome-shell logged
+`meta_window_set_stack_position_no_sync` assertions at 21:22:29, 21:23:08
+and 21:23:14, none at the close; recorded, not attributed.
+
+**D-304 Q5, of my own reading**: I had the log line, the code and the
+owner's word, and read the disagreement as the program's before asking
+what was done. The code was read correctly; the act was not mine to
+decide, and was not asked about before the reading was written.
+
+### What it closes
+
+**D-419's condition**: "Linux is not done while a person on Fedora cannot
+reach Settings or export the audit log" — shown, with Sertifikati and
+Dnevnik revizije beside it, through the real agent, every window drawn.
+**Open-items F8 closed.** D31's footer A seen on Fedora. With D-426's four,
+**eight web windows under one agent, every one drawn**.
+
+**Still the owner's**: the F12 report's exit-condition box for Fedora
+(D-427: D-420's ruling and F1's open checks).
