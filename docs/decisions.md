@@ -45129,3 +45129,52 @@ support.
    published one.
 5. R5's failure is explained (read, unrelated hunks), not absorbed; the 96
    is a finding against the draft, corrected.
+
+## D-432 — A proposed sort of all 86 open items written into session 27's handover as a proposal, not a ruling; three of my proposals overruled by the owner: B8 is not solved (an inference from readings taken for other purposes), B25 is not closed (a source reading can answer whether the accessibility bus presses Odobri, and a reading is not synthetic input), B29 is not deferred (no theme and no fonts from the desktop reads as cosmetic only because the DPI consequence was the one fixed); A2/E2 first tomorrow, D23 to have a date
+
+**Date:** 2026-10-05
+**Phase:** F12; open-items as a whole. The Ubuntu VM, the same boot as
+D-431; agent 2637 untouched.
+
+### The proposal
+
+Every open item sorted into solved, closed by decision, deferred past v1 —
+the owner's three — and a fourth, **v1 work**, because 30 items are none of
+the three. The whole sort, with a reason per item, is
+`docs/f12-linux-session-27.md` §D, marked as a proposal. Counts after the
+rulings below: solved 2, closed by decision 28, deferred 26, v1 work 30.
+`docs/open-items.md` is not moved by it.
+
+### The owner's rulings on it
+
+1. **B8.** I proposed "solved": SELinux read `Enforcing` on Fedora in an
+   earlier entry and the sandbox's `bwrap` chains counted there for D23.
+   I had said myself it was my inference from two readings taken for other
+   purposes. **The owner: a solved box resting on an inference is the shape
+   this project has spent two weeks correcting** — either left open, or closed
+   by decision with exactly that wording. Not chosen tonight; B8 stays open.
+2. **B25.** I proposed "closed by decision" on D-094. **The owner**: D-094
+   rules out measuring it, rightly; but if the bus can press Odobri, any
+   program running as the person can approve a signature without them, and
+   **reading the source is not synthetic input**. v1 work. Read tonight,
+   before writing the route down: **Odobri takes any click**
+   (`consent.js:162` calls `liroAct("approve")` with no `liroClickFacts`).
+   The route (session 27 §E.2) is mostly WebKit's AT-SPI implementation and
+   its sandbox's bus proxy, since Odobri is a web button; GTK's part is the
+   embedding socket — my understanding, to be confirmed by the reading.
+3. **B29.** I proposed "deferred". **The owner**: the portal refuses our
+   process, so the window gets no theme and no fonts from the desktop; it
+   reads as cosmetic only because the DPI consequence was the one fixed,
+   and that consequence was invisible until it broke every window after
+   the first. v1 work.
+4. **A2/E2 first tomorrow.**
+5. **D23 to have a date.** Not set tonight; proposed in session 27 §E.3.
+   What has been counted is one chain per window — fifty requests, fifty
+   windows, about 150 processes; a multi-document window not counted
+   separately.
+
+### Mine
+
+B8 was the same failure the owner named: an inference given a solved box.
+I wrote the caveat beside it and still put it in "solved"; the caveat
+should have decided the bucket.
