@@ -4,9 +4,9 @@
 this machine has no account there. Measured in D-424 (Fedora VM, K2–K6);
 the source reading and the Ubuntu half in D-425; **the reproducer below run
 as written on Fedora, with a variant and a control, in D-430**. An upstream
-search (D-430) found no existing report, so this is a new bug. **Still
-missing before filing**: the WebKit revision that "Where it appears to come
-from" was read at — to be named on the Ubuntu VM.*
+search (D-430) found no existing report, so this is a new bug. **The
+source reading's revision named in D-431** (Ubuntu VM): `webkitgtk-2.54.0`,
+unchanged in 2.54.1 and on `main` the day it was read. Ready to file.*
 
 ---
 
@@ -49,18 +49,26 @@ The value alone decides it, both ways:
 a fresh `WebKitWebContext` per view and `GSK_RENDERER=cairo` were each tried
 and changed nothing (all before the cause was found).
 
-**Where it appears to come from** (read, not traced). `WebCore::fontDPI()`
-(`Source/WebCore/platform/gtk/PlatformScreenGtk.cpp`) returns
-`SystemSettings::xftDPI() / 1024.0` whenever SystemSettings holds a value,
-with no check for −1, and `SystemSettingsManagerProxy::xftDPI()`
-(`UIProcess/gtk/SystemSettingsManagerProxyGtk.cpp`) passes GTK's integer on
-unchanged under GTK 4. `refreshInternalScaling()` (`WebKitWebViewBase.cpp`)
-multiplies the page zoom by `fontDPI() / 96 / pageScaleFactor`, and
-`webkit_web_view_get_zoom_level()` returns `pageZoomFactor / pageScaleFactor`
-— so with −1 the scale is −1/98304 of normal. Why the first view escapes it
-(perhaps it is created before SystemSettings holds the value, and
-`fontDPI()` falls back to 96) and why the result is NaN rather than a
-negative number, we did not establish.
+**Where it appears to come from** (read, not traced; at tag
+`webkitgtk-2.54.0`, commit `5220e80b97a253c60ed899361654142ab5021998`, line
+numbers there; the four functions are the same at `webkitgtk-2.54.1` and on
+`main` at `3fc0c58adaefe62b3b1b538320da79a47072997c`, 2026-10-05).
+`WebCore::fontDPI()` (`Source/WebCore/platform/gtk/PlatformScreenGtk.cpp:89`)
+returns `SystemSettings::xftDPI() / 1024.0` whenever SystemSettings holds a
+value, with no check for −1, and `SystemSettingsManagerProxy::xftDPI()`
+(`Source/WebKit/UIProcess/gtk/SystemSettingsManagerProxyGtk.cpp:128`) passes
+GTK's integer on unchanged under GTK 4. `refreshInternalScaling()`
+(`Source/WebKit/UIProcess/API/gtk/WebKitWebViewBase.cpp:437`) multiplies the
+page zoom by `fontDPI() / 96 / pageScaleFactor` when that ratio is more than
+2 % from 1, and is called when the page is created and again from a
+SystemSettings observer when `xftDPI` changes (`:2537`, `:2544`);
+`webkit_web_view_get_zoom_level()`
+(`Source/WebKit/UIProcess/API/glib/WebKitWebView.cpp:4211`) returns
+`pageZoomFactor / pageScaleFactor` — so with −1 the scale is −1/98304 of
+normal. Why the first view escapes it (perhaps it is created before
+SystemSettings holds the value, and `fontDPI()` falls back to the primary
+screen's DPI, 96 without screen data) and why the result is NaN rather
+than a negative number, we did not establish.
 
 **Seen elsewhere, probably the same root.** An application on KDE Wayland
 reports WebKitGTK 2.52.6's **GTK 3** build giving `devicePixelRatio`
@@ -76,9 +84,9 @@ system needs; it says nothing about the sandbox.) Ubuntu's users do not see it o
 because GTK 4.14 reads GSettings itself and so has a value there (with the
 schema missing it has −1 too).
 
-Expected: −1 treated as "unknown" (as `fontDPI()` already does when no
-value is held), so every view gets the 96-dpi scale; or at least the same
-scale for every view of a process.
+Expected: −1 treated as "unknown", so every view gets the scale
+`fontDPI()` already uses when no value is held (the primary screen's DPI,
+or 96); or at least the same scale for every view of a process.
 
 **Reproducer** (PyGObject; run as written on the system above — results below):
 

@@ -45054,3 +45054,78 @@ up as a failure first), once in time.
 
 `download-updates` read `true` after the owner set it. The VM is not
 returned to stock, by the owner's choice (D-429).
+
+## D-431 — The WebKit report's source reading named: `webkitgtk-2.54.0`, commit `5220e80b`, read on the Ubuntu VM through two routes that agree byte for byte; the four functions are the same at 2.54.1 and on `main` today, so the report is current; the reading corrected the draft once — with no value held `fontDPI()` falls back to the screen's DPI, not to 96 — and found a 2 % threshold it did not mention; the report is the owner's to file
+
+**Date:** 2026-10-05
+**Phase:** F12; open-items D36. The Ubuntu VM, boot 20:59:28; no agent run,
+no window opened. Predictions in `~/s27-predictions.md`, written before each
+fetch (R7 added after R0–R6 were read, before its own fetch).
+
+### Why it was needed
+
+D-425 wrote "Where it appears to come from" and did not record which
+WebKit it was read at; its other WebKit reading (D34's trigger) names
+`webkitgtk-2.52.6`. A report that cites functions without a revision
+cannot be checked by the person who receives it.
+
+### The reading
+
+`git ls-remote` on github.com/WebKit/WebKit: `webkitgtk-2.54.0` → commit
+`5220e80b97a253c60ed899361654142ab5021998`; `webkitgtk-2.54.1` →
+`628d6ce1850e17225185a5807a9d0aa375bae2be`; `main` →
+`3fc0c58adaefe62b3b1b538320da79a47072997c` (2026-10-05 20:44Z). Each file
+fetched raw at the commit, `curl -f`, under `env -i`.
+
+| | file at 2.54.0 | sha256 | the draft's claim |
+|---|---|---|---|
+| R1 | `PlatformScreenGtk.cpp:89` `fontDPI()` | `2906ecac…9b02` | held — no check for −1; **but with no value held it returns the primary screen's DPI, 96 only without screen data**, where the draft said 96 |
+| R2 | `SystemSettingsManagerProxyGtk.cpp:128` `xftDPI()` | `a712d7a1…4593` | held — GTK 4 passes `gtk-xft-dpi` on; only GTK 3 asks GDK's screen |
+| R3 | `WebKitWebViewBase.cpp:437` `refreshInternalScaling()` | `019f330a…8a68` | held — `fontDPI() / 96 / pageScaleFactor`, **applied only beyond 2 %** (not in the draft); called at page creation (`:2537`) and from a SystemSettings observer on `xftDPI` (`:2544`) |
+| R4 | `WebKitWebView.cpp:4211` `webkit_web_view_get_zoom_level()` | `42b0e192…c3e4` | held — `pageZoomFactor / pageScaleFactor`, zoom-text-only off |
+
+**Second route (R6, held)**: `webkitgtk-2.54.0.tar.xz` from webkitgtk.org,
+sha256 `846fd19c…5682`, equal to the sum webkitgtk.org publishes; its copies
+of the four files and `OptionsGTK.cmake` byte-identical to GitHub's at
+`5220e80b`. Could the comparison have failed: yes — the same `cmp` against
+2.54.1 reports the two files that differ there.
+
+**2.54.1 (R5, failed as written)**: I predicted none of the four files
+would differ; `WebKitWebViewBase.cpp` does — two hunks, drag-offset
+rounding and two guards in the widget snapshot. Read in full; neither
+touches the four functions or their callers. The other three files are
+identical. Control: `OptionsGTK.cmake` differs (`SET_PROJECT_VERSION(2 54 0)`
+→ `(2 54 1)`), so a difference would have shown.
+
+**`main` (R7, held)**: all four files differ from 2.54.0, and the four
+functions do not: `fontDPI()`, `xftDPI()`, `refreshInternalScaling()` and
+`get_zoom_level()` read the same; the other changed lines in the two large
+files contain no "scal", "dpi", "zoom" or "SystemSettings" (the grep
+matched nothing; the two diffs are 185 and 212 lines). So nobody has fixed
+it upstream as of today.
+
+**Not read**: Fedora's patches to `webkitgtk-2.54.0-2.fc44` and Ubuntu's to
+2.52.6 — the measurements were on those builds, the reading on upstream's.
+The report says "read, not traced"; that stays true.
+
+### The report
+
+`docs/reports/webkitgtk-xft-dpi-unset-zoom.md`: the revision, commits and
+line numbers in "Where it appears to come from"; "falls back to 96"
+corrected to the screen's DPI in that paragraph and in "Expected"; the
+2 % threshold and the two call sites added; the header's "still missing"
+replaced. **Ready to file; the owner files it.** D36 stays open until it is
+filed, and the workaround stays until a fixed WebKitGTK is the oldest we
+support.
+
+### D-304
+
+1. Each claim could have failed (a −1 check, a different expression, a
+   different file); each byte comparison has a control that did differ.
+2. The instrument is the source at a named commit, fetched with `-f`;
+   it can see the thing.
+3. Not a timing or count; n/a.
+4. Each fetch's file hashed and printed; the tarball's sum matched the
+   published one.
+5. R5's failure is explained (read, unrelated hunks), not absorbed; the 96
+   is a finding against the draft, corrected.
