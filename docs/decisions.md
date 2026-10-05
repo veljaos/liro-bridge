@@ -44923,3 +44923,62 @@ Dnevnik revizije beside it, through the real agent, every window drawn.
 
 **Still the owner's**: the F12 report's exit-condition box for Fedora
 (D-427: D-420's ruling and F1's open checks).
+
+## D-429 — The exit condition's Fedora half left unticked by the owner's decision, not by oversight: "verified twice" means two independent verifiers reaching the bar D-361 set, and Fedora's signature was checked by `pdfsig` and OpenSSL anchored at the signature's own CA 1, without Pošta's root and without `verifypdf`'s Trusted List check — F1 stays open; F10 taken in part: the four test pairings revoked, the package kept on the VM by the owner's choice, GNOME Software's downloads the owner's to turn back on
+
+**Date:** 2026-10-05
+**Phase:** F12; after D-428 was pushed, the Fedora VM, the same boot.
+
+### The exit condition's Fedora half (the owner)
+
+**Left unticked, deliberately.** D-420's ruling — Fedora is done for F12 —
+stands, as a phase. The exit condition is another thing: "a real card
+signs, verified twice" means two independent verifiers, and the bar is
+D-361's on Ubuntu, `verifypdf` against the Trusted List and OpenSSL. On
+Fedora the signature was checked by `pdfsig` and by OpenSSL `cms` anchored
+at CA 1 **from the signature's own copy**, not at Pošta Srbije CA Root, and
+`verifypdf` was not run. D-420 said so at the time: weaker evidence, not
+offered in D-361's place. In the owner's words: **"I would rather the box
+stay unticked with F1 open than tick it on a reading that does not reach the
+bar I set."** The report's box and F1 say so. What would tick it is F1's
+close as written: the root taken from the card (`F2E88F59…`) or from Pošta,
+and `verifypdf` run over the Fedora signature on the Ubuntu VM.
+
+### F10, in part
+
+**The four test pairings revoked** by the owner in Podešavanja, one first
+and then three, predicted before each (`~/s26-predictions.md` §P), the
+least certain — the Secret Service delete going through with no prompt —
+held:
+
+| | read |
+|---|---|
+| before | `pairings.json` 4 (`12c4e8b0…`, `b654c2e6…`, `fffb83a5…`, `2afcb9c2…`); the Secret Service's `SearchItems` on this program's attributes, 4 item paths (paths only: no secret read, no prompt possible) |
+| P1, `2afcb9c2…` | "Veza je prekinuta. …", three rows; log "action revokePairing", no WARN; store 3, keyring 3 |
+| P2, the other three | "Nijedna aplikacija nije povezana. …"; three more, no WARN; `pairings.json` `"pairings": []`; `SearchItems` `(@ao [], @ao [])` |
+
+The secret still in the owner's open terminal now authenticates nothing.
+
+**The package stays installed (the owner)**: dev.17 on this VM for whatever
+comes next. **The Fedora VM is not returned to stock**: `liro-bridge
+0.9.9~dev.17` and SafeSign Identity Client 4.6.0.0 (D-420) installed.
+**GNOME Software's `download-updates`**: still `false` when this was
+written; the owner's hands, `gsettings set org.gnome.software
+download-updates true`. F10 stays open on that one step.
+
+### Between R5 and P1: the agent changed
+
+D-428's R0–R5 ended at 21:25:37 under agent 2330. At **21:30:02** the log
+reads "signing window: Izađi in the agent's own window sent quit, so the
+agent stops" **`trigger: pointer`**, then "protocol: stopped"; 2330 and its
+workers ended. At 21:34:35 a launch from Activities became the agent, 8627
+(`open`, parent gnome-shell; "started by a launch that asked for the
+window", D27), its first window logging the workaround's line again (98304).
+The owner's account: they had **closed the main window**, reopened Liro
+Bridge and Settings, and took the new Settings for one "under the same
+agent". The log says Izađi by a pointer, which quits, and a new agent. Both
+are kept; not reconciled — the owner was asked which they pressed, and the
+answer is not recorded here. It does not touch D-428, all of whose steps
+came before 21:30:02 — but it is the shape D-417's Izađi and R3 had: what a
+person says they did and what the log says, read together and asked about
+before either is believed.

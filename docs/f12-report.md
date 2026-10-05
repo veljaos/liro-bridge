@@ -1,6 +1,6 @@
 # F12 — the phase report
 
-**Date:** 2026-10-03; **updated 2026-10-05**, through [[D-428]].
+**Date:** 2026-10-03; **updated 2026-10-05**, through [[D-429]].
 **Exit condition: not ticked here.**
 - **The Ubuntu half holds.** The installed package, approval in the window
   and a real card in a real reader signed a PDF that the independent
@@ -14,8 +14,12 @@
   that fails.
 - **What Fedora's half lacks**: the chain to Pošta Srbije CA Root, and
   `scripts/verifypdf`'s Trusted List check (open-items F1). The owner ruled
-  Fedora done for F12 on that signature ([[D-420]]). Whether it is "verified
-  twice" in the exit condition's sense is the owner's to say.
+  Fedora done for F12 on that signature ([[D-420]]). **The owner decided
+  ([[D-429]]) to leave the exit condition's Fedora half unticked, and this
+  is deliberate, not an oversight.** "Verified twice" means two independent
+  verifiers reaching [[D-361]]'s bar. Fedora's check was anchored at the
+  signature's own copy of CA 1, not at Pošta's root, and had no Trusted List
+  check. F1 stays open.
 
 F12's own **Report:** line asks for seven things. §§2–7 answer them in its
 order; §8 is the provenance table that §7 asks for, and §9 is the other half of
@@ -682,8 +686,9 @@ Added on 2026-10-05:
       [[D-397]]). **Fedora: signed, and verified by `pdfsig` and OpenSSL
       with controls** ([[D-420]]). The chain to the root and `verifypdf` are
       not checked (F1). The owner ruled Fedora done for F12 on it
-      ([[D-420]]); this box is the owner's to tick
+      ([[D-420]]). **Left unticked by the owner's decision** ([[D-429]]):
+      that reading does not reach [[D-361]]'s bar, so F1 stays open
 - [x] The soft token signs on Ubuntu 24.04, Debian 13 and Fedora 44 in CI,
       both verifiers agreeing ([[D-386]], [[D-387]])
 - [x] Which findings came from a VM, stated: this report, updated through
-      [[D-428]]
+      [[D-429]]

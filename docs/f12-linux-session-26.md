@@ -14,11 +14,11 @@ questions before believing any check.
 | package | `liro-bridge 0.9.9~dev.17` (rpm `6952c6a6…e7cc`), `/usr/bin/liro-bridge` `dc778885…633e`; dnf transaction 9; `rpm -V` clean |
 | platform | Fedora 44, kernel 7.2.7-200.fc44, GNOME Shell 50.5, GTK 4.22.5-2.fc44, WebKitGTK 2.54.0-2.fc44, Wayland; text-scaling-factor 1.0 |
 | boot | `8eee1feb…`, started 20:33:24 CEST after dev.17's install, the boot's one change |
-| agent | 2330 `tray` from autostart (parent `systemd --user`), dev.17 `e87974a`; its `pkcs11-worker`s 4531 (opensc) and 4543 (libaetpkss) |
+| agent | 8627 `open` (became the agent at 21:34:35 from an Activities launch, D27), dev.17; 2330, which drew D-426's and D-428's windows, quit at 21:30:02 — the log says Izađi by pointer, the owner remembers closing the window (D-429, not reconciled) |
 | card | the Pošta card in the passed-through reader, attached during the sitting |
-| pairings | `12c4e8b03bdb68a0f14814b1cdf19571`, this sitting's; its secret only in the environment of the owner's open terminal, printed nowhere. With session 24's three (`2afcb9c2…`, `fffb83a5…`, `b654c2e6…`) all test pairings, **the owner's to revoke** |
+| pairings | none: the four test pairings revoked by the owner in Podešavanja, `pairings.json` empty and no item of ours in the keyring (D-429) |
 | files | `~/s26-predictions.md` (every prediction and reading); `~/Documents/liro-audit-20261005-212209.jsonl` and `-report.json` (0600, D-428); `~/s26-pair.py` (the pairing helper: the secret to `eval` only); `~/s22-card/` unchanged — every request was refused |
-| still as the phase set it | GNOME Software's `download-updates` `false` (open-items F10) |
+| not returned to stock | by the owner's choice: dev.17 and SafeSign stay installed; GNOME Software's `download-updates` still `false` at D-429 — the owner's to set (F10) |
 
 ## B. What this sitting showed (D-426)
 
@@ -56,8 +56,11 @@ watched; footer A and dev.17's trigger lines not seen on Fedora.
    agent. Open-items F8 closed; the report updated through D-428.
 2. **The upstream WebKit report** (D36): its reproducer run once on
    Fedora as written, then filed by the owner.
-3. **When Fedora's work is done** (F10): `download-updates` back to `true`,
-   liro-bridge uninstalled, the test pairings revoked — the owner's hands.
+3. **F10** (D-429): the pairings revoked; the package kept by the owner's
+   choice; `download-updates` back to `true` — the owner's hands. The
+   owner closes the pairing terminal and deletes `~/s26-pair.py`.
+4. **The exit condition's Fedora half stays unticked by the owner's
+   decision (D-429)** until F1's two checks are done.
 
 ## D. Rules added in session 26
 
