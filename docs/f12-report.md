@@ -1,6 +1,6 @@
 # F12 — the phase report
 
-**Date:** 2026-10-03; **updated 2026-10-05**, through [[D-429]].
+**Date:** 2026-10-03; **updated 2026-10-05**, through [[D-430]].
 **Exit condition: not ticked here.**
 - **The Ubuntu half holds.** The installed package, approval in the window
   and a real card in a real reader signed a PDF that the independent
@@ -494,6 +494,8 @@ means source, binary, package or documentation, with nothing run.
 | the doors from the main window: Settings, the export (0600, chain intact), Sertifikati, Dnevnik revizije — each drawn | Fedora VM, installed dev.17, the agent of [[D-426]] | measured, the owner's eyes | [[D-428]] |
 | the chooser helper's folder mode: the portal's dialog | Fedora VM | measured | [[D-428]] |
 | Settings' title-bar × logged as a close from outside | Fedora VM, dev.17 | measured | [[D-428]] |
+| Settings' Zatvori by mouse logged as `Zatvori sent cancel`, `trigger: pointer` | Fedora VM, dev.17 | measured | [[D-430]] |
+| the upstream report's reproducer: −1 → view 2 nan; `GDK_DEBUG=default-settings` the same; the control both 1.0 | Fedora VM, PyGObject under `env -i` | measured, the owner's eyes | [[D-430]] |
 
 ---
 
@@ -509,7 +511,9 @@ was built in dev.15, and its row is now the doors' windows on Fedora. Five
 rows are narrowed. The rows added cover what D32's close does
 not reach and what dev.15 to dev.17 were not watched doing. Two of the
 rows added that day, the doors' windows on Fedora and footer A on Fedora,
-were taken in [[D-428]] and removed.
+were taken in [[D-428]] and removed. The row D-428 added, Settings' Zatvori
+on Fedora, was taken in [[D-430]] ("Zatvori sent cancel", `trigger: pointer`)
+and removed.
 
 | never taken | why it matters | where it stands |
 |---|---|---|
@@ -520,7 +524,6 @@ were taken in [[D-428]] and removed.
 | **A real module killing the held worker, on Linux** | F12 §2's box | synthetic SIGABRT only (open-items C9); Windows saw a real module crash a probe child ([[D-315]]) |
 | **MUP's card signing on Linux** | the other Serbian card | neither SafeSign nor OpenSC reads it ([[D-365]]); `ubavic/srb-id-pkcs11` not tried (E3) |
 | **Halcom** | a third issuer | no signature ever verified (C15) |
-| **Settings' Zatvori on Fedora** | dev.17's `Zatvori sent cancel` line | Settings was closed there with the title bar's ×, logged as a close from outside ([[D-428]]); Zatvori was pressed on Ubuntu only ([[D-425]]) |
 | **Why WebKit's first view survives `gtk-xft-dpi` −1** | the defect under D32, in 2.52.6 and 2.54.0 | not read; the upstream report drafted, its reproducer not run on Fedora as written, not filed (D36) |
 | **A desktop with no `text-scaling-factor`** | the workaround cannot act there, and later windows may be blank | met on neither VM; the WARN is tested, not seen (D36) |
 | **Text scaling changed while the agent runs, on screen** | the workaround follows it live | unit-tested under GSettings' memory backend ([[D-425]]); never watched |
@@ -691,4 +694,4 @@ Added on 2026-10-05:
 - [x] The soft token signs on Ubuntu 24.04, Debian 13 and Fedora 44 in CI,
       both verifiers agreeing ([[D-386]], [[D-387]])
 - [x] Which findings came from a VM, stated: this report, updated through
-      [[D-429]]
+      [[D-430]]

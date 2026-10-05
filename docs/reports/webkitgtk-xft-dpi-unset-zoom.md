@@ -2,10 +2,11 @@
 
 *Text for bugs.webkit.org (component WebKitGTK). To be filed by the owner —
 this machine has no account there. Measured in D-424 (Fedora VM, K2–K6);
-the source reading and the Ubuntu half in D-425. **Before filing**: run the
-minimal reproducer below on Fedora once — it was written after the
-measurements and has not been run as written; `ctxprobe.py`'s K3/K6 runs are
-what was measured.*
+the source reading and the Ubuntu half in D-425; **the reproducer below run
+as written on Fedora, with a variant and a control, in D-430**. An upstream
+search (D-430) found no existing report, so this is a new bug. **Still
+missing before filing**: the WebKit revision that "Where it appears to come
+from" was read at — to be named on the Ubuntu VM.*
 
 ---
 
@@ -61,6 +62,12 @@ multiplies the page zoom by `fontDPI() / 96 / pageScaleFactor`, and
 `fontDPI()` falls back to 96) and why the result is NaN rather than a
 negative number, we did not establish.
 
+**Seen elsewhere, probably the same root.** An application on KDE Wayland
+reports WebKitGTK 2.52.6's **GTK 3** build giving `devicePixelRatio`
+−0.0208 and a negative `innerWidth` — every view, negative rather than NaN —
+attributed to `fontDPI()` taking GDK's −1 (FastLED/cli#226,
+zackees/kernal-api#154); not reported here as far as we found.
+
 **2.52.6 behaves the same.** On Ubuntu 24.04 (WebKitGTK 2.52.6, GTK 4.14.5) with
 `gtk-xft-dpi` set to −1 after `gtk_init`: view 1 zoom 1.0, page 560×420; view 2
 zoom NaN, `innerWidth`/`innerHeight` 0, `devicePixelRatio` NaN; with GDK's own
@@ -73,7 +80,7 @@ Expected: −1 treated as "unknown" (as `fontDPI()` already does when no
 value is held), so every view gets the 96-dpi scale; or at least the same
 scale for every view of a process.
 
-**Reproducer** (PyGObject; not yet run as written — see the note above):
+**Reproducer** (PyGObject; run as written on the system above — results below):
 
 ```python
 import gi
@@ -99,11 +106,20 @@ GLib.timeout_add(8000, loop.quit)
 loop.run()
 ```
 
-Expected output: `view 1: zoom at creation 1.0`, `view 2: zoom at creation nan`,
-and window 2 showing blue with no text. Without the `set_property` line (on
-a desktop whose portal answers) both are 1.0. From the GDK source,
-`GDK_DEBUG=default-settings` should give the same −1 without the
-`set_property` line — not tried.
+Three runs, each a fresh process with only `WAYLAND_DISPLAY`,
+`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS` and `HOME` in its environment;
+the windows read by eye:
+
+| run | what | printed | window 1 | window 2 |
+|---|---|---|---|---|
+| A | the script above, as written | `view 1: zoom at creation 1.0`, `view 2: zoom at creation nan` | blue, "Hello" | blue, no text |
+| B | the `set_property` line replaced by a print of `gtk-xft-dpi`, run with `GDK_DEBUG=default-settings` | `gtk-xft-dpi after init -1`, then 1.0 and nan | blue, "Hello" | blue, no text |
+| C (control) | B's script with nothing forced (the portal answers this process) | `gtk-xft-dpi after init 98304`, then 1.0 and 1.0 | blue, "Hello" | blue, "Hello" |
+
+So the defect needs nothing but GTK's own "no settings" path: B reproduces it
+with no property set by the program, and C shows the same script paints
+both views when GTK has a value. B is the shorter reproducer — the script
+without the `set_property` line, under `GDK_DEBUG=default-settings`.
 
 The probe that made the measurements, with the geometry and snapshot
 readouts, is attached (`ctxprobe.py`; K6 is
@@ -112,6 +128,7 @@ readouts, is attached (`ctxprobe.py`; K6 is
 How we met it: our application makes its process non-dumpable
 (`PR_SET_DUMPABLE 0`) to keep PINs out of core dumps and away from
 same-user ptrace; xdg-desktop-portal cannot open `/proc/PID/root` for such a
-process and refuses every call from it, so GTK 4.22 has no settings. We now
+process and refused each call from it that we measured (Settings `ReadAll`,
+FileChooser `OpenFile`, Documents), so GTK 4.22 has no settings. We now
 set `gtk-xft-dpi` from `org.gnome.desktop.interface text-scaling-factor`
 ourselves when GTK has −1.

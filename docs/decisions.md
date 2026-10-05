@@ -44982,3 +44982,75 @@ answer is not recorded here. It does not touch D-428, all of whose steps
 came before 21:30:02 — but it is the shape D-417's Izađi and R3 had: what a
 person says they did and what the log says, read together and asked about
 before either is believed.
+
+## D-430 — The upstream WebKit report made ready to file, but for one line: its reproducer run as written on Fedora and it holds, a shorter one found — `GDK_DEBUG=default-settings` gives GTK's −1 with no property set by the program — and a control shows both could have failed; no existing upstream report found, so it is a new bug; the portal sentence narrowed to what was measured; the owner's recollection corrected by the log twice in one evening, both times the trigger logging's case
+
+**Date:** 2026-10-05
+**Phase:** F12; open-items D36. The Fedora VM, the same boot; agent 8627
+running and untouched by the runs. Predictions in `~/s26-predictions.md` §U,
+written before each run.
+
+### The runs
+
+Each a fresh `python3` under `env -i` with only `WAYLAND_DISPLAY`,
+`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS` and `HOME`; each on the
+owner's go, the windows read by the owner. Settings, always on top, was
+closed first with **Zatvori** by mouse — "settings: Zatvori sent cancel"
+`trigger: pointer`, Zatvori's line on Fedora for the first time (the gap
+D-428 left in the report's §9).
+
+| | script | printed | the owner |
+|---|---|---|---|
+| UA | the draft's code byte for byte | view 1 1.0, view 2 **nan** | 1 blue, "Hello"; 2 blue, empty |
+| UB | the `set_property` line replaced by a print, `GDK_DEBUG=default-settings` | **−1**, then 1.0, nan | the same as UA |
+| UC (control) | UB's script, nothing forced | **98304**, then 1.0, 1.0 | both "Hello" |
+
+All three held as predicted; **UB was the least certain** — the draft said
+"should … not tried", and this GTK lists the flag ("Force default values
+for xsettings", `GDK_DEBUG=help`, read before). Each stderr was 17 lines of
+Mesa/EGL refusals on this VM, nothing else. **UA shows the draft's one
+untested claim holds; UB is a better reproducer, needing nothing from the
+program; UC shows the same script in the same kind of process paints both
+views when GTK has a value**, so UA and UB could have failed (the owner:
+"without it the report rests on two runs that both force something").
+
+### The upstream search
+
+bugs.webkit.org quicksearch for "xft", "ALL xft-dpi", "fontDPI" and "ALL
+[GTK] NaN zoom", and the web: **no report of −1 becoming NaN on later
+views.** The nearest: 247980 (fixed 2024, Glen Whitney's DPI-scaling
+change, eb01eca and 5713584, which added `refreshInternalScaling()` — where
+our path comes from, not this bug); 274351 (open, fontDPI per monitor);
+250138 (fixed 2023, text-scaling rendering — offered by a search summary as
+relevant, read, and not). **A relative, not filed upstream as far as found**:
+FastLED/cli#226 and zackees/kernal-api#154, WebKitGTK 2.52.6's GTK 3 build
+on KDE Wayland, `devicePixelRatio` −0.0208 on every view, attributed to
+`fontDPI()` taking −1. A quicksearch matches words; this is a search that
+found nothing, not proof that nothing exists.
+
+### The report
+
+`docs/reports/webkitgtk-xft-dpi-unset-zoom.md`: the "not yet run" note
+replaced by the three runs; B given as the shorter reproducer; the GTK 3
+relative cited; the portal sentence narrowed from "refuses every call" to
+the three calls measured (Settings `ReadAll`, FileChooser `OpenFile`,
+Documents — D-408, B29, B30). **Still missing**: the WebKit revision the
+source reading was made at — on the Ubuntu VM. Then the owner files it.
+
+### The owner's two corrections, together
+
+R3 (D-428): "Zatvori" was the title bar's ×. Between R5 and P1 (D-429):
+"closed the main window" was Izađi — **the owner: "I pressed Izađi … The
+log is right and my recollection was loose."** Opposite directions, one
+evening, both the owner's account and both corrected by the log. **The
+owner's reading: an argument for the trigger logging, not against their
+memory — "a person reconstructing what they pressed half an hour later is
+not a reliable instrument, which is why the log now records it."** And the
+reverse holds for my side of it: in both cases I read the log correctly and
+still asked before believing either account — once too late (R3, written
+up as a failure first), once in time.
+
+### F10 closed
+
+`download-updates` read `true` after the owner set it. The VM is not
+returned to stock, by the owner's choice (D-429).
