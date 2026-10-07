@@ -45489,3 +45489,81 @@ caught by reading the document that recorded the event. And I wrote P3's
 second confirmation had I not checked that it printed anything at all.
 
 ---
+
+## D-435 — 39DE…'s revocation certificate found where the commands that made it would have put it: the owner had checked three places, concluded the key was lost and asked for "abandoned" to be written; the record was held back for one more check, and it was in Git Bash's own gpg home — two gpg installations, two keyring folders, and a check made with the one that did not make the key
+
+**Date:** 2026-10-07
+**Phase:** open-items A30, block 1. Nothing run on the VM.
+
+### What happened
+
+The owner looked for 39DE…'s revocation certificate and secret in three
+places: the Windows machine from PowerShell (no `gpg`, no gnupg folder), WSL
+(its `gpg` had never been run and made an empty keyring on the first call),
+and the Ubuntu VM (`gpg --list-secret-keys` empty, no
+`~/.gnupg/openpgp-revocs.d`). The owner concluded there was no backup and
+asked for the record to say **abandoned, not revoked**, and for session 6 §E
+to be corrected, since that machine "has no gpg".
+
+I held both back and asked for one more check. Session 6 §E's commands are
+bash — `FPR=$(… | awk …)`, `base64 -w0` — and run in neither PowerShell nor
+cmd; on Windows they run in Git Bash or WSL, and WSL was ruled out. Git for
+Windows ships its own `gpg`, which keeps its keyring in
+`%USERPROFILE%\.gnupg`, not in Gpg4win's `%APPDATA%\gnupg`, and is not on
+PowerShell's PATH. The owner's reading, from PowerShell:
+
+```
+%USERPROFILE%\.gnupg\openpgp-revocs.d\
+39DE792A503C4F4E26DF1E4586FA14F600AA59B3.rev   1197 bytes, 26-Sep-26 14:01
+```
+
+26 September is D-356's date. **So 39DE… can be revoked**: the `.rev` is
+enough on its own, whatever else that keyring holds; the owner reports the
+secret key is in it too. **Session 6 §E was right about Windows and needs no
+correction**; the key was made in Git Bash, which D-356 did not say.
+
+**The owner's ruling on what this entry is for**: not the fact but how it
+was reached — the owner checked three wrong places and concluded it was
+lost; the record was held back for one more check. Had "abandoned" been
+written, a revocable key would have been recorded as unrevocable, and the
+rotation would have been published without a revocation it could have
+carried.
+
+### Why it was invisible, which is the lesson
+
+**Two gpg installations, two keyring folders**, and the check made with the
+one that did not make the key. Nothing was hidden; the question "is there a
+gpg home on this machine" has more than one answer on Windows, and each
+`gpg` answers only for its own.
+
+My part in it: D-434 named the Windows location as
+`%APPDATA%\gnupg\openpgp-revocs.d\` — right for Gpg4win, from its
+documentation, and wrong for the `gpg` that made this key. I wrote a path
+for an installation I had not identified; it may have been where the first
+look went.
+
+**The rule it leaves**, beside D-434's (a revocation certificate made and
+stored off the machine when the key is): **a key's record says which `gpg`
+made it and its home folder** (`gpg --version`'s first line and `gpgconf
+--list-dirs homedir`), written at generation. And the rotation uses the
+`gpg` that already holds 39DE… — Git Bash's — rather than installing a
+second, so the old key's revocation and the new key live in one known home.
+
+### Declined
+
+**The GitHub-secret route** — a job bound to `release` making a revocation
+certificate from `LIRO_PACKAGE_SIGNING_KEY` and its passphrase — no, by the
+owner: unnecessary now, and a workflow touching a signing secret for nothing.
+
+### Next, in this order
+
+1. **The owner copies 39DE…'s `.rev` to the USB stick** before anything
+   else: a revocation certificate that lives only on the machine that holds
+   the key is not a backup. Not yet confirmed when this was written.
+2. The new key made in Git Bash, its `.rev` and the secret's backup on the
+   stick at the same sitting; its public half checked here in an empty
+   keyring, as in D-356.
+3. The committed key, the README, CI's check and A16's steps changed to it;
+   then 39DE… revoked publicly from its `.rev`.
+
+---
