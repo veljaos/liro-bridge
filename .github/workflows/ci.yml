@@ -51,26 +51,36 @@ jobs:
       # a window links what a window links.
       #
       # **The list is the argument, not the count.** Every name in it has
-      # to be a package whose job is to put something on a screen. A
-      # fourth entry that is not is how a GTK stack ends up behind code
+      # to be a package whose job is to put something on a screen. An
+      # entry that is not is how a GTK stack ends up behind code
       # that ships without one — and the answer then is not to widen this
       # list but to find out why something that is not a window grew a
       # window dependency (D-335's own case was one symbol in one file).
       #
-      # **scripts/pinmem is the fourth, and it passes the list's own test**:
-      # its job is to put this program's PIN dialog on a screen and measure
-      # what typing into it leaves (D-380). It ships in nothing. It is here,
-      # and vetted in linux-gui, so that a probe a later measurement needs
-      # is compiled on every push rather than rebuilt from a document —
-      # the first pinmem lived in /tmp and went with a reboot.
+      # **Probes under scripts/ are the one other kind, and what admits
+      # them is a rule, not a list of exceptions** (D-438): a package under
+      # scripts/ belongs here only if its job is to put this program's own
+      # windows on a screen — through internal/ui or internal/pinscreen,
+      # never a window built to resemble them (D-350) — for a measurement,
+      # and it ships in nothing. Such a probe is kept so that the
+      # instrument a later measurement needs is compiled on every push
+      # rather than rebuilt from a document (the first pinmem lived in /tmp
+      # and went with a reboot), and it is vetted and linted in linux-gui
+      # like the agent. Its cost: every change to internal/ui's or
+      # internal/pinscreen's API keeps every probe compiling in the same
+      # commit. A probe that no longer earns that is deleted, with an entry
+      # saying what it measured. Today: scripts/pinmem (what typing into
+      # the PIN dialog leaves, D-380) and scripts/d32probe (a process's
+      # first window against its later ones, D32, D-421).
       - name: only the window packages and the agent need GTK on linux
         run: |
           set -eu
           ui=github.com/veljaos/liro-bridge/internal/ui
-          expected="$(printf '%s\n%s\n%s\n%s' \
+          expected="$(printf '%s\n%s\n%s\n%s\n%s' \
             github.com/veljaos/liro-bridge/cmd/liro-bridge \
             github.com/veljaos/liro-bridge/internal/pinscreen \
             github.com/veljaos/liro-bridge/internal/ui \
+            github.com/veljaos/liro-bridge/scripts/d32probe \
             github.com/veljaos/liro-bridge/scripts/pinmem)"
 
           needs_ui() {
@@ -356,7 +366,7 @@ jobs:
       # module, since it loads every package it is pointed at and cannot
       # be told to skip one.
       - name: go vet (the two packages that link GTK)
-        run: go vet -unsafeptr=false ./internal/ui/... ./internal/pinscreen/... ./cmd/liro-bridge/... ./scripts/pinmem/...
+        run: go vet -unsafeptr=false ./internal/ui/... ./internal/pinscreen/... ./cmd/liro-bridge/... ./scripts/pinmem/... ./scripts/d32probe/...
 
       - name: golangci-lint (GOOS=linux)
         uses: golangci/golangci-lint-action@v9

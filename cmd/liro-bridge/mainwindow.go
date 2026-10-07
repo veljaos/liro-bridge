@@ -226,14 +226,6 @@ type mainWindow struct {
 	gather func(context.Context) (cli.Report, error)
 }
 
-// runMainWindow opens the signing window and runs it until it is
-// closed. initialPaths seeds the queue — the Explorer context menu and
-// the command line both arrive that way; an empty slice opens the empty
-// state.
-func runMainWindow(ctx context.Context, cfg config.Config, locale string, initialPaths []string) int {
-	return runMainWindowWatching(ctx, cfg, locale, initialPaths, nil)
-}
-
 // flowRequest is a run of the signing flow that does not begin at the
 // document list: the command line's `sign`, and — when F7 brings it —
 // a request from a paired application. What it carries is what the

@@ -45697,3 +45697,112 @@ new key. Then A16 (the owner, with 37D3…); then 39DE… revoked publicly from
 its `.rev`; then the rc tag.
 
 ---
+
+## D-438 — CI was red on master for a week and nobody read it: from D-410 (2026-09-30) to D-437, 39 runs, three causes stacked — a data race in the chooser's test fixture, `scripts/d32probe` outside the GTK guard, and two lint findings; each read to its cause, reproduced at HEAD and fixed; the finding is not the three failures but that "local green" meant less than CI, three sessions running, and that no one read the run after a push
+
+**Date:** 2026-10-07
+**Phase:** block 1, before the rc tag. The Ubuntu VM; CI's own steps
+extracted from `ci.yml` and run here.
+
+### How it was found
+
+Before predicting D-437's CI run, I listed master's runs. The last green is
+`68f6c9f` (session 15's handover, 2026-09-30 19:53); **every push since has
+failed — 39 runs** — and no entry mentions it. I had already predicted
+"green" for D-437 without looking.
+
+| from | failing | cause |
+|---|---|---|
+| `2a46931` D-410 | `ci` → test | five `internal/chooser` tests under `-race` |
+| `4c43666` D-422 | `ci` → the GTK guard; `linux-gui` → lint | `scripts/d32probe` (D-421) links GTK and was never admitted; `d32probe/main.go:63` unchecked `Fprintf`; `runMainWindow` dead on Linux since dev.15 (`9950197`) |
+| D-422 → D-437 | the same | the guard stops the `ci` job before its test step, so **the chooser race was hidden, not gone** |
+
+### The three causes
+
+**1. The chooser race (test fixture, not product).** Seven tests set the
+fake portal's `version`, `code` or `uris` after `fakePortalOn` had exported
+it on the bus; godbus's worker goroutine reads them when a call arrives, and
+the call crosses a socket, which gives Go's memory model no edge between the
+write and the read. `-race` was right. D-410 recorded "Local green, both
+views"; CI runs those packages with `-race`, which the local run evidently
+did not. **Fix**: the fake's answer is an argument to `fakePortalOn`, stored
+before `Export`, whose lock the handler lookup shares. Measured, predictions
+first: at HEAD (a worktree, its old call shape confirmed) 17 tests ran, 12
+passed, 5 failed, 16 race reports; after, the same 17 ran and passed under
+`-race`, none reported, and without `-race` too.
+
+**2. The guard.** `d32probe` opens the agent's own windows through
+`internal/ui` and so links GTK; D-421 recorded "vet clean" and did not run the
+guard. **Kept, by the owner's decision**, and the guard's comment rewritten
+**as a rule rather than a list**: a package under `scripts/` belongs in it
+only if its job is to put this program's own windows on a screen, through
+`internal/ui` or `internal/pinscreen`, for a measurement, and it ships in
+nothing; it is then vetted and linted in `linux-gui` like the agent. Its
+cost, written into the comment: every change to `internal/ui`'s or
+`internal/pinscreen`'s API keeps every probe compiling in the same commit; a
+probe that no longer earns that is deleted with an entry. Today `pinmem`
+(D-380) and `d32probe` (D-421). `d32probe` added to the GTK vet step too,
+which named `pinmem` and not it. `scripts/ctxprobe` is Python and outside
+all of this.
+
+**3. The lint.** `d32probe`'s `say` discards its write the way `pinmem`'s
+does, `_, _ = fmt.Fprintf(…)`. `runMainWindow` moved, unchanged, beside its
+only caller in `open_other.go` (`//go:build !linux`).
+
+### Verified with CI's own steps, not my summary of them
+
+The eleven steps of `ci` and `linux-gui` that these fixes touch, **extracted
+from `ci.yml` by its step index and run as written** (a `golangci-lint-action`
+step as `golangci-lint run` at the same v2.13.2 and the step's `env`), under
+`env -i`, each to its own log: the GTK guard (both views OK, five packages,
+52 sweep without GTK), gofmt, vet, the Windows lint (0 issues), `checkdeps`,
+the CSS token rule, both `-race` test views (34 `ok` each, `internal/chooser`
+among them), the GTK vet, the Linux lint (0 issues), the GTK test. All exit
+0, 322 s in all with a warm cache — I had said 30–60 minutes.
+
+**Controls, at HEAD in a worktree**: the extracted Linux lint fails with
+CI's two findings exactly; **HEAD's own guard step from HEAD's `ci.yml`**
+fails with CI's list exactly. The chooser control is above.
+
+### My instrument failures in this sitting
+
+- **The first Windows vet was bare `go vet`**, which flagged
+  `dropdelivery_windows_test.go`'s `unsafe.Pointer` — at HEAD too; CI runs
+  `-unsafeptr=false`. The sitting's own finding, repeated by me inside it.
+- **The first guard control ran the new script against the old code** and
+  passed, as it had to: the new list admits `d32probe`. It controlled
+  nothing. Re-run with HEAD's own step, it failed as CI does.
+- A shell loop to find a comment's first line never ended; stopped by its
+  task, not by a name.
+
+### The finding (the owner's framing)
+
+**"Local green" did not mean what CI checks.** Three sessions in a row wrote
+"both views green" and meant something weaker — no `-race` on the GTK-free
+packages, no GTK guard, no Linux lint — and none of us noticed, because
+nobody read the run. **So for a week the only check on this program was the
+owner looking at windows** and telling me what was seen. It is not a check
+that runs without the owner, and there was no other.
+
+**And the other half**: that check found four real defects CI would never
+have failed on — the white window (D32), the drag crash (D-412), the wait
+for Završi (D33), and the chooser's hang. **Neither check substitutes for the
+other, and the week showed both halves of that.**
+
+### Two rules
+
+1. **After every push, the run is read to its conclusion before the next
+   entry claims anything.** In the record, not only in a session's memory —
+   this is what goes into the public repository's ARCHITECTURE.md.
+2. **A claim of green names what ran.** Proposed by the owner: a script that
+   runs exactly CI's steps — `check.sh`, A33 — so that an entry can cite it
+   by name; "both views passed" is not a claim. Until it exists, an entry
+   says which of CI's steps it ran and how, as this one does.
+
+### Not yet read
+
+D-437's run (`cf24a25`): `ci` failed at the guard, as expected before these
+fixes; `linux-packages` — the throwaway-key signing and the README check,
+which A16 waits on — still running when this was written.
+
+---

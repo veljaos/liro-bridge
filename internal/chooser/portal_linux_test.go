@@ -107,14 +107,32 @@ type fakePortal struct {
 	release chan struct{}
 }
 
+// fakeAnswer is what the fake says when asked: the FileChooser version it
+// claims (zero means 4) and the Response's code and uris.
+//
+// It is given to fakePortalOn rather than set on the fake afterwards. A
+// field written after Export is read by godbus's worker goroutine when a
+// call arrives, and the call travels over a socket, so nothing orders the
+// write before the read: -race reported exactly that in five tests on every
+// CI run from D-410 to D-438. Set before Export, the write is ordered
+// before every read by the lock Export and the handler lookup share.
+type fakeAnswer struct {
+	version uint32
+	code    uint32
+	uris    []string
+}
+
 // fakePortalOn owns the portal's name on the private bus at address.
-func fakePortalOn(t *testing.T, address string, m mode) *fakePortal {
+func fakePortalOn(t *testing.T, address string, m mode, a fakeAnswer) *fakePortal {
 	t.Helper()
 	conn, err := dbus.Connect(address)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakePortal{conn: conn, mode: m, version: 4, release: make(chan struct{})}
+	if a.version == 0 {
+		a.version = 4
+	}
+	f := &fakePortal{conn: conn, mode: m, version: a.version, code: a.code, uris: a.uris, release: make(chan struct{})}
 	t.Cleanup(func() {
 		close(f.release)
 		_ = conn.Close()
@@ -230,7 +248,7 @@ var realLimits = limits{call: CallTimeout, ceiling: Ceiling}
 // and not as the bound running out, which would be "timeout".
 func TestARefusedPortalIsARefusalInBoundedTimeNotAHang(t *testing.T) {
 	address := privateBus(t)
-	fakePortalOn(t, address, refuse)
+	fakePortalOn(t, address, refuse, fakeAnswer{})
 
 	r := choose(address, files, nil, realLimits)
 	if r.Outcome != OutcomeRefused {
@@ -246,7 +264,7 @@ func TestARefusedPortalIsARefusalInBoundedTimeNotAHang(t *testing.T) {
 // answer.
 func TestARefusedVersionReadIsARefusal(t *testing.T) {
 	address := privateBus(t)
-	fakePortalOn(t, address, refuseVersion)
+	fakePortalOn(t, address, refuseVersion, fakeAnswer{})
 	if r := choose(address, files, nil, realLimits); r.Outcome != OutcomeRefused {
 		t.Fatalf("outcome = %q (%s), want %q", r.Outcome, r.Detail, OutcomeRefused)
 	}
@@ -256,7 +274,7 @@ func TestARefusedVersionReadIsARefusal(t *testing.T) {
 // timeout, shortened here.
 func TestAPortalThatNeverAnswersTheCallTimesOut(t *testing.T) {
 	address := privateBus(t)
-	fakePortalOn(t, address, silent)
+	fakePortalOn(t, address, silent, fakeAnswer{})
 	r := choose(address, files, nil, limits{call: 300 * time.Millisecond, ceiling: time.Minute})
 	if r.Outcome != OutcomeTimeout {
 		t.Fatalf("outcome = %q (%s), want %q", r.Outcome, r.Detail, OutcomeTimeout)
@@ -275,7 +293,7 @@ func TestNoPortalOnTheBusIsNoPortal(t *testing.T) {
 // A portal with no FileChooser interface is no portal, for this purpose.
 func TestAPortalWithNoFileChooserIsNoPortal(t *testing.T) {
 	address := privateBus(t)
-	fakePortalOn(t, address, noInterface)
+	fakePortalOn(t, address, noInterface, fakeAnswer{})
 	if r := choose(address, files, nil, realLimits); r.Outcome != OutcomeNoPortal {
 		t.Fatalf("outcome = %q (%s), want %q", r.Outcome, r.Detail, OutcomeNoPortal)
 	}
@@ -285,8 +303,7 @@ func TestAPortalWithNoFileChooserIsNoPortal(t *testing.T) {
 // because an old portal ignores the option and returns a file.
 func TestAFolderIsNotAskedOfAnOldPortal(t *testing.T) {
 	address := privateBus(t)
-	f := fakePortalOn(t, address, answerWith)
-	f.version = 2
+	f := fakePortalOn(t, address, answerWith, fakeAnswer{version: 2})
 	r := choose(address, Request{Kind: KindFolder, Title: "x"}, nil, realLimits)
 	if r.Outcome != OutcomeNoPortal {
 		t.Fatalf("outcome = %q (%s), want %q", r.Outcome, r.Detail, OutcomeNoPortal)
@@ -304,13 +321,11 @@ func TestAFolderIsNotAskedOfAnOldPortal(t *testing.T) {
 func TestAChoiceComesBackAsLocalPathsEvenWhenTheAnswerOutrunsTheReply(t *testing.T) {
 	for _, m := range []mode{answerWith, answerAfter} {
 		address := privateBus(t)
-		f := fakePortalOn(t, address, m)
-		f.code = 0
-		f.uris = []string{
+		fakePortalOn(t, address, m, fakeAnswer{code: 0, uris: []string{
 			"file:///home/someone/ugovor.pdf",
 			"https://example.invalid/faktura.pdf",
 			"file:///tmp/%C4%8Cita%C4%8D/ra%C4%8Dun.pdf",
-		}
+		}})
 		r := choose(address, files, nil, realLimits)
 		want := []string{"/home/someone/ugovor.pdf", "/tmp/Čitač/račun.pdf"}
 		if r.Outcome != OutcomeChosen || !reflect.DeepEqual(r.Paths, want) {
@@ -332,8 +347,7 @@ func TestAChoiceComesBackAsLocalPathsEvenWhenTheAnswerOutrunsTheReply(t *testing
 // instrument's (D-410).
 func TestTheCallCarriesWhatTheWindowAskedFor(t *testing.T) {
 	address := privateBus(t)
-	f := fakePortalOn(t, address, answerWith)
-	f.code = 1
+	f := fakePortalOn(t, address, answerWith, fakeAnswer{code: 1})
 	wire := monitorOpenFile(t, address)
 	_ = choose(address, files, nil, realLimits)
 
@@ -403,9 +417,7 @@ func monitorOpenFile(t *testing.T, address string) <-chan *dbus.Message {
 
 func TestAFolderRequestAsksForAFolderStartingWhereTheWindowSaid(t *testing.T) {
 	address := privateBus(t)
-	f := fakePortalOn(t, address, answerWith)
-	f.code = 0
-	f.uris = []string{"file:///home/someone/Potpisani"}
+	f := fakePortalOn(t, address, answerWith, fakeAnswer{code: 0, uris: []string{"file:///home/someone/Potpisani"}})
 	r := choose(address, Request{Kind: KindFolder, Title: "x", InitialFolder: "/home/someone/Dokumenti"}, nil, realLimits)
 	if r.Outcome != OutcomeChosen || len(r.Paths) != 1 || r.Paths[0] != "/home/someone/Potpisani" {
 		t.Fatalf("result = %+v", r)
@@ -422,8 +434,7 @@ func TestAFolderRequestAsksForAFolderStartingWhereTheWindowSaid(t *testing.T) {
 
 func TestACancelledDialogIsACancel(t *testing.T) {
 	address := privateBus(t)
-	f := fakePortalOn(t, address, answerWith)
-	f.code = 1
+	fakePortalOn(t, address, answerWith, fakeAnswer{code: 1})
 	if r := choose(address, files, nil, realLimits); r.Outcome != OutcomeCancelled || len(r.Paths) != 0 {
 		t.Fatalf("result = %+v, want cancelled", r)
 	}
@@ -432,7 +443,7 @@ func TestACancelledDialogIsACancel(t *testing.T) {
 // The portal leaving the bus while its dialog is open ends the wait.
 func TestThePortalLeavingEndsTheWait(t *testing.T) {
 	address := privateBus(t)
-	fakePortalOn(t, address, vanishAfterTaking)
+	fakePortalOn(t, address, vanishAfterTaking, fakeAnswer{})
 	r := choose(address, files, nil, limits{call: CallTimeout, ceiling: time.Minute})
 	if r.Outcome != OutcomeError || !strings.Contains(r.Detail, "left the session bus") {
 		t.Fatalf("result = %+v, want the portal's departure", r)
@@ -442,7 +453,7 @@ func TestThePortalLeavingEndsTheWait(t *testing.T) {
 // The parent saying stop — the window closed — takes the dialog down.
 func TestStopClosesTheDialog(t *testing.T) {
 	address := privateBus(t)
-	f := fakePortalOn(t, address, hold)
+	f := fakePortalOn(t, address, hold, fakeAnswer{})
 	stop := make(chan struct{})
 	go func() {
 		time.Sleep(200 * time.Millisecond)
@@ -460,7 +471,7 @@ func TestStopClosesTheDialog(t *testing.T) {
 // The ceiling, shortened: the dialog is closed and the outcome says why.
 func TestTheCeilingClosesTheDialogAndSaysSo(t *testing.T) {
 	address := privateBus(t)
-	f := fakePortalOn(t, address, hold)
+	f := fakePortalOn(t, address, hold, fakeAnswer{})
 	r := choose(address, files, nil, limits{call: CallTimeout, ceiling: 300 * time.Millisecond})
 	if r.Outcome != OutcomeExpired {
 		t.Fatalf("result = %+v, want expired", r)

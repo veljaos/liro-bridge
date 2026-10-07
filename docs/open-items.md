@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-436, 2026-10-07.** Session 27 §D's sort is accepted, and the order below is the owner's (D-433); the sort's "deferred past v1" bucket is dissolved into it, so there is one list, to be read in one sitting and acted
+**As of D-438, 2026-10-07.** Session 27 §D's sort is accepted, and the order below is the owner's (D-433); the sort's "deferred past v1" bucket is dissolved into it, so there is one list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -24,7 +24,7 @@ The owner's order. Every open item below sits in one block. Items in
 because the order does not name them, and are the owner's to move. Estimates
 per block are in D-433.
 
-1. **Package signing with a real key** — **A30** (the key rotated, D-434), **A16**, then **A15** and **C16/F9**.
+1. **Package signing with a real key** — **A30** (the key rotated, D-434), **A16**, then **A15** and **C16/F9**; before the rc tag, CI green (D-438) and A33.
 2. **E8**, the Guide's Linux section.
 3. **The Windows pass** — **A7, C1, C7, D10, D15/B14, D31's render, D33's
    Windows half, C21** (the memory-ownership audit); placed by me: D3, A21,
@@ -94,6 +94,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 30. **The package key is rotated before it signs anything.** 39DE…'s passphrase was typed into a pinentry window our own test opened (D-356); it has signed nothing, so a new key costs half a day now. The owner generates it on their own machine, with its revocation certificate made and stored off the machine at the same moment (D-434's rule); the committed public key, the README's fingerprint, CI's check and A16's steps change with it. 39DE…'s own revocation certificate **exists** (D-435): in Git Bash's gpg home, `%USERPROFILE%\.gnupg\openpgp-revocs.d\`, where the key was made; copied to the owner's USB stick first. The new key is made with that same `gpg`, and its record names the `gpg` and the home folder. 39DE… is revoked publicly from its `.rev` once the new key is committed. — D-356, D-434, D-435. **Made and committed (D-437)**: `37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65`, "Liro Bridge Linux packages (Konfirs d.o.o. Beograd)" — gpg refused a second key under 39DE…'s name, and the owner chose one that says who signs; ed25519 `[SC]`, expires 2029-10-06; made with Git for Windows' GnuPG 2.4.9 in `%USERPROFILE%\.gnupg` (keyboxd); its `.rev` and the secret's backup on the owner's USB stick beside 39DE…'s `.rev`; the public half checked in an empty keyring, its control refused. *Close:* CI green against the new key; 39DE… revoked publicly from its `.rev`. *Needs:* CI, then the owner's hands (the `.rev`). **Block 1, first.**
 31. *Authenticode: no certificate, by the owner's decision (D-436) — not paying for one and not writing to any authority; Windows says "Unknown publisher", as v0.9.2 does. No PFX will be issued, so the build's Authenticode step stays the no-op it is; whether SPEC §15.1's "do not design around its permanent absence" changes is the owner's. Closed by decision (D-436). Numbering kept.*
 32. **The cloud channel: a request from a server reaches the person's agent; the key stays on the card.** Defined by the owner (D-434): a `liro-bridge://` link opens the local agent, which fetches the job over HTTPS, shows consent, signs on the card and returns the signature; the loopback protocol unchanged. SPEC §2's exclusion is signing in the cloud — the key on a server, no person present — excluded permanently, and SPEC must say the channel is not that. **Protocol version negotiation in the same work: the SDK rejects an agent that is not exactly the protocol it expects.** — D-179, D-434. *Close:* its own phase document, then an estimate, then the phase. *Needs:* a document first. **Block 10.**
+33. **`check.sh`: one command that runs exactly CI's steps, so an entry can cite it instead of "local green".** Proposed by the owner (D-438) after three sessions wrote "both views green" and meant less than CI. The shape D-438 used by hand: the steps extracted from `ci.yml` by name and run as written, each logged, so the script cannot drift from CI. — D-368, D-410, D-438. *Close:* its cost shown to the owner, then built, with a control that fails. *Needs:* the owner's decision on the cost, then code. **Block 1, before the rc tag.**
 
 ## B. Claims not measured
 

@@ -60,7 +60,7 @@ import (
 var report io.Writer = os.Stdout
 
 func say(format string, args ...any) {
-	fmt.Fprintf(report, time.Now().Format("15:04:05.000")+"  "+format+"\n", args...)
+	_, _ = fmt.Fprintf(report, time.Now().Format("15:04:05.000")+"  "+format+"\n", args...)
 }
 
 const page = `<!doctype html>
