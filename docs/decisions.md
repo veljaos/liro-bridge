@@ -45567,3 +45567,50 @@ owner: unnecessary now, and a workflow touching a signing secret for nothing.
    then 39DE… revoked publicly from its `.rev`.
 
 ---
+
+## D-436 — No Authenticode certificate, by the owner's decision: Windows keeps saying "Unknown publisher", as v0.9.2 does; the rotation stands although 39DE… was found, because finding a key is not the passphrase never having been exposed; step 0 of the rotation read against its predictions, all four held, and 39DE…'s `.rev` on the stick is byte-identical to the original
+
+**Date:** 2026-10-07
+**Phase:** open-items A30, A31; block 1. Nothing run on the VM; the owner's
+Windows machine, Git Bash.
+
+### Authenticode: decided, not pending
+
+**The owner**: not paying for a certificate and not writing to any
+authority; Windows can say "Unknown publisher" — the program is open source,
+and that is what v0.9.2 already does. A31 is closed by this decision; D-434's
+email is not sent, and the survey (price range, the two open-source routes
+ruled out) stays only in this conversation's record of it. What D-434 found
+still holds and is not undone by not buying: no PFX will ever be issued, so
+`release.yml`'s `LIRO_AUTHENTICODE_PFX_BASE64` path and
+`sign-authenticode.ps1` can only ever be the no-op they are today. **SPEC
+§15.1 says "Do not design around its permanent absence"**; with this
+decision the absence is permanent until the owner says otherwise, and
+whether that sentence changes is the owner's — not edited here.
+
+### The rotation stands
+
+**The owner**: the reason from D-434 stands — the passphrase was typed into
+a window our own test opened — and nothing found since changes it. **Finding
+the key is not the same as the passphrase never having been exposed.**
+
+### Step 0, read against predictions written first
+
+| | predicted | read |
+|---|---|---|
+| `gpg --version` | 2.4.x, the least certain | `gpg (GnuPG) 2.4.9` |
+| `gpgconf --list-dirs homedir` | the `.gnupg` under `C:/Users/…`, in either spelling | `/c/Users/<owner>/.gnupg` |
+| `gpg --list-secret-keys --keyid-format long` | one key: ed25519, `…86FA14F600AA59B3`, `[SC]`, expires 2029-09-25, "Liro Bridge Linux packages" | exactly that, `[ultimate]`, created 2026-09-26 |
+| `sha256sum` of the `.rev`, home and stick | identical | both `6f117929587f135e85ef98baeb49ef3db94cbd3e1913ef4f866a4ce280fc229e` |
+
+Two things not predicted, neither a defect: the keys are in **keyboxd**'s
+store (`[keyboxd]`), not a `pubring.kbx` file — so a future look for this key
+by file name would miss it, the same shape as D-435; and the listing ran
+`checking the trustdb`, gpg writing its own trust database. The stick is
+`D:` (`/d/` in Git Bash), not D-435's `E:`.
+
+**So the gpg that made 39DE… is Git for Windows' GnuPG 2.4.9, home
+`%USERPROFILE%\.gnupg`, keyboxd** — D-435's rule, written for the old key
+after the fact and to be written for the new one at generation.
+
+---
