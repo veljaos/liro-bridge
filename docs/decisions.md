@@ -45764,16 +45764,25 @@ among them), the GTK vet, the Linux lint (0 issues), the GTK test. All exit
 CI's two findings exactly; **HEAD's own guard step from HEAD's `ci.yml`**
 fails with CI's list exactly. The chooser control is above.
 
-### My instrument failures in this sitting
+### The finding, twice more, in its author's own hands
 
-- **The first Windows vet was bare `go vet`**, which flagged
-  `dropdelivery_windows_test.go`'s `unsafe.Pointer` — at HEAD too; CI runs
-  `-unsafeptr=false`. The sitting's own finding, repeated by me inside it.
-- **The first guard control ran the new script against the old code** and
-  passed, as it had to: the new list admits `d32probe`. It controlled
-  nothing. Re-run with HEAD's own step, it failed as CI does.
-- A shell loop to find a comment's first line never ended; stopped by its
-  task, not by a name.
+Both of my instrument failures in this sitting are **the evening's finding
+itself — running my summary of a check instead of the check** — and both
+were caught within an hour of the rule being written, by me, before
+anything rested on them:
+
+- **The first Windows vet was bare `go vet`**, my summary of CI's vet. It
+  flagged `dropdelivery_windows_test.go`'s `unsafe.Pointer`, at HEAD too;
+  CI's step is `go vet -unsafeptr=false`. Run as CI writes it, clean.
+- **The first guard control ran the new script against the old code**, my
+  summary of "the guard at HEAD". It passed, as it had to — the new list
+  admits `d32probe` — and controlled nothing. HEAD's own step from HEAD's
+  `ci.yml` failed exactly as CI does.
+
+The owner's reading: a rule that catches its author twice on the day it is
+written is a rule that works. (Reworded at the owner's request after this
+entry was pushed; first written as a list of slips — D-439.) Separately: a
+shell loop to find a comment's first line never ended; stopped by its task.
 
 ### The finding (the owner's framing)
 
@@ -45804,5 +45813,112 @@ other, and the week showed both halves of that.**
 D-437's run (`cf24a25`): `ci` failed at the guard, as expected before these
 fixes; `linux-packages` — the throwaway-key signing and the README check,
 which A16 waits on — still running when this was written.
+
+---
+
+## D-439 — A16 done by the owner; the re-run of `59b65b3` green in `ci` and `linux-gui` — D-438's three fixes, in CI — with one Windows test failing that had passed on the same commit minutes earlier, recorded and not re-run away; a workflow with no timeouts anywhere held two jobs on a hung apt mirror for hours; the rc tag decided — `v0.9.9-rc1` on `59b65b3`, tomorrow, against a run read in one piece
+
+**Date:** 2026-10-07
+**Phase:** block 1. Nothing run on either VM; GitHub read through `gh`.
+
+### A16, by the owner
+
+The `package-signing` environment created with the `v*` tag rule; the secret
+`base64`-ed from the USB stick to the stick in Git Bash; both secrets added
+with **37D3…'s** passphrase; `secret.b64` deleted, the stick holding three
+files — both `.rev` certificates and the secret's `.asc` backup; the two old
+package secrets deleted from `release`, its Windows signing secrets
+untouched. **The passphrase is written in a notebook, off every machine.**
+Gated, as agreed, on `linux-packages` with the new key: on `cf24a25` it
+passed — "sign with a throwaway key; the committed key refuses it" and "the
+README states the committed key's fingerprint", and `linux-install` on all
+three images.
+
+### The runs
+
+- **`59b65b3`, first attempt**: `linux-gui` hung for 1 h 20 on `sudo
+  apt-get update` against `azure.archive.ubuntu.com` (the owner's reading);
+  cancelled and re-run by the owner.
+- **`cf24a25`**: `linux-gui` on the same step — "GTK4, WebKitGTK,
+  gobject-introspection and the PKCS#11 header" — from 18:23:33 for 1 h 54,
+  every later step pending. A running job's log is not readable, so the
+  mirror is not confirmed; the same step and shape. Its purpose served
+  (`linux-packages` above), **cancelled** at the owner's word.
+- **`59b65b3`, re-run (run 37669944025)**: the apt step 30 s this time.
+  **`ci` success — its first since 2026-09-30 — and `linux-gui` success**:
+  D-438's three fixes, in CI. `packaging`, `sdk-typescript` success.
+  **`windows` failure** (below). `linux-packages` past its 31-minute build and
+  still running at 20:49 UTC. **The run then concluded `cancelled`, at
+  20:49:52** — by whom is not in what `gh` shows: `linux-packages` stopped
+  inside "sign with a throwaway key", its README check skipped,
+  `linux-install` cancelled. **So `59b65b3` has no complete run**: `ci` and
+  `linux-gui` are green on it, `linux-packages` and `linux-install` are not
+  read. The tag waits for a fresh run of `59b65b3`, read in one piece.
+
+### A test that lies in one direction
+
+`TestAConsoleSharedWithACallerIsKept` (`console_windows_test.go:189`, from
+2026-09-12) failed on the re-run: "console observer: freed=1 freeErr=The
+handle is invalid. attached=0 attachErr=Incorrect function." **The same
+commit passed it on its first attempt, minutes earlier.** In the last 60 CI
+runs the `windows` job failed five times; the four others (2026-09-21/22)
+were different tests, in `internal/platform` and `pkcs11`, fixed then. So
+this test failed once in sixty, without a code change. Cause not read.
+
+**The rule (the owner's, from my instinct): a test that fails once and
+passes on a re-run is not a test that works; it is a test that lies in one
+direction. It is recorded, not re-run away** — re-run until green and
+forgotten, it teaches us to ignore it, and the next time it fails it will
+mean something and nobody will look. Open-items D37, block 3, with the run
+and the commit. **And the rc tag does not rest on a re-run**: the owner takes
+a green run with this one known failure listed rather than a Windows job
+re-run until green — a tag resting on a re-run is "local green" in another
+costume.
+
+### No timeouts anywhere
+
+`ci.yml` has no `timeout-minutes` at all, so a hung mirror holds a job to
+GitHub's 360-minute default, and both runs simply sat. **The same shape as
+the red week: nothing was wrong enough to announce itself** (the owner).
+`timeout-minutes: 15` on every apt install step — in `ci.yml` and in
+`release.yml`, whose build-linux toolchain and sign-linux gpg/rpm steps have
+none either — so a hung mirror fails fast and its red names the apt step,
+reading as the runner's problem rather than ours. With `check.sh` (A33),
+**after the tag**: adding a commit before it would mean another CI run.
+
+### The apt cache: not worth it
+
+The owner asked whether caching the apt packages is cheap. Read from run
+37660806485's step times: the apt steps take about a minute each when the
+mirror answers (`linux-gui` 60 s, the `linux-packages` toolchain 51 s, the
+`linux-install` installs 29–77 s), in parallel jobs — about a minute of wall
+time at most. It would not have saved tonight: a package cache does not skip
+`apt-get update`, which is where both runs hung. And the `linux-install`
+steps are the measurement of installing with the distribution's own tool; a
+cache would change what they test. Declined; the timeouts are the fix.
+
+### The rc tag, decided
+
+**`v0.9.9-rc1`, on `59b65b3` exactly** — the commit CI ran. Not `v0.9.3-rc1`,
+my earlier example: both VMs hold `0.9.9~dev.17`, and `dpkg` sorts
+`0.9.3~rc1` below it (measured), so the rc could not be installed on either
+VM to check it — "a tag I cannot install on either VM is not a rehearsal of
+anything" (the owner). `0.9.9~rc1` sorts above `0.9.9~dev.17`; rpm's order
+not measured here. It does not claim v1 while blocks 2–9 are open.
+**Tomorrow**, against a run read in one piece, not watched at midnight.
+
+### Infrastructure, tonight
+
+The owner's count: **three stalls, three services, none of them ours** — the
+apt mirror (twice), and a Go module download that held the run before for
+fifteen minutes. The second evening lost to waiting rather than to the code.
+
+### D-438, reworded
+
+D-438's section on my two instrument failures was reworded at the owner's
+request after it was pushed: they were the evening's finding itself —
+running my summary of a check instead of the check — caught by their author
+within an hour of the rule; "a rule that catches its author twice on the day
+it is written is a rule that works."
 
 ---
