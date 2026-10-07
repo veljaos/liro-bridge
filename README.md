@@ -141,19 +141,19 @@ the public key `liro-bridge-packages.asc`. The key is an OpenPGP ed25519 key,
 used only for these packages:
 
 ```
-Liro Bridge Linux packages
-39DE 792A 503C 4F4E 26DF  1E45 86FA 14F6 00AA 59B3
+Liro Bridge Linux packages (Konfirs d.o.o. Beograd)
+37D3 C56D 5F26 F2C1 F887  429F 0FC7 D69C DDDD 8D65
 ```
 
-That is `39DE792A503C4F4E26DF1E4586FA14F600AA59B3` in one piece. It expires on
-2029-09-25. It is not the key that signs the update manifest (SPEC §15.2) and
+That is `37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65` in one piece. It expires on
+2029-10-06. It is not the key that signs the update manifest (SPEC §15.2) and
 cannot be derived from it.
 
 *Debian and Ubuntu*
 
 ```
 gpg --import liro-bridge-packages.asc          # compare the fingerprint it prints with the one above
-gpg --verify SHA256SUMS.asc SHA256SUMS         # "Good signature from Liro Bridge Linux packages"
+gpg --verify SHA256SUMS.asc SHA256SUMS         # "Good signature from Liro Bridge Linux packages (Konfirs d.o.o. Beograd)"
 sha256sum --check --ignore-missing SHA256SUMS  # "liro-bridge_<v>_amd64.deb: OK"
 sudo apt install ./liro-bridge_<v>_amd64.deb
 ```

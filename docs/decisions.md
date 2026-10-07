@@ -45614,3 +45614,86 @@ by file name would miss it, the same shape as D-435; and the listing ran
 after the fact and to be written for the new one at generation.
 
 ---
+
+## D-437 — The new package key, `37D3C56D…8D65`, "Liro Bridge Linux packages (Konfirs d.o.o. Beograd)": gpg refused a second key under 39DE…'s name, which my prediction had not foreseen, and forcing it past that would have made two keys nobody can tell apart by name; made in the same gpg home as 39DE…, its revocation certificate and secret backup on the stick at once, its public half checked here in an empty keyring against a control, and committed
+
+**Date:** 2026-10-07
+**Phase:** open-items A30, A16; block 1. The owner's Windows machine, Git
+Bash; on the Ubuntu VM, only a scratch keyring.
+
+### The refusal, and the name
+
+Step 1 as I wrote it — `gpg --quick-generate-key "Liro Bridge Linux
+packages" ed25519 sign 3y` — **was refused**: `gpg: A key for "Liro Bridge
+Linux packages" already exists`. No prompt, no key; step 2's elimination then
+printed an empty line, as it should with only 39DE… present. **My prediction
+for step 1 failed**: I had not read the command's own guard, and I had
+designed step 2 for two keys sharing a name without asking whether gpg would
+allow it.
+
+Not forced (`--yes` would, from my knowledge, not read today). Two keys with
+one name in one store make every by-name selection a guess — session 6 §E's
+own fingerprint line takes the first match — and anyone holding both would be
+told "Good signature from Liro Bridge Linux packages" by either. That is
+D-435's shape: two things that cannot be told apart by looking. **My reason
+for keeping the name was weak**, and I said so: the README line it protected
+is in a file this change edits anyway, two lines. **The owner chose "Liro
+Bridge Linux packages (Konfirs d.o.o. Beograd)"** — it says who signs, the
+thing the owner wanted from Authenticode and is not paying for (D-436).
+
+### What the owner ran, and read
+
+The owner set `FPR=37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65` by hand, so the
+generation's own output and step 2's were not seen here; what they would
+have shown is read from the key below.
+
+| step | predicted | read |
+|---|---|---|
+| 3 the `.rev` | in the gpg home, slightly over 39DE…'s 1197 bytes | 1222 bytes, `openpgp-revocs.d/37D3….rev`; copied to the stick |
+| 4 the secret's backup | written to the stick | `liro-bridge-packages-secret-37D3….asc`, 545 bytes |
+| 6 the stick | both `.rev` files and the backup; the two sums identical | all three; `6e1944027d25efae141edb6664e73b81167b3e46487d32e20c575e5f9eda7de3` twice |
+
+Not predicted: `ls` on the stick shows the backup's date as `Oct 7 2026`
+rather than a time, which `ls` does for a timestamp it reads as more than six
+months old or in the future — possible on a FAT stick's local-time stamps.
+Unexplained, harmless as far as can be seen. The key was made with **Git for
+Windows' GnuPG 2.4.9, home `%USERPROFILE%\.gnupg`, keyboxd** (D-436), so
+D-435's rule is met for it at generation.
+
+### The public half, checked in an empty keyring
+
+The owner's paste, on the Ubuntu VM, GnuPG 2.4.4, a scratch `GNUPGHOME`,
+`--batch --pinentry-mode error`, under `env -i`; predictions written first.
+
+| | predicted | read |
+|---|---|---|
+| control: one body character changed | refused | `CRC error`, `Total number processed: 0`, exit 2, no key |
+| K1 fingerprint | `37D3C56D…8D65` | `37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65` |
+| K2 | ed25519 `[SC]`, created 2026-10-07, expires 2029-10-06, the least certain | exactly; the signature: "key expires after 3y0d0h0m" |
+| K3 uid | "Liro Bridge Linux packages (Konfirs d.o.o. Beograd)" | the same |
+| K4 self-signature | good | `sig!`, "1 good signature" |
+| K5 packets | public key, user ID, signature; no secret | those three; no secret key listed |
+
+### What changed in the repository
+
+- `build/linux/liro-bridge-packages.asc` is the new key, byte for byte the
+  checked paste. `sign.sh` and `verify.sh` take the fingerprint from that
+  file, so nothing else in them changes; nothing else in the repository named
+  39DE… outside the records.
+- README: the name, the fingerprint both ways, the expiry (2029-10-06), and
+  the "Good signature from …" line.
+- **CI's README check, run here**: the committed key's fingerprint is in the
+  README; **the control** — the same check with the old committed key from
+  `HEAD` — fails, so the check can.
+- **A16's steps rewritten around the stick.** The old step 4 deleted the
+  exported `secret.asc`; the `.asc` on the stick is now the backup itself, so
+  that step would have deleted it. Now: `base64` from the stick to the stick,
+  the passphrase is 37D3…'s, and only `secret.b64` is deleted.
+
+### Next
+
+CI on the next push: the throwaway-key run and the README check against the
+new key. Then A16 (the owner, with 37D3…); then 39DE… revoked publicly from
+its `.rev`; then the rc tag.
+
+---
