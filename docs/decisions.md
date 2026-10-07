@@ -45345,3 +45345,147 @@ closure into a Windows question. The caveat should have kept it out of the
 "closed" column, as it should have kept B8 out of "solved".
 
 ---
+
+## D-434 — Block 1 begun: `v*-rc` tags publish as prereleases, which no installed agent is offered, and nFPM's handling of a pre-release version measured before any tag rather than during one; the package key 39DE… to be rotated, because its passphrase was typed into our own test's window; Authenticode applied for in parallel, and the PFX-in-a-secret design is dead whichever authority issues it; the Settings presets to go; B8 closed by decision; the cloud channel defined by the owner as the opposite of what SPEC §2 excludes
+
+**Date:** 2026-10-07
+**Phase:** open-items block 1 (D-433). The Ubuntu VM; nothing installed,
+no agent touched. Approved by the owner before this commit: the
+`release.yml` diff.
+
+### The owner's answers to D-433's questions
+
+1. **Rotate 39DE….** The reason is the record's, not the owner's first
+   wording: in D-356 its passphrase was typed into a pinentry window our own
+   test opened. It has signed nothing, so rotation costs half a day now and
+   costs everyone who trusted it later.
+2. **Authenticode is not part of block 1.** A certificate authority checking
+   the company's identity is weeks the owner cannot compress. The
+   application starts in parallel and blocks nothing; **SPEC §15.1 stands
+   until the certificate exists.** The applicant is a company, **Konfirs
+   d.o.o. Beograd**, with its APR registration. The repository is private
+   today and will be a fresh public repository with a single commit at v1.
+3. **Prereleases**: as proposed, the diff shown first.
+4. **The two Settings presets are removed** — `freetsa.org` and `tsa.gov.rs`
+   both, in block 6. The owner: "a preset is a hard-coded service with a
+   friendly name. An empty field with a hint about what belongs there is
+   honest; a default pointing at a non-qualified provider is a trap, because
+   the signature looks timestamped and is not qualified."
+5. **B8 closed by decision**, in my wording: the sandbox under SELinux
+   Enforcing is inferred from `bwrap` chains counted for other purposes, not
+   measured. Not open, because nobody is going to measure it; not solved,
+   because it was not.
+
+### B-LT, said plainly (the owner's instruction)
+
+Block 6 makes the program **capable** of B-LT. **Whether a Serbian signature
+can actually reach B-LT is a separate question this project has not
+answered.** On the two cards in hand it cannot today: Pošta's issuer is
+published only over LDAP (D-281) and MUP's revocation is unreachable or over
+the cap (D-076). Capability built is not a level reached, and no document
+may say otherwise until a signature on a Serbian card reaches it and both
+verifiers say so.
+
+### The cloud channel, defined by the owner
+
+SPEC §2's exclusion is about a different thing, and SPEC must say so. **What
+is excluded, permanently, is signing in the cloud**: the key living on a
+server, signing without a person present. **The cloud channel is the
+opposite**: the key stays on the card in front of the person, and only the
+way a request reaches them changes. Today a web application must be on the
+same machine to reach the agent over loopback; a cloud ERP cannot — the
+browser cannot call it (D-179) and the server cannot reach the person's
+loopback. The shape: a `liro-bridge://` link opens the local agent, the agent
+fetches the job from the server over HTTPS, shows consent, signs on the card,
+returns the signature. **The loopback protocol stays as it is.** It gets its
+own phase document before any estimate, and **protocol version negotiation
+is in the same work: the SDK rejects an agent that is not exactly the
+protocol it expects.** Open-items A32, block 10.
+
+### The prerelease change
+
+`release.yml`'s `publish` step passes `--prerelease` when the version has a
+pre-release part (`*-*`), and the header says so. Read before writing it,
+and the reason it is only this: a tag like `v0.9.3-rc1` already passes
+everything upstream — `build.ps1:96` gives the MSI `0.9.3` (Windows
+Installer takes three numeric parts) while the binary reports the full
+version; `update.ParseVersion` accepts a semver pre-release, so signrelease
+does; nFPM runs with `version_schema: semver`. Installed agents read
+`releases/latest` (`internal/update/check.go:26`); that GitHub never makes a
+prerelease the latest release is **GitHub's documentation, not measured** —
+the rc run's own check is `releases/latest` still naming v0.9.2 afterwards.
+Not changed, noted: the version step's `case` at line 92 is a glob, and
+accepts anything that begins with three dotted digit groups.
+
+### nFPM and a pre-release version, measured before any tag
+
+Predictions written first (scratchpad `nfpm-check/predictions.md`). nFPM
+**v2.47.0** — `GitVersion: dev` from the tool itself, so the version was read
+from the binary's module line (`go version -m`). A minimal config with the
+real file's two version fields (`version: ${LIRO_VERSION}`,
+`version_schema: semver`), one dummy file, run under `env -i`; subject
+`0.9.3-rc1`, control `0.9.3`.
+
+| | predicted | subject `0.9.3-rc1` | control `0.9.3` |
+|---|---|---|---|
+| P1 .deb `Version` (`dpkg-deb -f`) | `0.9.3~rc1` | `0.9.3~rc1` | `0.9.3` |
+| P2 .rpm VERSION / RELEASE (header tags 1001/1002, a parser written for this) | `0.9.3~rc1` / `1`, the least certain | `0.9.3~rc1` / `1` | `0.9.3` / `1` |
+| P2's second route: bytes of the .rpm, counted | — | `0.9.3~rc1` 4×, `0.9.3-rc1` 0× | `0.9.3~rc1` 0× |
+| P3 `file` names the NVR | the same NVR | **nothing** — `RPM v3.0 bin i386/x86_64` | nothing |
+| P4 `dpkg --compare-versions 0.9.3~rc1 lt 0.9.3` | true | true; reversed, false | — |
+
+P1, P2 and P4 held. **P3 failed as an instrument**: `file` prints no NVR for
+either package, the control included, so it says nothing either way; the
+byte count replaced it as P2's second route. rpm's ordering of `~` is not
+measured (no `rpm` on this VM); that rpm sorts `~` before the release
+is my knowledge (since rpm 4.10), not read and not run. The file **names** `build.sh`
+gives (`liro-bridge_0.9.3-rc1_amd64.deb`) are its own, from `$version`, and
+were not part of this check.
+
+### The revocation certificate for 39DE…
+
+The owner asked me to look in the release environment. **The key was not
+made there**: session 6 §E has the owner generating it on their own Windows
+machine with `gpg --quick-generate-key`, exporting the secret, and putting
+only that export and the passphrase into the environment. GitHub secrets
+cannot be read back, and there is no gpg home in an environment to hold an
+`openpgp-revocs.d`. This VM has none (`~/.gnupg/openpgp-revocs.d` absent),
+which is expected: the private half was never here.
+
+From gpg's documented behaviour, not read on that machine: gpg 2.1 and later
+writes a revocation certificate to `openpgp-revocs.d/<fingerprint>.rev` in
+the generating machine's gpg home whenever it makes a key — on Windows,
+`%APPDATA%\gnupg\openpgp-revocs.d\`. Whether it is still there, the owner
+reads. **And the key is not one we can only abandon** while the offline
+backup of the secret and its passphrase exist: `gpg --generate-revocation`
+makes a revocation certificate from them at any time. It becomes a key we
+cannot revoke only if both the `.rev` file and the backup are gone.
+
+**The rule, for the new key and every key after it** (the owner's): the
+revocation certificate is generated and stored off the machine at the same
+moment the key is made — the moment you need it is the moment you cannot
+make it.
+
+### Authenticode — a design consequence, not a procurement note
+
+Since 2023 the CA/Browser Forum's code-signing requirements put the private
+key of a publicly trusted code-signing certificate in hardware — a token, or
+the authority's own cloud signing service (my knowledge; the current terms
+to be read with the market survey). **So `release.yml`'s design —
+`LIRO_AUTHENTICODE_PFX_BASE64` and a password handed to `build.ps1`, which
+signs the staged executable before WiX embeds it — is dead whichever
+authority issues the certificate**: there will be no PFX to put in a secret.
+What replaces it is decided by what the chosen authority offers (a cloud
+signing call from the build job, or a token, which CI cannot hold), and the
+ordering constraint stays — the executable is signed before the MSIs are
+built. Open-items A31.
+
+### Mine
+
+The owner's premise this time was that the release environment generated the
+key; mine last time was a closure on an entry I had not re-read. Both were
+caught by reading the document that recorded the event. And I wrote P3's
+`file` route without trying it on a control first — it would have read as a
+second confirmation had I not checked that it printed anything at all.
+
+---

@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-433, 2026-10-07.** Session 27 §D's sort is accepted, and the order below is the owner's (D-433); the sort's "deferred past v1" bucket is dissolved into it, so there is one list, to be read in one sitting and acted
+**As of D-434, 2026-10-07.** Session 27 §D's sort is accepted, and the order below is the owner's (D-433); the sort's "deferred past v1" bucket is dissolved into it, so there is one list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -24,7 +24,7 @@ The owner's order. Every open item below sits in one block. Items in
 because the order does not name them, and are the owner's to move. Estimates
 per block are in D-433.
 
-1. **Package signing with a real key** — **A16**, then **A15** and **C16/F9**.
+1. **Package signing with a real key** — **A30** (the key rotated, D-434), **A16**, then **A15** and **C16/F9**. In parallel, blocking nothing: **A31**, Authenticode.
 2. **E8**, the Guide's Linux section.
 3. **The Windows pass** — **A7, C1, C7, D10, D15/B14, D31's render, D33's
    Windows half, C21** (the memory-ownership audit); placed by me: D3, A21,
@@ -33,14 +33,12 @@ per block are in D-433.
 5. **E9 and B25** — whether somebody other than the person can approve a
    signature.
 6. **A2/E2**, the timestamp and B-LT; placed by me: D4, then A8.
-7. **D6, F1, D36, A6, A12, D24**; placed by me: B8 (until the owner's choice,
-   D-432), B29, C11, C13, A18, A29 + C5, D9, D11, D12, D13, D16.
+7. **D6, F1, D36, A6, A12, D24**; placed by me: B29, C11, C13, A18, A29 + C5, D9, D11, D12, D13, D16.
 8. **The hardware fault cases** — **B9, B11, B13, C9, F4, A5, A13**; placed
    by me: C10, B6 + F5.
 9. **Multi-user** — **B19, B5, B16** and anything else that needs a second
    account; placed by me: D30.
-10. **The cloud channel**, its own phase. No item and no definition in this
-    repository yet; SPEC §2 lists "Cloud / remote signing" as out of scope.
+10. **The cloud channel**, its own phase — **A32**, defined by the owner in D-434.
 11. **F13, macOS**, its own phase.
 
 **Not v1: other issuers' cards** — **C15** (Halcom) and the rest; placed by
@@ -52,15 +50,15 @@ time, it rejoins v1.
 **Closed by D-433** (left in place, in italics, with the reason): solved D29,
 E7; by decision A9, A10, A11, A19, A26, B3, B4, B10, B17, B20, B21, B23, B24,
 B28, B30, C2, C8, C18, C20, D14, D18, D19, D27, D34. **Not closed, against
-session 27's proposal**: A5 and A13 (the order names them), B8 (the owner's
-choice, not yet made), A14 (D-340 answers it for Linux only).
+session 27's proposal**: A5 and A13 (the order names them), A14 (D-340
+answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 
 ---
 
 ## A. Decisions not yet made
 
 1. *SPEC §6.5.2: rules, not measurements; the table removed (D-369). Numbering kept.*
-2. **The timestamp and B-LT — decided (D-433), not built.** The goal is a signature with full legal weight: B-LT with a qualified timestamp. **The program hard-codes no service.** Three cases: (i) no timestamp, B-B, as today; (ii) the person's own RFC 3161 endpoint, entered in Podešavanja — any provider; (iii) a service passed in with the request through the protocol, so an ERP can carry it and the paying happens where paying belongs — probably a protocol change, **costed separately**. Pošta Srbije is the intended qualified provider (the owner: prepaid packets at 4–8 dinars a stamp; test server `https://test-tsa.ca.posta.rs`). **Until it ships, SPEC §12.6 is corrected to describe what the program does** (a draft shown first). What exists (read for D-433): the RFC 3161 client `internal/pades/tsa`, which reached Pošta's test `timestamp1` once, in F3 (D-045) — the client-certificate test skips without Pošta's test PFX in `testdata/tsa/local/`; a URL, Basic credentials and a client certificate in `config.json` and Settings (`config.go:34–58`); `signatureLevel` defaulting to `b-lt` (`config.go:272`), a missing TSA treated as a failed one (`sign.go:278`); `/DSS` writing; the protocol's `level`, no TSA. **Settings offers two presets, `freetsa.org` (not qualified) and `tsa.gov.rs`** (`settingswindow.go:397`) — against "hard-codes no service" unless the owner rules a preset is not one. B-LT is unreachable on both Serbian cards: Pošta's issuer only over LDAP (D-281; option (a), the Trusted List's CAs, untried), MUP's OCSP refused and its CRL over the cap (D-076). — D-045, D-076, D-281, D-433. *Close:* SPEC §12.6 corrected; case (ii) end to end on Linux against Pošta's test server — a B-T signature with the card, verified by both tools; B-LT on a Pošta card; case (iii) costed, then decided. *Needs:* code, measurement, the owner's decisions (the presets; case (iii)); a qualified stamp needs Pošta's contract. **Block 6.**
+2. **The timestamp and B-LT — decided (D-433), not built.** The goal is a signature with full legal weight: B-LT with a qualified timestamp. **The program hard-codes no service.** Three cases: (i) no timestamp, B-B, as today; (ii) the person's own RFC 3161 endpoint, entered in Podešavanja — any provider; (iii) a service passed in with the request through the protocol, so an ERP can carry it and the paying happens where paying belongs — probably a protocol change, **costed separately**. Pošta Srbije is the intended qualified provider (the owner: prepaid packets at 4–8 dinars a stamp; test server `https://test-tsa.ca.posta.rs`). **Until it ships, SPEC §12.6 is corrected to describe what the program does** (a draft shown first). What exists (read for D-433): the RFC 3161 client `internal/pades/tsa`, which reached Pošta's test `timestamp1` once, in F3 (D-045) — the client-certificate test skips without Pošta's test PFX in `testdata/tsa/local/`; a URL, Basic credentials and a client certificate in `config.json` and Settings (`config.go:34–58`); `signatureLevel` defaulting to `b-lt` (`config.go:272`), a missing TSA treated as a failed one (`sign.go:278`); `/DSS` writing; the protocol's `level`, no TSA. **Settings offers two presets, `freetsa.org` (not qualified) and `tsa.gov.rs`** (`settingswindow.go:397`) — against "hard-codes no service" unless the owner rules a preset is not one. B-LT is unreachable on both Serbian cards: Pošta's issuer only over LDAP (D-281; option (a), the Trusted List's CAs, untried), MUP's OCSP refused and its CRL over the cap (D-076). — D-045, D-076, D-281, D-433. *Close:* SPEC §12.6 corrected; case (ii) end to end on Linux against Pošta's test server — a B-T signature with the card, verified by both tools; B-LT on a Pošta card; case (iii) costed, then decided. *Needs:* code, measurement, the owner's decisions (the presets; case (iii)); a qualified stamp needs Pošta's contract. **Block 6.** **D-434**: the two presets are removed in block 6 (the owner: "a preset is a hard-coded service with a friendly name"; an empty field with a hint instead). And plainly: block 6 makes the program capable of B-LT; **whether a Serbian signature can actually reach B-LT is a separate question, not answered.**
 3. *Clause 2 and the keystroke path: decided — conceded in clause 3, not a third exception to clause 2; on Wayland the compositor sees every key by construction, and "anything able to subvert the compositor can also draw a window headed Liro Bridge and collect the PIN directly" (D-398). Numbering kept.*
 4. *Core-dump hardening: the agent forbids its own, measured on the installed package — no core, no report, apport never called (D-376, D-377). Numbering kept.*
 5. **Per-request deadline for the PKCS#11 worker, and a bound on `Close`/`C_Finalize`.** `pkcs11ShutdownGrace` is 5 s "chosen rather than measured"; a login lasts as long as a person takes. — D-297, D-301, D-309, D-313. *Needs:* owner's decision.
@@ -74,7 +72,7 @@ choice, not yet made), A14 (D-340 answers it for Linux only).
 13. **A deadline on `uiThread.do`'s wait (Windows).** — D-207, D-099. *Needs:* owner's decision, then code.
 14. **Should the audit log travel with ordinary backups?** Decided by implication. — D-340. *Needs:* owner's decision. **Not closed (D-433), against session 27's proposal**: D-340 put the Linux chain under `$XDG_DATA_HOME` because backups commonly skip `$XDG_STATE_HOME` and the chain is evidence — on Linux, yes. On Windows it lives under `%LOCALAPPDATA%` (`internal/platform/paths.go:64`), chosen before that reasoning; whether common Windows backups take it is not measured (File History's defaults exclude AppData, known only in general). *Needs:* the owner's decision for Windows; block 3.
 15. **Publishing the package-signing fingerprint somewhere other than the repository's own host.** — session 6 §E; D-356. *Needs:* owner's decision.
-16. **The `package-signing` environment exists only in `release.yml`.** Ruled and wired (D-360); until it exists a tag's `sign-linux` refuses with "LIRO_PACKAGE_SIGNING_KEY is not set", which is the right failure. The owner does it in one sitting on Windows. *Needs:* owner's hands. The steps:
+16. **The `package-signing` environment exists only in `release.yml`.** Ruled and wired (D-360); until it exists a tag's `sign-linux` refuses with "LIRO_PACKAGE_SIGNING_KEY is not set", which is the right failure. The owner does it in one sitting on Windows. *Needs:* owner's hands, **with the new key from A30, not 39DE… (D-434)**. The steps:
     1. GitHub → Settings → Environments → **New environment** `package-signing`. Deployment branches and tags → **Selected** → add the tag rule `v*` (the same rule as `release`).
     2. On Windows, from the offline backup: `gpg --armor --export-secret-keys 39DE792A503C4F4E26DF1E4586FA14F600AA59B3 > secret.asc`, then base64 it on one line (`certutil -encodehex -f secret.asc secret.b64 0x40000001`, or PowerShell `[Convert]::ToBase64String([IO.File]::ReadAllBytes("secret.asc")) > secret.b64`).
     3. In `package-signing`, add `LIRO_PACKAGE_SIGNING_KEY` (the contents of `secret.b64`) and `LIRO_PACKAGE_SIGNING_PASSPHRASE`. GitHub cannot move a secret or show one, so both are entered again.
@@ -93,6 +91,9 @@ choice, not yet made), A14 (D-340 answers it for Linux only).
 27. *Paste into the PIN field: measured — one copy in the locked page, none after the wipe, nothing on the accessibility bus (D-388). Numbering kept.*
 28. *Both hand-made userns profiles removed by the owner in the sitting's step 0; the baselines before and after each unchanged, `liro-bridge` the only profile left (D-389, D-390). Numbering kept.*
 29. **`internal/ui`'s window tests need a profiled path again, and it should not be one the user can write.** Until then they cannot run on this VM (they skip under `go test`, C5). When needed: a profile naming a root-owned binary (e.g. installed with `sudo install -o root -m 0755` under `/usr/local/libexec/`), so the grant covers one known binary rather than whatever is placed in a home directory. *Needs:* owner's decision (a system change), when the window tests are next needed — left open by the owner, not to be decided in the abstract (D-391).
+30. **The package key is rotated before it signs anything.** 39DE…'s passphrase was typed into a pinentry window our own test opened (D-356); it has signed nothing, so a new key costs half a day now. The owner generates it on their own machine, with its revocation certificate made and stored off the machine at the same moment (D-434's rule); the committed public key, the README's fingerprint, CI's check and A16's steps change with it. 39DE…'s own revocation certificate: whether `%APPDATA%\gnupg\openpgp-revocs.d\` on the generating machine still holds it is the owner's to read; if not, one can be made from the offline backup. — D-356, D-434. *Close:* the new key committed and CI green against it; 39DE… revoked publicly. *Needs:* owner's hands, then code. **Block 1, first.**
+31. **Authenticode: no certificate, and the design that would take one is dead.** Applied for in parallel by Konfirs d.o.o. Beograd (APR); blocks nothing; SPEC §15.1 stands until it exists. A publicly trusted code-signing key now lives in hardware — a token or the authority's cloud — so `LIRO_AUTHENTICODE_PFX_BASE64` and `build.ps1`'s PFX path cannot take it whichever authority issues it; what replaces it follows from the authority's offer, and the executable is still signed before WiX embeds it. The repository is private until v1, which may matter for open-source offers. — D-238, D-253, D-434. *Close:* a certificate issued, the build's signing step rebuilt for it, a signed MSI's publisher read on Windows. *Needs:* a market survey (price range first, the owner's ceiling after), the authority's validation (weeks), code, Windows. **Parallel to block 1.**
+32. **The cloud channel: a request from a server reaches the person's agent; the key stays on the card.** Defined by the owner (D-434): a `liro-bridge://` link opens the local agent, which fetches the job over HTTPS, shows consent, signs on the card and returns the signature; the loopback protocol unchanged. SPEC §2's exclusion is signing in the cloud — the key on a server, no person present — excluded permanently, and SPEC must say the channel is not that. **Protocol version negotiation in the same work: the SDK rejects an agent that is not exactly the protocol it expects.** — D-179, D-434. *Close:* its own phase document, then an estimate, then the phase. *Needs:* a document first. **Block 10.**
 
 ## B. Claims not measured
 
@@ -103,7 +104,7 @@ choice, not yet made), A14 (D-340 answers it for Linux only).
 5. **Focus and raise on other compositors.** — D-337; F12 §11. *Needs:* Fedora machine, a KDE image.
 6. **DMABUF and NVIDIA variables on real GPUs.** — D-329, D-324; F12 §0.1. *Needs:* hardware (GPU).
 7. *The sandbox on stock 24.04: starts under the package's profile on 6.8.0-142 and on HWE 7.0.0-34, updated; refused without it on both (D-390). Numbering kept.*
-8. **WebKitGTK's sandbox under SELinux, with no profile.** — D-354, session 6 §G. *Needs:* Fedora machine.
+8. *WebKitGTK's sandbox under SELinux, with no profile: the sandbox under SELinux Enforcing is inferred from `bwrap` chains counted for other purposes, not measured. Not open, because nobody is going to measure it; not solved, because it was not. Closed by decision (D-434). Numbering kept.*
 9. **A module dying inside `C_Login`, or a worker that hangs.** — D-289. *Needs:* hardware.
 10. *The reaper's extra ~320 ms after a deliberate crash: harmless, and perhaps unreachable. Closed by decision (D-433). Numbering kept.*
 11. **Why the D-272 crash no longer reproduces** (three hypotheses). — D-294. *Needs:* hardware.

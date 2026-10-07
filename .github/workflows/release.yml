@@ -4,6 +4,8 @@ name: Release
 # Windows artefacts and the two Linux packages, signs the manifest (which
 # describes the Windows three) with the release key, verifies it the
 # way the agent will, and publishes them to GitHub Releases (SPEC §15).
+# Pushing v1.2.3-rc1 does all of the same and publishes a prerelease,
+# which no installed agent is offered (see `publish`).
 #
 # workflow_dispatch does everything the release key is not needed for,
 # so the whole build can be exercised without a tag and without a
@@ -383,13 +385,22 @@ jobs:
           fi
           printf '%s\n' "$out"
 
+      # A version with a pre-release part (v0.9.3-rc1) is published as a
+      # prerelease. Installed agents read releases/latest
+      # (internal/update/check.go), and GitHub never makes a prerelease
+      # the latest release, so a tag can run every real key end to end
+      # without any agent in the field being offered it (D-434).
       - name: publish
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          gh release create "${GITHUB_REF_NAME}" \
+          case "${{ needs.build.outputs.version }}" in
+            *-*) pre=1 ;;
+            *) pre= ;;
+          esac
+          gh release create "${GITHUB_REF_NAME}" ${pre:+--prerelease} \
             --title "Liro Bridge ${{ needs.build.outputs.version }}" \
             --notes-file docs/release-notes-template.md \
             dist/release/*
