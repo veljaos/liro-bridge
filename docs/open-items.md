@@ -1,6 +1,6 @@
 # Everything open in Liro Bridge
 
-**As of D-439, 2026-10-07.** Session 27 §D's sort is accepted, and the order below is the owner's (D-433); the sort's "deferred past v1" bucket is dissolved into it, so there is one list, to be read in one sitting and acted
+**As of D-440, 2026-10-07.** Session 27 §D's sort is accepted, and the order below is the owner's (D-433); the sort's "deferred past v1" bucket is dissolved into it, so there is one list, to be read in one sitting and acted
 from. Every item has a pointer and what would close it. When an item is
 closed, delete it here in the same commit as the entry that closes it; when
 something new is left open, add it here in the same commit as the entry that
@@ -24,7 +24,7 @@ The owner's order. Every open item below sits in one block. Items in
 because the order does not name them, and are the owner's to move. Estimates
 per block are in D-433.
 
-1. **Package signing with a real key** — A30's key made and committed, A16 done (D-439); next **C16/F9** — `v0.9.9-rc1` tagged on `4e6fd47`, its release run unread (session 28 §D.1) — then 39DE…'s revocation (A30), **A15**, and after the tag A33 with the timeouts.
+1. **Package signing with a real key** — A30's key made and committed, A16 done (D-439); next **A16** again — `package-signing`'s rule is a branch rule and refused the tag (D-440) — then **C16/F9** by re-running the failed jobs of run 37690223641, then 39DE…'s revocation (A30), **A15**, and after the tag A33 with the timeouts.
 2. **E8**, the Guide's Linux section.
 3. **The Windows pass** — **A7, C1, C7, D10, D15/B14, D31's render, D33's
    Windows half, C21** (the memory-ownership audit); placed by me: D3, A21,
@@ -72,7 +72,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 13. **A deadline on `uiThread.do`'s wait (Windows).** — D-207, D-099. *Needs:* owner's decision, then code.
 14. **Should the audit log travel with ordinary backups?** Decided by implication. — D-340. *Needs:* owner's decision. **Not closed (D-433), against session 27's proposal**: D-340 put the Linux chain under `$XDG_DATA_HOME` because backups commonly skip `$XDG_STATE_HOME` and the chain is evidence — on Linux, yes. On Windows it lives under `%LOCALAPPDATA%` (`internal/platform/paths.go:64`), chosen before that reasoning; whether common Windows backups take it is not measured (File History's defaults exclude AppData, known only in general). *Needs:* the owner's decision for Windows; block 3.
 15. **Publishing the package-signing fingerprint somewhere other than the repository's own host.** — session 6 §E; D-356. *Needs:* owner's decision.
-16. *The `package-signing` environment: created by the owner with the `v*` tag rule, its two secrets from 37D3…'s backup on the USB stick and 37D3…'s passphrase, `secret.b64` deleted, the stick keeping both `.rev` files and the secret's `.asc`, the two old package secrets deleted from `release` and its Windows signing secrets untouched; the passphrase in a notebook, off every machine (D-439). Numbering kept.*
+16. **The `package-signing` environment refuses tags: its `v*` rule is a branch rule.** Done by the owner (D-439), but the rule's ref type is **Branch** where `release`'s is **Tag** — read from the API (D-440) after the rc release run's `sign-linux` was refused ("Tag "v0.9.9-rc1" is not allowed to deploy to package-signing"). My steps said "tag rule" and did not warn that GitHub's dialog defaults to Branch. Everything else in A16 stands: 37D3…'s secret and passphrase, the stick's three files, the old package secrets gone from `release`, the passphrase in a notebook. *Close:* the rule's ref type set to **Tag**; both environments read back as `tag`; then `gh run rerun 37690223641 --failed`, read against R3–R5. *Needs:* owner's hands (GitHub → Settings → Environments → `package-signing` → the `v*` rule: Ref type **Tag**). **Block 1, next.**
     1. GitHub → Settings → Environments → **New environment** `package-signing`. Deployment branches and tags → **Selected** → add the tag rule `v*` (the same rule as `release`).
     2. On Windows, in Git Bash (D-435), from the USB stick — the secret's backup is already armoured there (D-437): `base64 -w0 /d/liro-bridge-packages-secret-37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65.asc > /d/secret.b64`. Nothing is exported again and nothing is written to the machine's own disk.
     3. In `package-signing`, add `LIRO_PACKAGE_SIGNING_KEY` (the contents of `/d/secret.b64`) and `LIRO_PACKAGE_SIGNING_PASSPHRASE` (**37D3…'s** passphrase, not 39DE…'s).
@@ -146,7 +146,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 13. **`Sign.java` and `sign.php` never executed.** — sdk/examples README. *Needs:* a JDK and PHP.
 14. *The stamp with the holder's name: read by the owner — "SAVKA ODŽIĆ", Ž and Ć rendered (D-363). Numbering kept.*
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
-16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands. **Tagged `v0.9.9-rc1` on `4e6fd47` (2026-10-07); its release run, 37690223641, not read to its end — session 28 §D.1, with R1–R6.**
+16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands. **Tagged `v0.9.9-rc1` on `4e6fd47` (2026-10-07); its release run, 37690223641, read to its end (D-440): nothing published — `package-signing` refused the tag (A16), so the real key was not tried.**
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
 18. *§11.11's `NO_READER` on a clean machine: unit-tested; no clean machine needed for v1. Closed by decision (D-433). Numbering kept.*
 19. *The chooser's window-closed path: watched by a person on Xorg, first by an accident and then on purpose — the helper's `Request.Close` 60 ms before the window left the client list, the helper gone, one INFO line, no kill (D-415). On Wayland on stock GNOME it still cannot be produced (D-414): the attached dialog covers the corner X there, and on Xorg it does not reach mutter's title bar (B28). Numbering kept.*

@@ -45936,3 +45936,50 @@ within an hour of the rule; "a rule that catches its author twice on the day
 it is written is a rule that works."
 
 ---
+
+## D-440 — The rc release run read to its end: nothing published, because `package-signing`'s deployment rule is a branch rule, not a tag rule — the environment refused the tag before `sign-linux` ran a step, so the real key was not tried; my A16 steps said "tag rule" and did not warn that GitHub's dialog defaults to Branch
+
+**Date:** 2026-10-07, after the owner had stopped for the night.
+**Phase:** block 1, C16/F9. Run 37690223641 (workflow Release, `v0.9.9-rc1`
+on `4e6fd47`), read through `gh` against R1–R6 as session 28 §D.1 records
+them, written before the tag was pushed.
+
+| | predicted | read |
+|---|---|---|
+| R1 build | 0.9.9-rc1; binary reports it; MSI 0.9.9; signrelease refuses without a key | **held**, but the MSI's ProductVersion not read: `liro-bridge 0.9.9-rc1 (commit 4e6fd47, built 2026-10-07T21:33:50Z, go1.26.5, windows/amd64)`; "refused, and wrote neither release.json nor release.json.sig"; both MSIs "unsigned (SPEC section 15.1)" |
+| R2 build-linux | `liro-bridge_0.9.9-rc1_amd64.deb`, `liro-bridge-0.9.9-rc1.x86_64.rpm`, Version `0.9.9~rc1` | **names held**; the Linux binary reports `liro-bridge 0.9.9-rc1 (commit 4e6fd47`; the packages' own Version field not read (in the artefact, not the log) |
+| R3 sign-linux, the least certain | 37D3… signs; `verify.sh` passes | **failed, and not where predicted**: "Tag "v0.9.9-rc1" is not allowed to deploy to package-signing due to environment protection rules." The job ran no step; its steps and log are 404. **The key, the passphrase and the base64 were never tried.** |
+| R4 release | signed, verified, published as prerelease | **skipped** (needs `sign-linux`) |
+| R5 after | a Pre-release page; `releases/latest` v0.9.2 | **no release page** ("release not found"); `releases/latest` v0.9.2 — nothing reached anyone |
+| R6 a hung apt step | cancelled and recorded | none hung. `build-linux`'s toolchain step took **722 s** — slow against its usual ~51 s, under the 15-minute line, left to finish |
+
+### Why the environment refused
+
+Read from the API, both environments' deployment rules:
+
+| environment | rule | type |
+|---|---|---|
+| `release` | `v*` | **tag** |
+| `package-signing` | `v*` | **branch** |
+
+So `package-signing` admits branches named `v*` and no tags. **My A16 steps
+said "add the tag rule `v*`" and did not say that GitHub's "Add deployment
+branch or tag rule" dialog has a ref-type choice that defaults to Branch** —
+a step written as my summary of the setting rather than as the setting. It
+has a security side as well as a functional one: as set, a branch named `v…`
+could deploy to the environment that holds the package key; as a tag rule,
+only a `v*` tag can, as D-360 intended.
+
+### What follows
+
+- The owner changes `package-signing`'s rule to ref type **Tag** (or deletes
+  it and adds `v*` as a tag rule), and the API read above is repeated: both
+  rows `tag`.
+- **Then the failed jobs are re-run** — `gh run rerun 37690223641 --failed`,
+  which re-runs `sign-linux` and `release` on the artefacts `build` and
+  `build-linux` already made (kept seven days). **This is a re-run with its
+  cause fixed and recorded, not a re-run until green** (D-439's rule is about
+  the second kind). R3–R5 stand as written for it.
+- A16 reopened until then.
+
+---

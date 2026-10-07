@@ -24,7 +24,7 @@ believing any check.
 | GitHub `release` | The Windows release signing secrets, untouched; the old package secrets deleted (D-439). |
 | The committed package key | `37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65`, "Liro Bridge Linux packages (Konfirs d.o.o. Beograd)", expires 2029-10-06 (D-437). |
 | **The rc tag** | **`v0.9.9-rc1`, pushed by the owner at about 21:33 UTC on 2026-10-07: annotated tag `68f76d9`, dereferencing to `4e6fd47`.** Not `59b65b3`: `4e6fd47`'s own CI run (37685399104) was complete and green in every job — `linux-packages`' throwaway-key and README steps included, `windows` too — and `59b65b3..4e6fd47` changes only three files under `docs/`, which no workflow reads. Tag the commit CI ran. |
-| **The release run** | **Run 37690223641 (workflow Release, `4e6fd47`, `v0.9.9-rc1`) — NOT CONCLUDED when this was written, and nobody watched it conclude.** At 22:00 UTC: `build` success; `build-linux` in "build the packages" (27 min — the slow Linux build, not apt); `sign-linux` and `release` not started. **Read it first — §D.1.** |
+| **The release run** | **Run 37690223641 concluded `failure` at 22:02:13 UTC, read to its end (D-440): nothing published.** `build` and `build-linux` success; **`sign-linux` refused by the `package-signing` environment** — its `v*` rule is a *branch* rule, not a tag rule — so it ran no step and **the real key was never tried**; `release` skipped. No release page; `releases/latest` v0.9.2. |
 | CI | `4e6fd47`: run 37685399104, complete, every job success. `59b65b3`: a third attempt of 37669944025 concluded success at about 21:20; superseded. |
 | CI, earlier tonight | **Run 37669944025** (the re-run of `59b65b3`) **concluded `cancelled` at 20:49:52 UTC, by the owner — nothing in it failed**: `ci` and `linux-gui` green — the first green `ci` since 2026-09-30; `windows` failed once (D37); `linux-packages` cancelled inside the throwaway-key step after a slow Go module download was taken for a hang, `linux-install` with it. **No complete run of `59b65b3` exists.** |
 
@@ -72,9 +72,20 @@ believing any check.
 
 ## D. Next, in this order
 
-1. **Read the release run first: run 37690223641**, workflow Release, tag
-   `v0.9.9-rc1` on `4e6fd47`. Nobody watched it conclude. Read every job and
-   step against R1–R6 below, **before** anything else is claimed:
+1. **The release run has been read (D-440) — start from its fix, not from
+   reading it again.** `sign-linux` was refused by `package-signing`'s
+   deployment rule, a *branch* rule `v*` where `release`'s is a *tag* rule.
+   **The owner sets that rule's ref type to Tag**; then read both back:
+
+   ```
+   for e in package-signing release; do gh api repos/veljaos/liro-bridge/environments/$e/deployment-branch-policies --jq '.branch_policies[] | "'$e' \(.name) \(.type)"'; done
+   ```
+
+   Both must say `tag`. **Then re-run the failed jobs** — `gh run rerun
+   37690223641 --failed` re-runs `sign-linux` and `release` on the artefacts
+   already built (kept seven days, so by 2026-10-14). A re-run with its cause
+   fixed and recorded, not a re-run until green. Read it against R3–R5 below,
+   which stand as written. The commands for reading, from the first run:
 
    ```
    gh run view 37690223641 --json status,conclusion,jobs --jq '.status, .conclusion, (.jobs[] | "\(.conclusion)\t\(.name)")'
@@ -112,7 +123,11 @@ believing any check.
      hang; the Linux build (about 31 minutes) and a Go module download are
      slow, and are left to finish (D-439).
 
-   **Read so far, at 22:00 UTC** — `build` complete, success. **R1 held in
+   **Read at 22:02, the run concluded (D-440, table there)**: R1 held (the
+   MSI's ProductVersion not read); R2's names held (the packages' Version
+   field not read); **R3 refused by the environment, the key not tried**; R4
+   skipped; R5 — no page, `latest` v0.9.2; R6 none hung (the toolchain step
+   722 s, slow). Earlier, at 22:00 — `build` complete, success. **R1 held in
    part**: the binary reports `liro-bridge 0.9.9-rc1 (commit 4e6fd47, built
    2026-10-07T21:33:50Z, go1.26.5, windows/amd64)`; signrelease "refused, and
    wrote neither release.json nor release.json.sig"; the three artefacts
@@ -142,14 +157,12 @@ believing any check.
 
 ## E. What is not done that a reader might assume is
 
-- **The rc release run has not been read to its end.** Whether a release
-  page for `v0.9.9-rc1` exists, and whether 37D3… signed anything, is what
-  §D.1 reads. Until then no release exists beyond v0.9.2 as far as this
-  record knows.
+- **No release exists beyond v0.9.2**: the rc run published nothing
+  (D-440). The tag `v0.9.9-rc1` exists; its page does not.
 - **39DE… is not revoked**; only rotated out of the repository and GitHub.
-- **No package is known to have been signed with 37D3…**: the throwaway-key
-  run refusing a foreign signature is not a signature by 37D3…, and R3 is
-  unread.
+- **No package has been signed with 37D3…**: the throwaway-key run refusing
+  a foreign signature is not a signature by 37D3…, and the rc run never
+  reached the key (D-440).
 - **`check.sh` does not exist**; until it does, an entry says which of CI's
   steps it ran and how.
 
