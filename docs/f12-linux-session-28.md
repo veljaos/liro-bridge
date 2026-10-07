@@ -23,7 +23,7 @@ believing any check.
 | GitHub `package-signing` | 37D3…'s secret and passphrase; `v*` tag rule (A16, D-439). |
 | GitHub `release` | The Windows release signing secrets, untouched; the old package secrets deleted (D-439). |
 | The committed package key | `37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65`, "Liro Bridge Linux packages (Konfirs d.o.o. Beograd)", expires 2029-10-06 (D-437). |
-| CI | **Run 37669944025** (the re-run of `59b65b3`) **concluded `cancelled` at 20:49:52 UTC**: `ci` and `linux-gui` green — the first green `ci` since 2026-09-30; `windows` failed once (D37); `linux-packages` stopped inside the throwaway-key step, `linux-install` cancelled. **No complete run of `59b65b3` exists.** |
+| CI | **Run 37669944025** (the re-run of `59b65b3`) **concluded `cancelled` at 20:49:52 UTC, by the owner — nothing in it failed**: `ci` and `linux-gui` green — the first green `ci` since 2026-09-30; `windows` failed once (D37); `linux-packages` cancelled inside the throwaway-key step after a slow Go module download was taken for a hang, `linux-install` with it. **No complete run of `59b65b3` exists.** |
 
 ## B. What this sitting did
 
@@ -70,7 +70,9 @@ believing any check.
 ## D. Next, in this order
 
 1. **A fresh run of `59b65b3`, read in one piece** — 37669944025 was
-   cancelled before `linux-packages` finished. Predictions written before it
+   cancelled before `linux-packages` finished. **The run block 1 waits on was
+   cancelled by the owner, not by a fault**: do not start by looking for a
+   problem that is not there. Predictions written before it
    starts: `ci`, `linux-gui`, `linux-packages`, `linux-install` and
    `packaging` green; `windows` green or D37 again, and either is recorded,
    not re-run away. If every job but a D37 failure is green, the owner tags:

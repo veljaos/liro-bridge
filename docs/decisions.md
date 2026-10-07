@@ -45849,11 +45849,17 @@ three images.
   D-438's three fixes, in CI. `packaging`, `sdk-typescript` success.
   **`windows` failure** (below). `linux-packages` past its 31-minute build and
   still running at 20:49 UTC. **The run then concluded `cancelled`, at
-  20:49:52** — by whom is not in what `gh` shows: `linux-packages` stopped
-  inside "sign with a throwaway key", its README check skipped,
-  `linux-install` cancelled. **So `59b65b3` has no complete run**: `ci` and
-  `linux-gui` are green on it, `linux-packages` and `linux-install` are not
-  read. The tag waits for a fresh run of `59b65b3`, read in one piece.
+  20:49:52 — by the owner, and nothing in it failed.** After fifteen minutes
+  on a Go module download the owner took `linux-packages` for hung and
+  stopped it; it was not hung — it had gone on to build both packages, check
+  the `.deb`'s dependency list and install gpg and rpm for the signing step,
+  and was cancelled inside "sign with a throwaway key". **The throwaway-key
+  check and the README check were skipped because of the cancel, not because
+  anything went wrong**; `linux-install` was cancelled with it. So `59b65b3`
+  has no complete run: `ci` and `linux-gui` green on it, `linux-packages`
+  and `linux-install` not read. The tag waits for a fresh run of `59b65b3`,
+  read in one piece. (First written here as cancelled "by whom is not in what
+  `gh` shows"; corrected at the owner's word.)
 
 ### A test that lies in one direction
 
@@ -45909,9 +45915,17 @@ not measured here. It does not claim v1 while blocks 2–9 are open.
 
 ### Infrastructure, tonight
 
-The owner's count: **three stalls, three services, none of them ours** — the
-apt mirror (twice), and a Go module download that held the run before for
-fifteen minutes. The second evening lost to waiting rather than to the code.
+The owner's count, corrected by the owner: **two real stalls and one
+cancelled wait.** The apt mirror hung twice (`59b65b3`'s first attempt,
+`cf24a25`) — the runner's, not ours. The third, the Go module download in the
+re-run's `linux-packages`, was slow and then went on; **the owner declared
+infrastructure broken on a fifteen-minute wait and cancelled it, and the cost
+was the complete run block 1 now waits for** — in the owner's words, "this
+one was my impatience". The same shape as the evening's finding from the
+other side: a judgement made on a summary of the run, not on reading it to
+its end. Without timeouts there was no line between a slow step and a hung
+one; with them (A33) a hung step fails by itself and a slow one is left to
+finish.
 
 ### D-438, reworded
 
