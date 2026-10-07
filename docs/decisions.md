@@ -45178,3 +45178,170 @@ rulings below: solved 2, closed by decision 28, deferred 26, v1 work 30.
 B8 was the same failure the owner named: an inference given a solved box.
 I wrote the caveat beside it and still put it in "solved"; the caveat
 should have decided the bucket.
+
+## D-433 — The owner's order for everything before v1, in eleven blocks with package signing first; session 27's sort accepted as written, its "deferred past v1" bucket dissolved into the order, and one thing put outside v1 — other issuers' cards, which wait on other people; A2/E2 decided as three cases with no hard-coded service; four of my proposed closures not applied, one because reading its source contradicted it
+
+**Date:** 2026-10-07
+**Phase:** open-items as a whole. Nothing run, no VM state touched; the
+repository's records and source read.
+
+### The owner's ruling
+
+Session 27 §D is accepted as written, with D-432's three rulings in it. Above
+it, the order before v1:
+
+1. **Package signing with a real key**: A16, then A15 and C16/F9. "A program
+   that asks for a PIN must be signed with a key someone can trust … if
+   somebody can substitute a package, nothing else we built this fortnight
+   matters."
+2. **E8**, the Guide's Linux section — otherwise we ship support nobody can
+   install.
+3. **The Windows pass**: A7, C1, C7, D10, D15/B14, D31's render, D33's
+   Windows half, and the memory-ownership audit, never run against WebView2
+   and Win32.
+4. **D23** — every window leaves a process chain behind.
+5. **E9 and B25** — both the same question: whether somebody other than the
+   person can approve a signature, "and that is the whole of what this
+   program promises".
+6. **A2/E2**, the timestamp and B-LT.
+7. D6, F1, D36, A6, A12, D24.
+8. The hardware fault cases: B9, B11, B13, C9, F4, A5, A13.
+9. Multi-user: B19, B5, B16 and anything else that needs a second account.
+10. The cloud channel, as its own phase.
+11. F13, macOS, as its own phase.
+
+**The deferred bucket dissolves**: everything in it is v1 work except one
+thing. **Not v1: other issuers' cards** (C15, Halcom, and the rest) — "not
+because it does not matter, but because I cannot do it myself": it waits on
+people answering an email and trying the program. The owner sends those
+emails today; if someone answers in time, it rejoins v1.
+
+**A2/E2, how it is to be solved.** The goal is a signature with full legal
+weight, so B-LT with a qualified timestamp. The program hard-codes no
+service. Three cases: no timestamp, B-B, as today; the person's own RFC 3161
+endpoint, entered in Podešavanja, any provider; a service passed in with the
+request through the protocol, so an ERP can carry it "and the paying happens
+where paying belongs" — probably a protocol change, costed separately. Pošta
+Srbije is the intended qualified provider (the owner: prepaid packets at 4–8
+dinars a stamp, and an open test server at `https://test-tsa.ca.posta.rs`).
+Until it ships, **SPEC §12.6 is to be corrected to describe what the program
+does.**
+
+### How it was applied — and four places it was not applied as proposed
+
+`docs/open-items.md` now opens with the order; every open item sits in one
+block, or outside v1. 24 items closed by decision and 2 solved, each left in
+place in italics with its reason, as the file's rule asks. Four of session
+27's proposed closures were **not** applied:
+
+- **A5 and A13** — proposed closed, but the owner's block 8 names both. The
+  later and more particular instruction wins; they are open in block 8.
+- **B8** — the proposal's row is "the owner's choice: closed with exactly
+  this wording, or left open", and accepting the row does not make the
+  choice. Open, in block 7, until the owner makes it.
+- **A14** — proposed closed as "write down what D-340 implied". Reading D-340
+  to write it down contradicts the closure: D-340 put the Linux audit chain
+  under `$XDG_DATA_HOME` **because** backup tools commonly skip
+  `$XDG_STATE_HOME` and the chain is evidence — so on Linux the answer is yes,
+  it should travel with backups. On Windows it lives under `%LOCALAPPDATA%`
+  (`internal/platform/paths.go:64`, `internal/audit/store.go:4`), chosen
+  before that reasoning existed. Whether common Windows backups take it is
+  something I know only in general (File History's defaults do not include
+  AppData) and have not measured. Open, in block 3, as a Windows decision.
+
+**Placed by me, because the order does not name them** — each marked in
+open-items as mine and the owner's to move:
+
+| block | items | why there |
+|---|---|---|
+| 3 Windows | D3, A21, D17, A14 | Windows code or a Windows decision. **D3** is one of the two the owner put "above the rest" (open-items §D's head), in `batchlevel_windows.go` |
+| 6 A2/E2 | D4, A8 | **D4** (`CERT_REVOKED` has no producer; the parsed CRL thrown away) is the owner's other "above the rest" item; B-LT fetches the same CRLs. A8 follows D4 |
+| 7 | B8, B29, C11, C13, A18, A29 + C5, D9, D11, D12, D13, D16 | B29 by D-432's ruling, v1; the rest code or tests, none reaching a person |
+| 8 hardware | C10, B6 + F5 | C10 tests the reap backstop's fault path; B6 + F5 need a real GPU |
+| 9 multi-user | D30 | needs logouts measured on both backends, as B19 does |
+| not v1 | B12, C6, E3 | B12 needs a NetSeT card, C6 a one-PIN-per-signature card. **E3 is the least certain placement**: MUP on Linux waits on the owner's decision about third-party code against a national identity card, not on an email |
+
+The owner's block 9 names B5 (another compositor) and B16 (another machine)
+as multi-user; neither needs a second account. Kept as written.
+
+**New item, from the ruling**: C21, the memory-ownership audit against
+WebView2 and Win32 — D-412's sweep of transfer annotations against generated
+bodies has no Windows counterpart.
+
+**The cloud channel** has no item and no definition in this repository;
+SPEC §2's out-of-scope table lists "Cloud / remote signing" (`SPEC.md:84`).
+Block 10 is recorded as the owner named it, undefined.
+
+### What item 1 rests on, as the record has it
+
+The owner's sentence was "today it is signed with a key made for a
+rehearsal". The record has it this way: **no Linux package has ever been
+signed with the real key.** CI signs every push with a throwaway key made in
+the job and requires the committed key to refuse it (D-356); dev builds have
+never been signed — the owner's own installs are checked against the hash the
+building session commits (session 13 §A; D-405). The real key,
+`39DE792A503C4F4E26DF1E4586FA14F600AA59B3`, ed25519, expiring 2029-09-25, is
+committed (`build/linux/liro-bridge-packages.asc`) and its secret is in the
+`release` environment and the owner's offline backup; **its passphrase was
+typed by the owner into a pinentry window our own test opened on this VM**
+(D-356), into an agent that never held the secret; the owner judged the
+exposure and did not rotate it. Windows has **no Authenticode certificate**
+(SPEC §15.1; "Unknown publisher" since v0.9.0, D-253); its updates are signed
+with D-238's release key.
+
+Two facts bear on C16's first run. **A `v*` tag publishes a live release**:
+`release.yml`'s publish step is `gh release create` with neither `--draft`
+nor `--prerelease`. And installed Windows agents read
+`releases/latest` (`internal/update/check.go:26`), which GitHub does not
+point at a prerelease. So a first real-key run that installed agents never
+see needs `release.yml` to mark a tag with a hyphen (`v0.9.3-rc1`) as a
+prerelease — a small change, not made.
+
+### What A2/E2 already has, read for this entry
+
+- An RFC 3161 client, `internal/pades/tsa`, which reached Pošta's test
+  `timestamp1` (Basic auth) end to end once, in F3 (D-045). The
+  client-certificate endpoint's test skips here: Pošta's test PFX is not on
+  this VM (`testdata/tsa/local/`, git-ignored by design).
+- `tsaURL`, Basic credentials and a client certificate in `config.json` and
+  in Settings (`config.go:34–58`, `settingswindow.go:36–40`). **Settings
+  offers two presets, `https://freetsa.org/tsr` and `https://tsa.gov.rs/`**
+  (`settingswindow.go:397–398`). freetsa.org is not a qualified provider.
+  Whether a preset is a hard-coded service is the owner's to say.
+- `signatureLevel` defaults to `b-lt` (`config.go:272`). With no TSA set,
+  `pades.Sign` treats the missing TSA exactly as a TSA that failed
+  (`sign.go:278`), so the person meets §12.8's choice — read in source, not
+  watched on Linux. With a TSA, B-T. B-LT is unreachable on both Serbian
+  cards: Pošta's issuer is published only over LDAP (D-281; option (a), the
+  Trusted List's own CAs, untried), MUP's OCSP refuses connections and its
+  CRL is over D-076's cap.
+- The protocol already carries `level` (PROTOCOL.md §6.2); it carries no
+  TSA.
+
+### Estimates, per block, in working days
+
+Mine, written before any of the work; for comparing later, not commitments.
+
+| block | days | outside the owner's hands |
+|---|---|---|
+| 1 package signing | 1.5–2.5 (+0.5 to rotate the key; Authenticode, if in, +1 of ours) | GitHub Actions; wherever A15 publishes; Authenticode: a CA's validation, weeks |
+| 2 E8 | 3–4 | — |
+| 3 Windows pass | 8–12 (the ownership audit 2–3 of it) | — but the owner's Windows machine and hands throughout |
+| 4 D23 | 2–4 | if the chain is WebKit's to end, the upstream fix (a workaround is ours) |
+| 5 E9 + B25 | 4–5; up to 9 if B25 finds Odobri pressable | an upstream fix, if the hole is WebKit's or AT-SPI's |
+| 6 A2/E2 | 5.5–8.5; the protocol case +3–5 | Pošta: the contract and qualified stamps, the test server's uptime; MUP's revocation (D-076); ERPs adopting the protocol case |
+| 7 | the named six 3–4.5; my additions +6–9 | D36's fix is WebKit's |
+| 8 hardware faults | 2–3 of code; the measurements not estimable | a module or card that faults cannot be ordered |
+| 9 multi-user | 4–7 | — (a second machine, a KDE image: the owner's) |
+| 10 cloud channel | not estimable: undefined | — |
+| 11 F13 macOS | 15–25 | Apple: Developer ID and notarization; a Mac |
+| not v1 | — | other issuers' people |
+
+### Mine
+
+A14 is D-432's shape again in a quieter form: I proposed closing an item on
+an entry I had marked "not re-read tonight", and reading it turned the
+closure into a Windows question. The caveat should have kept it out of the
+"closed" column, as it should have kept B8 out of "solved".
+
+---

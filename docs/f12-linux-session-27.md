@@ -5,9 +5,15 @@ D-432). **Written:** 2026-10-05. **Working rules:** session 13 §C, session 15
 §E, session 22 §E, session 23 §E, session 24 §E, session 25 §E. D-304's five
 questions before believing any check.
 
-**§D below is a proposal, not a ruling.** Nothing in it is decided except
-where §C says the owner ruled. `docs/open-items.md` is unchanged by it except
-for B25, B29 and D23, which the owner ruled on (§C).
+**Ruled on 2026-10-07 (D-433).** The owner accepted §D as written, with §C's
+rulings, and set an order above it; the order is now the head of
+`docs/open-items.md`, and that file, not §D, is the list. §D's "deferred past
+v1" bucket is dissolved into the order — all v1 work but other issuers' cards.
+Four of §D's closures were not applied: A5 and A13 (the order names them), B8
+(the owner's choice, not yet made), A14 (D-340 answers it for Linux only).
+§E's order is superseded: package signing comes first, A2/E2 is block 6, and
+D23's date is re-proposed in open-items D23. §D below is kept as written, as
+the proposal that was ruled on.
 
 ---
 
