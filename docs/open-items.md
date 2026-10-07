@@ -24,7 +24,7 @@ The owner's order. Every open item below sits in one block. Items in
 because the order does not name them, and are the owner's to move. Estimates
 per block are in D-433.
 
-1. **Package signing with a real key** — A30's key made and committed, A16 done (D-439); next **C16/F9**, the tag `v0.9.9-rc1` on `59b65b3` (D-439), then 39DE…'s revocation (A30), **A15**, and after the tag A33 with the timeouts.
+1. **Package signing with a real key** — A30's key made and committed, A16 done (D-439); next **C16/F9** — `v0.9.9-rc1` tagged on `4e6fd47`, its release run unread (session 28 §D.1) — then 39DE…'s revocation (A30), **A15**, and after the tag A33 with the timeouts.
 2. **E8**, the Guide's Linux section.
 3. **The Windows pass** — **A7, C1, C7, D10, D15/B14, D31's render, D33's
    Windows half, C21** (the memory-ownership audit); placed by me: D3, A21,
@@ -146,7 +146,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 13. **`Sign.java` and `sign.php` never executed.** — sdk/examples README. *Needs:* a JDK and PHP.
 14. *The stamp with the holder's name: read by the owner — "SAVKA ODŽIĆ", Ž and Ć rendered (D-363). Numbering kept.*
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
-16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands.
+16. **Package signing with the real key has never run.** The CI steps have (D-360): throwaway signing, the README's check on three images, Fedora's `rpm -K`. — D-356. *Close:* the first `v*` tag, after A16. *Needs:* CI, owner's hands. **Tagged `v0.9.9-rc1` on `4e6fd47` (2026-10-07); its release run, 37690223641, not read to its end — session 28 §D.1, with R1–R6.**
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
 18. *§11.11's `NO_READER` on a clean machine: unit-tested; no clean machine needed for v1. Closed by decision (D-433). Numbering kept.*
 19. *The chooser's window-closed path: watched by a person on Xorg, first by an accident and then on purpose — the helper's `Request.Close` 60 ms before the window left the client list, the helper gone, one INFO line, no kill (D-415). On Wayland on stock GNOME it still cannot be produced (D-414): the attached dialog covers the corner X there, and on Xorg it does not reach mutter's title bar (B28). Numbering kept.*
