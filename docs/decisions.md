@@ -46289,3 +46289,93 @@ that found 39DE…'s revocation certificate where three checks had said it was
 not (D-435).
 
 ---
+
+## D-444 — C16 on Fedora: the rc checked as the README says and installed — gpg is on stock Fedora 44, `rpm -K` held and its controls refused, and **rpm sorts `0.9.9~rc1` above `0.9.9~dev.17`**, read for the first time as dnf's "Upgrading"; and **on Fedora nothing at install time checks who signed a package installed from a file** — dnf says it skipped the check, in the same words as for an unsigned build, and rpm underneath checks digests only; the README now says so, and what we promise about it is the owner's (A35). C16 closed
+
+**Date:** 2026-10-08
+**Phase:** block 1, C16/F9, the Fedora half. On the Fedora VM (rpm 6.0.2,
+gpg 2.4.9); the four files carried from the release page on a stick into
+`~/rc1`; `rpm --import` and `dnf install` by the owner's hands. Predictions
+written at 19:47:33 UTC before any reading, in `~/s30-predictions.md`;
+least certain named: F7a.
+
+### Against the predictions
+
+| | predicted | read |
+|---|---|---|
+| F0 | dev.17 installed, no 37D3… in rpm's keys, no clock jump | **held**: `0.9.9~dev.17-1`, epoch 0; one `gpg-pubkey`, Fedora 44's, named by its full fingerprint (rpm 6); boot 19:44:19 UTC and `/proc/uptime` 215 s agree. One agent, **PID 2342**, `tray`, started 29 s after boot. `~/.gnupg` did not exist |
+| F1 | gpg present, from the OS install | **held**: gnupg2 2.4.9; first installed in dnf transaction 2, `dnf5 --config /kiwi_dnf5.config`, 2026-04-22 — Fedora's own image build; required by `gpgme` and `libdnf5-plugin-expired-pgp-keys`; reason `Group`. The owner's only own dnf transaction before ours is `dnf install -y gh`. An inference that it is on every Workstation install, from one VM's history, not a fresh install read |
+| F2 | the page's bytes | **held**: rpm `ebb2684f…ffa2`, key `8356360f…` 429 bytes and byte-identical to `build/linux/liro-bridge-packages.asc` |
+| F3a | `--show-keys`: pub, forty digits, uid | **held**, and equal to README line 145 compared as strings. **Not predicted**: on a home that does not exist it first prints `gpg: directory '/home/velja/.gnupg' created` and `trustdb created` — a person's first sight of it on a fresh Fedora; now in the README |
+| F3b | imports nothing | **held**: 0 keys in the default home, 1 in the throwaway home of F3c as the control. `--show-keys` left no daemon; my own `--list-keys` started `keyboxd` 4182 (the read between the two showed none), stopped by that PID |
+| F3c | beyond the Fedora block: SHA256SUMS verified in a throwaway home | **held**: Good signature, made 17:48:47 UTC, `Primary key fingerprint: 37D3 C56D 5F26 F2C1 F887  429F 0FC7 D69C DDDD 8D65`, the rpm `OK`; its `gpg-agent` 4207 stopped by PID |
+| F4 | `rpm -K` before the import refuses | **held**: `digests SIGNATURES NOT OK`, exit 1; `-Kv`: `Header OpenPGP V4 EdDSA/SHA512 signature, key ID 0fc7d69cdddd8d65: NOKEY`. The signature is header-only; the package has no scriptlets; `V=0.9.9~rc1 R=1 E=0` |
+| F5 | import silent; a new key named by fingerprint or key ID | **held**: silent (the owner; two "Sorry, try again" were the password); `gpg-pubkey-37d3c56d5f26f2c1f887429f0fc7d69cdddd8d65-6ac68b7c` at 19:52:34 UTC — the full fingerprint |
+| F6 | `digests signatures OK` | **held**, exit 0; `-Kv` now names the full fingerprint where NOKEY named the key ID |
+| F7a | last byte changed: `DIGESTS` upper, `signatures` lower — **least certain** | **failed as worded**: `DIGESTS SIGNATURES NOT OK`, exit 1, although `-Kv` says the header signature `OK` and only `Payload SHA256 digest: BAD`. rpm's short line capitalises both when anything fails, so **it does not say which part failed**; now in the README |
+| F7b | a header byte changed: `SIGNATURES` upper | **held**: `DIGESTS SIGNATURES NOT OK`, exit 1; header signature `BAD`, header digest `BAD`, payload `OK`. Each copy differed from the original by one byte (`cmp -l`); the originals re-hashed unchanged |
+| F8a | an upgrade, dev.17 → rc1 | **held**: dnf listed Upgrading, `0.9.9~dev.17 → 0.9.9~rc1` (the owner), and printed `Upgrading liro-bridge-0:0.9.9~rc1`, `Removing liro-bridge-0:0.9.9~dev.`; dnf history 10. **rpm sorts the rc above the dev builds** — rpmvercmp: the tildes cancel, then `rc` > `dev` |
+| F8b | nothing about the signature; asks first | **failed**: it asked, and it printed **`Warning: skipped OpenPGP checks for 1 package from repository: @commandline`** — below. Also not predicted: a pending offline transaction, below |
+| F9a | `0.9.9~rc1-1`, signature 0fc7… | **held**: installed 19:57:20 UTC; the header keeps the EdDSA signature (`OPENPGP` and `DSAHEADER` tags; `rpm -qi`'s Signature line wraps onto the next line, which a one-line grep misses) |
+| F9b | `--version` 0.9.9-rc1, 4e6fd47 | **held**: `liro-bridge 0.9.9-rc1 (commit 4e6fd47, built 2026-10-07T21:47:31Z, go1.26.5, linux/amd64)` at 19:58:13; it wrote a start line into the log (D38) |
+| F9c | agent unrestarted | **held**: 2342, same start. As on Ubuntu, **the running agent is dev.17, not the rc**, and which binary it maps cannot be read (A34) |
+
+### "Skipped OpenPGP checks": nothing at install checks the signer
+
+The owner asked which it is: the warning is the one every unsigned dev build
+got, so it cannot tell a signed package from an unsigned one at install.
+**It cannot.** Read:
+
+- dnf5's main config: `localpkg_gpgcheck = 0` (`pkg_gpgcheck = 1` covers
+  repository packages, `20-fedora-defaults.conf`). The warning reports the
+  setting, not a look at the package.
+- **rpm under it checks digests only**: `%_pkgverify_level` is `digest`.
+  So the install would refuse a corrupted package — both F7 copies fail a
+  digest — and accept one unsigned or signed by any other key. That last
+  sentence is read from the settings, not by installing such a package.
+- dev.17, the control: `rpm -K` on `~/liro-bridge-0.9.9-dev.17.x86_64.rpm`
+  says `digests OK` — no signature at all; dnf history 9 installed it the
+  same way. That dnf printed the same warning for it is the owner's account;
+  dnf's history keeps no warnings.
+
+**So on Fedora the signature is checked only by a person running `rpm -K`.**
+The README had said dnf does not check (D-443's paragraph); it now also says
+rpm does not, quotes dnf's warning as expected for signed and unsigned alike,
+and says that any word in capitals means stop. Whether that is what we tell
+people, or whether the instructions change — `--setopt=localpkg_gpgcheck=1`
+would make dnf check against rpm's keys, untested — is what we promise, so
+the owner's: **A35**. The Ubuntu half has the same shape and the README
+already said it: `apt install ./file.deb` checks no signature.
+
+### The pending offline transaction, invalidated on the owner's word
+
+dnf warned that installing would invalidate a pending offline transaction
+by `dnf5daemon-server`; the owner held the prompt until it was explained.
+Read: GNOME Software's automatic update, prepared by `dnf5daemon-server`
+PID 3152 and written 19:52:14 UTC, `status = "download-complete"`, **not
+scheduled** (no `/system-update`): 140 installs and upgrades from `updates`,
+kernel 7.2.9, glibc, openssl, firefox, selinux-policy, and webkitgtk6.0 /
+javascriptcoregtk6.0 2.54.1 and cairo, which the agent links; nothing of
+ours; 105 MB under `/var/cache/dnf5daemon-server`. Losing it loses no data
+and defers the updates. Its stored rpmdb cookie `8e4c9357…` differs from
+the database's after our `rpm --import` (`197341e6…`, read through rpm's
+Python binding), so it was likely stale already; that the two are computed
+the same way is not read. For the measurement, losing it is better: applied
+at the next reboot it would have changed WebKitGTK, cairo and glibc under
+the rc's first start, two changes in one boot (D-391). The owner answered y;
+dnf printed `Pending offline transaction has been invalidated`. **The
+updates are to be applied as their own step, in their own boot, after the
+rc is read running.**
+
+### What follows
+
+- **C16 closed**: the real key's work checked by a person on both VMs as the
+  README says, the rc installed on both, its Version field read on both.
+- **A35**, the owner's: what the Fedora instructions promise.
+- On both VMs the running agent is dev.17; the next measurement starts from
+  an agent the owner has restarted.
+- `~/.gnupg` now exists on this VM (created by the README's command, plus a
+  `public-keys.d` my `--list-keys` made); rpm's database holds 37D3…; both
+  are what a person following the README would have.
+
+---

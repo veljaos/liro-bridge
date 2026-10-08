@@ -184,12 +184,18 @@ sudo dnf install ./liro-bridge-<v>.x86_64.rpm
 Compare the fingerprint before `rpm --import`, not after: rpm trusts every
 key it has imported, for every package, and `rpm -K` says only that the
 package was signed by one of them. `gpg --show-keys` reads the file without
-importing it anywhere.
+importing it anywhere; the first time gpg runs it also says it created
+`~/.gnupg` and a trustdb, and still imports nothing.
 
-`dnf` does not check the signature of a package installed from a file
-(`localpkg_gpgcheck` is off by default), so `rpm -K` is the check. "digests OK"
-with no "signatures" means the package is not signed, and should not be
-installed.
+Nothing at install time checks who signed the package, so `rpm -K` is the
+check. `dnf` does not check the signature of a package installed from a file
+(`localpkg_gpgcheck` is off by default) and says so — "skipped OpenPGP checks
+for 1 package from repository: @commandline" — for a signed package and an
+unsigned one alike; `rpm` underneath it checks only digests
+(`%_pkgverify_level` is `digest`). "digests OK" with no "signatures" means the
+package is not signed, and should not be installed. Any word in capitals, such
+as "DIGESTS SIGNATURES NOT OK", means stop; that line does not say which part
+failed, and `rpm -Kv` does.
 
 **What this does and does not protect against.** It catches a file swapped or
 altered on its way to you, from a mirror or anyone between. It does not catch
