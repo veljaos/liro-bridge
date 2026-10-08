@@ -50,7 +50,7 @@ what it is and roughly how long.
 | The release | `v0.9.9-rc1`, **Pre-release**, ten assets, published 2026-10-08 17:50:07 UTC; `releases/latest` v0.9.2 (D-441). |
 | GitHub `package-signing` | `v*` **tag** rule, read back (D-441); 37D3…'s secret proved by the run that used it. |
 | CI | Run 37822575930 on `314303f`: complete, all nine jobs `success` (D-442). **Carries GitHub's notice: `ubuntu-latest` becomes Ubuntu 26 from 2026-10-19.** |
-| README | The Debian/Ubuntu lines' comments rewritten to say what each command prints; the fingerprint compared at `--verify` (D-442). **The Fedora block had no comparison at all: `gpg --show-keys` added before `rpm --import` (D-443).** D-442's push is in CI (run 37827959361); D-443's is not yet pushed. |
+| README | The Debian/Ubuntu lines' comments rewritten to say what each command prints; the fingerprint compared at `--verify` (D-442). **The Fedora block had no comparison at all: `gpg --show-keys` added before `rpm --import` (D-443).** Both pushes read to their end, all nine jobs `success`: `d16e04b` run 37827959361 (19:11:11 UTC), `803d298` run 37829074866 (19:21:38 UTC); the README step passed in each. |
 
 ## B. What this sitting did
 
@@ -76,14 +76,15 @@ what it is and roughly how long.
    line says what it prints (D-442) — both done.
 4. D-376's costs kept as one list, for whoever picks D-376 up (A34).
 5. The `-race` probe's 14 min 21 s: a second reading when one comes, not
-   sought.
+   sought. **They came, unsought**: 13 min 52 s (run 37827959361) and
+   13 min 14 s (run 37829074866) — about fourteen minutes is its time, not
+   an anomaly.
 
 ## D. Next, in this order
 
-1. **Read the CI run the push of D-442 starts, to its end** — it is the
-   README change's first run, and `linux-packages`' README step greps the
-   fingerprint (`gh run list --commit $(git rev-parse HEAD)`; the full SHA,
-   D-442).
+1. *Done in the sitting*: D-442's and D-443's pushes read to their end,
+   green (§A). After any later push, the same: `gh run list --commit
+   $(git rev-parse HEAD)` — the full SHA (D-442).
 2. **C16/F9, the Fedora half**, as the README says, from the release page
    into a new directory: **first `gpg --show-keys liro-bridge-packages.asc`
    (D-443) — whether `gpg` is on a stock Fedora 44 at all is not known**,
