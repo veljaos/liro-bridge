@@ -46529,3 +46529,89 @@ imported nothing.
 fresh commit, and a revoked key nobody ever had is noise there.
 
 ---
+
+## D-446 — `check.sh` written on Fedora, to run on Ubuntu: CI's `ci` and `linux-gui` steps read out of `ci.yml` at run time and run as written, anything it cannot run as CI would refused before anything runs; six controls written, three of them run here (the three that need no Go) and three — the red tree among them — run nowhere yet
+
+**Date:** 2026-10-08
+**Phase:** block 1, A33. On the Fedora VM, which has no Go toolchain and
+gets none (the owner: "that has not changed because it would be convenient
+tonight"); the script is for the Ubuntu VM.
+
+### What it is
+
+`check.sh` (root) → `scripts/check/check.py`. **What it runs is not a list
+kept in the script**: each step of `ci` and `linux-gui`, the two jobs on the
+Ubuntu host with no container, is read from `ci.yml` when it runs —
+D-438's by-hand method made a command.
+
+- A `run:` step: its script, as written, under `bash --noprofile --norc -eo
+  pipefail` (GitHub's default), with the step's env, `RUNNER_TEMP` fresh per
+  job, from the tree's root.
+- `golangci-lint-action@v9`: `golangci-lint run` with the step's env,
+  **refused unless the installed golangci-lint is the version the step
+  names**.
+- `setup-go@v5`: **refused unless `go env GOVERSION` is go.mod's**;
+  `GOTOOLCHAIN=local`, so Go never fetches another.
+- `checkout@v4`, `cache@v4`: skipped, the reason printed.
+- **The apt steps are not run** — they need root, and nothing here prompts.
+  The packages they install are read from the step and each checked with
+  `dpkg-query`; one missing is a refusal naming it.
+- **Refused, before anything runs** (exit 2): an action it does not know,
+  by exact version (a new major is a change in what the step does); a key
+  it does not understand on a job or a step (`if`, `shell`, `container`,
+  job `env` …); an expression `${{ }}` in a script or env; a `sudo` that is
+  not apt-get update/install; a host that is not Ubuntu.
+- **Environment**: the caller's PATH and HOME (warm Go caches), `CI=true`,
+  `LANG=C.UTF-8`, no display variables (CI's host has none). **`CI=true` is
+  not decoration**: `internal/chooser`'s `privateBus` turns a missing
+  `dbus-daemon` from a skip into a failure under CI
+  (`portal_linux_test.go:47`), so a run without it would skip where CI fails.
+- Each step bounded by `timeout` (its `timeout-minutes`, else 45), logged
+  to its own file under `~/.cache/liro-check/<time>-<commit>/`; a failing
+  job stops at its first failure, as on GitHub; a `continue-on-error` step
+  (the `-race` probe) is reported failed-as-a-probe and does not fail the
+  job.
+- **The summary names what ran**: the commit, whether the tree had
+  uncommitted changes, every step of both jobs with its outcome or why it
+  did not run, steps not selected by `--only` (and "not a full check"),
+  and the jobs check.sh never runs (`windows`, `packaging`,
+  `linux-packages`, `linux-install`, `sdk-typescript`). Exit 0 / 1 / 2.
+
+`--list` prints the plan without running. Read here: 27 steps, every
+`uses` accounted for, both apt lists taken from the steps, the probe
+marked. `./check.sh` here: `refused, nothing run: no go on PATH; CI uses
+1.26.5`, exit 2 — what it must do on a machine that is not CI's.
+
+### The controls — **the first thing to take on Ubuntu**
+
+`scripts/check/controls.sh` (all six, or named ones). Each edits a copy of
+`ci.yml`, never the file, and greps its edit into the copy before reading
+the result (session 25 §E):
+
+| | control | expected | run |
+|---|---|---|---|
+| C1 | the red tree: `59b65b3^`, in a worktree | exit 1; `ci[2]` (the GTK guard) and `linux-gui[5]` (lint) failed — CI's own failures on that tree (D-438) | **not run** |
+| C2 | an unknown action added | exit 2, "unknown step type" | **here: as expected** |
+| C3 | the lint step's version → v0.0.1 | exit 2, "is not v0.0.1" | **not run** |
+| C4 | a nonexistent package in an apt step | exit 2, "not installed: liro-control-no-such-package" | **not run** |
+| C5 | an expression in a step's env | exit 2, "expression" | **here: as expected** |
+| C6 | `sudo true` added as a step | exit 2, "sudo for something other" | **here: as expected** |
+
+**C1, C3 and C4 have not been run anywhere**, nor has check.sh run a single
+step. Until C1 is red on Ubuntu with exactly CI's two failures, a green
+check.sh means nothing (D-304).
+
+Not controlled: the Go version refusal (a control would need a second Go);
+`CI=true`'s effect (the chooser test fails only with `dbus-daemon` absent).
+
+### My errors in it, before anything rested on them
+
+- **The control selection was inverted** on its first run: `want` returned
+  yes for every control, so C3, C4 and C1 ran here too and refused at the Go
+  check, as they had to on this VM — **reported as not as expected, and not
+  counted as run**. C1 had made its worktree and removed it (`git worktree
+  list` read after: one tree). Fixed; the three no-Go controls re-run alone.
+- `python3 -c "…"` with backticks in it lost a word from D-445's heading
+  (session 30 §F.4), fixed before the commit.
+
+---

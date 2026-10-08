@@ -27,6 +27,7 @@ check.
 
 ## B. What this sitting did
 
+- **D-446** — `check.sh` written here for Ubuntu; C2, C5, C6 run as expected, C1, C3, C4 not run (§G).
 - **D-445** — A35 left as written (a repository would close it); "signed" ≠ "installing checks it" written into the README and the release notes; A15 decided: a statement signed with the owner's qualified certificate, verified twice with controls, and konfirs.com; 39DE… revoked, "no reason given"; D39 found and counted (2 of unknown cause in 65 Windows runs since 09-23).
 - **D-444** — C16's Fedora half, as the README says: gpg present on stock
   Fedora 44 (Fedora's image build installed it); `--show-keys` printed the
@@ -52,8 +53,8 @@ check.
 1. **Push and read CI to its end** — every push, the handover's own
    included (D39 is what happens otherwise): `gh run list --commit $(git
    rev-parse HEAD)`, the full SHA.
-2. **`check.sh` on the Ubuntu VM — its controls first** (§G). They have
-   never been run.
+2. **`check.sh` on the Ubuntu VM — its controls first** (§G). C1, C3 and
+   C4 have never been run; check.sh has run no step.
 3. **A15**: the statement — its text, then signed by the program with the
    owner's card, then verified in Adobe Reader and a Serbian validator, each
    with a control; the konfirs.com page; the README pointing to both.
@@ -77,7 +78,7 @@ check.
 - **D-445's README and release-notes change has not been through CI.**
 - **The rc's published release page still has the old notes**; the new row
   reaches the next release.
-- **`check.sh` and its controls have never run** (§G).
+- **`check.sh` has run no step; C1, C3, C4 have never run** (§G).
 
 ## F. Rules added in this sitting
 
@@ -91,3 +92,26 @@ check.
 4. **Backticks run inside double quotes too**: a Markdown heading passed to
    `python3 -c "…"` lost a word to command substitution (D-445's heading,
    fixed). Text with backticks goes through a file, never a shell string.
+
+## G. `check.sh` — its controls have not been run
+
+Written tonight on Fedora (D-446); **run on the Ubuntu VM, controls first**:
+
+```
+scripts/check/controls.sh          # all six; C1 makes and removes a worktree at 59b65b3^
+./check.sh --list                  # the plan, nothing run
+./check.sh                         # CI's ci and linux-gui steps; the -race probe alone ~14 min
+```
+
+- **C1, C3, C4 have never run.** C1 is the one that matters: check.sh on
+  the red tree must exit 1 with `ci[2]` (the GTK guard) and `linux-gui[5]`
+  (lint) failed — CI's own failures there. Until it does, a green check.sh
+  is a check that has not been shown able to fail.
+- C2, C5, C6 ran on Fedora (plan-time refusals, no Go needed): as expected.
+- check.sh has not run a single step anywhere.
+- It runs longer than the Bash tool's ten minutes. Run it in the owner's
+  terminal, or as a background command announced with its length — never
+  left to the tool to background on its own (session 23 §E).
+- It needs `python3-yaml`, Go 1.26.5 and golangci-lint v2.13.2, and the
+  packages the two apt steps name; each missing one is a refusal that says
+  which.
