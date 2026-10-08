@@ -23,7 +23,7 @@ check.
 | The release | `v0.9.9-rc1`, Pre-release; `releases/latest` v0.9.2. |
 | README | The Fedora block says nothing at install checks the signer, quotes dnf's "skipped OpenPGP checks" as expected, names gpg's first-run lines, and says any word in capitals from `rpm -K` means stop (D-444); **pushed, CI `success` all nine jobs** (run 37836947039, 20:20:16 UTC). "What this does and does not protect against" now opens with signed ≠ checked at install, and the release notes template says the same (D-445): **not pushed**. |
 | 39DE… | **Revoked** and committed as `build/linux/liro-bridge-packages-39DE-revoked.asc` (D-445). The `.rev` is in `~/rev` on the Fedora VM, unchanged; the owner's to put back on the stick and remove. |
-| CI | `dbf439a` (session 29's handover) **failed** on `windows`, unread until tonight: D39. `5588678` green. |
+| CI | `dbf439a` (session 29's handover) **failed** on `windows`, unread until tonight: D39. `5588678` green (run 37836947039). **`a2648cc` and `421133d` were pushed together and GitHub ran only the head**: run 37840505064 on `421133d`, `success`, all nine jobs, 20:55:41 UTC — `a2648cc`'s tree inside it, no run of its own (the same query on `421133d` is the control). This handover's own commit is the next run to read. |
 
 ## B. What this sitting did
 
@@ -47,6 +47,13 @@ check.
    read and explained).
 6. "Skipped OpenPGP checks" was not passed over: the owner asked which it
    is; it is the same for signed and unsigned, and rpm checks digests only.
+7. **D39's count is written as two single failures in two tests**, not one
+   flake seen twice: 65 Windows runs since 09-23, 62 green, one cancelled,
+   two failures (D37, D39). The owner's "two in sixty-one" was from memory
+   and is withdrawn by the owner as loose.
+8. **check.sh refusing on Fedora is the right first reading**: a check that
+   cannot do what CI does should say so rather than do part of it — the
+   failure it exists to prevent (the owner).
 
 ## D. Next, in this order
 
@@ -75,7 +82,6 @@ check.
 - **That gpg is on every Fedora 44 Workstation** is inferred from this VM's
   history, not read on a fresh install.
 - **What gpg prints in Serbian** is still not read, on either VM.
-- **D-445's README and release-notes change has not been through CI.**
 - **The rc's published release page still has the old notes**; the new row
   reaches the next release.
 - **`check.sh` has run no step; C1, C3, C4 have never run** (§G).
@@ -95,7 +101,10 @@ check.
 
 ## G. `check.sh` — its controls have not been run
 
-Written tonight on Fedora (D-446); **run on the Ubuntu VM, controls first**:
+Written tonight on Fedora (D-446). **On the Ubuntu VM the controls are the
+first thing to run, before check.sh itself. C1 is the one that matters: if
+the red tree does not come back red with CI's two failures, check.sh proves
+nothing** (the owner).
 
 ```
 scripts/check/controls.sh          # all six; C1 makes and removes a worktree at 59b65b3^

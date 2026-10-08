@@ -46457,8 +46457,10 @@ and two failures with no code change — D37 (`59b65b3`, attempt 2) and D39
 (`dbf439a`).** Two different tests, each seen once: not one flake seen
 twice, and neither has a cause. Two in sixty-odd is not a rate anyone has
 characterised; a green run does not lower it, and nothing about it is
-known except that it happens. (The owner's "61st run, second failure" is
-this count framed by D-439's sixty; the API's figures are the ones above.)
+known except that it happens. The owner's "two in sixty-one" was said from
+memory; the owner withdrew it as loose and asked for it written as the
+reading: **two single failures in two tests**, which is a different thing
+from one flake seen twice.
 
 The owner, on D39: right to record it rather than re-run it, and **the
 finding underneath is the shape of the week CI was found red: a handover's
