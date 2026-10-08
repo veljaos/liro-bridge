@@ -45983,3 +45983,114 @@ only a `v*` tag can, as D-360 intended.
 - A16 reopened until then.
 
 ---
+
+## D-441 — `package-signing`'s rule set to Tag at the second attempt, the first caught only by reading it back; the fix is a security fix as much as a repair — as a branch rule, `v*` let any branch named `v…` reach the package key for about 22 hours, and the deployment record shows nothing used it; the failed jobs of run 37690223641 re-run with that cause fixed, and R3–R5 held: **37D3… has signed its first packages**, `v0.9.9-rc1` is published as a prerelease and `releases/latest` is still v0.9.2; one prediction of mine miscounted, recorded as such
+
+**Date:** 2026-10-08
+**Phase:** block 1, A16 and C16. Nothing run on either VM; GitHub read
+through `gh`. Predictions written at 17:41:50 UTC, before any reading
+(below, as written, P1–P3); each step taken on the owner's word.
+
+### S1 failed before it held
+
+The owner had changed the rule's ref type from Branch to Tag in GitHub's
+dialog before the sitting began. The read-back, at 17:42:40:
+
+```
+package-signing v* branch
+package-signing {"custom_branch_policies":true,"protected_branches":false}
+release v* tag
+release {"custom_branch_policies":true,"protected_branches":false}
+```
+
+**P1a — both rules `tag` — failed.** The owner then deleted the rule and
+added it again with Ref type set to **Tag** before typing the pattern. Read
+again at 17:46:58: `package-signing 62401797 v* tag`, `release 59703161 v*
+tag`, both with custom policies on, so the rows are what is enforced (P1b,
+held both times). The first read did not print rule ids, so the id does not
+show the rule is new; the owner's account does, and the type now reads
+`tag`.
+
+**This is the most useful part of the sitting** (the owner): the field was
+clicked, GitHub's page showed what was expected, and the API said otherwise.
+Nothing but reading the setting back would have caught it — not the page,
+not the owner's memory of the click, and not a run, which would have been
+refused exactly as last night's was and looked like the same failure. The
+same shape as D-440's cause from the other side: there my steps were my
+summary of the setting; here the page was. The record of a setting is the
+API's read of it.
+
+### The security half
+
+Last night's failure published nothing and never touched the key (D-440).
+**But the rule as it stood would have let any branch named `v…` deploy to
+`package-signing`**, and so run any workflow that branch carried with
+37D3…'s secret key and passphrase in its environment. A tag rule admits only
+`v*` tags, as D-360 intended. So the fix is a security fix as much as a
+repair, and the entry is filed as both.
+
+The window, as the record shows it: from the environment's creation,
+**2026-10-07 19:36:39 UTC**, until the second edit, **between 17:42:40 and
+17:46:58 UTC today — about 22 hours.** Of that, the part after the owner's
+first edit — when the owner believed it closed — was **about four hours**,
+by the owner's account; GitHub's API keeps no time for the edit, so that
+figure is the owner's, not read.
+
+**"'The rule allowed it' and 'nothing used it' are different claims"** (the
+owner). The second was read at 17:42:53, before the re-run, which adds a
+deployment of its own to the list being read:
+
+| | predicted | read |
+|---|---|---|
+| P2a | no branch named `v*` | **held**: the repository has one branch, `master` |
+| P2b | no deployment to `package-signing` that succeeded; at most the refused one | **held**: one deployment, `6921949730`, ref `v0.9.9-rc1`, `4e6fd47`, created 2026-10-07 22:02:11 by `veljaos`; statuses `waiting` 22:02:12, `failure` 22:02:13, both on job `113039282237` of run 37690223641 |
+
+D-304's second question: the deployment record could have seen a use — it
+records refusals too, and saw this one. Its limits: the branch list shows
+only branches that exist now (one pushed and deleted would not be in it,
+though its deployment would), and the claim rests on GitHub keeping the
+record. So: **the rule allowed it; GitHub's deployment record shows nothing
+used it.**
+
+### The re-run
+
+`gh run rerun 37690223641 --failed` at 17:48:17 — **a re-run with its cause
+fixed and recorded, not a re-run until green** (D-439's rule is about the
+second kind). Attempt 2 concluded `success` at 17:50:13, read to its end:
+
+| | predicted | read |
+|---|---|---|
+| P3a | attempt 2 on `4e6fd47`; `build`, `build-linux` kept; `sign-linux`, `release` re-run | **held**: `build` and `build-linux` carry their 2026-10-07 times (21:33–22:02); `sign-linux` 17:48:25–17:48:52, `release` 17:48:56–17:50:12 |
+| P3b, R3 | the environment admits the tag; attempt 1's packages; 37D3… signs; `verify.sh` passes | **held, all of it.** Took `liro-bridge-linux-0.9.9-rc1` (artefact `11513564885`, attempt 1's, digest checked by the action); `signing with 37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65`; the rpm `key: 37D3…`; `SHA256SUMS: good signature by 37D3…`; `.deb: OK`, `.rpm: OK`; `rpm … digests signatures OK`; `verified`. **The secret's first real use worked** — the base64 and the passphrase as typed, D-440's least certain prediction |
+| P3c, R4 | signrelease signs; verifyrelease accepts; `--prerelease` | **held**: "release.json and release.json.sig written", "verified against the trust set this agent embeds", "every artefact matches its signed digest", the page's URL |
+| P3d, R5 | Pre-release; `releases/latest` v0.9.2; "11 assets" and the eleven-item list | **held as named, wrong as counted.** `prerelease true`, published 17:50:07 by `github-actions[bot]`; `latest` `v0.9.2`. The page carries exactly the items P3d named — and they are **ten**, not eleven. The count was my arithmetic; recorded, not smoothed over |
+| P3e | the page's Windows bytes are `build`'s, not a rebuild | **held**: the page's digests `db19233a…7392` (`-x64.msi`), `69febbf3…4956` (`-per-machine.msi`), `6a498c97…c8c9` (`.exe`) are `build`'s from 2026-10-07 and `release.json`'s; `release` took the signed Linux artefact `11568986024` with the digest `sign-linux` uploaded (`b3e108c6…`); the page's `liro-bridge-packages.asc` (`8356360f…`, 429 bytes) is byte-identical to the committed key |
+| P3f, R6 | no apt step hung | **held**: the apt step 14 s, `sign-linux` 27 s, `release` 76 s |
+
+Not absorbed:
+
+- rpmsign printed `warning: Could not set GPG_TTY to stdin: Inappropriate
+  ioctl for device` — it has no terminal in a container; the rpm's signature
+  verified after it.
+- Every `actions/*@v4` warned that Node.js 20 is deprecated and was forced
+  onto Node.js 24 — GitHub's, not this run's; for A33's pass over the
+  workflows.
+- **Still not read from R1 and R2**: the MSI's ProductVersion, and the
+  packages' own Version field (`0.9.9~rc1` predicted). Both are in the
+  artefacts; the packages' is read at the install on the VMs.
+
+### What follows
+
+- **A16 closed**: both environments `tag`, read back; the secret proved by
+  the run that used it.
+- **37D3… has signed packages** — the rc's `.rpm` and `SHA256SUMS`. Session
+  28's §E said it had not, and was true for a day; that sentence is
+  corrected in place rather than left for a reader to inherit.
+- **C16 stays open**: the real key has run; a person has not yet checked its
+  work as the README tells people to. Its close is now C16/F9 on both VMs —
+  `gpg --verify` and `sha256sum --check` on Ubuntu, `rpm -K` on Fedora, then
+  the install.
+- **A rule, the owner's evening in one line: a setting is what the API reads
+  back, not what the page showed when it was saved.**
+
+---

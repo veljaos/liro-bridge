@@ -20,11 +20,11 @@ believing any check.
 | The owner's Windows machine | Git for Windows' **GnuPG 2.4.9**, home `%USERPROFILE%\.gnupg`, **keyboxd** (D-436): 39DE… and 37D3… both in it. Not Gpg4win — a second installation is how 39DE… went missing (D-435). |
 | The USB stick (`D:`) | Three files: `39DE….rev`, `37D3….rev`, `liro-bridge-packages-secret-37D3….asc` (D-437, D-439). |
 | 37D3…'s passphrase | In a notebook, off every machine (D-439). |
-| GitHub `package-signing` | 37D3…'s secret and passphrase; `v*` tag rule (A16, D-439). |
+| GitHub `package-signing` | 37D3…'s secret and passphrase; `v*` **tag** rule — a *branch* rule until 2026-10-08 between 17:42:40 and 17:46:58 UTC, read back as `tag` (D-440, D-441). |
 | GitHub `release` | The Windows release signing secrets, untouched; the old package secrets deleted (D-439). |
 | The committed package key | `37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65`, "Liro Bridge Linux packages (Konfirs d.o.o. Beograd)", expires 2029-10-06 (D-437). |
 | **The rc tag** | **`v0.9.9-rc1`, pushed by the owner at about 21:33 UTC on 2026-10-07: annotated tag `68f76d9`, dereferencing to `4e6fd47`.** Not `59b65b3`: `4e6fd47`'s own CI run (37685399104) was complete and green in every job — `linux-packages`' throwaway-key and README steps included, `windows` too — and `59b65b3..4e6fd47` changes only three files under `docs/`, which no workflow reads. Tag the commit CI ran. |
-| **The release run** | **Run 37690223641 concluded `failure` at 22:02:13 UTC, read to its end (D-440): nothing published.** `build` and `build-linux` success; **`sign-linux` refused by the `package-signing` environment** — its `v*` rule is a *branch* rule, not a tag rule — so it ran no step and **the real key was never tried**; `release` skipped. No release page; `releases/latest` v0.9.2. |
+| **The release run** | **Re-run (attempt 2) concluded `success` at 2026-10-08 17:50:13 UTC (D-441): `v0.9.9-rc1` published as a prerelease, ten assets, `releases/latest` still v0.9.2; 37D3… signed the `.rpm` and `SHA256SUMS`.** Attempt 1, below, as D-440 read it. **Run 37690223641 concluded `failure` at 22:02:13 UTC, read to its end (D-440): nothing published.** `build` and `build-linux` success; **`sign-linux` refused by the `package-signing` environment** — its `v*` rule is a *branch* rule, not a tag rule — so it ran no step and **the real key was never tried**; `release` skipped. No release page; `releases/latest` v0.9.2. |
 | CI | `4e6fd47`: run 37685399104, complete, every job success. `59b65b3`: a third attempt of 37669944025 concluded success at about 21:20; superseded. |
 | CI, earlier tonight | **Run 37669944025** (the re-run of `59b65b3`) **concluded `cancelled` at 20:49:52 UTC, by the owner — nothing in it failed**: `ci` and `linux-gui` green — the first green `ci` since 2026-09-30; `windows` failed once (D37); `linux-packages` cancelled inside the throwaway-key step after a slow Go module download was taken for a hang, `linux-install` with it. **No complete run of `59b65b3` exists.** |
 
@@ -72,8 +72,11 @@ believing any check.
 
 ## D. Next, in this order
 
-1. **The release run has been read (D-440) — start from its fix, not from
-   reading it again.** `sign-linux` was refused by `package-signing`'s
+1. **Done (D-441), kept here as the record of R1–R6.** The rule was set to
+   Tag at the second attempt — the first edit did not take, and only the
+   read-back below caught it; the failed jobs re-run; R3–R5 held, P3d's
+   count of assets was mine and wrong (ten, not eleven). **The release run
+   had been read (D-440) — start from its fix, not from reading it again.** `sign-linux` was refused by `package-signing`'s
    deployment rule, a *branch* rule `v*` where `release`'s is a *tag* rule.
    **The owner sets that rule's ref type to Tag**; then read both back:
 
@@ -157,12 +160,16 @@ believing any check.
 
 ## E. What is not done that a reader might assume is
 
-- **No release exists beyond v0.9.2**: the rc run published nothing
-  (D-440). The tag `v0.9.9-rc1` exists; its page does not.
+- **No release exists beyond v0.9.2** — *corrected by D-441*: the
+  `v0.9.9-rc1` prerelease page exists since 2026-10-08 17:50 UTC. No
+  *release* beyond v0.9.2 does: `releases/latest` is v0.9.2, and no
+  installed agent is offered the rc.
 - **39DE… is not revoked**; only rotated out of the repository and GitHub.
-- **No package has been signed with 37D3…**: the throwaway-key run refusing
-  a foreign signature is not a signature by 37D3…, and the rc run never
-  reached the key (D-440).
+- ~~No package has been signed with 37D3…~~ — **true when written, and not
+  any more (D-441)**: the rc's `.rpm` and `SHA256SUMS` are signed by 37D3…,
+  verified in CI by `verify.sh` against the committed key. **What is still
+  not done: no person has checked that signature as the README tells people
+  to** — C16/F9 on both VMs (§D.2).
 - **`check.sh` does not exist**; until it does, an entry says which of CI's
   steps it ran and how.
 
