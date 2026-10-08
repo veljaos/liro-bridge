@@ -46617,3 +46617,148 @@ Not controlled: the Go version refusal (a control would need a second Go);
   (session 30 §F.4), fixed before the commit.
 
 ---
+
+## D-447 — check.sh's controls on Ubuntu: **C1 red with CI's two failures exactly** — the red tree's guard list line for line and its lint's two findings at CI's lines and columns — and C2–C6 as expected; check.sh's first full run green on 8dee60a with CI's numbers and the `-race` probe's 166 results identical to CI's test by test; and a defect it had, found by a prediction: **a full run leaves `dist/ci-helpers`, and the next run swept 54 packages where CI sweeps 52 under a header that said "clean"** — now refused, with a seventh control; 8dee60a's own CI run read first, green
+
+**Date:** 2026-10-08
+**Phase:** block 1, A33. The Ubuntu VM (booted 21:25 UTC); nothing run on
+the agent. Every run under `env -i HOME PATH` with `~/go/bin` first on PATH
+(golangci-lint v2.13.2 lives there and is not on the login PATH).
+Predictions in `~/s31-predictions.md`, each block's written before it ran.
+
+### The first reading, under session 30 §F.5: 8dee60a
+
+Session 30's handover commit, run **37846617401**: `success`, attempt 1,
+**all nine jobs**, concluded 21:40:57 UTC, read to its end by one `gh run
+watch` and its conclusion read again through the API. The control, the same
+query on `ba01328`: run 37843849854, `success` (session 30 read it). Its
+annotation: `ubuntu-latest` becomes Ubuntu 26 from 2026-10-19 — A33's pin.
+
+### C1: the red tree is red, with CI's two failures and nothing else
+
+What C1 compares against, read before predicting. C1 passes `--root` and
+not `--workflow`, so check.py reads **the red tree's own `ci.yml`** — read:
+every key and action in it is one check.py knows (its `actions/cache` step's
+`with` holds an expression, which a skipped action does not look at). And
+**CI never linted `cf24a25` itself**: on run 37666429539 its `linux-gui`
+hung on apt and was cancelled (D-439); CI's lint failure is on its parent
+`3a0795d`, run 37663845144, and between the two only README, the key file
+and two documents changed. So the guard half is compared with `cf24a25`'s
+own run, the lint half with its parent's.
+
+`gh run view --log-failed` printed **nothing, exit 0, on both runs**; the
+API's job log (`actions/jobs/<id>/logs`) has the failures. An empty read is
+not an absence (session 29 §F.2) — this one would have been.
+
+Predictions (21:32:04 UTC), least certain that `linux-gui[4]`, the GTK vet,
+passes here so the lint is reached at all. **All held**:
+
+| | predicted | read |
+|---|---|---|
+| P1 | exit 1, "C1: as expected" | **held**, 55 s in all |
+| P1a | `ci[2]` failed; the found list = CI's on `cf24a25` | **held**: the four expected + `scripts/d32probe`, line for line CI's |
+| P1b | `ci[3]`–`[14]` not run | **held** |
+| P1c | `linux-gui[4]` passes — least certain | **held**, 20 s |
+| P1d | `linux-gui[5]` CI's two exactly | **held**: `scripts/d32probe/main.go:63:13` errcheck, `cmd/liro-bridge/mainwindow.go:233:6` unused, "2 issues" |
+| P1e | `linux-gui[6]`–`[11]` not run | **held** |
+| P1f | under 5 min | **held**, 55 s |
+| P1g | one worktree after | **held** |
+
+That the lint read the red tree and not this one: `func runMainWindow` is at
+`mainwindow.go:233` only in `cf24a25`; at HEAD it is in `open_other.go:25`.
+
+### C3, C4 — and C2, C5, C6 again, here
+
+**All as expected**, read in their logs and not only controls.sh's line:
+C3 refused at `linux-gui[5]` ("is not v0.0.1"), which means preflight had
+already passed both jobs' apt packages and `ci[6]`'s v2.13.2; C4 named
+`liro-control-no-such-package` alone. No step ran: `~/.cache/liro-check`
+did not exist before or after.
+
+### The first full run: 8dee60a, green, with CI's numbers
+
+Predictions (21:34:27 UTC), least certain the `-race` probe. **F1–F5, F7
+held**: exit 0, ", clean", 27 steps; the guard "52 packages sweep without
+GTK", "50 … no C toolchain" — CI's on `ba01328`; 34 packages `ok` in each
+`-race` view, `internal/chooser` among them; the probe "passed under -race";
+**25 min** (21:34:35–21:59:42), the probe 1012 s of it.
+
+**The probe skips window tests here** (no display), so its pass is CI's
+only if CI skipped the same: counted from both logs, **141 PASS, 25 SKIP,
+0 FAIL — identical test by test** to CI's on 8dee60a.
+
+### F6: a defect, predicted and then read
+
+`linux-gui[9]` — CI's step — writes `dist/ci-helpers/{genpdf,extract}/main.go`.
+On GitHub that runner is not `ci`'s; here they stay. `dist/` is ignored, so
+`git status` is empty; `go list ./...` is not. Predicted, then read:
+`./check.sh --only ci:2` after the run printed **"54 packages sweep without
+GTK", "52 … no C toolchain"**, the two helpers in its list, under **", clean"**.
+It passed — and was not CI's check: gofmt, vet, both test views and the
+three builds over two packages CI's `ci` never sees, and a summary that
+could not say so.
+
+**Fixed** (`084b4d4`): preflight refuses when `git ls-files --others
+--ignored --exclude-standard -- '*.go'` is not empty, naming the files.
+**C7**: an ignored `main.go` planted under `dist/` in a worktree of HEAD,
+never in this tree; refused naming it. A consequence, said: every full run
+leaves `dist/ci-helpers` and the next run refuses until it is removed.
+
+Predictions for the fix: G1 held — the leftover tree refused, naming both.
+**G2 failed**: I predicted all seven controls as expected with the leftovers
+still present; **C3 and C4 were refused for the leftovers** — they run
+against this tree and reach preflight, while C2, C5, C6 refuse at plan time.
+The controls were right to say NOT as expected: a refusal for another reason
+is not theirs. `dist/ci-helpers` removed (two files, stamped 21:42:03 and
+21:42:23, inside the first run's `linux-gui[9]`); **all seven as expected**,
+C1 again with the same two failures.
+
+### check.sh on `084b4d4`, the fix: green
+
+Predictions G3/G4 (least certain G3: the first run's `/tmp/softtoken`,
+`/tmp/liro-home`, `/tmp/signed.pdf` still present). **Both held.**
+`./check.sh` on `084b4d4`, ", clean": **every selected step passed**, exit 0,
+22:03:08–22:10:03 UTC; 52 / 50; 34 `ok` in each `-race` view; the probe
+passed with the same 141 PASS and 25 SKIP, identical test by test.
+
+**7 minutes against 25, the probe 34 s against 1012 s — explained, not
+absorbed**: `-count=1`, no `(cached)` line in either probe log, per-package
+test times alike (`internal/ui` 8.7 / 8.3 s, `pinscreen` 1.3 / 1.1 s,
+`cmd/liro-bridge` 30.4 / 28.0 s). The 978 s are the build — gotk4 under
+`-race`, cold on the first run and cached since. **A first run on a cold
+`-race` cache is ~25 minutes; a warm one ~7.**
+
+G4: the next `./check.sh --only ci:2` refused, naming `dist/ci-helpers` —
+as the fix means. Removed again (the two files); the tree holds no ignored
+Go file now.
+
+**This is the first claim of green that names what ran (session 28 §F.4):
+`check.sh` on `084b4d4`, both jobs, 27 steps, with the five jobs it never
+runs named in its summary — `windows`, `packaging`, `linux-packages`,
+`linux-install`, `sdk-typescript`.** `084b4d4` has no CI run yet; it is not
+pushed.
+
+### D-304's five questions
+
+1. **Could it have failed?** C1 is the answer the owner asked for: the tree
+   CI failed on fails here, at the same two steps, with the same output.
+   C2–C7 each refuse for their own reason, read in the log.
+2. **Could it see what it reports absent?** The probe's skips were the
+   place a pass could hide; they match CI's one for one. The guard's count
+   was the place F6 hid, and it was seen because it was predicted.
+3. **Resolution?** Step granularity; a step's own output is in its log.
+4. **Did this run actually run?** The commit and "clean" printed; C1's lint
+   names a line that exists only in the red tree; the logs are stamped
+   with the run's time and commit.
+5. **Read, and the discrepancy explained?** 54 against 52 — explained, and a
+   finding; G2's failure — explained, my prediction, not the controls.
+
+### Not controlled, still
+
+The Go-version refusal (needs a second Go); `CI=true`'s effect (needs
+`dbus-daemon` absent); `/tmp/softtoken`, `/tmp/liro-home`, `/tmp/signed.pdf`
+persist between runs here where a runner is fresh (outside the tree, so not
+swept); `XDG_RUNTIME_DIR` is not passed to steps, and whether GitHub's
+runner sets it is not read.
+
+---
