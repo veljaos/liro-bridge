@@ -46780,3 +46780,32 @@ swept); `XDG_RUNTIME_DIR` is not passed to steps, and whether GitHub's
 runner sets it is not read.
 
 ---
+
+## D-448 — E8, the Guide, moves to the end, after macOS and before v1: all three platforms' instructions written together, in one pass; the Windows pass becomes block 2 and every block after it moves up one — the owner's decision, with the reason against it heard
+
+**Date:** 2026-10-08
+**Phase:** between blocks 1 and 2. Nothing run.
+
+**The owner's decision.** E8 — the Guide's Linux section, block 2 since
+D-433 — is no longer written now. **The Guide is written once, for Windows,
+Linux and macOS together, after F13 (macOS) and before v1.** So block 2 is
+the Windows pass, and D23, E9/B25, A2/E2, the D6 block, the hardware faults,
+multi-user, the cloud channel and F13 each move up one (2–10); E8 is 11, the
+last block.
+
+**The reason against it, said and heard: Linux is fresh now and will not be
+in ten weeks.** What a person meets installing on Ubuntu and Fedora — gpg's
+first-run lines, dnf's "skipped OpenPGP checks", which card and which
+SafeSign — is known in detail today and will have to be read back out of
+D-361 to D-447 then. **The owner chose the single pass anyway.** Recorded as
+the owner's, so that when E8 is written and the Linux half costs more than it
+would have now, the cost is one that was chosen, not one that happened.
+
+What E8 carries is unchanged: D29's screenshots checked, forgetting pairings
+before uninstalling (A19), re-pairing after a pairing made with the keyring
+locked (A10), other issuers' cards as untried (C15). `docs/open-items.md`:
+the order renumbered, E8's item and the ten block references that named a
+number moved with it (3→2, 6→5, 7→6, 10→9). Earlier entries and handovers
+that say "block 2: E8" are left as they were written.
+
+---
