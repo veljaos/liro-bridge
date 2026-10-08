@@ -98,6 +98,14 @@ check.
 4. **Backticks run inside double quotes too**: a Markdown heading passed to
    `python3 -c "…"` lost a word to command substitution (D-445's heading,
    fixed). Text with backticks goes through a file, never a shell string.
+5. **A handover's own commit is read like any other push, and its result is
+   recorded in the next sitting's entry**, not chased inside the handover
+   (the owner). Writing each one down inside itself never closes: every
+   such record is a commit that needs its own run. D39 came from nobody
+   reading such a push; the fix is reading them. So: `ba01328`'s run,
+   37843849854, was read to its end tonight — `success`, all nine jobs,
+   21:18:05 UTC — and the commit carrying this rule is **the Ubuntu
+   sitting's first reading**, recorded in its first entry.
 
 ## G. `check.sh` — its controls have not been run
 
