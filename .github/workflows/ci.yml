@@ -134,7 +134,11 @@ jobs:
       # rather than a widening of this job's claim. The build step at
       # the end of this job still runs with CGO_ENABLED=0, over every
       # package that can be built that way (D-353).
+      # A hung package mirror fails this step at 15 minutes and names it,
+      # instead of holding the job to GitHub's 360 (D-439). Every package
+      # install in this file has the same bound; the longest took 77 s.
       - name: the PKCS#11 header
+        timeout-minutes: 15
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libp11-kit-dev
@@ -356,6 +360,7 @@ jobs:
       # needed one, which is D-334's shape a third time: a development
       # package this machine has and the runner does not (D-353).
       - name: GTK4, WebKitGTK, gobject-introspection and the PKCS#11 header
+        timeout-minutes: 15
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -880,6 +885,7 @@ jobs:
       # build.sh can stamp the commit; the rest is D-353's list plus
       # dpkg-dev for dpkg-shlibdeps and binutils for objdump.
       - name: the build container's toolchain
+        timeout-minutes: 15
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
@@ -973,6 +979,7 @@ jobs:
       # a key made here and thrown away — and the one thing that key must
       # never do is pass as the committed one.
       - name: sign with a throwaway key; the committed key refuses it
+        timeout-minutes: 15
         run: |
           set -eu
           apt-get install -y --no-install-recommends gnupg rpm
@@ -1042,6 +1049,7 @@ jobs:
       # Fedora's rpm accepts an ed25519 signature Ubuntu's rpmsign made is
       # measured here and nowhere else.
       - name: the README's check passes before install
+        timeout-minutes: 15
         run: |
           set -eu
           if command -v apt-get >/dev/null; then
@@ -1061,6 +1069,7 @@ jobs:
           fi
 
       - name: install the package with the distribution's own tool
+        timeout-minutes: 15
         run: |
           set -eu
           if command -v apt-get >/dev/null; then
@@ -1091,6 +1100,7 @@ jobs:
           path: softtoken-check
 
       - name: the soft token signs, and two independent verifiers agree
+        timeout-minutes: 15
         run: |
           set -eu
           if command -v apt-get >/dev/null; then
@@ -1133,6 +1143,7 @@ jobs:
       # checked with the distribution's own parser, without loading it:
       # a container has no kernel of its own to load it into.
       - name: the AppArmor profile ships where it belongs, and parses
+        timeout-minutes: 15
         run: |
           set -eu
           if command -v apt-get >/dev/null; then

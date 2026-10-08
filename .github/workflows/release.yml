@@ -186,7 +186,11 @@ jobs:
     container: ubuntu:24.04
     if: github.repository == 'veljaos/liro-bridge'
     steps:
+      # A hung package mirror fails this step at 15 minutes and names it,
+      # instead of holding the job to GitHub's 360 (D-439). Every package
+      # install in this file has the same bound; the longest took 77 s.
       - name: the build container's toolchain
+        timeout-minutes: 15
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
@@ -249,6 +253,7 @@ jobs:
     environment: package-signing
     steps:
       - name: gpg and rpmsign
+        timeout-minutes: 15
         run: |
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates gnupg rpm
