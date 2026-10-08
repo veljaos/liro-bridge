@@ -46094,3 +46094,149 @@ Not absorbed:
   back, not what the page showed when it was saved.**
 
 ---
+
+## D-442 — C16 on Ubuntu: the rc fetched, its signature checked by hand and installed, as a person following the README would — every prediction about the package held, and **the README's own instruction did not work as written**: it says to compare "the fingerprint it prints" at the import, where gpg prints sixteen hex digits, not forty; fixed. The CI run of `314303f` read to its end, green, and carrying GitHub's notice that `ubuntu-latest` becomes Ubuntu 26 on 2026-10-19 — three jobs to pin before then. My first CI query could not see the run it was looking for; the running agent's binary could not be read, D-376 again, and the log's "starting" line turned out to be written by every invocation
+
+**Date:** 2026-10-08
+**Phase:** block 1, C16/F9, the Ubuntu half. On the Ubuntu VM; the install by
+the owner's hands. Predictions written at 18:17:18 UTC before any reading,
+two added at 18:44:45 before U3.
+
+### U0 — the CI run, read first (D-438's rule)
+
+**My first query could not have found it.** `gh run list --commit 314303f`
+returned `[]`; the filter wants the full SHA. A control with `4e6fd47`'s full
+SHA returned its three known runs, and the full SHA of `314303f` returned
+**run 37822575930**, created 18:13:12 and still running — P0a's premise
+(that it had concluded overnight) was wrong too. The empty result was the
+filter, not the absence of a run, and only the control said so: **a check
+that cannot fail looks like a pass — the same class as "local green"** (the
+owner). Watched to its end by one `gh run watch`: **concluded `success` at
+18:40:10, attempt 1, all nine jobs** (P0b held; `windows` passed, which says
+nothing about D37's once in sixty; P0c held, no Release run).
+
+Not absorbed:
+- `linux-gui`'s apt step **10 min 36 s** (about a minute when the mirror
+  answers): slow, not hung; the second slow apt step in two days after
+  10-07's 722 s.
+- The `-race` probe **14 min 21 s** — one number with nothing beside it; a
+  second reading taken when one comes, not sought.
+- **GitHub printed a notice on this run: "The ubuntu-latest label will
+  migrate to Ubuntu 26 beginning October 19, 2026."** `ci`, `linux-gui` and
+  `sdk-typescript` run on the `ubuntu-latest` host with no container
+  (`linux-packages`, `linux-install` and the release's Linux jobs are pinned
+  images). From the 19th, `linux-gui` would install GTK and WebKitGTK from
+  Ubuntu 26 and check "the agent links exactly the libraries SPEC §1.1 and
+  F12 §8 account for" against them while every package targets 24.04 — **a
+  check that would go green on the wrong thing** (the owner). Decided by the
+  owner: `runs-on: ubuntu-24.04` on the three, in A33's pass, **with a
+  deadline of 2026-10-19, not housekeeping**. **We were told** — GitHub
+  printed it on this run; had it slipped past, the breakage on the 19th
+  would have looked like our code.
+- Node.js 20 deprecation warnings on `actions/*@v4`, as on 10-08's release run.
+
+### U1–U8, against the predictions
+
+| | predicted | read |
+|---|---|---|
+| U1 | `0.9.9~dev.17` installed; conffile unedited | **held**: `install ok installed`; `/etc/apparmor.d/liro-bridge` md5 `d8e56751…9102` = dpkg's. One agent, **PID 2458**, `/usr/bin/liro-bridge tray`, started 17:39:25, 37 s after boot. `~/.gnupg` holds **0 public keys** — so the default home could not have stood in for the import |
+| U2 | four files, the page's bytes | **held**: fetched by `gh release download` into a new `~/Downloads/liro-bridge-v0.9.9-rc1`; sizes and SHA-256 equal to the page's digests (D-441) |
+| U3 | import prints the name; **least certain: it prints the 16-hex key ID, not the fingerprint the README tells the reader to compare** | **held, and the README is wrong as written** — below |
+| U4 | Good signature, `[unknown]`, the trust WARNING, the full fingerprint here | **held**: made 17:48:47 UTC by EDDSA key `37D3C56D…8D65`; `Primary key fingerprint: 37D3 C56D 5F26 F2C1 F887  429F 0FC7 D69C DDDD 8D65` |
+| U5 | `.deb: OK`, the rpm line ignored | **held**; the signed file's rpm line, `ebb2684f…ffa2`, is the page's rpm digest — Fedora's file is under the same signature |
+| U5c | controls: one byte of `SHA256SUMS` → BAD; one byte of the `.deb` → FAILED | **held**: `BAD signature from "Liro Bridge…"`, exit 1; `FAILED`, `1 computed checksum did NOT match`, and — not predicted — `SHA256SUMS: no file was verified`, exit 1. On copies in their own directory; the originals re-hashed after |
+| U6 | `Version: 0.9.9~rc1` | **held** (the field R2 left unread) |
+| U7 | upgraded over dev.17; no conffile question; an `_apt` notice; [Y/n] uncertain | **held, from the owner's terminal**: `1 upgraded, 0 newly installed`, **`Unpacking liro-bridge (0.9.9~rc1) over (0.9.9~dev.17)`** — dpkg's own answer to the sort; no conffile question; `N: Download is performed unsandboxed as root as file '…' couldn't be accessed by user '_apt'`; **apt did not ask [Y/n]** |
+| U8 | `0.9.9~rc1 install ok installed`; the binary reports 0.9.9-rc1 at `4e6fd47`; agent 2458 unrestarted | **held**: dpkg.log `upgrade … 0.9.9~dev.17 0.9.9~rc1` at 18:49:08; `liro-bridge 0.9.9-rc1 (commit 4e6fd47, built 2026-10-07T21:47:31Z, go1.26.5, linux/amd64)`; conffile unchanged; 2458 same PID, same start. **Which binary 2458 runs: not read** — below |
+
+P3d: the import left no daemon; `--verify` started a `gpg-agent` on the
+empty home, **PID 6214**, which outlived it and was stopped by that PID.
+
+### The README's instruction did not work as written
+
+`README.md:155` said `gpg --import liro-bridge-packages.asc  # compare the
+fingerprint it prints with the one above`. gpg printed, exactly:
+
+```
+gpg: key 0FC7D69CDDDD8D65: public key "Liro Bridge Linux packages (Konfirs d.o.o. Beograd)" imported
+```
+
+Sixteen hex digits, against the README's forty. **A person following it
+literally cannot do what it asks** (the owner). Not dangerous — the sixteen
+are the forty's last four groups, and `--verify` prints the whole fingerprint
+one command later — but the instruction did not work, **and nobody had
+noticed because nobody had followed it. That is what C16 was for.** CI's
+README step checks that the fingerprint is *in* the README, not that the
+README's instructions can be carried out — a check of a document's content,
+not of its use.
+
+Fixed: each line's comment now says what that command prints; the
+comparison is put at `--verify`'s "Primary key fingerprint" line, all forty
+digits; the trust WARNING a person sees every time is named as expected; and
+"BAD signature" is named as the stop. **The locale, unmeasured**: the
+README quotes gpg's English, this VM's `LANG` is `en_US.UTF-8`, and most
+people who install this will have gpg speaking Serbian — the same class as
+the fingerprint, the instructions quoting one thing and a person seeing
+another (the owner). The README now says the words differ by language and
+the digits do not; what Serbian gpg prints is not read.
+
+**U2 is not quite what a downloader does** (the owner): a person clicks the
+release page; `gh` is a client of it. For a private repository there is no
+other route from a shell, so it is the right instrument — but what is being
+tested is instructions for people, and one step of them was taken by a
+different tool than the README implies. The bytes are the page's (P2).
+
+### Which binary the running agent is on — D-376, again
+
+P8c meant to read `/proc/2458/exe` and see `(deleted)`: **Permission
+denied** — the file is root's while the process is uid 1000, the agent
+having made itself non-dumpable (D-376). The second route I tried,
+`ss -ltnp` on its port 17580, shows a listener and **an empty process
+column** — and that one was not new: **D-396 had recorded `ss -p` as blind to
+this program**, and I tried it anyway. What can be said: 2458 was not
+restarted (same PID, same start); `bridge.json`, written 17:39:27.87, 2.4 s
+after 2458 started, says `0.9.9-dev.17` on port 17580, which something still
+listens on; and 2458 is the only `liro-bridge` process. **Consistent with
+2458 running dev.17 from a deleted file; not read.**
+
+**D-376's costs, in one list** (the owner: three is a pattern, and whoever
+picks D-376 up should see the list, not footnotes). Each time the answer was
+"work around it", and each time that was right:
+
+- **To people**: the file chooser on Fedora — portals refuse the process
+  (D-408); the DPI value — GTK's −1 and every window after the first drawn
+  white, worked around in (c) (D-424).
+- **To our instruments**: `ss -p` cannot map its sockets (D-396, and again
+  here); `/proc/PID/root` (D-412) and `/proc/PID/environ` (D-423)
+  unreadable; `/proc/PID/exe` unreadable, so which binary a running agent is
+  on cannot be read (here).
+
+D-424 recorded why it stays: with `ptrace_scope` 0 the flag is the only
+thing keeping a same-user program from reading the agent's memory. Open-items
+A34.
+
+### The log's "starting" line is written by every invocation
+
+The third route, the log, nearly misled: `bridge.log` showed `liro-bridge
+starting … "version":"0.9.9-rc1","commit":"4e6fd47"` at 18:49:38.589 —
+**which was my `liro-bridge --version` for P8b**, not an agent starting.
+`run()` logs the line at `main.go:176`, before flags are parsed at `:247`, so
+`--version`, and every invocation that reaches that line, writes an
+agent-start line into the agent's own log, with no PID to tell the two apart.
+Anyone reading the log for agent starts — as I was — counts invocations.
+Open-items D38; whether earlier entries counted a start line that was a
+command is not checked.
+
+### What follows
+
+- **C16/F9's Ubuntu half done**; the Fedora half — `rpm -K`, then `dnf
+  install`, and rpm's order of `0.9.9~rc1` against `0.9.9~dev.17` — is next.
+- The pin on three jobs, deadline 2026-10-19, in A33's pass.
+- **How this project is run, from here (the owner)**: run everything that can
+  be run without asking; make the reasonable call and say what was decided
+  and why; stop only for the owner's eyes, the owner's hands, what cannot be
+  undone and could go either way, and the owner's decisions; report at the
+  end of a block. "Ready, wait for my go" was for the window measurements.
+  Written into session 29's handover as the first thing.
+
+---

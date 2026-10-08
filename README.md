@@ -152,11 +152,22 @@ cannot be derived from it.
 *Debian and Ubuntu*
 
 ```
-gpg --import liro-bridge-packages.asc          # compare the fingerprint it prints with the one above
-gpg --verify SHA256SUMS.asc SHA256SUMS         # "Good signature from Liro Bridge Linux packages (Konfirs d.o.o. Beograd)"
+gpg --import liro-bridge-packages.asc          # "key 0FC7D69CDDDD8D65: public key "Liro Bridge Linux packages …" imported"
+gpg --verify SHA256SUMS.asc SHA256SUMS         # "Good signature from "Liro Bridge Linux packages (Konfirs d.o.o. Beograd)""
+                                               # "Primary key fingerprint: 37D3 C56D …" — compare this line with the one above
 sha256sum --check --ignore-missing SHA256SUMS  # "liro-bridge_<v>_amd64.deb: OK"
 sudo apt install ./liro-bridge_<v>_amd64.deb
 ```
+
+The import prints only the last sixteen digits of the key's fingerprint; the
+whole of it appears under `gpg --verify`, on the line that begins
+"Primary key fingerprint". That is the line to compare, all forty digits,
+with the fingerprint above. Above it gpg also says "WARNING: This key is not
+certified with a trusted signature!" — expected for a key you have just
+imported and not signed yourself; the fingerprint is what tells you whose key
+it is. "BAD signature" means the checksum file is not the one that was
+signed: stop there. The quoted words are gpg's in English; in another
+language they differ, and the digits do not.
 
 The `.deb` carries no embedded signature: `apt install ./file.deb` would not
 check one. The signed checksum file is the check, so run it before installing.
