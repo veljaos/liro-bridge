@@ -50,7 +50,7 @@ what it is and roughly how long.
 | The release | `v0.9.9-rc1`, **Pre-release**, ten assets, published 2026-10-08 17:50:07 UTC; `releases/latest` v0.9.2 (D-441). |
 | GitHub `package-signing` | `v*` **tag** rule, read back (D-441); 37D3…'s secret proved by the run that used it. |
 | CI | Run 37822575930 on `314303f`: complete, all nine jobs `success` (D-442). **Carries GitHub's notice: `ubuntu-latest` becomes Ubuntu 26 from 2026-10-19.** |
-| README | The Debian/Ubuntu lines' comments rewritten to say what each command prints; the fingerprint compared at `--verify` (D-442). Not yet through CI — the push after this handover runs it. |
+| README | The Debian/Ubuntu lines' comments rewritten to say what each command prints; the fingerprint compared at `--verify` (D-442). **The Fedora block had no comparison at all: `gpg --show-keys` added before `rpm --import` (D-443).** D-442's push is in CI (run 37827959361); D-443's is not yet pushed. |
 
 ## B. What this sitting did
 
@@ -59,6 +59,8 @@ what it is and roughly how long.
   (a branch rule let any `v…` branch reach the key for about 22 hours; the
   deployment record shows nothing used it); the failed jobs re-run with that
   cause fixed; 37D3…'s first signatures; the rc published as a prerelease.
+- **D-443** — the README's Fedora block compared no fingerprint at all;
+  `gpg --show-keys` added before the import.
 - **D-442** — CI read to its end first (and my first query of it could not
   have found it); the Ubuntu half of C16: fetched, imported, verified,
   checksummed, two controls refused, installed as an upgrade; **the README's
@@ -83,7 +85,9 @@ what it is and roughly how long.
    fingerprint (`gh run list --commit $(git rev-parse HEAD)`; the full SHA,
    D-442).
 2. **C16/F9, the Fedora half**, as the README says, from the release page
-   into a new directory: `sudo rpm --import liro-bridge-packages.asc`,
+   into a new directory: **first `gpg --show-keys liro-bridge-packages.asc`
+   (D-443) — whether `gpg` is on a stock Fedora 44 at all is not known**,
+   then `sudo rpm --import liro-bridge-packages.asc`,
    `rpm -K liro-bridge-0.9.9-rc1.x86_64.rpm` ("digests signatures OK"), a
    control (`rpm -K` on a copy with one byte changed), then `sudo dnf
    install ./…rpm` — **rpm's order of `0.9.9~rc1` against the installed

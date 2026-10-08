@@ -175,10 +175,16 @@ check one. The signed checksum file is the check, so run it before installing.
 *Fedora*
 
 ```
+gpg --show-keys liro-bridge-packages.asc       # forty digits under "pub" — compare them with the one above
 sudo rpm --import liro-bridge-packages.asc
 rpm -K liro-bridge-<v>.x86_64.rpm              # "digests signatures OK"
 sudo dnf install ./liro-bridge-<v>.x86_64.rpm
 ```
+
+Compare the fingerprint before `rpm --import`, not after: rpm trusts every
+key it has imported, for every package, and `rpm -K` says only that the
+package was signed by one of them. `gpg --show-keys` reads the file without
+importing it anywhere.
 
 `dnf` does not check the signature of a package installed from a file
 (`localpkg_gpgcheck` is off by default), so `rpm -K` is the check. "digests OK"

@@ -46240,3 +46240,52 @@ command is not checked.
   Written into session 29's handover as the first thing.
 
 ---
+
+## D-443 — The README's Fedora block had no fingerprint comparison at all: the key went into rpm's database as root unexamined, and `rpm -K` then accepts whatever was imported; `gpg --show-keys` added before the import, read here to print the forty digits and import nothing
+
+**Date:** 2026-10-08
+**Phase:** block 1, C16. The owner, reading D-442's diff: it touched only the
+Debian and Ubuntu block — did the Fedora instructions have the same defect?
+"If they were not, they should not ship wrong while the other half is
+right."
+
+**Not the same defect — a worse one.** The Fedora block was `sudo rpm
+--import`, `rpm -K`, `sudo dnf install`: no step compared anything with the
+fingerprint the section opens with. The key went into the system's rpm
+database unexamined, and **rpm trusts every key it has imported, for every
+package** — `rpm -K` says only that a package was signed by one of them. So
+the Fedora half of the README checked transport and nothing about whose key
+it was. D-442's own sentence holds here too: nobody had noticed because
+nobody had followed it.
+
+The `rpm -K` comment itself is right as far as CI reads it: `linux-install
+(fedora:44)` on run 37822575930 printed `liro-bridge-0.0.0-ci.x86_64.rpm:
+digests signatures OK` and requires that string — with a throwaway key; ours
+is read on the Fedora VM.
+
+**Fixed**: `gpg --show-keys liro-bridge-packages.asc` first, its comment
+"forty digits under "pub" — compare them with the one above", and a
+paragraph saying to compare before `rpm --import`, not after, and why. Read
+here (gpg 2.4.4, a new empty home): it prints `pub ed25519 2026-10-07 [SC]
+[expires: 2029-10-06]`, then `37D3C56D5F26F2C1F887429F0FC7D69CDDDD8D65`
+unspaced (the README states both forms), then the uid; **and imports
+nothing** — 0 keys in that home afterwards, against 1 in U3's home as the
+control. **Not read: whether `gpg` is present on a stock Fedora 44
+Workstation**, and what Fedora's gpg prints — the first two predictions of
+C16's Fedora half.
+
+### An unexpected file, read before anything was assumed
+
+After the commit, `git status` showed an untracked file in the repository
+root named `ha256sum --check --ignore-missing SHA256SUMS`. It was read before
+anything was done with it: 2012 bytes, born 18:54:42 — seventeen seconds
+before the push started CI — and its content the owner's coloured `git diff`
+of the README. The name said how: `less`'s `s` saves its input to a file, and
+the owner had typed the next command, `sha256sum …`, while the diff was still
+open. Untracked, in no commit; left for the owner, who deleted it. **The
+habit worth keeping is the stop, not the answer** (the owner): an unexpected
+file is read before it is assumed to be mine or the owner's — the same habit
+that found 39DE…'s revocation certificate where three checks had said it was
+not (D-435).
+
+---
