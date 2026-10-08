@@ -197,8 +197,12 @@ package is not signed, and should not be installed. Any word in capitals, such
 as "DIGESTS SIGNATURES NOT OK", means stop; that line does not say which part
 failed, and `rpm -Kv` does.
 
-**What this does and does not protect against.** It catches a file swapped or
-altered on its way to you, from a mirror or anyone between. It does not catch
+**What this does and does not protect against.** The packages are signed;
+installing them does not check the signature, on either distribution. The
+check protects only a person who runs it before installing, and a package
+installed without it is protected exactly as much as an unsigned one would be.
+Run, it catches a file swapped or altered on its way to you, from a mirror or
+anyone between. It does not catch
 a compromise of this repository itself, because the key and the fingerprint
 above come from the same place as the packages. Comparing the fingerprint with
 one published somewhere else would close that gap; no such place exists yet.

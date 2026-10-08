@@ -46379,3 +46379,153 @@ rc is read running.**
   are what a person following the README would have.
 
 ---
+
+## D-445 — A35 and A15 decided by the owner: the Fedora instructions left as written with a package repository named as what would close the gap, "signed" kept apart from "installing checks it" wherever we describe the signing, and the fingerprint to be published as a statement signed with the owner's qualified certificate and on konfirs.com; **39DE… revoked** from its own `.rev`, whose colon guard keeps it from being used by accident; and a Windows failure on session 29's own handover push, found a day late by the control of this push's CI query — two of unknown cause in 65 Windows runs, which a green run does not lower
+
+**Date:** 2026-10-08
+**Phase:** block 1, after C16. Nothing run on either VM's agent; GitHub read
+through `gh`.
+
+### A35, the owner's ruling
+
+**Left as written.** Telling people to type `--setopt=localpkg_gpgcheck=1`
+is advice nobody will follow, and it is untested. What the README says is
+the honest thing: the signature exists, neither dnf nor rpm checks it at
+install time, and `rpm -K` is how a person checks it — true on both
+distributions (apt checks no signature on a local `.deb` either), and more
+than most projects say. **What would actually close it is a package
+repository** — dnf with `gpgcheck=1`, apt with `signed-by` — so that the
+package manager checks every install and every update; it belongs with the
+cloud work (A32), not here. A35 closed by decision.
+
+### Kept visible: two claims, only one of them true
+
+**"The packages are signed" and "installing them checks the signature" are
+different claims, and until D-444 we only had the first** (the owner).
+Anywhere the signing is described — the README, the release notes, whatever
+A15 becomes — it must not read as though installing is protected: a person
+who skips the check gets exactly what an unsigned package would give them.
+
+Read for it: SPEC claims nothing about install-time checks (§1's "install
+the package, and nothing else" is about dependencies). The README and the
+release notes template claimed nothing either, but neither said it was not
+so. Now:
+
+- README, "What this does and does not protect against", opens: the packages
+  are signed; installing them does not check the signature, on either
+  distribution; the check protects only a person who runs it before
+  installing, and a package installed without it is protected exactly as much
+  as an unsigned one would be.
+- `docs/release-notes-template.md`, the `SHA256SUMS` row: neither `apt` nor
+  `dnf` checks that signature at install; it protects only whoever checks it
+  themselves before installing. The template is what `release.yml` publishes
+  (`--notes-file`), so the next release page says it; the rc's page, already
+  published, does not.
+
+### The push before this one failed, and nobody had read it
+
+D-438's rule, the run read to its end before claiming anything. The query
+for `5588678` came back with its run in progress; **its control — the same
+query for `HEAD~1`, `dbf439a` — came back `failure`.** `dbf439a` is session
+29's handover, pushed after the handover recorded `d16e04b` and `803d298`
+green; its own run, 37833946737, was never read. One file of Markdown.
+
+`windows`, `cmd/liro-bridge`: `TestTheSignWindowIsOnScreenBeforeTheCertificateListIs`
+saw its window, released the held enumeration (`SMART_CARD_SERVICE_DOWN`
+logged 19:44:12.798), posted `WM_CLOSE`, and **`sign` did not return in
+60 s**; the next 20 window tests failed at once, `PostJSON(init): ui: window
+is closed`. Every other package `ok`; the other eight jobs `success`. The
+cause is not read. **Recorded, not re-run away** (session 28 §F.7): open-items
+D39, Windows block. The second Windows failure with no code change after D37,
+in a different test.
+
+D-304's fifth question, on the record itself: the handover said "both pushes
+read to their end, green", which was true of the two it named — and the
+third push of the sitting went unread. **A handover's own push is a push**;
+the rule was written for code, and applied to docs the same way it catches
+this.
+
+`5588678` itself, run 37836947039: **`success`, attempt 1, all nine jobs**,
+concluded 20:20:16 UTC, read to its end by one `gh run watch`; the README's
+fingerprint step passed; `windows` passed.
+
+**What that pass does and does not say** (the owner asked for it read).
+Counted over every attempt of the last 70 CI runs, through the API: the
+`windows` job ran 72 times. Seven failures; five on 2026-09-21/22, tests
+fixed then. **Since 2026-09-23 it ran 65 times: 62 green, one cancelled,
+and two failures with no code change — D37 (`59b65b3`, attempt 2) and D39
+(`dbf439a`).** Two different tests, each seen once: not one flake seen
+twice, and neither has a cause. Two in sixty-odd is not a rate anyone has
+characterised; a green run does not lower it, and nothing about it is
+known except that it happens. (The owner's "61st run, second failure" is
+this count framed by D-439's sixty; the API's figures are the ones above.)
+
+The owner, on D39: right to record it rather than re-run it, and **the
+finding underneath is the shape of the week CI was found red: a handover's
+own push is a push, and nobody read it. Two in two weeks.**
+
+### A15, the owner's ruling: a statement signed with the owner's qualified certificate, and konfirs.com
+
+Options brought (keys.openpgp.org, a DNS record, the gap left stated, among
+them); chosen: **1 and 2**.
+
+1. **A PDF statement of the package key's fingerprint, signed by this
+   program with the owner's own Serbian qualified certificate** — the only
+   option whose trust does not rest on somebody's host, so it can sit on the
+   release page itself. **It names the owner**: Konfirs has no certificate
+   of its own and none is bought for this; a person reading it sees who
+   signed, and who signed is the owner. **It is a measurement as well as a
+   publication** (the owner): the program signing a statement about itself
+   with a real qualified certificate; if it does not verify in Adobe Reader
+   and in a Serbian validator, that is something about the product no test
+   would have said. Verified as D-361 verified a signature: two verifiers,
+   each with a control.
+2. **A page on konfirs.com** stating the same fingerprint — hosting and DNS
+   are credentials apart from GitHub.
+
+Both say the signature is checked by a person, not by installing (above).
+
+### Revoking 39DE…: done here, from the `.rev` alone
+
+Session 28 §D.3 has it done in Git Bash and pasted. Decided instead: on the
+Fedora VM, in a throwaway home — 39DE…'s **public** half from git history
+(`cf24a25^:build/linux/liro-bridge-packages.asc`, read here to be
+`39DE792A503C4F4E26DF1E4586FA14F600AA59B3`) and the `.rev` from the owner's
+stick, its `:` guard removed on a copy; no secret key involved, nothing
+pasted. The owner's hands: the stick.
+
+Predictions written at 20:14:16 UTC, before `~/rev` existed (in
+`~/s30-predictions.md`), least certain V3; **all held**:
+
+| | predicted | read |
+|---|---|---|
+| V1 | 1197 bytes, armour's first line guarded by `:` | **held**: line 21 `:-----BEGIN PGP PUBLIC KEY BLOCK-----`; sha256 `6f117929…229e` |
+| V1c | the unmodified copy imports nothing | **held**: `no valid OpenPGP data found`, exit 2; the key still `[expires: 2029-09-25]` |
+| V2 | the guard removed on a copy: revocation imported | **held**: `key 86FA14F600AA59B3: "Liro Bridge Linux packages" revocation certificate imported`, `new key revocations: 1` |
+| V3 | `[revoked: 2026-09-26]` — least certain | **held**: `pub ed25519 2026-09-26 [SC] [revoked: 2026-09-26]`, uid `[ revoked]` |
+| V4 | reason 0 | **held**: sigclass `0x20`, `revocation reason 0x00 ()`, made by 86FA… itself at 2026-09-26 12:01:40 UTC — 99 s after the key (12:00:01): gpg's automatic certificate at generation |
+| V5 | read back in a fresh home: revoked | **held**: `--show-keys` says `[revoked: 2026-09-26]` (it does not mark uid validity); the `.rev` re-hashed unchanged; the `gpg-agent` the import started, 6576, stopped by PID |
+
+The owner saw the key before it was committed. Committed as
+`build/linux/liro-bridge-packages-39DE-revoked.asc`, beside the live key;
+nothing in CI or `build/linux/*.sh` globs `*.asc` (read), so it cannot be
+taken for the signing key.
+
+**"No reason given" stands** (the owner): the certificate was written at
+generation and cannot carry another reason without the secret key; a key
+nobody outside this repository ever held, and that signed nothing published,
+needs no compromise flag. This entry is where anyone would look for why:
+its passphrase was typed into our own test's pinentry (D-356), and it was
+replaced by 37D3… (D-437).
+
+**A property of the file we did not know we had** (the owner): the `.rev`
+as gpg writes it will not import until a person removes that colon. A
+revocation certificate on a stick cannot be used by accident — by the owner,
+or by anyone who finds the stick. Read here as V1c: the unmodified file
+imported nothing.
+
+**A30 closed**: 39DE… revoked from its own `.rev` and committed revoked.
+**It does not travel into the public repository** (D-435): v1 starts from a
+fresh commit, and a revoked key nobody ever had is noise there.
+
+---

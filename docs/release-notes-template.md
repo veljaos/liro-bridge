@@ -13,7 +13,7 @@ verzije ovog izdanja.
 | `.exe` | Sam program, bez instalacije. |
 | `.deb` | Linux: Ubuntu 24.04 i Debian. |
 | `.rpm` | Linux: Fedora. |
-| `SHA256SUMS`, `SHA256SUMS.asc`, `liro-bridge-packages.asc` | Potpisan spisak otisaka Linux paketa i javni ključ kojim se potpis proverava. Postupak je u README-u, u odeljku *Installing on Linux*. |
+| `SHA256SUMS`, `SHA256SUMS.asc`, `liro-bridge-packages.asc` | Potpisan spisak otisaka Linux paketa i javni ključ kojim se potpis proverava. Ni `apt` ni `dnf` taj potpis ne proveravaju pri instalaciji: štiti samo onoga ko ga pre instalacije sam proveri, postupkom iz README-a, u odeljku *Installing on Linux*. |
 | `release.json`, `release.json.sig` | Potpisani opis izdanja. Program ih koristi kada proverava ima li novije verzije; nije potrebno da ih preuzimate. |
 
 **Pri prvom pokretanju Windows će prikazati upozorenje** ("Windows
