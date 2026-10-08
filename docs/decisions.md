@@ -46809,3 +46809,73 @@ number moved with it (3→2, 6→5, 7→6, 10→9). Earlier entries and handover
 that say "block 2: E8" are left as they were written.
 
 ---
+
+## D-449 — A33's last two pieces, each cited as check.sh: `timeout-minutes: 15` on the ten package-install steps (`b781030`) and `runs-on: ubuntu-24.04` on `ci`, `linux-gui` and `sdk-typescript` (`73058c4`), check.sh green on each with the controls first; what check.sh's green says about them is that nothing else changed — it cannot see either change itself; 72e252e's run read first, green, `084b4d4` inside it with no run of its own
+
+**Date:** 2026-10-08
+**Phase:** block 1, A33. The Ubuntu VM; GitHub read through `gh` and the API.
+
+### The first reading: 72e252e, with 084b4d4 inside it
+
+The owner pushed `084b4d4` and `72e252e` together. **Run 37852060680 on
+`72e252e`: `success`, attempt 1, all nine jobs, concluded 22:29:34 UTC**,
+read to its end. **`084b4d4` has no run of its own**: the query by its full
+SHA came back empty, the same query on `72e252e` non-empty — the control
+that makes the empty one an absence. Its tree is inside the run, as
+`a2648cc`'s was in `421133d`'s.
+
+### Before either edit
+
+Read, then predictions written (22:16:48 UTC, `~/s31-predictions.md`), least
+certain the durations:
+
+- No `timeout-minutes` anywhere in `ci.yml` or `release.yml`.
+- The ten steps that install packages took **0–77 s** on runs 37846617401
+  and 37843849854 (step times from the API's jobs listing; `gh run view`
+  gives them as null). 15 minutes is eleven times the longest.
+- `ubuntu-latest` today reports **"Image: ubuntu-24.04", version
+  20261004.327.1** in its "Set up job" log (ba01328's `ci`). This VM is
+  Ubuntu 24.04.5.
+
+### The timeouts: `b781030` — all held
+
+| | predicted | read |
+|---|---|---|
+| T1 | as data, the only change is `timeout-minutes: 15` on ten steps | **held**: eight in `ci.yml` (`ci[3]`, `linux-gui[3]`, `linux-packages[0]`, `[10]`, `linux-install[1]`, `[2]`, `[5]`, `[8]`), two in `release.yml` (`build-linux[0]`, `sign-linux[0]`), nothing else |
+| T2 | `./check.sh --list` byte-identical | **held** |
+| T3 | controls, 7 as expected | **held** |
+| T4 | `./check.sh` green, ", clean", 52/50, ~7 min | **held**: 22:17:56–22:24:59, 34 `ok` per `-race` view, the probe passed |
+
+"Package-install step" read as D-439 meant it: every step that runs
+`apt-get install` or `dnf install`, including the four in `linux-install`
+that do a few seconds of checking after the install (each 0–10 s).
+
+### The pin: `73058c4` — all held
+
+| | predicted | read |
+|---|---|---|
+| P1 | as data, only `runs-on` `ubuntu-latest` → `ubuntu-24.04` on `ci`, `linux-gui`, `sdk-typescript` | **held**; the comment on `ci` says why and why not the container jobs |
+| P2 | `--list` identical (check.py's RUNNERS has `ubuntu-24.04`) | **held** |
+| P3 | controls, 7 as expected; C1 unchanged (it reads the red tree's own `ci.yml`) | **held** |
+| P4 | `./check.sh` green | **held**: 22:27:45–22:34:54, 52/50, 34 + 34, the probe passed |
+
+### What check.sh's green says here, and what it cannot
+
+**It says nothing else changed**: both jobs' 27 steps, run as CI writes
+them, pass on each commit, and the plan is byte for byte the one before.
+**It cannot see either change itself**: check.sh does not run the apt steps
+(it checks their packages with `dpkg-query`), so a step's bound is never
+exercised here; and it does not read the host's Ubuntu version, so the pin
+and the VM agree (24.04 and 24.04.5) because they were read, not because
+check.sh compared them. **The changes themselves are CI's to show** — on the
+push: every job `success`, and the three pinned jobs' "Set up job" saying
+`ubuntu-24.04`, which `ubuntu-latest` also says until the 19th. After the
+19th, the unpinned host jobs (`linux-packages`, `linux-install`) will say
+Ubuntu 26 under their containers; that is by D-442's design.
+
+**Not done in this pass**: the Node.js 20 deprecation of `actions/*@v4`
+(A33 names it "in the same pass"). GitHub already forces those actions onto
+Node 24 and the runs pass; moving to their next majors means check.py's
+exact-version table read against each, and C2–C7 again. Left in A33.
+
+---
