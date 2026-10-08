@@ -6,7 +6,12 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: that label becomes Ubuntu 26 from
+    # 2026-10-19, and this host is what the job checks against — every
+    # package targets 24.04, so a moving label would be green on the
+    # wrong thing (D-442). The same on linux-gui and sdk-typescript; the
+    # container jobs take their userland from the image, not the host.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -311,7 +316,7 @@ jobs:
   # detector's verdict on the other 50 packages no longer waits behind a
   # fifteen-minute gotk4 build.
   linux-gui:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -1184,7 +1189,7 @@ jobs:
   # file drift from its generator, and running the generator would have
   # deleted a block five screens depended on (docs/decisions.md D-183).
   sdk-typescript:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: sdk/typescript
