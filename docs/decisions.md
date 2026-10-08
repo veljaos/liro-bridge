@@ -46667,6 +46667,11 @@ passes here so the lint is reached at all. **All held**:
 That the lint read the red tree and not this one: `func runMainWindow` is at
 `mainwindow.go:233` only in `cf24a25`; at HEAD it is in `open_other.go:25`.
 
+**The owner's reading: the result wanted — the check can fail**, which is
+more than most checks ever prove about themselves. The caveat stands beside
+it and does not weaken it: CI never linted `cf24a25`, the comparison is with
+its parent's run, and the failures are the same two at the same lines.
+
 ### C3, C4 — and C2, C5, C6 again, here
 
 **All as expected**, read in their logs and not only controls.sh's line:
@@ -46698,6 +46703,15 @@ It passed — and was not CI's check: gofmt, vet, both test views and the
 three builds over two packages CI's `ci` never sees, and a summary that
 could not say so.
 
+**The better finding of the two** (the owner): check.sh quietly drifting
+from CI on its second run — the exact failure it exists to prevent, found
+on the day it was written. **What makes it worth keeping is that it was
+predicted before the run** — F6, written at 21:34:27 UTC with the full
+run's other predictions, in `~/s31-predictions.md`, naming the 54 and the
+", clean" header — **and then read as predicted.** Nothing had failed: a
+check.sh run that passes would not have shown it, and nobody reads a
+package count on a green run unless it was written down beforehand.
+
 **Fixed** (`084b4d4`): preflight refuses when `git ls-files --others
 --ignored --exclude-standard -- '*.go'` is not empty, naming the files.
 **C7**: an ignored `main.go` planted under `dist/` in a worktree of HEAD,
@@ -46705,11 +46719,15 @@ never in this tree; refused naming it. A consequence, said: every full run
 leaves `dist/ci-helpers` and the next run refuses until it is removed.
 
 Predictions for the fix: G1 held — the leftover tree refused, naming both.
-**G2 failed**: I predicted all seven controls as expected with the leftovers
-still present; **C3 and C4 were refused for the leftovers** — they run
-against this tree and reach preflight, while C2, C5, C6 refuse at plan time.
-The controls were right to say NOT as expected: a refusal for another reason
-is not theirs. `dist/ci-helpers` removed (two files, stamped 21:42:03 and
+
+**G2: the controls behaving correctly.** G2 said all seven as expected with
+the leftovers still in the tree; five were. **C3 and C4 were refused for
+the leftovers** — they run against this tree and reach preflight, where the
+new refusal comes first, while C2, C5, C6 refuse at plan time — **and they
+refused to accept a refusal for the wrong reason**: each wants its own text,
+not exit 2. A control that passed on any exit 2 would have passed here and
+hidden the leftover files (the owner's reading: write it as that rather than
+as a miss). `dist/ci-helpers` removed (two files, stamped 21:42:03 and
 21:42:23, inside the first run's `linux-gui[9]`); **all seven as expected**,
 C1 again with the same two failures.
 
@@ -46751,7 +46769,7 @@ pushed.
    names a line that exists only in the red tree; the logs are stamped
    with the run's time and commit.
 5. **Read, and the discrepancy explained?** 54 against 52 — explained, and a
-   finding; G2's failure — explained, my prediction, not the controls.
+   finding; G2's two NOT-as-expected — explained: the controls refusing a refusal for the wrong reason.
 
 ### Not controlled, still
 
