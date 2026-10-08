@@ -187,7 +187,17 @@ def go_mod_version(root):
 
 
 def preflight(steps, root, env):
-    """Refuse before running anything if the tools are not CI's."""
+    """Refuse before running anything if the tools are not CI's, or if the
+    tree holds Go that CI's checkout would not."""
+    # `go list ./...` sweeps every Go file in the module, and git's status
+    # does not show the ignored ones, so the summary's "clean" could not
+    # say they were there. CI's linux-gui[9] writes dist/ci-helpers, so a
+    # full check.sh leaves two such packages and the next run's ci job
+    # swept 54 where CI sweeps 52 (D-447).
+    ignored = git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "--", "*.go").split()
+    if ignored:
+        raise Refusal("Go files git ignores are in the tree, and ./... would sweep them where CI's checkout has none: "
+                      + " ".join(ignored) + " (remove them; a full check.sh leaves dist/ci-helpers, from linux-gui[9])")
     sel = [p for p in steps if p["selected"]]
     if any(p["kind"] in ("run", "lint") for p in sel) or any(p["kind"] == "setup-go" for p in steps):
         want = go_mod_version(root)

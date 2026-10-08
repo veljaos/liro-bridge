@@ -12,8 +12,10 @@
 #       "not installed".
 #   C5  an expression in a step's env → refused, exit 2, "expression".
 #   C6  a sudo that is not apt → refused, exit 2, "sudo for something other".
+#   C7  a Go file git ignores (dist/…), in a worktree of HEAD → refused,
+#       exit 2, "Go files git ignores" (D-447). The worktree is removed.
 #
-# With arguments (C2 C5 …) only those run; with none, all six.
+# With arguments (C2 C5 …) only those run; with none, all seven.
 # C2–C6 change a copy of ci.yml, never the file; C1 takes about as long as
 # the red tree's first failing steps (minutes, not CI's quarter hour).
 # Each control's edit is checked to be in its copy before its result is
@@ -75,6 +77,26 @@ control C5 'w["jobs"]["ci"]["steps"][4].setdefault("env", {})["CONTROL"] = "${{ 
 	'${{ github.sha }}' 2 "expression"
 control C6 'w["jobs"]["ci"]["steps"].insert(4, {"name": "control C6", "run": "sudo true"})' \
 	"sudo true" 2 "sudo for something other"
+
+# C7: an ignored Go file, planted in a worktree of HEAD, never in this tree.
+if [ "${#selected[@]}" -eq 0 ] || want C7; then
+	wt7="$work/c7"
+	if git worktree add --detach "$wt7" HEAD >/dev/null 2>&1; then
+		mkdir -p "$wt7/dist/liro-control-c7"
+		printf 'package main\n\nfunc main() {}\n' >"$wt7/dist/liro-control-c7/main.go"
+		if git -C "$wt7" check-ignore -q dist/liro-control-c7/main.go; then
+			./check.sh --root "$wt7" >"$work/C7.log" 2>&1
+			expect C7 2 "Go files git ignores are in the tree, and ./... would sweep them where CI's checkout has none: dist/liro-control-c7/main.go" "$work/C7.log" $?
+		else
+			echo "C7: the planted file is not ignored in the worktree; the control is void"
+			fail=$((fail + 1))
+		fi
+		git worktree remove --force "$wt7"
+	else
+		echo "C7: could not make the worktree"
+		fail=$((fail + 1))
+	fi
+fi
 
 # C1: the red tree, in a worktree of its own.
 if [ "${#selected[@]}" -gt 0 ] && ! want C1; then
