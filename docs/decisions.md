@@ -46879,3 +46879,56 @@ Node 24 and the runs pass; moving to their next majors means check.py's
 exact-version table read against each, and C2–C7 again. Left in A33.
 
 ---
+
+## D-450 — Block 1 closed. The Node.js 20 actions are not part of it, by the owner's decision. What the block cost and bought: three evenings against the owner's half day, out by a factor of six — not because the work was underestimated, but because the ground under it had not been checked
+
+**Date:** 2026-10-08
+**Phase:** the end of block 1. Nothing run; the push of `c2dab76` read (the
+handover, session 31 §A).
+
+### Closed
+
+Block 1, package signing with a real key, closed by the owner after D-449:
+37D3… made, its secret in the `package-signing` environment, the rc signed
+with it and checked as the README says on both distributions (C16), 39DE…
+revoked; A15 and A35 decided; and A33's check.sh, controlled and run, with
+the timeouts and the `ubuntu-24.04` pin cited as it.
+
+### The Node.js 20 actions: the owner's decision, not an omission
+
+**Not part of block 1.** Nothing is breaking; GitHub already runs
+`actions/*@v4` on Node 24; moving them to their next majors means check.py's
+exact-version table read against each and the controls run again, for no
+present benefit. **Left in A33 as ordinary work, with no date on it — by the
+owner's decision.** Anyone who finds them still on `@v4` later should read
+this before assuming they were forgotten.
+
+### What the block cost, and what it bought (the owner's account)
+
+**Three evenings, for what the owner estimated at half a day. Almost none
+of it was the key.** It went on things nobody had looked at in months:
+
+- **the signing key's revocation certificate was not where the record said
+  it was looked for** — two gpg installations on one machine (D-435);
+- **CI red for a week**, 39 runs, while three sessions wrote "local green"
+  (D-438);
+- **an environment rule set to the wrong ref type** — a branch rule where a
+  tag rule was meant, caught only by reading it back (D-441);
+- **two defects in the README that nobody had followed as written** — the
+  fingerprint gpg does not print at import (D-442), and on Fedora nothing at
+  install checks who signed the package (D-444);
+- **and check.sh, which did not exist** (D-446, D-447) — and once it
+  existed, its own controls and its first two runs found a way it drifted
+  from CI.
+
+**The next block's estimate should be read knowing this one was out by a
+factor of six, and why**: not because the work was underestimated, but
+because the ground under it had not been checked. D-433's own estimate for
+block 1, written before the work and mine, was 1.5–2.5 working days plus 0.5
+for the rotation; what was actually done would not have been named in it,
+because none of the five above was known to be there. **D-433 puts the
+Windows pass at 8–12 working days, the ownership audit 2–3 of it — and
+nothing of the program has been run on Windows since dev.14** (the owner;
+session 31 §A). Its ground is the least checked of any block's.
+
+---
