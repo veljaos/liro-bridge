@@ -47520,3 +47520,111 @@ agent with the check on would be offered 0.9.3 as well.
 text reaches the log only by an unverified accident.
 
 ---
+
+## D-455 — 0.9.3 built and not released: a branch from the `v0.9.2` tag carrying exactly the callback fix and the crash output, five files, green on its own CI step here; the crash output goes to `crash.log` by design, set in `main` because the first attempt, in `run`, broke six tests the way it would have held a file in any process that drives `run`; one unrelated failure recorded rather than re-run — a test that discovers the machine's real PKCS#11 modules twice and requires them to agree (D45); and what the tag will do, said before anyone pushes it
+
+**Date:** 2026-10-11
+**Phase:** block 2, D43's decision (D-454) carried out up to the tag. The
+owner's Windows machine; the card out of the reader; every test run through
+D-452's redirect, the audit chain read before and after (`aa182e1b…`, 319,
+every time).
+
+### The crash output (master `0b3c5fd`)
+
+`config.SetupCrashOutput(logDir)` opens `logs\crash.log` for appending and
+hands it to `debug.SetCrashOutput`, which keeps a duplicate, so the runtime's
+report of a fatal error or an unrecovered panic is written there as well as
+to stderr. **A file of its own, not `bridge.log`**: the rotating writer
+renames `bridge.log` when it fills, and a handle held for the life of the
+process would follow the renamed file or stand in the rename's way; and
+`bridge.log` is one JSON object per line.
+
+**Where it is called — corrected once.** I first put it in `run`, after
+`SetupLogging`. CI's Windows command then failed six `cmd/liro-bridge` tests
+(run 6), each at `TempDir` cleanup: "crash.log … being used by another
+process" — those tests drive `run` in-process in a temporary config home,
+and the runtime holds the file for the process's life. **It belongs to the
+process, so it is in `main`** — after `detachAllocatedConsole`, beside
+`ForbidCoreDumps`, which sits there for the same stated reason — its failure
+kept in a package variable for `run` to log once there is a log, because
+stderr after the console is given back is exactly the place this exists to
+stop relying on.
+
+**Its test** (`internal/config`): a child copy of the test binary sets it up
+and dies of an unrecovered panic; the parent requires the child's marker and
+a goroutine stack in `crash.log`, and that the child did not exit cleanly.
+**Control, in a throwaway worktree: the call removed — "reading the crash
+file: … cannot find the file", FAIL.** With it: PASS. **Not covered: `main`'s
+wiring** — nothing in the suite passes through `main`; it is read, not
+measured. D44 closes only when a crash of the installed program is watched
+landing in `crash.log`.
+
+Then, on master: gofmt and `go vet -unsafeptr=false` clean, `GOOS=windows`
+lint 0 issues, and CI's Windows command (run 7): `cmd/liro-bridge` and
+`internal/config` ok, 36 packages ok — and one failure that is not this
+change's.
+
+### D45: a test that needs two discoveries of the real modules to agree
+
+Run 7: `internal/keysource/pkcs11`'s `TestSourcesAreOnePerUsableModule` —
+"got 3 sources for 2 usable modules", "got 0 failures from Sources and 1
+from Modules", "source 1 speaks to `C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll`,
+want `C:\Program Files\MUP RS\Celik\netsetpkcs11_x64.dll`", then the test's
+own `index out of range` panic after its length check. **The package
+imports neither `internal/config` nor anything in `cmd/`, tests included**
+(`go list -deps -test`), so the change cannot reach it; it passed in runs 1,
+2, 5 and 6 in 2.5–5 s, and took 10.4 s here. What it does: it calls
+`Sources` and `Modules` — two separate discoveries of **this machine's real
+PKCS#11 modules**, two NetSeT builds here — and requires them to agree; one
+discovery reported a module failure the other did not. **Cause not read**;
+NetSeT's slowness is B12's. **Recorded, not re-run away** (session 28 §F.7):
+once in five runs here, on a machine CI never imitates, because no runner
+has a vendor's module. And the test indexes `usable[i]` after reporting the
+lengths differ — a test defect of its own.
+
+### release/0.9.3 — built, not tagged, not pushed
+
+A worktree at `C:\Users\Veljko\s32-rel093`, branch `release/0.9.3` from the
+`v0.9.2` tag (`cc24984`):
+
+- `00fac0e` — master's `39a7ac8` (the callback fix and its test),
+  cherry-picked clean: `win32_windows.go` and `dropwatch_windows_test.go` are
+  byte-identical at `v0.9.2` and at the fix's parent.
+- `0a51870` — master's `0b3c5fd`, **adapted**: v0.9.2's `main.go` has no
+  `ForbidCoreDumps`, no `enableChooserHelper` and no PKCS#11 shutdown, and the
+  cherry-pick's second conflict would have brought master's PKCS#11 shutdown
+  in with it; resolved to the crash-output lines only, the comment giving its
+  reason without citing a function that is not there.
+
+`git diff --stat v0.9.2 release/0.9.3`: **five files, 197 lines in, 6 out —
+the two fixes, their two tests, and 18 lines of `main.go`.** On the branch,
+its own `ci.yml` Windows step (the same command as master's): `go vet` clean,
+`GOOS=windows` lint 0 issues, `go test -tags softtoken ./... -count=1` **exit
+0, 34 packages ok**, and both new tests passed by name in a `-v` run. The
+chain unchanged throughout. **Not run here**: the branch's Linux jobs —
+v0.9.2's `ci.yml` predates A33's `ubuntu-24.04` pin, so its host jobs read
+Ubuntu 24.04 until 2026-10-19 and Ubuntu 26 after.
+
+### What the tag does, said before it is pushed
+
+v0.9.2's `release.yml`, read: a `v*` tag builds on `windows-latest` (go.mod's
+1.26.5), signs `release.json` in the `release` environment with
+`LIRO_RELEASE_SIGNING_KEY` (the key that signed the rc), skips Authenticode
+(no PFX, D-436), and **publishes at once** — `gh release create` with no
+`--prerelease`, so **0.9.3 becomes "latest" the moment it exists**, which is
+what makes v0.9.2 agents see it. **Its page text is `docs/release-notes-template.md`
+as it stood at v0.9.2: it says nothing about what 0.9.3 fixes, and it calls
+the `.exe` "Sam program, bez instalacije"** — the line D41 says is wrong,
+ruled E8's. Both are the owner's to decide before the tag, not after.
+
+The order proposed: the owner pushes `release/0.9.3`; its CI run is read to
+its end; the owner tags `0a51870` as `v0.9.3` and pushes the tag; the
+release run is read to its end and the published page and `release.json`
+read back. Then D43's close: 0.9.3 installed and a main window left open past
+33 minutes with the agent alive, watched — on a machine where it is an
+upgrade. **Not this one as it stands**: it has the rc (0.9.9), and the MSI's
+`MajorUpgrade` refuses a downgrade — "A newer version of Liro Bridge is
+already installed on this computer" (read in `liro-bridge.wxs`); so the rc
+uninstalled first, or another machine — the owner's choice.
+
+---
