@@ -19,6 +19,7 @@ import (
 type healthResponse struct {
 	AgentVersion         string `json:"agentVersion"`
 	ProtocolVersion      int    `json:"protocolVersion"`
+	ProtocolVersions     []int  `json:"protocolVersions"`
 	MinimumClientVersion string `json:"minimumClientVersion"`
 }
 
@@ -49,6 +50,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{
 		AgentVersion:         s.agentVersion,
 		ProtocolVersion:      ProtocolVersion,
+		ProtocolVersions:     ProtocolVersions,
 		MinimumClientVersion: MinimumClientVersion,
 	})
 }

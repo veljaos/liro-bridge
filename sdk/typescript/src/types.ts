@@ -15,8 +15,10 @@ import type { SecretStore } from './secrets.js';
 export interface Health {
   /** The agent's own version. */
   readonly agentVersion: string;
-  /** The protocol version it speaks. */
+  /** The protocol version it speaks — the newest, when it speaks several. */
   readonly protocolVersion: number;
+  /** Every version it speaks, ascending; `[protocolVersion]` from an agent older than the list. */
+  readonly protocolVersions: readonly number[];
   /**
    * The oldest SDK this agent will serve. If this SDK's version is
    * below it, tell the person to update the agent rather than failing

@@ -92,12 +92,20 @@ class LiroBridge {
         const info = await (0, discovery_js_1.readBridgeFile)(bridgePath);
         const transport = new transport_js_1.Transport((0, discovery_js_1.baseUrlFor)(info.port), resolved.requestTimeoutMs);
         const agent = await fetchHealth(transport);
-        if (info.protocolVersion !== 0 && info.protocolVersion !== discovery_js_1.PROTOCOL_VERSION) {
-            throw new errors_js_1.LiroError('VERSION_TOO_OLD', {
-                detail: `the agent speaks protocol version ${info.protocolVersion} and this SDK speaks ${discovery_js_1.PROTOCOL_VERSION}. ` +
-                    'Update whichever is older',
+        // Negotiated, not compared: this used to refuse any agent whose
+        // newest version was not exactly this SDK's, which would have
+        // refused the first agent to speak a version 3 even while it still
+        // spoke 2 (F14 §8). The health answer is the authority; the
+        // discovery file is the fallback for an agent that predates it.
+        const offered = agent.protocolVersions.length > 0 ? agent.protocolVersions : info.protocolVersions;
+        const chosen = (0, discovery_js_1.negotiateProtocol)(offered);
+        if (chosen === null) {
+            throw new errors_js_1.LiroError('PROTOCOL_UNSUPPORTED', {
+                detail: `the agent speaks protocol version${offered.length === 1 ? '' : 's'} ${offered.join(', ')} and this SDK ` +
+                    `speaks ${discovery_js_1.PROTOCOL_VERSIONS.join(', ')}. Update whichever is older`,
             });
         }
+        transport.setProtocolVersion(chosen);
         let pairing = await loadPairing(resolved.secretStore, resolved.applicationName);
         if (pairing === null) {
             if (typeof options.onPairingCode !== 'function') {
@@ -579,9 +587,14 @@ async function fetchHealth(transport) {
         retryable: true,
     });
     const body = (0, transport_js_1.parseJSON)(response, 'GET /v2/health');
+    const protocolVersion = typeof body.protocolVersion === 'number' ? body.protocolVersion : 0;
+    const listed = (0, discovery_js_1.versionList)(body.protocolVersions);
     return {
         agentVersion: typeof body.agentVersion === 'string' ? body.agentVersion : '',
-        protocolVersion: typeof body.protocolVersion === 'number' ? body.protocolVersion : 0,
+        protocolVersion,
+        // An agent older than the list says only its one version; one that
+        // says neither is version 2, which every agent before both fields was.
+        protocolVersions: listed.length > 0 ? listed : [protocolVersion > 0 ? protocolVersion : 2],
         minimumClientVersion: typeof body.minimumClientVersion === 'string' ? body.minimumClientVersion : '0.0.0',
     };
 }

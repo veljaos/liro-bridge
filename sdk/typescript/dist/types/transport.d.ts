@@ -43,6 +43,15 @@ export declare class Transport {
     private readonly defaultTimeoutMs;
     private pairing;
     constructor(baseUrl: string, defaultTimeoutMs: number, pairing?: StoredPairing | null);
+    /**
+     * The protocol version chosen with the agent, sent on every request
+     * as `X-Liro-Protocol` once there is one (`PROTOCOL.md` §4.1). Null
+     * until `connect` has negotiated it; a request without the header is
+     * version 2 to every agent.
+     */
+    private protocolVersion;
+    /** Sets the version every later request names. */
+    setProtocolVersion(version: number): void;
     /** The pairing requests are signed with, once there is one. */
     setPairing(pairing: StoredPairing | null): void;
     /** The pairing currently in use, or `null`. */

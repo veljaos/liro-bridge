@@ -13,16 +13,39 @@
  * that would turn some on.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PROTOCOL_VERSION = void 0;
+exports.PROTOCOL_VERSIONS = exports.PROTOCOL_VERSION = void 0;
+exports.negotiateProtocol = negotiateProtocol;
 exports.defaultBridgeFilePath = defaultBridgeFilePath;
 exports.readBridgeFile = readBridgeFile;
+exports.versionList = versionList;
 exports.baseUrlFor = baseUrlFor;
 const promises_1 = require("node:fs/promises");
 const node_os_1 = require("node:os");
 const node_path_1 = require("node:path");
 const errors_js_1 = require("./errors.js");
-/** The protocol version this SDK is written against. */
+/** The newest protocol version this SDK is written against. */
 exports.PROTOCOL_VERSION = 2;
+/**
+ * Every protocol version this SDK speaks, ascending. It picks the
+ * highest one the agent also speaks (`PROTOCOL.md` §4.1, F14 §8) and
+ * refuses an agent only when the two lists share nothing.
+ */
+exports.PROTOCOL_VERSIONS = [2];
+/**
+ * The version both sides speak, or `null` when they share none. An
+ * agent older than the list advertises only `protocolVersion`, read as
+ * a list of one; one that advertises neither is read as version 2,
+ * which is every agent before the field existed.
+ */
+function negotiateProtocol(agentVersions, ours = exports.PROTOCOL_VERSIONS) {
+    let best = null;
+    for (const v of ours) {
+        if (agentVersions.includes(v) && (best === null || v > best)) {
+            best = v;
+        }
+    }
+    return best;
+}
 /**
  * The per-user discovery file for the current platform.
  *
@@ -90,7 +113,15 @@ async function readBridgeFile(path) {
         port: info.port,
         agentVersion: typeof info.agentVersion === 'string' ? info.agentVersion : '',
         protocolVersion: typeof info.protocolVersion === 'number' ? info.protocolVersion : 0,
+        protocolVersions: versionList(info.protocolVersions),
     };
+}
+/** A `protocolVersions` value as sent, keeping only whole numbers. */
+function versionList(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.filter((v) => typeof v === 'number' && Number.isInteger(v));
 }
 /** `http://127.0.0.1:<port>` — loopback, always, with no way to ask for anything else. */
 function baseUrlFor(port) {

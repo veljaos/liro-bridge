@@ -205,6 +205,13 @@ const (
 	// thing PROTOCOL.md §7 says can never happen (D-264).
 	CodeEndpointNotFound Code = "ENDPOINT_NOT_FOUND"
 
+	// CodeProtocolUnsupported: the client named a protocol version
+	// (X-Liro-Protocol) this agent does not speak; details carry the
+	// versions it does (F14 §8, [[D-461]]). Not VERSION_TOO_OLD, which
+	// is a client below minimumClientVersion: here neither side is old,
+	// they share no version, and the remedy is whichever is behind.
+	CodeProtocolUnsupported Code = "PROTOCOL_UNSUPPORTED"
+
 	CodeInternal Code = "INTERNAL"
 )
 
@@ -254,6 +261,7 @@ func AllCodes() []Code {
 		CodeDocumentSigningDisabled,
 		CodeCertificateListingDisabled,
 		CodeEndpointNotFound,
+		CodeProtocolUnsupported,
 		CodeInternal,
 	}
 }

@@ -29,7 +29,7 @@ export { LiroError, isKnownAgentCode, allKnownAgentCodes, messageForCode } from 
 export type { KnownLiroErrorCode, ClientLiroErrorCode, LiroErrorCode, LiroErrorOptions } from './errors.js';
 export { FileSecretStore, StoredPairing, REDACTED_SECRET } from './secrets.js';
 export type { SecretStore, SerialisedPairing } from './secrets.js';
-export { defaultBridgeFilePath, readBridgeFile, PROTOCOL_VERSION } from './discovery.js';
+export { defaultBridgeFilePath, negotiateProtocol, readBridgeFile, PROTOCOL_VERSION, PROTOCOL_VERSIONS } from './discovery.js';
 export type { BridgeInfo } from './discovery.js';
 export { EMPTY_BODY_SHA256, MAX_NONCE_LENGTH, HEADER_APP_ID, HEADER_NONCE, HEADER_SIGNATURE, HEADER_TIMESTAMP, canonicalString, signCanonical, sha256Hex, newNonce, } from './canonical.js';
 export { MINIMUM_NODE_MAJOR } from './environment.js';

@@ -120,6 +120,7 @@
   "error.consent_timeout": "Odgovor nije stigao na vreme, pa ništa nije potpisano.",
   "error.document_signing_disabled": "Potpisivanje celih dokumenata je isključeno. Uključite ga u Podešavanjima.",
   "error.endpoint_not_found": "Ova verzija Liro Bridge-a nema ono što je aplikacija zatražila. Ažurirajte Liro Bridge.",
+  "error.protocol_unsupported": "Ova verzija Liro Bridge-a i aplikacija koja ju je pozvala nemaju zajedničku verziju protokola. Ažurirajte onu koja je starija.",
   "error.input_unreadable": "Dokument nije mogao da se pročita. Možda je otvoren u drugom programu ili više nije na istom mestu.",
   "error.internal": "Došlo je do neočekivane greške. Detalji su zapisani u tehnički dnevnik: AppData\\Local\\Liro\\logs",
   "error.job_in_progress": "Ova aplikacija već ima posao potpisivanja u toku. Sačekajte da se završi.",

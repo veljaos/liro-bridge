@@ -16,6 +16,30 @@ import (
 // break; adding an endpoint or a field does not change it.
 const ProtocolVersion = 2
 
+// ProtocolVersions is every version of this protocol this agent speaks,
+// ascending; ProtocolVersion is its last element. A client picks the
+// highest one it shares and says so in ProtocolHeader (F14 §8,
+// [[D-461]]). Before this list existed the TypeScript SDK refused any
+// agent whose protocolVersion was not exactly its own, so the first
+// agent to speak a version 3 would have been refused by every client of
+// version 2 even while still speaking 2.
+var ProtocolVersions = []int{2}
+
+// ProtocolHeader is the request header a client names its version in.
+// A request without it is version 2: every client before this sends
+// none.
+const ProtocolHeader = "X-Liro-Protocol"
+
+// speaks reports whether this agent serves version v.
+func speaks(v int) bool {
+	for _, have := range ProtocolVersions {
+		if have == v {
+			return true
+		}
+	}
+	return false
+}
+
 // MinimumClientVersion is the oldest SDK version this agent will serve
 // (SPEC §15.2, F7 §4.3). An SDK reads it from /v2/health and tells the
 // person to update rather than failing obscurely later.
@@ -41,6 +65,10 @@ type BridgeInfo struct {
 	Port            int    `json:"port"`
 	AgentVersion    string `json:"agentVersion"`
 	ProtocolVersion int    `json:"protocolVersion"`
+	// ProtocolVersions is every version this agent speaks, ascending
+	// (F14 §8, [[D-461]]). ProtocolVersion stays, as the newest of them,
+	// for clients written before there was a list.
+	ProtocolVersions []int `json:"protocolVersions,omitempty"`
 }
 
 // WriteBridgeFile writes info to path, creating the directory if it is

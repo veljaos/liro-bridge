@@ -80,9 +80,10 @@ func startProtocol(fallback config.Config, version string, pairings *api.Pairing
 
 	bridgePath := platform.DefaultBridgeFile()
 	if err := api.WriteBridgeFile(bridgePath, api.BridgeInfo{
-		Port:            port,
-		AgentVersion:    version,
-		ProtocolVersion: api.ProtocolVersion,
+		Port:             port,
+		AgentVersion:     version,
+		ProtocolVersion:  api.ProtocolVersion,
+		ProtocolVersions: api.ProtocolVersions,
 	}); err != nil {
 		_ = listener.Close()
 		return nil, fmt.Errorf("writing the discovery file: %w", err)

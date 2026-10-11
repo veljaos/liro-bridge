@@ -380,12 +380,22 @@ GET /v2/health
 ```
 
 ```json
-{ "agentVersion": "1.4.0", "protocolVersion": 2, "minimumClientVersion": "0.0.0" }
+{ "agentVersion": "1.4.0", "protocolVersion": 2, "protocolVersions": [2], "minimumClientVersion": "0.0.0" }
 ```
 
 No authentication, no body, and no `Content-Type` (§2.5). It reveals
 nothing else — not certificates, not pairings, not the name of the person
 at the machine.
+
+**`protocolVersions` is every version of this protocol the agent speaks**, ascending,
+and `protocolVersion` is the newest of them. Pick the highest version on both your
+list and the agent's, and send it on every request as `X-Liro-Protocol: <n>`; an
+agent that does not speak `n` answers `426 PROTOCOL_UNSUPPORTED` with the versions
+it does. A request with no header is version 2, which is what every client written
+before this header existed sends. Refuse an agent only when the two lists share
+nothing — never because the agent's newest version is not yours (F14 §8). An agent
+older than this field sends no `protocolVersions`; read its `protocolVersion` as a
+list of one.
 
 `minimumClientVersion` is the oldest SDK this agent will serve. If your
 version is below it, tell the person to update the agent rather than
@@ -772,6 +782,7 @@ it was.
 |---|---|---|---|
 | `REQUEST_INVALID` | 400 | Wrong method, a body that is not JSON, a missing or unacceptable field, a body over the limit. `details.field` or `details.maxBytes` says which. | Fix the request. |
 | `ENDPOINT_NOT_FOUND` | 404 | This agent has no such endpoint. `details.path` and `details.method` say which call. | Almost always an agent older than your SDK: check `agentVersion` from §4.1 and update it. See the note below. |
+| `PROTOCOL_UNSUPPORTED` | 426 | The request named a protocol version in `X-Liro-Protocol` that this agent does not speak. `details.protocolVersions` lists the ones it does. | Pick the highest version in both lists (§4.1); if there is none, update whichever side is older. |
 | `NOT_PAIRED` | 401 | No live pairing for this `appId`. | Pair again. |
 | `AUTH_FAILED` | 401 | The request did not authenticate. | See §3.3. |
 | `PAIRING_CODE_INCORRECT` | 401 | Wrong six-digit code; the request is still live. `details.attemptsRemaining`. | Ask the person to read the code again. |
