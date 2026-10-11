@@ -854,7 +854,9 @@ requests it allowed does not limit a caller in a loop.
 ## 9. A whole integration, start to finish
 
 ```
-1. Read %LOCALAPPDATA%\Liro\bridge.json for the port. Never scan.
+1. Read the discovery file for the port (§4: %LOCALAPPDATA%\Liro\bridge.json
+   on Windows, $XDG_RUNTIME_DIR/liro/bridge.json on Linux, ~/Library/
+   Application Support/Liro/bridge.json on macOS). Never scan.
 
 2. GET /v2/health
    -> 200 {"agentVersion":"...","protocolVersion":2,"minimumClientVersion":"0.0.0"}

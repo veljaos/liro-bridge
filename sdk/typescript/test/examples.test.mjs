@@ -210,3 +210,26 @@ test('every example resolves LOCALAPPDATA the way the agent writes it', async ()
     assert.match(source, pattern, `${file} does not read the LOCALAPPDATA environment variable`);
   }
 });
+
+test('every example finds the agent on all three platforms, not only on Windows', async () => {
+  // D6: five of the seven examples knew only %LOCALAPPDATA%\Liro\bridge.json,
+  // so on Linux and macOS they reported the agent not running while it
+  // was ([[D-459]]). The paths are SPEC §14's and the agent's own
+  // (platform.DiscoveryPath): $XDG_RUNTIME_DIR/liro/bridge.json, falling
+  // back to ~/.local/state/liro/bridge.json, and ~/Library/Application
+  // Support/Liro/bridge.json. Each example is read for all four pieces;
+  // the .mjs ones go through the SDK's defaultBridgeFilePath, which has
+  // its own test.
+  const pieces = [
+    ['the Linux runtime directory', /XDG_RUNTIME_DIR/],
+    ['the Linux fallback', /\.local["'\/\\,\s]+state|\.local\/state/],
+    ["macOS's directory", /Application Support/],
+    ['the Windows directory', /LOCALAPPDATA/],
+  ];
+  for (const file of EVERY_EXAMPLE) {
+    const source = await readFile(join(examplesDir, file), 'utf8');
+    for (const [what, pattern] of pieces) {
+      assert.match(source, pattern, `${file} does not know ${what}: it cannot find an agent there`);
+    }
+  }
+});
