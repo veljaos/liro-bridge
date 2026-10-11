@@ -124,14 +124,24 @@ func TestAFileThatIsNotAModuleIsAFailureAndNotACrash(t *testing.T) {
 // TestSourcesAreOnePerUsableModule guards the shape the caller depends on:
 // every usable module becomes exactly one Source, and a module that failed
 // becomes none.
+//
+// **One discovery, not two** (D45, [[D-458]]). It called Sources and then
+// Modules — two discoveries of whatever modules this machine has, each a
+// child process per module with ProbeTimeout to answer — and required them
+// to agree. On the owner's machine one did not, once in five: the test took
+// 10.4 s against its usual 2.5–5, ProbeTimeout is 10 s, and Modules reported
+// one failure that Sources had not — read as one probe of a NetSeT build
+// running out its ten seconds in the second discovery and not the first.
+// That is the product's question (whether ten seconds is right for NetSeT,
+// B12), not this rule's, and the test now asks the rule of one answer. It
+// then indexed past the lengths it had just reported unequal and panicked;
+// it stops instead. Every failure is logged, the reason with it, so a
+// recurrence says which module and why rather than leaving it to inference.
 func TestSourcesAreOnePerUsableModule(t *testing.T) {
-	sources, failures := Sources("", nil)
-	usable, sameFailures := Modules("", nil)
+	usable, failures := Modules("", nil)
+	sources := sourcesFor(usable)
 	if len(sources) != len(usable) {
-		t.Errorf("got %d sources for %d usable modules", len(sources), len(usable))
-	}
-	if len(failures) != len(sameFailures) {
-		t.Errorf("got %d failures from Sources and %d from Modules", len(failures), len(sameFailures))
+		t.Fatalf("got %d sources for %d usable modules", len(sources), len(usable))
 	}
 	for i, s := range sources {
 		if s.ModulePath() != usable[i].Path {
