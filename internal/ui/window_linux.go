@@ -501,6 +501,10 @@ func (w *linuxWindow) Close() error {
 		}
 	})
 	w.markClosed()
+	// The web process is ended; WebKit keeps its D-Bus proxy running
+	// regardless, one chain per window for the life of the agent (D23,
+	// dbusproxy_linux.go).
+	releaseProxiesAfterClose()
 	return err
 }
 
