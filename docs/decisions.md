@@ -47375,3 +47375,148 @@ window) — read with it.
    one by one.
 
 ---
+
+## D-454 — **Every Windows release since v0.9.1 dies after about half an hour of main window** — watched on the installed rc at 33 min 10 s, found by reading code and not by any test, log or person; **when it dies the program records nothing**: the only trace is the Go runtime's raw crash text in `bridge.log`, very likely there by accident of a reused handle, and no line from the program says it stopped; **D-453's "nothing in `bridge.log`" was false, and the owner's conclusion built on it was wrong — corrected here before it was written**; D43 decided: a 0.9.3 from the v0.9.2 tag with the one fix and the crash output recorded by design; and how many people that reaches — we cannot know, by design, and the download counts say it may be almost nobody
+
+**Date:** 2026-10-11
+**Phase:** block 2, C21 row 1 watched on the product. The owner's Windows
+machine; the installed rc, agent PID 6292 (started 21:59:22 by the
+installer). Predictions X1–X8 written before the window was opened;
+local times CEST.
+
+### Read D-453 with this entry
+
+**D-453 says the crash leaves "nothing in `bridge.log`", because the
+runtime's message goes "to a console the agent has already given back".
+That was my inference from `detachAllocatedConsole`, never read through,
+and the watch measured it false.** The owner then wrote, on it, that "the
+log could not say it" and built a conclusion — that the program had been
+crashing in every release and the log could not have told anyone. **The
+owner's words: that correction is the owner being wrong, not a detail; the
+log did say it, by accident.** It was corrected before this entry was
+written, not after. D-453 stands as pushed (entries are not edited);
+whoever reads it should be sent here.
+
+### The watch
+
+A detached watcher held a handle to PID 6292 — exact PID, nothing else —
+so its exit code could be read after it ended, polling every 500 ms. The
+owner opened the main window from the Desktop icon and left it alone.
+
+| | predicted | read |
+|---|---|---|
+| X1 | a window of 6292's within ~2 s | **held**: 22:42:46.857, hwnd `0x2105ce`, "Liro Bridge"; the drop watch's first registration logged 22:42:47 |
+| X2 | exits 30–34 min after the window — **least certain** | **held**: **23:15:56.907, 1990.1 s — 33 min 10 s** |
+| X3 | exit code 2 | **held** |
+| X4 | nothing in `bridge.log` about it | **failed** — below |
+| X5 | `bridge.json` left, nothing on 17580 | **held**: the file from 21:59:22 still names 17580; nobody listens |
+| X6 | no Application event, no WER report | **held** |
+| X7 | the window goes with the process | **held**: no `liro-bridge`, no `msedgewebview2` of ours left |
+| X8 | the chain unchanged | **held**: `aa182e1b…`, 319; no `SigningInProgress` |
+
+Handles held at 376 and the working set at ~39.7 MB from the second
+minute to the last: nothing the watcher could see grew. The slots are not
+something an outside instrument can count; 1990 s against the runtime's
+2000 is the count.
+
+### X4: what the log holds
+
+`bridge.log` grew from 293733 to 322650 bytes. After the agent's own JSON
+lines, at line 1703, **the runtime's text**: `fatal error: too many callback
+functions`, then `goroutine 24 … [running, locked to thread]` — `runtime.throw`
+← `syscall.compileCallback` (`syscall_windows.go:334`) ← `NewCallback` ←
+`internal/ui.descendantWindows(0x2105ce)` (`win32_windows.go:429`) ←
+`(*window).watchDropSurface` (`dropwatch_windows.go:105`) ← `wndProc(0x2105ce,
+0x113)` — `WM_TIMER`, the drop watch's tick — then every other goroutine,
+and last a line of Chromium's own, `[1011/231556.898:ERROR:ui\gfx\win\window_impl.cc:172]
+Failed to unregister class Chrome_WidgetWin_0. Error = 1412`. **D-453's
+mechanism, confirmed on the installed product, frame by frame.**
+
+**How it got there is not established.** No code of ours routes stderr:
+`config.SetupLogging` writes JSON to the rotating file and writes to stderr
+only under `LIRO_DEBUG`. **Very likely by accident of a reused handle** —
+C21's row 11, unverified: the runtime keeps the stderr handle's number from
+start-up, `FreeConsole` leaves it pointing at nothing, and the log file
+opened afterwards may be given the same number, so whatever is written to
+"stderr" — the runtime's crash, Chromium's error — lands in the log. **If
+that accident ever stops happening — a Go version, a Windows version, a
+change of ours — the crash becomes genuinely silent, and nobody would
+notice the day it did** (the owner). And whatever the route, the program
+itself writes nothing: no JSON line says the agent ended, and a person
+reading the log for the agent's own lines finds none.
+
+The log runs from 2026-09-05 to tonight, never rotated, 430 start lines,
+and **tonight's is the only crash text in it**. So what is established is
+that every release since v0.9.1 **will** crash after about half an hour of
+main window in one agent's life; **whether it has crashed for anyone is not
+known**, and on this machine it had not before tonight — as far as a log
+that may only catch it by accident can say.
+
+### C21 row 2, in people's terms (the owner asked)
+
+One handle per audit entry — every batch signed, failed or refused, from
+the window or through the protocol (`recordAudit`, the refusal path; each
+opens a store and appends under a new lock) — all to the same named mutex,
+so no new kernel object, only a new handle-table entry; reading the log
+takes no lock and costs none. The count resets whenever the agent
+restarts, which is every login. **This machine: 319 entries in September,
+about ten a day — ten handles a day. A person signing 300 batches a day,
+a month without a reboot: 9,000.** Windows' per-process limit is about 16.7
+million; an ERP sending 10,000 one-document requests a day would reach it
+after about four and a half years without a restart. **Harmless in any use
+we can imagine**; the cost is a handle count in Task Manager that only
+climbs, which misleads whoever is diagnosing something else. Not fixed, by
+the owner's ruling: one fix per release.
+
+### D43: decided — option A, with the crash output
+
+**The owner: v0.9.2 is what people have and it crashes; that is not
+carried to v1.** Three options were shown after the watch:
+
+- **A, a 0.9.3 from the v0.9.2 tag with the one fix** — `win32_windows.go`
+  and `dropwatch_windows_test.go` are byte-identical at `v0.9.2` and at the
+  fix's parent, so it applies as written; v0.9.2's own `release.yml` builds
+  on a `v*` tag; installed v0.9.2 agents check daily, on by default, and
+  would be offered it within a day.
+- B, a 0.9.3 from master — brings Windows people everything since v0.9.2,
+  D31's footer and D33's result timing among it, neither run on Windows.
+  Not ready.
+- C, wait — leaves people with a crash whose frequency nobody can estimate.
+
+**Decided: A, and with it `debug.SetCrashOutput`, so the next crash is
+recorded by design rather than by luck. Not row 2, not the error-path
+leaks: one fix per release, and this one is worth its own** (the owner).
+
+### Who would never learn of it
+
+**Anyone who turned the daily check off is never offered 0.9.3.** How many
+that could be: **we have no way to know, and that is by design** — the
+agent reports nothing to anyone; its update check is an anonymous GET of a
+public file. What can be seen is GitHub's public download counts (read
+tonight, 2026-10-11):
+
+| | per-user MSI | per-machine MSI | `.exe` | `release.json` |
+|---|---|---|---|---|
+| v0.9.0 | 2 | 0 | 1 | 7 |
+| v0.9.1 | 6 | 2 | 2 | 9 |
+| v0.9.2 | **2** | **0** | **0** | **38** |
+| rc1 (prerelease) | 2 | 1 | 2 | 1 |
+
+**v0.9.2's installers were downloaded twice in all, and one of those is the
+owner's own install of 2026-09-20.** Of the 38 fetches of its
+`release.json`, **20 came from this machine's agents** (every "update:
+nothing newer … latest 0.9.2" line in its log, 2026-09-17 to tonight); the
+other 18 are not attributed — the Linux VMs' agents check the same URL and
+are the likely source, not read. So the counts are consistent with **almost
+nobody outside the owner running v0.9.2 at all**, and they cannot tell
+"checks off" from "not installed" from "never existed". **Whether 0.9.3
+reaches anyone who did not already know may be a question with the answer
+"nobody"; the decision is the owner's, made knowing this.** v0.9.1's 10
+installer downloads are the largest number on the page, and a v0.9.1
+agent with the check on would be offered 0.9.3 as well.
+
+`open-items`: D43's text corrected (the crash is recorded, by accident);
+**D44** added — the program records nothing when it dies, and the runtime's
+text reaches the log only by an unverified accident.
+
+---
