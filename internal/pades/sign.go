@@ -275,6 +275,7 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 	// must never fall below the requested one without the caller being
 	// told why, and "nobody configured a TSA" is not an exception to
 	// that rule).
+	var timestamp *tsa.Response
 	if opts.RequestedLevel != "" && opts.RequestedLevel != LevelBB {
 		var resp *tsa.Response
 		var tsaErr error
@@ -288,6 +289,7 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 		case tsaErr == nil:
 			builder.AddUnsignedAttribute(cms.OIDSignatureTimeStampToken, resp.TokenDER)
 			result.AchievedLevel = LevelBT
+			timestamp = resp
 			// Task 3: the /M value (signingDate) was fixed before this
 			// round trip even began — it is the signer's own machine
 			// clock, unverified. Now that a qualified timestamp exists,
@@ -327,7 +329,21 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 	result.Bytes = ph.Bytes
 
 	if result.AchievedLevel == LevelBT && opts.RequestedLevel == LevelBLT {
-		applyDSS(ctx, result, cmsDER, signerCert, chain, opts.MaxRevocationArtefactSize, opts.RevocationMemory)
+		fetch := opts.AIAFetch
+		if fetch == nil {
+			fetch = cms.HTTPAIAFetcher
+		}
+		if err := applyDSS(ctx, result, cmsDER, dss.GatherRequest{
+			Signer:          signerCert,
+			Chain:           chain,
+			Timestamp:       &dss.Timestamp{GenTime: timestamp.GenTime, Certificates: timestamp.SignerCertificates},
+			TrustStore:      opts.TrustStore,
+			FetchIssuer:     func(ctx context.Context, url string) ([]byte, error) { return fetch(ctx, url) },
+			MaxArtefactSize: opts.MaxRevocationArtefactSize,
+			Memory:          opts.RevocationMemory,
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	return result, nil
@@ -509,29 +525,51 @@ func classifyTSAError(err error) errs.Code {
 }
 
 // applyDSS attempts F3 §7's B-LT upgrade in place on result, degrading
-// to B-T with a note on any failure rather than returning an error —
-// DSS embedding is best-effort by design (F3 §7.3). maxArtefactSize is
-// Options.MaxRevocationArtefactSize, forwarded to
-// dss.CollectRevocation (Task 1b); zero or negative means
-// dss.DefaultMaxArtefactSize. mem is Options.RevocationMemory,
-// forwarded unchanged (J-10); nil means nothing is remembered.
-func applyDSS(ctx context.Context, result *Result, cmsDER []byte, signerCert *x509.Certificate, chain []*x509.Certificate, maxArtefactSize int64, mem *dss.EndpointMemory) {
+// to B-T with a note when the validation data cannot be had — DSS
+// embedding is best-effort by design (F3 §7.3).
+//
+// One thing is not best-effort ([[D-462]]): **evidence that the signer's
+// certificate, or one of its issuers, is revoked.** The signature is
+// already made by then, and saving it would hand the person a document
+// carrying, in its own /DSS, the proof that it is invalid; so nothing is
+// saved and the document fails with CERT_REVOKED — the code's first
+// producer (D4). A revoked timestamp authority or OCSP responder is not
+// the signer's fault and does not make the signature invalid at B-T: the
+// document is kept at B-T, without that evidence claimed as B-LT, and
+// the note says why.
+func applyDSS(ctx context.Context, result *Result, cmsDER []byte, req dss.GatherRequest) error {
 	doc, err := pdf.Parse(result.Bytes)
 	if err != nil {
 		result.Notes = append(result.Notes, fmt.Sprintf("B-LT requested; re-parsing for DSS failed: %v", err))
-		return
+		return nil
 	}
-	allCerts := append([]*x509.Certificate{signerCert}, chain...)
-	entries := dss.CollectRevocation(ctx, allCerts, maxArtefactSize, mem)
-	dssResult, err := dss.Apply(doc, cmsDER, allCerts, entries)
+	m := dss.Gather(ctx, req)
+	for _, r := range m.Revoked {
+		if r.Role == dss.RoleSigner {
+			return errs.New(errs.CodeCertRevoked, fmt.Errorf(
+				"pades: the revocation evidence says %q was revoked at %s; nothing was saved",
+				r.Certificate.Subject.CommonName, r.RevokedAt.UTC().Format(time.RFC3339)))
+		}
+	}
+	if len(m.Revoked) > 0 {
+		result.Notes = append(result.Notes, fmt.Sprintf(
+			"B-LT not claimed: the evidence says %q, which vouches for the timestamp or a responder, is revoked; saved at B-T",
+			m.Revoked[0].Certificate.Subject.CommonName))
+		return nil
+	}
+	dssResult, err := dss.ApplyMaterial(doc, cmsDER, m)
 	if err != nil {
 		result.Notes = append(result.Notes, fmt.Sprintf("B-LT requested; embedding /DSS failed: %v", err))
-		return
+		return nil
 	}
 	result.Bytes = dssResult.Bytes
+	if m.Stale > 0 {
+		result.Notes = append(result.Notes, fmt.Sprintf(
+			"%d revocation response(s) are no newer than the timestamp even after asking again; embedded as given", m.Stale))
+	}
 	if dssResult.Complete {
 		result.AchievedLevel = LevelBLT
-		return
+		return nil
 	}
 	if dssResult.TooLarge {
 		// Task 1c: the achieved level is B-T, and the reason must be
@@ -543,9 +581,10 @@ func applyDSS(ctx context.Context, result *Result, cmsDER []byte, signerCert *x5
 		result.LargestSkippedBytes = dssResult.LargestSkippedBytes
 		result.Notes = append(result.Notes, fmt.Sprintf(
 			"revocation data too large to embed (%d bytes); saved at B-T", dssResult.LargestSkippedBytes))
-		return
+		return nil
 	}
 	result.Notes = append(result.Notes, "B-LT requested; OCSP/CRL unavailable for at least one certificate")
+	return nil
 }
 
 func parseChain(der [][]byte) []*x509.Certificate {

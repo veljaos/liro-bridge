@@ -915,14 +915,20 @@ Output that we generate is DER.
 
 ### 12.6 Signature levels
 
-| Level | Contents | Our position |
-|---|---|---|
-| B-B | Signature only | Fallback only, on explicit user choice |
-| B-T | + signature timestamp | **Minimum** |
-| B-LT | + `/DSS` with certificates, OCSP responses, CRLs | **Default** |
-| B-LTA | + archive timestamp | Optional |
+**Corrected in session 33 to describe what the program does (D-433's instruction, [[D-462]]); a draft for the owner, who has not yet read it.** The table it replaces called B-T the minimum and B-LT the default, which described a goal rather than the program.
 
-The state's own signing tool stops at B-T with a document timestamp and **no `/DSS`**. Producing B-LT puts our output ahead of it.
+| Level | Contents | What the program does |
+|---|---|---|
+| B-B | Signature only | Produced when the person chooses B-B in Settings, when the request asks for it, on the hash-only path (the caller timestamps its own CMS), and when no timestamp could be had and the person agreed to sign without one — the signing window asks every time. |
+| B-T | + signature timestamp | Produced when the timestamp authority the person entered in Settings answered. **No authority is built in** (D-433, D-434): the field is empty out of the box. |
+| B-LT | + `/DSS` with certificates, OCSP responses, CRLs | **Requested by default** (`signatureLevel` is `b-lt`), **reached only when every certificate that needs validation data got it** — see below. Otherwise the document is saved at B-T and the reason is said. |
+| B-LTA | + archive timestamp | Not produced. |
+
+**What B-LT collects**, after reading how DSS 6.5 reaches BASELINE-LT (nothing of DSS is used; it is Java and LGPL): the signer's certificate and each issuer up to a trust anchor; the signature timestamp's authority and its issuers; and each delegated OCSP responder, unless its certificate carries ocsp-nocheck. An issuer is found among the certificates at hand, then in the Trusted List's CA certificates, then at the certificate's AIA address over HTTP, and is used only if it signed the certificate. A self-signed certificate, or one listed in the Trusted List, is an anchor and needs no evidence. For each of the rest: OCSP first, then the CRL; an answer is used only if its signature verifies under the issuer (or a responder the issuer certified) and it says good or revoked — *unknown* proves nothing. Evidence no newer than the timestamp is asked for once more and, if still no newer, embedded and reported. A `/DSS` already in the document is kept and added to. Only `http` and `https` are dialled: `ldap://` addresses are skipped, which is why D-281's question is still open.
+
+**A revoked certificate.** If the evidence says the signer's certificate or one of its issuers is revoked, **nothing is saved** and the document fails with `CERT_REVOKED`. If it says the timestamp authority or a responder is revoked, the document is kept at B-T and B-LT is not claimed.
+
+**Whether a Serbian signature reaches B-LT is not answered.** MUP's OCSP responder has refused every request measured and its CRL is over the 5 MB cap (D-076); Pošta's issuer is in the Trusted List, so its chain completes, but no Pošta B-LT signature has been made since that was read (D-281, session 33). The state's own signing tool stops at B-T with a document timestamp and no `/DSS`.
 
 ### 12.7 Timestamp authorities
 

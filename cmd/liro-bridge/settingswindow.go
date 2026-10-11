@@ -327,11 +327,8 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.start_with_windows":             c.T(startAtLoginKey(runtime.GOOS)),
 			"settings.tsa_label":                      c.T("settings.tsa_label"),
 			"settings.tsa_custom_url_placeholder":     c.T("settings.tsa_custom_url_placeholder"),
-			"settings.tsa_preset_freetsa":             c.T("settings.tsa_preset_freetsa"),
-			"settings.tsa_preset_freetsa_warning":     c.T("settings.tsa_preset_freetsa_warning"),
-			"settings.tsa_preset_rsgov":               c.T("settings.tsa_preset_rsgov"),
-			"settings.tsa_preset_rsgov_note":          c.T("settings.tsa_preset_rsgov_note"),
 			"settings.tsa_url_label":                  c.T("settings.tsa_url_label"),
+			"settings.tsa_url_hint":                   c.T("settings.tsa_url_hint"),
 			"settings.export_choose_folder":           c.T("settings.export_choose_folder"),
 			"settings.tsa_user_label":                 c.T("settings.tsa_user_label"),
 			"settings.tsa_password_label":             c.T("settings.tsa_password_label"),
@@ -367,7 +364,6 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.cloud_origins_remove":           c.T("settings.cloud_origins_remove"),
 		},
 		"model": map[string]any{
-			"tsaPresets":            tsaPresets(),
 			"locale":                cfg.Locale,
 			"startWithWindows":      cfg.StartWithWindows,
 			"tsaURL":                cfg.TSAURL,
@@ -389,41 +385,6 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"pairings":              jsPairings(c, pairings),
 			"cloudOrigins":          jsCloudOrigins(cloudOrigins()),
 		},
-	}
-}
-
-// tsaPresetFreeTSA and tsaPresetRSGOV are Task 1c's two named timestamp
-// authorities. Neither is a default: config.Default's TSAURL is empty
-// and stays empty, and neither radio is preselected — these are
-// shortcuts for filling in the URL field, not a policy about which
-// authority to use (Task 1a).
-//
-// freetsa.org's endpoint was verified directly: one RFC 3161 request
-// over SHA-256 returned HTTP 200, Content-Type
-// application/timestamp-reply, PKIStatus granted.
-//
-// tsa.gov.rs is the RS-GOV TSA of the Office for Information
-// Technologies and eGovernment — the authority that timestamped the
-// real MUP-signed document in testdata/pdfs/local/mup.pdf (signer
-// certificate CN "RS-GOV TSA-3 200103828", TSTInfo policy
-// 1.3.6.1.4.1.55016.1.1.0, exactly SPEC §12.7's OID). The address is
-// the one its operator publishes on the eUprava service page for the
-// service; probing it is recorded in docs/decisions.md, including that
-// it is contract-gated and was returning a maintenance page when
-// probed.
-const (
-	tsaPresetFreeTSA = "https://freetsa.org/tsr"
-	tsaPresetRSGOV   = "https://tsa.gov.rs/"
-)
-
-// tsaPresets is what the settings page renders as its two preset rows.
-// The URL travels to the page so the page never has to know one, and
-// so a preset row and the free-text field can never disagree about
-// what a preset means.
-func tsaPresets() []map[string]string {
-	return []map[string]string{
-		{"id": "freetsa", "url": tsaPresetFreeTSA},
-		{"id": "rsgov", "url": tsaPresetRSGOV},
 	}
 }
 

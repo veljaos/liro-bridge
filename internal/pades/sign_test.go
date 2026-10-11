@@ -16,11 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/crypto/ocsp"
-
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/keysource"
-	"github.com/veljaos/liro-bridge/internal/pades/pdf"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
 	"github.com/veljaos/liro-bridge/internal/pades/verify"
 )
@@ -537,69 +534,8 @@ func TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence(t *testing.T) {
 }
 
 // TestSignDocumentBLTAchievedWithOCSPEvidence is the complement of
-// TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence: with a fake OCSP
-// responder returning a small, valid "good" response, real revocation
-// evidence exists, so the /DSS revision is written and B-LT is reached.
-func TestSignDocumentBLTAchievedWithOCSPEvidence(t *testing.T) {
-	ca, caKey := newTestCA(t)
-	var leafCert *x509.Certificate // set below, read by the handler closure at request time
-	ocspSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respTemplate := ocsp.Response{
-			Status:       ocsp.Good,
-			SerialNumber: leafCert.SerialNumber,
-			ThisUpdate:   time.Now().Add(-time.Minute),
-			NextUpdate:   time.Now().Add(time.Hour),
-			Certificate:  ca,
-		}
-		der, err := ocsp.CreateResponse(ca, ca, respTemplate, caKey)
-		if err != nil {
-			t.Fatalf("ocsp.CreateResponse: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/ocsp-response")
-		_, _ = w.Write(der)
-	}))
-	defer ocspSrv.Close()
-
-	sess := newChainedSession(t, ca, caKey, []string{ocspSrv.URL}, nil)
-	leafCert = sess.cert
-	input := buildMinimalPDF(t)
-
-	result, err := SignDocument(context.Background(), input, sess, Options{
-		RequestedLevel: LevelBLT,
-		TSA:            fakeTSAClientAt(t, time.Now()),
-	})
-	if err != nil {
-		t.Fatalf("SignDocument: %v", err)
-	}
-	if result.AchievedLevel != LevelBLT {
-		t.Fatalf("AchievedLevel = %s, want B-LT (notes: %v)", result.AchievedLevel, result.Notes)
-	}
-	if !bytes.HasPrefix(result.Bytes, input) {
-		t.Fatal("the original document bytes are not a literal prefix of the signed output")
-	}
-
-	doc, err := pdf.Parse(result.Bytes)
-	if err != nil {
-		t.Fatalf("re-parse signed output: %v", err)
-	}
-	root, ok := doc.ResolveDict(doc.Trailer().Get(pdf.Name("Root")))
-	if !ok {
-		t.Fatal("/Root did not resolve")
-	}
-	dssDict, ok := doc.ResolveDict(root.Get(pdf.Name("DSS")))
-	if !ok {
-		t.Fatal("/DSS did not resolve, want a written DSS revision")
-	}
-	ocsps, ok := doc.Resolve(dssDict.Get(pdf.Name("OCSPs"))).(pdf.Array)
-	if !ok || len(ocsps) == 0 {
-		t.Fatalf("/DSS/OCSPs = %#v, want at least one entry", dssDict.Get(pdf.Name("OCSPs")))
-	}
-
-	r := verifyResult(t, result.Bytes)
-	if len(r.Errors) > 0 || !r.SignatureOK || !r.HasTimestamp || !r.TimestampOK {
-		t.Fatalf("independent verification failed: %+v errors=%v", r, r.Errors)
-	}
-}
+// TestSignDocumentBLTAchievedWithOCSPEvidence moved to blt_test.go with
+// the timestamp's own chain beside it ([[D-462]]).
 
 // TestSignDocumentMissingGlyphMapsToCodeStampGlyphMissing is Task 2: a
 // character the stamp's font subset cannot draw used to surface as

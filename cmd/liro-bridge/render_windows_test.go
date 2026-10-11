@@ -41,10 +41,7 @@ var settingsDataI18nKeys = []string{
 	"settings.start_with_windows",
 	"settings.tsa_label",
 	"settings.tsa_url_label",
-	"settings.tsa_preset_freetsa",
-	"settings.tsa_preset_freetsa_warning",
-	"settings.tsa_preset_rsgov",
-	"settings.tsa_preset_rsgov_note",
+	"settings.tsa_url_hint",
 	"settings.tsa_user_label",
 	"settings.tsa_password_label",
 	"settings.tsa_client_cert_label",
@@ -124,53 +121,22 @@ func jsStringLiteral(key string) string {
 	return string(b)
 }
 
-// TestSettingsTSAPresetsFillTheURLAndStartUnselected is Task 1c (F5
-// second-real-run review). Two named presets, neither preselected out
-// of the box, each filling the URL field it is a shortcut for — and a
-// hand-typed URL selecting neither, so a preset radio never claims an
-// authority the user did not choose.
-func TestSettingsTSAPresetsFillTheURLAndStartUnselected(t *testing.T) {
+// TestSettingsOffersNoTimestampService is D-434: the two presets were a
+// hard-coded service with a friendly name, and there are none now — no
+// radio to choose one, and an empty URL field out of the box, with the
+// sentence that says what to put in it.
+func TestSettingsOffersNoTimestampService(t *testing.T) {
 	c := i18n.Load("sr-Latn")
 	win, _ := sharedSettingsWindow(t, c, config.Default())
 
-	if got := evalString(t, win, "String(document.querySelectorAll('input[name=tsa-preset]:checked').length)"); got != "0" {
-		t.Fatalf("%s preset radios are checked with the default (empty) configuration; want none", got)
+	if got := evalString(t, win, "String(document.querySelectorAll('input[type=radio][name=tsa-preset]').length)"); got != "0" {
+		t.Fatalf("%s timestamp presets are offered; D-434 removed them", got)
 	}
-
-	for _, tc := range []struct{ id, wantURL string }{
-		{"tsa-preset-freetsa", tsaPresetFreeTSA},
-		{"tsa-preset-rsgov", tsaPresetRSGOV},
-	} {
-		script := "(function(){var el=document.getElementById('" + tc.id + "');el.checked=true;" +
-			"el.dispatchEvent(new Event('change'));return document.getElementById('tsa-url').value;})()"
-		if got := evalString(t, win, script); got != tc.wantURL {
-			t.Errorf("choosing %s put %q in the URL field, want %q", tc.id, got, tc.wantURL)
-		}
+	if got := evalString(t, win, "document.getElementById('tsa-url').value"); got != "" {
+		t.Fatalf("the URL field holds %q out of the box, want empty", got)
 	}
-
-	// A URL that is neither preset selects neither.
-	script := "(function(){var u=document.getElementById('tsa-url');u.value='https://example.invalid/tsa';" +
-		"u.dispatchEvent(new Event('input'));" +
-		"return String(document.querySelectorAll('input[name=tsa-preset]:checked').length);})()"
-	if got := evalString(t, win, script); got != "0" {
-		t.Errorf("a hand-typed URL left %s preset radios checked, want none", got)
-	}
-}
-
-// TestSettingsPresetSelectionReflectsASavedURL: reopening Settings with
-// a preset's own URL already saved shows that preset as the chosen one,
-// rather than silently presenting it as a custom URL.
-func TestSettingsPresetSelectionReflectsASavedURL(t *testing.T) {
-	c := i18n.Load("sr-Latn")
-	cfg := config.Default()
-	cfg.TSAURL = tsaPresetFreeTSA
-	win, _ := sharedSettingsWindow(t, c, cfg)
-
-	if got := evalString(t, win, "String(document.getElementById('tsa-preset-freetsa').checked)"); got != "true" {
-		t.Errorf("freetsa.org preset checked = %s with its own URL saved, want true", got)
-	}
-	if got := evalString(t, win, "String(document.getElementById('tsa-preset-rsgov').checked)"); got != "false" {
-		t.Errorf("the other preset is checked too, want only one")
+	if got := evalString(t, win, "String(document.body.textContent.indexOf("+jsStringLiteral(c.T("settings.tsa_url_hint"))+") >= 0)"); got != "true" {
+		t.Fatalf("the hint under the URL field is not on the page")
 	}
 }
 

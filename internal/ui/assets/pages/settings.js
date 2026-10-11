@@ -4,7 +4,6 @@
   var pendingAction = "";
   var pendingAppID = "";
   var pendingOrigin = "";
-  var presetURLs = {};
 
   // renderPairings draws the applications that may ask this agent to
   // sign (F7 2.4). Every value in a row is caller-supplied and goes in
@@ -77,22 +76,6 @@
     });
   }
 
-  // syncPresetSelection checks the preset whose URL is exactly what the
-  // URL field holds, and none when it matches neither (Task 1c: neither
-  // preset is preselected, and a hand-typed URL never silently claims
-  // to be one of them).
-  // It registers no event handlers. It ran with a copy of the stamp
-  // button's click handler pasted into it, so every keystroke in the URL
-  // field added another: measured at seven messages for one press of
-  // the stamp button after five keystrokes, which is seven stamp
-  // windows opened one after another.
-  function syncPresetSelection() {
-    var url = document.getElementById("tsa-url").value;
-    document.querySelectorAll("input[name=tsa-preset]").forEach(function (el) {
-      el.checked = presetURLs[el.value] === url && url !== "";
-    });
-  }
-
   function showStatus(status) {
     var el = document.getElementById("action-status");
     window.liroSetText(document.getElementById("action-status-text"), status.text);
@@ -124,7 +107,6 @@
     // stale "exported to ..." from a previous session.
     showStatus({ text: "", intent: "" });
     var m = payload.model;
-    (m.tsaPresets || []).forEach(function (p) { presetURLs[p.id] = p.url; });
     document.getElementById("locale").value = m.locale;
     document.getElementById("start-with-windows").checked = !!m.startWithWindows;
     document.getElementById("tsa-url").value = m.tsaURL || "";
@@ -158,7 +140,6 @@
     // that was already replaced there.
     var levelIDs = { "b-b": "level-bb", "b-t": "level-bt", "b-lt": "level-blt" };
     document.getElementById(levelIDs[m.signatureLevel] || "level-blt").checked = true;
-    syncPresetSelection();
   };
 
   // __liroCollectState is read back by Go via Window.Eval (never a
@@ -196,14 +177,6 @@
   document.getElementById("stamp-settings-btn").addEventListener("click", function () {
     act("stampSettings");
   });
-
-  document.querySelectorAll("input[name=tsa-preset]").forEach(function (el) {
-    el.addEventListener("change", function () {
-      if (!el.checked) return;
-      document.getElementById("tsa-url").value = presetURLs[el.value] || "";
-    });
-  });
-  document.getElementById("tsa-url").addEventListener("input", syncPresetSelection);
 
   document.getElementById("save-btn").addEventListener("click", function () { act("save"); });
   document.getElementById("export-audit-btn").addEventListener("click", function () { act("exportAuditLog"); });
