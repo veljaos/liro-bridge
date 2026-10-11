@@ -51,13 +51,17 @@ internal static class Liro
     private static string DiscoveryFile()
     {
         var home = Environment.GetEnvironmentVariable("HOME") ?? "";
-        if (OperatingSystem.IsWindows())
+        // Environment.OSVersion and a directory every Mac has, rather than
+        // OperatingSystem.IsWindows/IsMacOS: those are .NET 5 and later, and
+        // this file is also compiled with the csc.exe inside Windows' own
+        // .NET Framework 4, which has neither.
+        if (Environment.OSVersion.Platform == PlatformID.Win32NT)
         {
             var local = Environment.GetEnvironmentVariable("LOCALAPPDATA")
                         ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             return Path.Combine(local, "Liro", "bridge.json");
         }
-        if (OperatingSystem.IsMacOS())
+        if (Directory.Exists("/System/Library/CoreServices"))
         {
             return Path.Combine(home, "Library", "Application Support", "Liro", "bridge.json");
         }
