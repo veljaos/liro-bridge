@@ -1,6 +1,12 @@
 Liro Bridge, potpisivanje PDF dokumenata kvalifikovanim elektronskim
 sertifikatom sa kartice ili USB tokena.
 
+**Šta ispravlja ovo izdanje**
+
+Liro Bridge u sistemskoj traci mogao je da prestane da radi posle
+otprilike pola sata dok je glavni prozor otvoren. Ovo izdanje to
+ispravlja.
+
 **Šta da preuzmete**
 
 Fajlovi su niže na ovoj stranici, pod *Assets*. Ime svakog sadrži broj
