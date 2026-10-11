@@ -13,6 +13,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -162,7 +163,12 @@ func recordWarnings(t *testing.T) func() []string {
 	prev := slog.Default()
 	var mu sync.Mutex
 	var recs []string
-	slog.SetDefault(slog.New(recordingHandler{next: prev.Handler(), mu: &mu, recs: &recs}))
+	// Not prev.Handler(): while slog's own default is in place, that
+	// handler writes through log.Default(), and SetDefault points
+	// log.Default() back at the new handler — so every record went round
+	// the loop into log.Logger's mutex a second time and the test hung
+	// for ten minutes on CI's first run of it (session 33).
+	slog.SetDefault(slog.New(recordingHandler{next: slog.NewTextHandler(os.Stderr, nil), mu: &mu, recs: &recs}))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	return func() []string {
 		mu.Lock()

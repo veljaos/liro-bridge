@@ -27,3 +27,27 @@ measurement found no defect for that row.
 ## P2 — the same tests after the fixes
 
 All six pass; nothing else changes.
+
+## P1, read — CI run 38183853425 on 48e53ce (results belong to the entry; listed here only so P3 can be read against them)
+
+P1a red as predicted. P1b red as predicted (4 of 5 pinned). P1c never
+asserted: the test hung ten minutes in its own log handler (recordWarnings
+forwarded to slog's default handler, which loops through log.Default() back
+into itself) and the package timed out, so **P1d and P1e never ran**. The
+hang's stack shows `registerDropTargets`, called from Navigate on the test's
+goroutine, logging "registered a drop target" — RegisterDragDrop off the UI
+thread **succeeded** at least once, which P1c's mechanism said it would not.
+**P1f failed as a prediction**: cmd/liro-bridge passed.
+
+## P3 — the same commit plus the harness fix only (no product fix), CI's `windows` job
+
+Written before the commit that carries the harness fix is pushed.
+
+| | test | predicted |
+|---|---|---|
+| P3a | P1a's | **FAIL**, ~200 handles, as measured |
+| P3b | P1b's | **FAIL**, 4 of 5 pinned, as measured |
+| P3c | P1c's | **PASS** — no defect found for the row: the stack above shows the off-thread registration succeeding, so the thread Go ran Navigate on was able to take a drop target (an OLE-initialised thread reused by the runtime, or the apartment rule is looser than the comment says). **Least certain of P3**: the test may assert something else that the off-thread path still breaks (a target registered on the wrong apartment never receives a drop, which this test does not drive) |
+| P3d | P1d's | **FAIL**, ~30 GDI objects |
+| P3e | P1e's | **FAIL**, CollectPIN does not return in 15 s |
+| P3f | the P1f reading step | passes; its diagnosis shows `stderrAfter` equal to `stderrBefore` and `file` a different value — Server 2025's FreeConsole leaves the console handles as they were, or their numbers are not the first handed out, and the reuse D-454 reasoned from did not happen here |
