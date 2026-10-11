@@ -62,7 +62,10 @@ func checkPackage(pkg string, deps []string) []Violation {
 				out = append(out, Violation{pkg, d, rule3})
 			}
 		}
-	case isUnder(pkg, "internal/api"):
+	// internal/cloud is the API door's other half (F14, D-461): it reads
+	// its jobs with internal/api's own rules, so it may import that door
+	// and is held to the same rule about the other two.
+	case isUnder(pkg, "internal/api"), isUnder(pkg, "internal/cloud"):
 		for _, d := range deps {
 			if isUnder(d, "internal/ui") || isUnder(d, "internal/cli") {
 				out = append(out, Violation{pkg, d, rule4})

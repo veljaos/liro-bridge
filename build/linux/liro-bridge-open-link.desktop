@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Liro Bridge
+Comment=Open a signing request from a server you allowed
+Comment[sr@latin]=Otvori zahtev za potpis sa servera koji ste dozvolili
+Comment[sr]=Отвори захтев за потпис са сервера који сте дозволили
+Exec=liro-bridge open-link %u
+TryExec=liro-bridge
+Icon=liro-bridge
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/liro-bridge;

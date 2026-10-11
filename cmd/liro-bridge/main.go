@@ -205,7 +205,7 @@ func run(args []string, out io.Writer) int {
 	// There is one `sign` and it shows the consent window. SPEC §18.2
 	// admits no exception — "No signature without human approval. No
 	// flag, no configuration, no header bypasses the consent screen" —
-	// and SPEC §4.3 puts all four entry points through the same consent
+	// and SPEC §4.3 puts every entry point through the same consent
 	// screen, the same session and the same audit log. `--interactive`
 	// used to be what made the difference; it is not a distinction any
 	// more, and parseSignArgs says so to anyone who still passes it.
@@ -237,6 +237,13 @@ func run(args []string, out io.Writer) int {
 			return 1
 		}
 		return runShellVerb(context.Background(), args[1:], cfg)
+	}
+	// F14 §1: what the desktop runs for a liro-bridge:// link.
+	if len(args) > 0 && args[0] == platform.LinkSubcommand {
+		if !requireWebView2(i18n.Load(cfg.Locale)) {
+			return 1
+		}
+		return runOpenLink(args[1:], out, cfg, version)
 	}
 	if len(args) > 0 && args[0] == "tray" {
 		// F5 §3: the agent starts minimised to tray with no window. Not
@@ -324,6 +331,7 @@ var topLevelCommands = []command{
 	{"sign", "Sign a PDF file"},
 	{"open", "Open the main window to sign documents"},
 	{"tray", "Run the agent in the system tray"},
+	{"open-link", "Open a liro-bridge:// link from a server (run by the desktop)"},
 	{"uninstall-notice", "Clear what this agent extracted and say what an uninstall keeps (run by the installer)"},
 }
 

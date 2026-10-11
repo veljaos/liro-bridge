@@ -21,6 +21,7 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/api"
 	"github.com/veljaos/liro-bridge/internal/config"
+	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/platform"
 )
 
@@ -49,7 +50,12 @@ type protocolAgent struct {
 // which is a real state (a secret store that would not open) and is
 // reported rather than fatal: an agent that cannot serve the protocol
 // can still sign for the person sitting at it.
-func startProtocol(fallback config.Config, version string, pairings *api.Pairings) (*protocolAgent, error) {
+//
+// signer and registry are the agent's own, passed in rather than made
+// here because the cloud channel signs through the same two (F14 §7):
+// one consent window at a time, one job registry, whichever door a
+// request came in by.
+func startProtocol(fallback config.Config, version string, pairings *api.Pairings, signer *protocolSigner, registry *jobs.Registry) (*protocolAgent, error) {
 	if pairings == nil {
 		return nil, errors.New("there is no pairing store, so nothing could be authenticated")
 	}
@@ -66,8 +72,8 @@ func startProtocol(fallback config.Config, version string, pairings *api.Pairing
 		Pairings:     pairings,
 		Flow:         flow,
 		Auth:         api.NewAuthenticator(pairings, nonces, nil),
-		Jobs:         newJobRegistry(),
-		Signer:       newProtocolSigner(fallback),
+		Jobs:         registry,
+		Signer:       signer,
 		Certificates: gatheredCertificates{},
 		AgentVersion: version,
 		// Read at the moment a request arrives, not captured here: a

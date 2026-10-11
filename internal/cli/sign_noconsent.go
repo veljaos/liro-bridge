@@ -5,7 +5,7 @@
 //
 // SPEC §18.2 is unconditional — "No signature without human approval.
 // No flag, no configuration, no header bypasses the consent screen" —
-// and SPEC §4.3 says all four entry points go through the same consent
+// and SPEC §4.3 says every entry point goes through the same consent
 // screen. This code predates the consent screen (F5) and was never
 // reconciled with either. It was reachable as `liro-bridge sign` by any
 // process on the machine, with no pairing, no origin binding and no

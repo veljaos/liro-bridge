@@ -1147,11 +1147,14 @@ jobs:
           set -eu
           for f in /usr/share/applications/liro-bridge.desktop \
                    /usr/share/applications/liro-bridge-open-pdf.desktop \
+                   /usr/share/applications/liro-bridge-open-link.desktop \
                    /usr/share/icons/hicolor/48x48/apps/liro-bridge.png \
                    /usr/share/icons/hicolor/256x256/apps/liro-bridge.png; do
             test -s "$f" || { echo "::error::$f is missing"; exit 1; }
           done
           grep -qx 'MimeType=application/pdf;' /usr/share/applications/liro-bridge-open-pdf.desktop
+          grep -qx 'MimeType=x-scheme-handler/liro-bridge;' /usr/share/applications/liro-bridge-open-link.desktop
+          grep -qx 'Exec=liro-bridge open-link %u' /usr/share/applications/liro-bridge-open-link.desktop
 
       # The profile on Debian and Ubuntu, and not on Fedora. Its syntax is
       # checked with the distribution's own parser, without loading it:
@@ -1186,6 +1189,7 @@ jobs:
             test ! -e /usr/bin/liro-bridge
           fi
           test ! -e /usr/share/applications/liro-bridge.desktop
+          test ! -e /usr/share/applications/liro-bridge-open-link.desktop
 
   # The TypeScript SDK. Its own job rather than steps on the ubuntu one,
   # because it needs Node rather than Go and because a red SDK should

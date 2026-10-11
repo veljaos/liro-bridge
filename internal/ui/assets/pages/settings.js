@@ -3,6 +3,7 @@
 
   var pendingAction = "";
   var pendingAppID = "";
+  var pendingOrigin = "";
   var presetURLs = {};
 
   // renderPairings draws the applications that may ask this agent to
@@ -47,6 +48,35 @@
     });
   }
 
+  // renderCloudOrigins draws the servers the person allowed (F14 2). An
+  // origin is the one value in a row, caller-supplied in the sense that
+  // a server's link chose it, and goes in through setText.
+  function renderCloudOrigins(list) {
+    var host = document.getElementById("cloud-origins");
+    host.innerHTML = "";
+    document.getElementById("cloud-origins-empty").hidden = !!(list && list.length);
+    (list || []).forEach(function (o) {
+      var row = document.createElement("div");
+      row.className = "pairing-row";
+      var text = document.createElement("div");
+      text.className = "pairing-text";
+      var origin = document.createElement("code");
+      origin.className = "pairing-origin";
+      window.liroSetText(origin, o.origin);
+      text.appendChild(origin);
+      var remove = document.createElement("button");
+      remove.className = "liro-btn liro-btn-secondary liro-btn-compact pairing-revoke";
+      window.liroSetText(remove, window.liroT("settings.cloud_origins_remove"));
+      remove.addEventListener("click", function () {
+        pendingOrigin = o.origin;
+        act("removeCloudOrigin");
+      });
+      row.appendChild(text);
+      row.appendChild(remove);
+      host.appendChild(row);
+    });
+  }
+
   // syncPresetSelection checks the preset whose URL is exactly what the
   // URL field holds, and none when it matches neither (Task 1c: neither
   // preset is preselected, and a hand-typed URL never silently claims
@@ -83,6 +113,10 @@
       renderPairings(payload.pairings);
       return;
     }
+    if (payload.type === "cloudOrigins") {
+      renderCloudOrigins(payload.cloudOrigins);
+      return;
+    }
     if (payload.type !== "init") return;
     window.liroApplyStaticStrings();
     // A freshly opened window says nothing about what an action did:
@@ -116,6 +150,7 @@
       ? "liro-text-small liro-outcome-warning"
       : "liro-text-small liro-text-secondary";
     renderPairings(m.pairings);
+    renderCloudOrigins(m.cloudOrigins);
     // Task 3 (F5 fourth-real-run review): three levels, B-B included.
     // An unrecognised saved value falls back to the project's default
     // rather than leaving every radio unchecked — Go validates the
@@ -135,6 +170,7 @@
     return JSON.stringify({
       action: pendingAction,
       revokeAppId: pendingAppID,
+      removeOrigin: pendingOrigin,
       locale: document.getElementById("locale").value,
       startWithWindows: document.getElementById("start-with-windows").checked,
       tsaURL: document.getElementById("tsa-url").value,

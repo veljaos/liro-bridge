@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="/tokens.css" />
+<link rel="stylesheet" href="/intents.css" />
+<link rel="stylesheet" href="/pages/origin.css" />
+</head>
+<body class="liro-page">
+
+<!-- The question a server's first link asks (F14 §2, D-461): may this
+     server send requests to sign? One field and two buttons.
+
+     The origin is the one the agent parsed out of the link and will
+     connect to over TLS — never a name the server supplied — and it is
+     shown verbatim, scheme and port included, for SPEC §6.2's reason:
+     a person who sees a host they did not expect can notice. Nothing is
+     fetched from the server before this is answered. -->
+<main>
+  <div class="identity liro-scroll-region">
+    <div class="field">
+      <p class="field-label" data-i18n="origin.server_label"></p>
+      <p class="field-value" id="origin"></p>
+    </div>
+  </div>
+
+  <div class="explain liro-text-secondary">
+    <p data-i18n="origin.explain"></p>
+    <p data-i18n="origin.every_request"></p>
+  </div>
+
+  <div class="actions">
+    <button id="deny-btn" class="liro-btn liro-btn-secondary" data-i18n="origin.deny"></button>
+    <button id="allow-btn" class="liro-btn liro-btn-primary" data-i18n="origin.allow"></button>
+  </div>
+</main>
+
+<script src="/bridge.js"></script>
+<script src="/pages/origin.js"></script>
+</body>
+</html>

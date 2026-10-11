@@ -31,6 +31,7 @@ import (
 type settingsFormState struct {
 	Action                string `json:"action"`
 	RevokeAppID           string `json:"revokeAppId"`
+	RemoveOrigin          string `json:"removeOrigin"`
 	Locale                string `json:"locale"`
 	StartWithWindows      bool   `json:"startWithWindows"`
 	TSAURL                string `json:"tsaURL"`
@@ -243,6 +244,19 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		})
 		postWindowStatus(win, text, ui.IntentPositive)
 		return false
+	case "removeCloudOrigin":
+		// F14 §2: the server's next link asks again. A request of its
+		// already on screen is not touched — it was allowed when it came.
+		if err := cloudOrigins().Remove(state.RemoveOrigin); err != nil {
+			slog.Warn("settings: removing an allowed server failed", "error", err)
+			return false
+		}
+		slog.Info("settings: an allowed server was removed", "origin", state.RemoveOrigin)
+		_ = win.PostJSON(map[string]any{
+			"type":         "cloudOrigins",
+			"cloudOrigins": jsCloudOrigins(cloudOrigins()),
+		})
+		return false
 	case "stampSettings":
 		// F6 §6: the stamp window, reachable from Settings as well as
 		// from the main window. Settings stays open behind it, owned by
@@ -348,6 +362,9 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.pairings_empty":                 c.T("settings.pairings_empty"),
 			"settings.pairings_revoke":                c.T("settings.pairings_revoke"),
 			"settings.secret_store_label":             c.T("settings.secret_store_label"),
+			"settings.cloud_origins_title":            c.T("settings.cloud_origins_title"),
+			"settings.cloud_origins_empty":            c.T("settings.cloud_origins_empty"),
+			"settings.cloud_origins_remove":           c.T("settings.cloud_origins_remove"),
 		},
 		"model": map[string]any{
 			"tsaPresets":            tsaPresets(),
@@ -370,6 +387,7 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"secretStoreText":       secretStoreSentence(c, secrets),
 			"secretStoreFallback":   secrets.Mechanism == "" || secrets.Fallback,
 			"pairings":              jsPairings(c, pairings),
+			"cloudOrigins":          jsCloudOrigins(cloudOrigins()),
 		},
 	}
 }

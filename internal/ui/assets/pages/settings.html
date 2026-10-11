@@ -186,6 +186,16 @@
       <p id="secret-store" class="liro-text-small liro-text-secondary"></p>
     </section>
 
+    <!-- The servers whose links may put a request in front of this
+         person (F14 §2): the origin each was allowed as, verbatim, and
+         the one action that matters. Removing one means its next link
+         asks again; it never touches a request already on screen. -->
+    <section class="pairings-section">
+      <span class="liro-field-label" data-i18n="settings.cloud_origins_title"></span>
+      <p id="cloud-origins-empty" class="liro-text-small liro-text-secondary" data-i18n="settings.cloud_origins_empty" hidden></p>
+      <div id="cloud-origins"></div>
+    </section>
+
     <div class="actions-row">
       <button id="export-audit-btn" class="liro-btn liro-btn-secondary" data-i18n="settings.export_audit_log"></button>
     </div>

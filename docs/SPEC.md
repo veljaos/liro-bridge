@@ -81,10 +81,10 @@ These are permanently out of scope. Do not build them, do not leave hooks for th
 
 | Not this | Why |
 |---|---|
-| Cloud / remote signing | This product is for physical hardware only. |
+| Signing in the cloud: a key held anywhere but the person's own card or token, or a signature made with nobody present | This product is for physical hardware only. The cloud channel (`docs/phases/F14.md`, D-461) is not this and never becomes it: it is a way for a server's request to *reach the person*, who approves it in the consent window and signs with their own card — the key never leaves the card, and nothing is signed without them. A server that wants to sign by itself is out of scope permanently. |
 | Document archiving or storage | The agent writes signed files where the user says and forgets them. |
 | Multi-step signing workflows | No routing, no "waiting for second signer", no state machine. |
-| Document sharing or transfer | Nothing leaves the machine. |
+| Document sharing or transfer | Nothing leaves the machine but a request's own answer, to whoever sent the request: the program on this machine that asked over loopback, or the server a cloud request was fetched from (F14 §3.2) — never anywhere else. |
 | Verification-as-a-service | The agent verifies its own output as a self-check. It is not a validation service for third parties. |
 | Unattended / server-side signing | A human approves every batch. There is no daemon mode, no service account, no API key that bypasses consent. |
 | Certificate-based authentication (portal login) | Different call surface, different risk. Out of scope. |
@@ -160,15 +160,15 @@ These are checked in CI. A violation fails the build.
    Trust evaluation (TSL, OCSP, chain building) is pure and independently testable. `internal/errs` is a dependency-free leaf carrying only the error-code vocabulary; importing it does not compromise that property. No other `internal/` package may be imported.
 
 4. **`internal/api`, `internal/ui`, `internal/cli` MUST NOT import each other.**
-   Three independent front doors onto the same core.
+   Three independent front doors onto the same core. `internal/cloud`, the cloud channel (F14), is the API door's other half — it reads its jobs by `internal/api`'s own rules — so it may import `internal/api` and is held to the same rule about `internal/ui` and `internal/cli`.
 
 5. **Nothing in `internal/` may import `cmd/`.**
 
 Implement rule enforcement in CI as a small Go program or a `go list`-based script in `scripts/check-deps.go`. Do not use a third-party linter for this; the rule set is tiny and must not silently stop working when a dependency updates.
 
-### 4.3 The four entry points
+### 4.3 The five entry points
 
-All four go through the **same** consent screen, the same session, the same audit log. They differ only in what they carry.
+All five go through the **same** consent screen, the same session, the same audit log. They differ only in what they carry.
 
 | Entry point | Caller | Sees documents | Notes |
 |---|---|---|---|
@@ -176,6 +176,7 @@ All four go through the **same** consent screen, the same session, the same audi
 | `POST /v2/sign/pdf` | Third-party ERPs | Yes | Optional module. Can be disabled at install time. |
 | Agent window / OS integration | The user directly | Yes | Drag and drop, right-click menu. `liro-bridge open` is the same window, with nothing in it. |
 | CLI | The user, from a shell | Yes | `liro-bridge sign --in x.pdf` — the same window, entered at the certificate step. There is no unattended mode. |
+| Cloud channel (`liro-bridge://` link) | A server the person allowed | As the job says — hashes, or documents where the whole-document path is on | `docs/phases/F14.md`. The agent fetches the job over HTTPS and returns the answer to the same origin; the request is the loopback protocol's own (`POST /v2/sign` or `/v2/sign/pdf`), read by the same rules. The consent window names the origin the agent connected to, never a name the server chose. |
 
 The hash-only path exists because it is the most secure arrangement available: the agent never possesses the document. It is preserved even though the agent is now capable of handling documents, because a compromised web application must not be able to extract documents through the agent.
 

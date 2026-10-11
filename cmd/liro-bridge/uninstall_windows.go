@@ -118,7 +118,7 @@ func runUninstallNotice(args []string, out io.Writer, cfg config.Config) int {
 	slog.Info("uninstall: derived state removed", "removed", removed, "failed", failed, "dir", dir)
 	fprintf(out, "removed %d of %d derived items from %s\n", removed, removed+failed, dir)
 
-	// The two registrations the agent makes for itself. It is the only
+	// The three registrations the agent makes for itself. It is the only
 	// thing that knows how to unmake them, and after RemoveFiles it
 	// will not be here to be asked — so this is where they go. The
 	// per-user installer also removes them declaratively, because a
@@ -126,6 +126,9 @@ func runUninstallNotice(args []string, out io.Writer, cfg config.Config) int {
 	// binary that no longer exists.
 	if err := platform.NewShellMenu().Unregister(); err != nil {
 		slog.Warn("uninstall: could not remove the Explorer menu entry", "error", err)
+	}
+	if err := platform.NewURLScheme().Unregister(); err != nil {
+		slog.Warn("uninstall: could not remove the liro-bridge:// link scheme", "error", err)
 	}
 	if err := platform.NewAutostart().SetEnabled(false, ""); err != nil {
 		slog.Warn("uninstall: could not remove the autostart entry", "error", err)

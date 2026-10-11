@@ -259,6 +259,17 @@ func (s *protocolSigner) Sign(ctx context.Context, req api.SignRequest, job *job
 	return result, nil
 }
 
+// holdSlot runs f in the one-window slot: after any consent window up
+// now has gone, and with none opening until f returns. The cloud
+// channel's question about a server is the one window that takes it
+// without being a signing (F14 §2), so it never opens over a batch
+// somebody is reading.
+func (s *protocolSigner) holdSlot(f func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f()
+}
+
 // newJobRegistry is the agent's own job registry. One per process,
 // like the pairing store and for the same reason (D-182): a job's
 // identity, its one-at-a-time slot and its result all have to be the
