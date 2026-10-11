@@ -47628,3 +47628,31 @@ already installed on this computer" (read in `liro-bridge.wxs`); so the rc
 uninstalled first, or another machine — the owner's choice.
 
 ---
+
+## D-456 — The owner's rulings on 0.9.3: the release notes say why it exists, in one factual line, and the `.exe` line is left for E8; the watch is on this machine, the rc uninstalled first — not tonight; the tag belongs on `0df5719`, not on D-455's `0a51870`
+
+**Date:** 2026-10-12
+**Phase:** block 2, D43 between build and tag. Nothing run.
+
+**The notes (the owner).** "A release whose notes say nothing about why it
+exists is a release nobody installs on purpose." On `release/0.9.3`,
+`docs/release-notes-template.md` gains, after its opening paragraph, **Šta
+ispravlja ovo izdanje** — "Liro Bridge u sistemskoj traci mogao je da
+prestane da radi posle otprilike pola sata dok je glavni prozor otvoren.
+Ovo izdanje to ispravlja." — commit `0df5719`, six lines, nothing else.
+Master's template is unchanged. **The `.exe` line stays as v0.9.2 had it**:
+D41's correction belongs with E8, and release text is not rewritten
+unconsidered at midnight (the owner).
+
+**So the tag goes on `0df5719`.** D-455 named `0a51870`, the commit before
+the notes; tagging that would publish 0.9.3 without its reason. The branch
+is v0.9.2 + six files now (`git diff --stat v0.9.2 0df5719`: 203 in, 6 out).
+
+**The watch (the owner).** On this machine, with the rc uninstalled first
+and reinstalled afterwards — "one machine with a clean reading beats two
+with a muddled one" — **and not tonight.**
+
+The branch is the owner's to push; its CI run is read to its end before the
+tag, as D-455 set out.
+
+---
