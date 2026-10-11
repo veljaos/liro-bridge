@@ -3,12 +3,55 @@
 package ui
 
 import (
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+// descendantsCalls is more than the Go runtime's 2000 Windows callback
+// slots (cb_max in runtime/zcallback_windows.go): about 35 minutes of a
+// main window's drop watch, which lists the tree once a second.
+const descendantsCalls = 2100
+
+// descendantsHelperEnv makes a copy of this test binary the child of
+// the test below.
+const descendantsHelperEnv = "LIRO_UI_DESCENDANTS_HELPER"
+
+// TestDescendantsHelper is not a test. It is this binary listing a
+// window tree more times than there are callback slots, in a process of
+// its own, because running out of them is a fatal runtime error that no
+// test can recover from in-process.
+func TestDescendantsHelper(t *testing.T) {
+	if os.Getenv(descendantsHelperEnv) == "" {
+		t.Skip("not the helper; this runs only as a child of the test below")
+	}
+	for i := 0; i < descendantsCalls; i++ {
+		_ = descendantWindows(0)
+	}
+}
+
+// TestListingAWindowsDescendantsSpendsNoCallbackSlot is the regression
+// test for D-453: descendantWindows handed syscall.NewCallback a new
+// closure on every call, the runtime never releases a callback, and
+// after 2000 of them it throws — so a main window left open for about
+// half an hour took the agent down, with nothing in its log.
+func TestListingAWindowsDescendantsSpendsNoCallbackSlot(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDescendantsHelper$", "-test.v")
+	cmd.Env = append(os.Environ(), descendantsHelperEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("listing a window tree %d times ended the process: %v\n%s", descendantsCalls, err, out)
+	}
+	// A helper that skipped would also exit 0, and would prove nothing.
+	if !strings.Contains(string(out), "--- PASS: TestDescendantsHelper") {
+		t.Fatalf("the helper did not run its loop:\n%s", out)
+	}
+}
 
 func TestOnlyWindowsWithNoTargetYetAreRegisteredAgain(t *testing.T) {
 	registered := []*dropTarget{{hwnd: 0x10}, {hwnd: 0x20}, nil}

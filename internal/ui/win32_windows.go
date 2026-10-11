@@ -421,16 +421,40 @@ func readDropPaths(hdrop uintptr) []string {
 	return out
 }
 
+// descendantsMu serialises descendantWindows, because its one callback
+// appends to one package-level slice. EnumChildWindows calls the
+// callback synchronously on the calling thread before it returns, so
+// the lock is held for exactly the enumeration and nothing inside it
+// takes the lock again.
+var (
+	descendantsMu  sync.Mutex
+	descendantsOut []uintptr
+)
+
+func enumDescendant(child uintptr, _ uintptr) uintptr {
+	descendantsOut = append(descendantsOut, child)
+	return 1
+}
+
+// enumDescendantCallback is created once, like every other callback in
+// this package. It was a closure made per call, and a closure is a new
+// callback to the runtime every time: syscall.NewCallback's trampolines
+// are never released, the runtime has 2000 of them, and the 2001st is a
+// fatal error rather than an error — so the drop watch, listing the tree
+// once a second, took the agent down after about half an hour of a main
+// window being open, with nothing in its log ([[D-453]]).
+var enumDescendantCallback = syscall.NewCallback(enumDescendant)
+
 // descendantWindows lists every window beneath hwnd, in no particular
 // order. EnumChildWindows is already recursive, so one call reaches the
 // whole subtree.
 func descendantWindows(hwnd uintptr) []uintptr {
-	var out []uintptr
-	cb := syscall.NewCallback(func(child uintptr, _ uintptr) uintptr {
-		out = append(out, child)
-		return 1
-	})
-	_, _, _ = procEnumChildWindows.Call(hwnd, cb, 0)
+	descendantsMu.Lock()
+	defer descendantsMu.Unlock()
+	descendantsOut = nil
+	_, _, _ = procEnumChildWindows.Call(hwnd, enumDescendantCallback, 0)
+	out := descendantsOut
+	descendantsOut = nil
 	return out
 }
 
