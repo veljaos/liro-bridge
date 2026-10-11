@@ -47081,3 +47081,297 @@ A7's question is what happens on 1.27.1: the tests run on go1.26.5 as CI does
 run of `cmd/liro-bridge`'s tests, HKCU `Run` and the verb are read (D10).
 
 ---
+
+## D-452 — The suite run on the owner's Windows machine without reaching the audit chain: `LOCALAPPDATA` redirected for the whole run, the chain copied before and verified after each of four runs — 319 entries, byte-identical throughout; **D10's registry half found and measured: the test helper restores a registration that existed and never removes one it created**, so on a machine with autostart off one test run turns it on, pointing at a deleted file; A7 read on go1.27.1 — exactly D-308's failure, to the byte; and a suite that only a person's care keeps off the real chain recorded as D42; the owner's rulings on D40 and D41
+
+**Date:** 2026-10-11
+**Phase:** block 2, after D.0 (D-451). The owner's Windows machine, the rc
+installed and its agent PID 6292 running throughout; **the card out of the
+reader** for every run (the owner's hands; read as `SCARD_STATE_EMPTY`).
+Predictions in `C:\Users\Veljko\s32-predictions.md`, written before each
+run; local times CEST.
+
+### The audit chain: the owner's condition, and how it was met
+
+The owner, before anything ran: **if the tests can write into the real
+audit chain, they are not run against it under any circumstance, and it is
+not worked around quietly; the chain is copied before and verified after,
+and a change in it stops everything** — "that is not a test failure, it is
+a finding about the product."
+
+**Read first: can a redirected run reach it?** Every path the program
+writes on Windows, the audit directory included, comes from `%LOCALAPPDATA%`
+(`platform.ConfigDir`/`DataDir`; `auditDir()`, `interactive.go:856`); nothing
+in non-test code uses a known-folder API. Finding a running agent
+(`liveAgent`, `singleinstance.go:63`) reads `bridge.json` from the same
+directory, and handing it a request (`handOver`, `RequestOpen`) creates a
+file there — so a redirected process cannot see the owner's agent or hand
+it anything. What is machine-wide is HKCU, the `Local\` leader mutex (which
+only elects a collector) and the port range: a test can reach 6292's
+unpaired `/v2/health`, which writes nothing, and a signature needs a pairing
+whose secret is in the real store. `ConfigDir` falls back to
+`%USERPROFILE%\AppData\Local` when `LOCALAPPDATA` is empty; no Windows test
+builds a child environment that drops it (every one appends to
+`os.Environ()`). **So by reading, redirecting `LOCALAPPDATA` for the whole
+run keeps every route the code has off the chain. D-266's append was never
+explained, so the reading rules out the routes known and not that one; the
+copy and the verify are what stand between the suite and it.**
+
+**The measurement.** Before the block: the live chain copied — **319
+entries, sequence 0..318** (A1's least certain part failed: I had predicted
+318, the chain starts at 0), sha256 `aa182e1b…`; `scripts/auditverify`
+(go1.26.5) on the copy, "319 entries, OK". **Its control, at the second
+attempt**: my first "tampered" copy was identical — the substitution matched
+nothing, `cmp` was silent — so its OK meant nothing and is not counted; the
+second changed one byte of entry 200's timestamp, `cmp` named the byte, and
+the verifier answered **"BROKEN at entry 200"**, exit 1. Each run then
+copied the chain before and after, compared hashes and lines, and after
+runs 1 and 2 a fresh copy was verified and `cmp`'d against the pre-block
+copy.
+
+| run | what | result | the chain after |
+|---|---|---|---|
+| 1 | CI's command, go1.26.5 | **exit 0**, 148 s; 37 ok, 18 no test files | `aa182e1b…`, 319, verifies, byte-identical |
+| 2 | the same, go1.27.1 (A7) | exit 1, 161 s; **one** failure (below) | the same |
+| 3 | `-v -run Console`, go1.26.5 | exit 0, 15 s | the same |
+| 4 | run 3 with `Run\LiroBridge` deleted first | exit 0, 16 s | the same |
+
+Also identical after every run: `config.json`, `pairings.json`,
+`secrets.json`, `secrets.entropy`, `update-state.json`, `bridge.json`,
+`HKCU\Software\Liro`, and the agent's `bridge.log` length; 6292 the only
+`liro-bridge` process. The redirect caught a whole `Liro` tree each time —
+`logs`, an extracted icon, `ui-assets`, a WebView2 profile — that would
+otherwise have gone into the owner's directory (as D-313 found), and **no
+`audit`, `pairings.json` or `secrets.*` anywhere under it**.
+
+Run as CI's step: `go test -tags softtoken ./... -count=1`, `CGO_ENABLED=0`,
+`LIRO_DEBUG=1`, `LOCALAPPDATA` a fresh directory per run, `GOCACHE` pinned to
+the real one. Not CI's: a real profile, a running agent on 17580, Windows 11
+26200 — and run 1 green regardless (T1, my least certain).
+
+### D42: a suite that only care keeps off the real chain (the owner)
+
+**The redirect works, and that is the point the owner made: the suite has
+never been run where it could reach the chain, and the only reason it is
+safe is that we are careful by hand.** Most of `cmd/liro-bridge`'s tests use
+whatever `%LOCALAPPDATA%` the developer has (D-266 counted 14 of 252
+redirecting it); CI is safe because a runner's profile is thrown away. A
+test that could append to a real audit chain if someone forgot one
+environment variable is the program's own code reaching the one file whose
+value is that only a signature writes to it, under conditions nobody
+intended. Recorded as **D42**, not as a note in this run.
+
+### D10's registry half: found, and measured
+
+**Corrected first**: at T4 I wrote that `keepThisMachinesAutostartAndMenu`
+"postdates D-266". It does not — it exists since `775dfa3` (2026-09-05) and
+the console test calls it since `5babf33` (2026-09-12), before D-266. Read:
+**its cleanup restores every value that was present before and skips every
+one that was not** (`settingspersist_windows_test.go`, `if !v.present {
+continue }`). Tonight the Run value and the verb existed, so runs 1–3
+restored them and read identical; **D-266's Run value was absent, so the
+test's own registration stayed.**
+
+**Run 4 measured it**: `Run\LiroBridge` exported and deleted (nothing else
+touched), the console tests run. After: **the value exists —
+`…\Temp\TestAConsoleTheAgentIsAloneOnIsGivenBack2844900067\001\alone.exe"
+tray` — and that file and its directory no longer exist.** My prediction
+said `shared.exe` (least certain) and failed in a way that confirms the
+mechanism: the second test's helper found the first test's leftover
+"present" and restored it. The verb, which existed, read identical. The
+value was written back and the key's export compared byte-identical to the
+one taken before the delete.
+
+**What that means outside a test**: on a machine where a person turned
+autostart off, one run of the suite turns it on, pointing at a deleted file,
+and at the next login nothing starts and nothing says so. For a developer's
+machine only — but it is the same shape as D40, the registration following
+whichever binary ran, and the same shape as D42, a test reaching state that
+belongs to the person. **D10 stays open**: its registry half has a cause and
+not a fix (restore must also remove what was absent); its audit half — D-266's
+18 → 20 — is not reproduced, and is now D42's to guard.
+
+### A7 on go1.27.1 — the reading A7 needs (the owner)
+
+Run 2, `GOTOOLCHAIN=local` (go1.27.1): **exactly one failing test, A7's** —
+`scripts/genicon`'s `TestTheCommittedAssetIsWhatThisGeneratorProduces`,
+"`internal/ui/assets/icon.ico` is 18579 bytes and this generator produces
+18880" — **D-308's message to the byte**; the asset last changed in
+`26dacf6` (2026-09-16). Every other package passed, `cmd/liro-bridge` with its
+real WebView2 windows included. So on the newer Go the only difference in
+the whole suite is the one A7 already names; its three answers still wait on
+the owner.
+
+### D37: what the observer says when it works
+
+Run 3 (`-v`, which run 1 was not, so run 1 could not say whether D37's test
+ran — D-304's second question): **`TestAConsoleSharedWithACallerIsKept` ran
+here and passed** (3.75 s, `attached=1`), as did the "alone" test, whose
+observer failed AttachConsole with **"The handle is invalid"** —
+ERROR_INVALID_HANDLE, AttachConsole's documented answer when the target has
+no console. **D37's CI failure read "Incorrect function"**, which is not
+that answer. So D37 was not the agent found without a console in the
+documented sense; it points at the observer's question failing rather than
+the agent's rule (`detachAllocatedConsole` frees only when
+`GetConsoleProcessList` returns 1). A reading, not a cause; D37 stays open.
+
+### The owner's rulings
+
+- **D41 — the `.exe` on the release page: decided.** It stays, and it is not
+  for people: it is the binary the MSI wraps and what `release.json`'s
+  digest covers. What is wrong is that it sits on a page a person reads with
+  nothing saying it is not the download. The release-notes template gets a
+  line — the MSI is the install, the `.exe` is for people who know why they
+  want it — and that is E8 work, with the guide.
+- **D40 — left open, no decision.** "The last binary started owns the
+  startup entry" is reasonable for a program somebody installs once and
+  wrong for a machine where two builds exist, which is every developer's;
+  the owner wants to see whether it bites again before ruling. (Run 4 is a
+  test's version of it, recorded under D10, not offered as the bite.)
+
+### D-304's five questions
+
+1. **Could it have failed?** The verifier refused a one-byte change (A3,
+   second attempt); run 2 failed; run 4's Run value changed.
+2. **Could it see what it reports absent?** "No audit directory under the
+   redirect" was looked for by name in a tree where the logs and the
+   WebView2 profile were found; "D37's test ran" needed run 3's `-v` because
+   run 1 could not show a skip.
+3. **Resolution?** The chain by sha256, line count and full verification; the
+   registry by export bytes; tests by name.
+4. **Did it actually run?** Each run's toolchain and `LOCALAPPDATA` printed by
+   the process that ran it; test names and durations in the logs.
+5. **Read, and the discrepancy explained?** A1's 318 against 319; my T4
+   claim withdrawn; G1's `shared.exe` against `alone.exe` explained by the
+   helper's own rule.
+
+**`9953b72` (D-451, pushed by the owner)**: run 38170757377, `success`,
+attempt 1, **all nine jobs**, the last concluded 20:22:07Z, read to its end
+through the API (no `gh` here); the control, `27e88bb`'s run, read in D-451.
+
+---
+
+## D-453 — C21's first pass on Windows found a crash in every release since v0.9.1: **the drop watch spent one of the Go runtime's 2000 callback slots every second a main window was open, and the 2001st is a fatal error** — so after about half an hour of main window, summed over the agent's life, the tray died with nothing in its log; measured on the real function (fatal at iteration 1979, a static callback's control 2100 calls clean), fixed by making the callback once like every other in the package, its regression test red on the old code and green on the new; and the rest of C21's inventory recorded as an inventory — one more finding verified (the audit lock's mutex handle is never closed), the others not yet
+
+**Date:** 2026-10-11
+**Phase:** block 2, C21 (the memory-ownership audit against WebView2 and
+Win32), begun the same evening as D-452. The owner's Windows machine; every
+test run through D-452's redirect, the audit chain read before and after.
+
+### How C21 was started, and what that means for its rows
+
+**The inventory is a delegated reading**: an agent read every non-test
+Windows file in `internal/ui`, `internal/platform`, `internal/keysource` and
+`cmd/liro-bridge` and compared each resource taken across the OS boundary
+with its documented ownership rule — 44 rows. **A row is a finding here
+only once I have checked it myself.** Two are; the rest are listed below as
+what C21 has still to check, not as findings. The module has no
+third-party WebView2 binding: all of WebView2 and COM is our own code in
+`internal/ui`.
+
+### Row 1: the callback slots — read, measured, fixed
+
+**Read.** `descendantWindows` (`internal/ui/win32_windows.go`) passed
+`syscall.NewCallback` a closure that appended to a local slice — a new
+closure on every call. The runtime keys a callback by its funcval pointer
+(go1.26.5, `runtime/syscall_windows.go`, `winCallbackKey{fn *funcval}`), so
+each call registered a new trampoline; none is ever released (the closure
+it captured stays reachable from the runtime's table too); `cb_max = 2000`
+(`zcallback_windows.go`); past it, `throw("too many callback functions")` —
+a fatal error, not a panic, which no `recover` reaches. `watchDropSurface`
+(`dropwatch_windows.go`) calls it every `dropWatchInterval`, 1000 ms, for
+as long as a window with a drop handler is open — the main window
+(`mainwindow.go`). **The package already knew the rule**: `folder_windows.go`,
+`com_windows.go` and `uithread_windows.go` each say NewCallback's
+trampolines are never released and build theirs once; this was the only
+call site in non-test code that did not (all of them listed).
+
+**In which builds**: the drop watch arrived in `9b6748c` (2026-09-12). **v0.9.1,
+v0.9.2 — the release people have installed — and v0.9.9-rc1 carry it;
+v0.9.0 does not.** So on Windows, since v0.9.1, a tray agent that has had a
+main window open for about half an hour in total (2000 seconds less the slots the agent spent at start), across however many
+windows and days, ends with exit code 2 and its message written to a
+console it has already given back (`detachAllocatedConsole`) — **nothing in
+`bridge.log`**, and the next request finds no agent. Not watched on an
+installed agent: the measurement below is the function, not the tray.
+
+**Measured** (predictions K1–K3 first; a scratch test in `internal/ui`,
+created and deleted in this sitting): the control, `NewCallback` called
+2100 times with one package-level function value — no throw. The real
+`descendantWindows(0)`, its iteration written to stderr before each call —
+**`fatal error: too many callback functions` after iteration 1979** (21
+slots already in use by the test binary; my least certain part, "between
+1900 and 1999", held). The chain unchanged across both.
+
+**Fixed** (code commit before this entry): one package-level callback,
+`enumDescendantCallback`, made once, appending to one package-level slice
+under a mutex; `EnumChildWindows` calls it synchronously on the calling
+thread, so the lock covers exactly the enumeration. No Go pointer through
+`lParam` (no `unsafe` round trip for `vet` to flag). **Its regression test**,
+`TestListingAWindowsDescendantsSpendsNoCallbackSlot`
+(`dropwatch_windows_test.go`), lists a tree 2100 times in a child copy of the
+test binary — in-process the throw would take the whole package's run with
+it — and requires the child to have actually run its loop, so a skipped
+child cannot pass it. **Its control: red on the old code** — "listing a
+window tree 2100 times ended the process: exit status 2 / fatal error: too
+many callback functions" (F1) — **then green on the fix** (F2). Then:
+`internal/ui` whole, 36 s, ok; **CI's whole Windows command, go1.26.5,
+exit 0 in 116 s, 37 packages ok** (run 5); `gofmt -l` empty; `go vet
+-unsafeptr=false` clean; **`golangci-lint` v2.13.2, `GOOS=windows`, `./...`:
+0 issues — and its control**, an unused function planted in a throwaway
+worktree of HEAD, refused (`unused: 1`). The chain `aa182e1b…`, 319, after
+every one of them.
+
+**Not decided here, the owner's**: whether people on v0.9.2 get this fix
+by a release, and when. The fix is on master, not in any published build.
+`open-items`: **D43**, until a build carrying it is installed and watched.
+
+### Row 2: the audit lock's mutex handle — read, not fixed
+
+`windowsDirLock.openMutex` (`internal/platform/dirlock_windows.go`) creates
+the named abandoned-writer mutex once per lock object; `Unlock` releases it
+(`ReleaseMutex`) and never closes it (`CloseHandle`), and `DirLock` has no
+close. `audit.NewStore` makes a new lock per store, and the agent makes a
+new store per record — so **one kernel handle per audit record, kept for
+the agent's life**. Real and slow (a few a day against a per-process limit
+in the millions); recorded, not fixed tonight — one code change per sitting
+(D-391). Not measured (it wants signatures).
+
+### The rest of the inventory: C21's to check, not findings
+
+The agent's verdicts, unverified by me: **error-path leaks** — the window's
+two icons when creation fails (`window_windows.go`), the PIN dialog's two
+fonts when its build fails (`pindialog_windows.go`), navigation-guard
+handlers pinned forever when an `add_*` fails (`navguard_windows.go`), the
+tray's icon never destroyed (one per process); **uncertain** — drop targets
+revoked after `Controller::Close` may never be released by OLE; `Navigate`'s
+drop-target registration running on a goroutine with no OLE apartment and
+racing the UI thread's watch on `w.dropTargets`; WebView2 event tokens never
+`remove_*`d (safe either way: nothing is unpinned while WebView2 holds a
+reference); an NCrypt key handle whose `fCallerFree` is FALSE outliving its
+freed certificate context (`windowscng/conn_windows.go` — documented not to
+happen with the flags used); the console's cached std handles after
+`FreeConsole`; the PIN dialog on a `WM_QUIT` nobody posts. **Its
+reassurance, also unverified**: no WebView2 use-after-free or double free —
+every Go object handed to WebView2 or OLE is pinned until its COM count
+reaches zero, every WebView2 `LPWSTR` freed with `CoTaskMemFree`, every
+interface released once after `Close`. The drop-target race and the
+`Navigate` thread may share ground with D39 (a window's slot outliving its
+window) — read with it.
+
+### D-304's five questions
+
+1. **Could it have failed?** K1, the control, could not; K2 did; the
+   regression test failed on the old code; the lint refused a planted defect.
+2. **Could it see what it reports absent?** "No other per-call
+   `NewCallback`" is a grep of every call site, listed; "no issues" is a lint
+   that was shown to report one.
+3. **Resolution?** The iteration number; the test's child output.
+4. **Did it run?** The child's own `--- PASS: TestDescendantsHelper` is
+   required by the test; each run's toolchain and redirect printed by the
+   process that ran it.
+5. **Discrepancy?** None between prediction and reading; the 21 slots
+   before the loop are the test binary's own static callbacks, not counted
+   one by one.
+
+---
