@@ -46932,3 +46932,152 @@ nothing of the program has been run on Windows since dev.14** (the owner;
 session 31 §A). Its ground is the least checked of any block's.
 
 ---
+
+## D-451 — **For three weeks this Windows machine ran a binary that exists nowhere else**: a build of `8670f56` from a modified tree, go1.27.1, written 2026-09-19 17:37, whose changes cannot be recovered — every agent start in the log since at least 2026-10-03 says `dev`/`none`, and anything the owner noticed on Windows since 2026-09-20 was noticed on it; **the mechanism: the agent rewrites the startup entry and the Explorer verb to its own path at every start, so whichever binary started last silently owns both**; block 2's D.0 read, the rc's per-user MSI verified against its signed manifest with two controls and installed by the owner over v0.9.2, every read-back held; the first file run was the release's `.exe`, not the MSI, and the read before it was lost
+
+**Date:** 2026-10-11
+**Phase:** block 2, the Windows pass — session 31 §D.0, on the owner's
+Windows machine (Windows 11 Pro 10.0.26200), the Pošta card and reader
+plugged in. Predictions in `C:\Users\Veljko\s32-predictions.md`, each block's
+written before it ran; local times are CEST (UTC+2).
+
+### The headline: the agent on this machine was not 0.9.2, and not anything in git
+
+At D.0's first read one agent ran: **PID 7716**, `tray`, started 21:06:38,
+37 s after boot, its image **`C:\Users\Veljko\Desktop\liro-bridge\liro-bridge.exe`**
+— the repository root, git-ignored. `go version -m` read it without running
+it (a run would have written D38's start line): **go1.27.1,
+`vcs.revision=8670f56`, `vcs.time=2026-09-19T15:31:29Z`, `vcs.modified=true`**,
+written 2026-09-19 17:37:15. **No commit holds that tree, and neither the
+binary nor git records what was modified.** What can be said, as inference and
+not recovery: HEAD was `8670f56` (17:31), the next commit `fe409b1` (17:45) is
+preferPKCS11, and D-318's signature at 18:53 used preferPKCS11 — so the
+uncommitted change was most likely that work, in some state of it.
+
+`bridge.log`: every start since at least 2026-10-03 — 10-03, 10-04, 10-05,
+10-06, 10-07, 10-08, 10-10, 10-11 — `"version":"dev","commit":"none"`, and the
+updater said "nothing newer … latest 0.9.2" each day. v0.9.2 was installed
+(2026-09-20 13:50) and not running.
+
+**What this does to the record's Windows readings.** The record knew this
+binary by name in September: D-319 and D-321 identify PID 14864 as "the
+repository-root build from 2026-09-19 17:37", and **D-323 found the startup
+entry "back on this build" and called it "as intended"** — chosen once, for
+the icon measurement, and never put back. **The record never said it was a
+modified tree.** So:
+
+- **D-318's signature** (audit sequence 318, 2026-09-19 16:53:07Z, `pkcs11`,
+  `aetpkss1.dll`) was made by a build carrying uncommitted code; it is the
+  last entry in this machine's audit log.
+- **D-319 to D-323**'s Windows readings — the tray icon's ink (D-320, D-321),
+  the instruments (D-322), the two agents (D-323) — were taken on it, as those
+  entries say, and none of them can be reproduced from git.
+- **Anything the owner noticed on Windows from 2026-09-20 to 2026-10-11** was
+  noticed on it.
+- D-324 to D-450: none ran the program on Windows (searched for the install
+  path, the repository binary, HKCU and Windows PIDs; one hit, a decision).
+
+**A Windows reading dated 2026-09-19 17:37 or later and before this entry
+should be read as taken on that build.**
+
+### The mechanism
+
+**The agent registers HKCU `Run\LiroBridge` and the Explorer verb
+`SystemFileAssociations\.pdf\shell\LiroBridgeSign` for itself at every start,
+from `os.Executable()`** (`startup_windows.go`; the wxs comment on
+`RemovePerUserRegistrations`, F10 §3.1). **So whichever binary started last
+silently owns both** — a developer's build run once from a tree takes the
+person's autostart and their right-click menu, and keeps them for as long as
+it is the one that starts at login. That is how a dev build held them for
+three weeks with nobody choosing it after D-323. The same mechanism handed
+them back tonight: the installed rc's first start re-pointed both (M6).
+Whether a binary outside the installed folder should register at all is the
+owner's (D40).
+
+### D.0, read
+
+| | predicted | read |
+|---|---|---|
+| W0 | `27e88bb` green | **held** — run 37856552239, `success`, attempt 1, nine jobs, 23:13:04Z (10-08); `windows` test step 22:57:24–23:00:08. Control `c2dab76` 37854675685 `success`. No `gh` on this machine: read through `api.github.com` |
+| W1 | a pre-rc version — **least certain** | **failed**, as the headline: installed v0.9.2 (`cc24984`, go1.26.5, clean), not on PATH, not running |
+| W2 | per-user | **held** — I first called it failed on the ARP entry's location, then read Windows Installer: context 2 (user-unmanaged), AssignmentType 0, the owner's SID, files in `%LOCALAPPDATA%\Programs\Liro Bridge`. **Its ARP entry is under `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall`, not HKCU — unexplained** (B31); the rc's is there too |
+| W3 | the installed binary | **failed** — the headline |
+| W4 | Go older than 1.26.5 | **failed** — **go1.27.1**, `GOTOOLCHAIN=auto`; CI's `windows` job takes go.mod's 1.26.5. This is A7's "newer Go", on the machine itself |
+| W5 | reader visible, service up | **held** — Microsoft Usbccid reader (VID_0BDA PID_0165) OK; the card under "SafeSign IC's read-only minidriver for QSCD on JCOP 4 P71"; SCardSvr running |
+| W6 | clean, = origin | **held** |
+
+### The install: the per-user rc MSI, the owner's choice
+
+No Go file, MSI source or `go.mod` changed between `v0.9.9-rc1` and HEAD, so
+the rc is master's program; per-user, the scope 0.9.2 had.
+
+**Verification.** **`SHA256SUMS` (37D3…) lists the `.deb` and `.rpm` only** —
+predicted from its 197 bytes; the least certain half held: the MSI is covered
+by `release.json`, signed by the updater's key. `scripts/verifyrelease`, built
+on go1.26.5, accepted it and all three Windows artefacts (the per-user MSI
+`db19233a…`). Controls: one byte of `release.json` changed — refused, "the
+signature does not verify over these bytes"; one bit of the MSI — refused,
+"hashes to f7b9…, the manifest says db19…". gpg over `SHA256SUMS`: `VALIDSIG
+37D3C56D…8D65`, the README's key — covering the Linux packages only.
+
+**Step 2 not run.** The plan was to stop 7716 by exact PID; at 21:37:17 it
+logged "protocol: stopped" and removed `bridge.json` — **the owner quit it
+from the tray**. That build logs no quit trigger, so the log alone could not
+say so.
+
+**The first file run was not the MSI, and the read before it was lost.** The
+owner ran the download before the hash and Zone.Identifier read (lost — the
+owner). It was **`liro-bridge-0.9.9-rc1-x64.exe`**, the standalone binary: no
+MsiInstaller event, the product still 0.9.2, the install folder unchanged.
+Read after the fact, unmodified since its download: sha256 `6a498c97…`, the
+manifest's `.exe`; no Zone.Identifier stream — whether it had one before "Run
+anyway" is exactly the lost read. **The owner saw one screen, "Windows
+protected your PC", pressed "Run anyway", and then nothing.** Its only trace:
+`bridge.log` 21:46:57 "liro-bridge starting" `0.9.9-rc1`/`4e6fd47` and no
+other line — with no arguments `run()` prints usage and returns 0, and the
+binary is a console program (PE subsystem 3), so a console opened and closed.
+**D38 on Windows, from a person's double-click**: a start line for an agent
+that never started. **And the release's `.exe` does nothing a person can
+see** (D41).
+
+**The MSI, second attempt — read before opening (M0, held):** 4972544 bytes,
+`db19233a…`, Zone.Identifier `ZoneId=3`, referrer the rc's release page; the
+control, the curl copy, has no stream.
+
+| | predicted | read |
+|---|---|---|
+| M1 | SmartScreen; no UAC — **least certain** | **held**: one screen, "Windows protected your PC", "Run anyway"; no UAC. My "Unknown publisher under More info" **not seen** — the owner saw no publisher line anywhere. Then "Liro Bridge — wait while install" about a second; a Desktop icon and a tray icon (the owner). **The MSI shows the same single screen as the `.exe`** |
+| M2 | no notice from 0.9.2 | **held** |
+| M3 | one 0.9.9 product, context 2, 0.9.2 gone | **held**: `{F18B05B5-5CD6-4FC7-A1DF-DB5A6D477413}` 0.9.9, context 2, 20261011; MsiInstaller 1040 at 21:59:19.828, 1042, 11707 and 1033 (status 0) at 21:59:22.454. No event names 0.9.2's removal (why: not read) |
+| M4 | installed binary `4e6fd47`, go1.26.5, clean | **held**; sha256 `6a498c97…` — byte-identical to the release's `.exe` |
+| M5 | one agent from the installed path | **held**: **PID 6292**, parent 11112, 21:59:22, `tray`; 127.0.0.1:17580 owned by 6292; `bridge.json` `agentVersion` `0.9.9-rc1`; log: start `0.9.9-rc1`/`4e6fd47`, WebView2 154.0.4258.62, listening |
+| M6 | Run and the verb re-pointed | **held**: both `%LOCALAPPDATA%\Programs\Liro Bridge\liro-bridge.exe` |
+
+The repository root's `liro-bridge.exe` is left in place, git-ignored: it is
+the only copy of that build, and deleting it cannot be undone. `dist\` holds
+five older binaries (2026-09-06 to 09-12), also left.
+
+### D-304's five questions
+
+1. **Could it have failed?** W1, W3 and W4 did. The install's read-back could
+   have — and the first time it read "nothing installed", which is how the
+   `.exe` was found.
+2. **Could it see what it reports absent?** "No MsiInstaller event" was read
+   over a window in which the MSI later logged four; "no Zone.Identifier"
+   against the browser copy that has one.
+3. **Resolution?** Process by exact PID, product by code and context, file by
+   sha256, registry by value.
+4. **Did it actually run?** The agent's PID, parent and start time; the MSI's
+   events to the millisecond; the binaries by embedded VCS stamp, not by name.
+5. **Read, and the discrepancy explained?** W2's misreading said and taken
+   back; HKLM for a per-user ARP entry, and no event for 0.9.2's removal, left
+   **unexplained**, not smoothed; the 21:37 stop explained by the owner.
+
+### Next, in block 2
+
+A7's question is what happens on 1.27.1: the tests run on go1.26.5 as CI does
+(`GOTOOLCHAIN=go1.26.5`, fetched into the module cache, nothing else changed),
+**and on 1.27.1, the reading A7 needs** (the owner). Before and after every
+run of `cmd/liro-bridge`'s tests, HKCU `Run` and the verb are read (D10).
+
+---
