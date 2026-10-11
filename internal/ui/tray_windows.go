@@ -182,10 +182,16 @@ func (t *tray) run(ready chan<- error) {
 	// only if the embedded .ico can't be extracted or loaded, so a
 	// packaging problem degrades the tray icon rather than stopping the
 	// agent from starting at all.
-	icon := loadTrayIcon(hwnd)
+	// ownIcon is the one this process loaded from the file and so owns
+	// (LoadImageW with LR_LOADFROMFILE, no LR_SHARED); IDI_APPLICATION
+	// is the system's, shared, and is never destroyed. Given back once
+	// the shell no longer shows it (C21, [[D-457]]).
+	ownIcon := loadTrayIcon(hwnd)
+	icon := ownIcon
 	if icon == 0 {
 		icon, _, _ = procLoadIconW.Call(0, uintptr(idiApplication))
 	}
+	defer destroyWindowIcons(ownIcon, 0)
 
 	var nid notifyIconDataW
 	nid.CbSize = uint32(unsafe.Sizeof(nid))

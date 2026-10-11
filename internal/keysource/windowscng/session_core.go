@@ -27,8 +27,9 @@ type ncryptConn interface {
 	// its private key via CryptAcquireCertificatePrivateKey with
 	// CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG (F2 §2.1). It owns the
 	// certificate store and context for the duration of the call and
-	// closes both before returning — nothing above this layer needs
-	// them once the key handle exists.
+	// closes both before returning — unless callerFree is false, when the
+	// key handle is the context's and both are kept until
+	// releaseRetained.
 	findAndAcquire(thumbprint string) (der []byte, key ncryptKeyHandle, callerFree bool, err error)
 
 	// setWindowHandle sets NCRYPT_WINDOW_HANDLE_PROPERTY on key. A
@@ -44,6 +45,12 @@ type ncryptConn interface {
 	// call this only when fCallerFree was true (F2 §2.1) — a cached
 	// handle must never be freed.
 	freeKey(key ncryptKeyHandle) error
+
+	// releaseRetained gives back whatever findAndAcquire kept alive for
+	// key — the certificate context that owns a handle acquired with
+	// fCallerFree false. A no-op for any other key. session.Close calls
+	// it after freeKey, on both paths.
+	releaseRetained(key ncryptKeyHandle)
 
 	// probePresence attempts to open the certificate's private key
 	// handle (findAndAcquire's own first step — locate the certificate,
@@ -153,12 +160,15 @@ func (s *session) Close() error {
 		return nil
 	}
 	s.closed = true
+	defer s.conn.releaseRetained(s.key)
 	if !s.callerFree {
-		// fCallerFree was false: Windows caches this handle. Freeing it
-		// here would corrupt the cache for every other process using
-		// the same key (F2 §2.1) — so it is deliberately leaked from
-		// this session's point of view, not actually leaked from the
-		// process's, since Windows owns and reuses it.
+		// fCallerFree was false: the handle belongs to the certificate
+		// context findAndAcquire kept for it, and is freed with that
+		// context (releaseRetained, deferred above) — never with
+		// NCryptFreeObject (F2 §2.1). It used to be said that Windows
+		// caches it for other processes; the cache is the context's, in
+		// this process, and the context was freed before the session
+		// ever used the handle ([[D-457]]).
 		return nil
 	}
 	return s.conn.freeKey(s.key)

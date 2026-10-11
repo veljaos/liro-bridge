@@ -303,11 +303,19 @@ func registerDropTarget(hwnd uintptr, onFiles func([]string)) (*dropTarget, erro
 // revokeDropTarget undoes registerDropTarget and drops this package's
 // own reference to the target. OLE releases its reference inside
 // RevokeDragDrop, so the object is unpinned once both are gone.
+//
+// A refused revoke is said, because it is the one sign that OLE kept its
+// reference: the target stays pinned for the life of the process, and
+// nothing else would ever show it ([[D-457]]).
 func revokeDropTarget(hwnd uintptr, t *dropTarget) {
 	if t == nil {
 		return
 	}
-	_, _, _ = procRevokeDragDrop.Call(hwnd)
+	if r, _, _ := procRevokeDragDrop.Call(hwnd); int32(r) < 0 {
+		slog.Warn("ui: a drop target could not be given back; it stays registered",
+			"hwnd", fmt.Sprintf("%#x", hwnd), "class", windowClass(hwnd),
+			"hresult", fmt.Sprintf("0x%08X", uint32(r)))
+	}
 	t.release()
 }
 

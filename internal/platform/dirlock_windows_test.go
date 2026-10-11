@@ -199,7 +199,7 @@ func assertExcludes(t *testing.T, first, second *windowsDirLock) {
 // supported configuration and the point of the fallback. It fails only
 // if CreateMutexW starts returning something neither expected.
 func TestGlobalNamedObjectsAreAvailableToThisAccount(t *testing.T) {
-	h, err := createMutex(`Global\LiroBridge.Test.` + dirLockID(t.TempDir()))
+	h, err := openNamedMutex(`Global\LiroBridge.Test.` + dirLockID(t.TempDir()))
 	if err == nil {
 		_ = windows.CloseHandle(h)
 		return
