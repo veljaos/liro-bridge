@@ -42,8 +42,22 @@ func main() {
 	// In main rather than in run: run takes the writer it prints to, so
 	// tests drive it with a buffer and have no console in the question.
 	detachAllocatedConsole()
+
+	// If this process dies inside the runtime, its report goes to
+	// crash.log beside bridge.log, by design rather than by luck: with the
+	// console given back, stderr is a place nobody may be listening
+	// (D-454). In main rather than in run: the runtime holds the file for
+	// the life of the process, and tests that drive run in a temporary
+	// config home could not remove it. A failure is kept for run to log
+	// once there is a log.
+	crashOutputErr = config.SetupCrashOutput(platform.DefaultLogDir())
+
 	os.Exit(run(os.Args[1:], os.Stdout))
 }
+
+// crashOutputErr is SetupCrashOutput's failure in main, if it had one,
+// for run to log. It stays nil in tests, which never pass through main.
+var crashOutputErr error
 
 func run(args []string, out io.Writer) int {
 	cfg, cfgErr := config.Load(platform.DefaultConfigFile())
@@ -54,6 +68,10 @@ func run(args []string, out io.Writer) int {
 		return 1
 	}
 	defer func() { _ = closer.Close() }()
+
+	if crashOutputErr != nil {
+		logger.Warn("startup: a crash of this process would not be recorded", "error", crashOutputErr)
+	}
 
 	if cfgErr != nil {
 		logger.Warn("startup: config file could not be read, using defaults", "error", cfgErr)
