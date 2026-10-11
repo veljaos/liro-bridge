@@ -92,9 +92,23 @@ func main() {
 	// In main rather than in run: run takes the writer it prints to, so
 	// tests drive it with a buffer and have no console in the question.
 	detachAllocatedConsole()
+
+	// If this process dies inside the runtime, its report goes to
+	// crash.log beside bridge.log, by design rather than by luck: with the
+	// console given back, stderr is a place nobody may be listening
+	// (D-454). In main rather than in run, for ForbidCoreDumps' reason —
+	// the runtime holds the file for the life of the process, and tests
+	// that drive run in a temporary config home could not remove it. A
+	// failure is kept for run to log once there is a log.
+	crashOutputErr = config.SetupCrashOutput(platform.DefaultLogDir())
+
 	enableChooserHelper()
 	os.Exit(run(os.Args[1:], os.Stdout))
 }
+
+// crashOutputErr is SetupCrashOutput's failure in main, if it had one,
+// for run to log. It stays nil in tests, which never pass through main.
+var crashOutputErr error
 
 func run(args []string, out io.Writer) int {
 	// The module probe is dispatched before anything else in this function,
@@ -149,6 +163,10 @@ func run(args []string, out io.Writer) int {
 		return 1
 	}
 	defer func() { _ = closer.Close() }()
+
+	if crashOutputErr != nil {
+		logger.Warn("startup: a crash of this process would not be recorded", "error", crashOutputErr)
+	}
 
 	// Every PKCS#11 module this process opened is held in a child, and the
 	// children are closed here because this is where the process ends. See
