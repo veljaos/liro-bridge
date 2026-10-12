@@ -2,7 +2,7 @@
 
 **What this is:** the handover after a session run in Anthropic's cloud on a Linux container — **no Windows, no macOS, no card, no reader, no screen** — asked to work through six tasks without asking anything, record every decision, and bring back the whole thing. **Written:** 2026-10-12. Branch `claude/wizardly-clarke-rmvkdt`, not merged, no PR. Entries **D-457 to D-463**; predictions in `docs/s33-predictions.md`, each block committed before the run it predicts.
 
-**Read first:** D-457 … D-463, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C24, D4, D6, D23, D39, D44–D48, B32–B33).
+**Read first:** D-457 … D-463, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C25, D4, D6, D23, D39, D44–D48, B32–B33).
 
 ---
 
@@ -25,15 +25,19 @@
 |---|---|---|---|
 | 38183853425 | `48e53ce` | P1: C21's tests, no fix | windows **red as designed**: P1a, P1b red; Navigate's test hung 10 min in **my** log handler; cmd green (P1f's prediction failed). Every other job green. |
 | 38185042718 | `7cd0a8b` | P3: harness fixed, still no fix | windows red as designed: P3a/b/d/e red, **P3c passed (no defect)**, P3f half-read. Every other job green. |
-| 38186918219 | `55a582e` | P4: the fixes, cloud channel, B-LT | @@P4@@ |
-| 38187564063 | `e131e3f` | P5: the PIN dialog's owner watch; F13's first macOS run | @@P5@@ |
+| 38186918219 | `55a582e` | P4: the fixes, cloud channel, B-LT | eight jobs green (packaging with the MSI's new key; the desktop entry installed and removed on three distributions). windows red on **two** rows: the PIN dialog (P1e's mechanism wrong — see D-457) and `internal/cloud`'s own test, which cut a path at `/` — **I first reported one row**, having read the log only from `internal/pades` down. |
+| 38187564063 | `e131e3f` | P5: the PIN owner watch; F13's first macOS run | windows: **`internal/ui` green, the PIN row included (P5a)**; red on the cloud test and the LaunchAgent's path rule (both fixed in `5e187d9`). macos: red at vet in PKCS#11 only — `internal/ui`'s Objective-C compiled first time. |
+| 38187726349 | `3f8b65d` | macOS, second | macos: **`internal/ui` and `internal/platform` green** (the window, the Keychain, the LaunchAgent); PKCS#11 failed to link (`pkcs11_linux.c`'s `liro_*` symbols missing — in its own test binary and in the three that import it, `cmd/liro-bridge`, `pkcs11/worker`, `pinscreen`; and `-lp11-kit` from Homebrew, found here). windows red on the same two test bugs as `e131e3f` (`5e187d9`). The Linux jobs and the three `linux-install` green. |
+| 38187982282 | `ac20812` | macOS, third | **macos green**: the suite, and the bundle — universal, `--version`, only system frameworks. windows red on the two test bugs fixed in `5e187d9` (read from its log: `internal/cloud`'s `filepathDir` and the LaunchAgent's two tests, nothing else). The Linux jobs and the three `linux-install` green. |
+| 38188278943 | `38bbcfa` | everything, and the macOS tests with `-v` | **all ten jobs green**: `ci` (the real-TSA test cannot skip on an unreachable server — `SignDocument` saves at B-B and the test fails, as it does in this container — so green there means Pošta's test TSA was reached and a B-T signature verified; inferred from the test's code and the result, the log being not `-v`), `linux-gui` with its race probe, `linux-packages` and the three `linux-install`, `packaging`, `sdk-typescript`; **`windows` green from its first test line** — every Go package `ok`, the SDK 110 passed, 0 failed, 3 skipped by design (the discovery-file examples place the file on Linux and macOS only); **`macos` green, and the `-v` step says every named test ran, none skipped**: the window, the Keychain, both LaunchAgent tests, and SoftHSM 2.7 — token read, a 256-byte signature verified against the certificate, one wrong PIN one `CKR_PIN_INCORRECT`. |
 
 **check.sh, cited before each push** (run as an ordinary user; root fails one test for an environmental reason, D-460):
-- `48e53ce`: all of `ci` except the real-TSA test (DNS to `test-tsa.ca.posta.rs` blocked here; CI reaches it).
+- `48e53ce`: all of `ci` except the real-TSA test (DNS to `test-tsa.ca.posta.rs` blocked here; CI reaches it — see run 38188278943's row for how that is known). That test's `Skip` branch is dead: an unreachable TSA is not an error from `SignDocument` but a B-B result, so the test fails rather than skips (C25).
 - `7cd0a8b`: `ci:2,4–8` green.
 - `0e3935a`: **lint red in both views** — an unused test helper of mine — fixed before pushing (`55a582e`).
 - `55a582e`: every `ci` and `linux-gui` step green except the DNS-blocked test; fuzz and the three builds re-run separately, green.
 - `61b78ca`/`e131e3f`: the same, the same one environmental failure; `ci:2,4–8,11–14` green on `e131e3f`.
+- `3f8b65d`, `ac20812`, `38bbcfa`: `ci:2,4–8,12–14` (and `linux-gui:4,5` where the PKCS#11 package changed) green; on `38bbcfa` `ci:9` red only on the DNS-blocked test.
 
 ## C. Decided, and on what basis (each in its entry)
 
@@ -55,6 +59,7 @@
 | D45's inference | **the owner's machine** (NetSeT's slow probe) |
 | The origin window and Settings in WebView2; the consent window with a 255-character origin | **Windows with a screen**; the last also measurable under Xvfb |
 | Everything in F13 §4's right-hand column: Gatekeeper, a link opening the agent, the menu bar item, a drop, the PIN dialog, SafeSign with a Pošta card, Approve | **a Mac, a card, a person** |
+| The macOS window's photograph | **the owner's eyes** — it is in the `liro-macos` artifact of runs 38187726349, 38187982282 and 38188278943 (the last: artifact 11720308536, two files — the photograph and the zipped bundle); this container's proxy refused the artifact host, so I have not seen it |
 | Signing the macOS bundle | **the owner's Apple Developer ID**, or a decision to ship unsigned |
 | `Sign.cs` compiled | a C# compiler (Windows) |
 | The stderr test's file half (P3f), with the helper fixed | one CI run read with `-v` |
@@ -67,6 +72,11 @@
 - The origin window's first measurement read the page before the resize had reached it, then accepted a region that hid the origin (D-461; both found by the test, both fixed in it).
 - P1e's mechanism (an owner destroys owned windows across threads) was wrong; P4 showed it, and the fix that relied on it did nothing there (D-457, P4/P5).
 - An unused helper left in the B-LT tests — caught by check.sh's lint before the push.
+- Two tests that assumed `/` (the origin list's, the LaunchAgent's) — red on Windows; and **I read run 38186918219's Windows log from the middle and reported one failure where there were two** (D-457's P4 paragraph says so).
+- The consent-layout test's first form passed its own control, because it never asked whether the page scrolled (D-461).
+- **I wrote up runs before their last jobs had finished.** `linux-gui`'s race probe, `linux-packages` and the three `linux-install` jobs run ten to fifteen minutes after the others. Three runs' rows said "every other job green" before those jobs ended. They all ended green, and I read each to its conclusion at the end of the session, but the rows were written before that was known. In the predictions file I also wrote "all seven jobs green" for the last run while two were still running; I caught it before committing.
+- **Three runs had no prediction written before them** (the macOS runs after P5). Said in `docs/s33-predictions.md`, not written afterwards.
+- The second macOS run's link failure was recorded as PKCS#11's alone. Its log shows the same missing symbols in the three packages that import it (D-463, corrected).
 
 ## F. Rules this session adds
 
@@ -74,7 +84,11 @@
 2. **A result the test cannot see is not measured** — read the handle before closing the file; wait until the page has the size you asked for; ask whether the thing you are checking is still on screen (D-457, D-461).
 3. **`go f(g())` evaluates `g()` before the goroutine starts** — a control made by adding `go` in front of a call can change nothing (D-461).
 4. **A Windows window does not take another thread's owned windows with it** (D-457, P4).
+5. **Read a failed job's log from its first test line, not its tail** — a 130-line tail began at `internal/pades` and hid a failure above it (D-457).
+6. **In a suite, a skip and a pass both print `ok`** — a measurement that matters gets a `-v` run of its own (D-463).
+7. **On macOS, a cgo link line can carry a Homebrew library into the product** — the bundle is checked with `otool -L` (D-463).
+8. **A run is read when its last job has ended, not when the jobs I was waiting for have.** In this workflow `linux-install` starts only after `linux-packages`, about fifteen minutes in (this session).
 
 ## G. The tree
 
-Worktree `/home/user/wt-fix` (branch `s33-fixes`) was where the work was done; the pushed branch is the same commits, fast-forwarded. The main tree holds a stash `d6-work` from before the work moved — superseded by D-459's commits; dropped at the end of the session.
+Worktree `/home/user/wt-fix` (branch `s33-fixes`) was where the work was done; the pushed branch is the same commits, fast-forwarded. The main tree held a stash `d6-work` from before the work moved. It was compared file by file with the branch: four files identical, and two (`Sign.cs`, the README) older drafts that the committed version improves on (`OperatingSystem.IsWindows` there, which .NET Framework 4's `csc` lacks). It was dropped. The worktree was removed at the end; nothing is left outside the branch.

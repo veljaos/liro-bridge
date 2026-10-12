@@ -160,6 +160,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 22. **The cloud channel has never met a real server, a browser or a card** (D-461). *Needs:* a test server (F14 §6), each platform, the card.
 23. **B-LT's new rules have never met a real Serbian responder** (D-462): MUP's OCSP and CRL, Pošta's CRL over HTTP, Pošta's TSA chain. *Needs:* network from a machine that reaches them, the card.
 24. **F13, all of it on a Mac with a person** (D-463, F13 §4): Gatekeeper, a link clicked, the menu bar item, a drop, the PIN dialog, SafeSign with a Pošta card, window sizes in macOS's fonts, Approve. *Needs:* a Mac, a card, a person; the owner's Developer ID or a decision to ship unsigned.
+25. **`TestSignDocumentBTWithRealTSA` cannot skip.** Its `Skip` on an unreachable TSA is dead: `SignDocument` returns no error when the stamp fails. It saves at B-B (`sign.go`, a missing TSA treated as a failed one), so the test fails wherever Pošta's test server is unreachable, as in session 33's container. Read in D-463's closing note. On CI the failure is useful, because a green `ci` means the server was reached and a B-T signature verified. On a contributor's machine without that network it reads as a product failure. *Close:* the owner chooses: skip on the B-B note and lose CI's proof, or keep it failing and say so in check.sh's environmental list. *Needs:* the owner's decision.
 
 ## D. Known defects, not fixed
 

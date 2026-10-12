@@ -95,3 +95,10 @@ Written before the push that carries both.
 | P5a | `TestAPINDialogWhoseOwnerIsDestroyedReturns` | passes: within ~250 ms of the owner's destruction `IsWindow` is false and the dialog cancels |
 | P5b | every other Windows test | as in run 38186918219 |
 | P5c | the `macos` job | **red**, and where is the least certain thing in this session: code no compiler has seen. Most likely first failures, in order: an Objective-C compile error in `darwin_objc.go`; a cgo type mismatch between the preamble's declarations and `_cgo_export.h`; a test written for Linux or Windows that is untagged and fails on darwin. **Not** predicted: a window that opens and loads on the first attempt |
+
+## P5, read — runs 38187564063 (`e131e3f`) and after
+
+- **P5a passed** (run 38187564063): the PIN dialog cancels when its owner goes.
+- **P5b failed on two rows that were not "as before"**: `internal/cloud`'s own test and the LaunchAgent's path rule, both of which assumed `/`. These were new tests, so P5b's "as in run 38186918219" could not cover them. Fixed in `5e187d9`.
+- **P5c failed in its detail.** The job was red, as predicted, but not where predicted. `internal/ui`'s Objective-C and both cgo halves compiled the first time. The first failures were in PKCS#11, a package P5c did not name: darwin forms were missing, and then the link failed (D-463).
+- **No prediction block was written for the three macOS runs after this one** (`3f8b65d`, `ac20812`, `38bbcfa`). I treated them as fix-and-retry runs and did not write down beforehand what each would show. This breaks the session's rule, and I am stating it here rather than writing predictions after the fact. What each run showed is in D-463, read from its log. The last run, 38188278943 on `38bbcfa`, was read to its conclusion: all ten jobs green; Windows read from its first test line (every Go package `ok`; the SDK 110 passed, 0 failed); every macOS test named in the `-v` step reported as run, none skipped.
