@@ -190,3 +190,7 @@ Two runs. **M** carries the new tests, with each fix switched back to its old be
 **More than predicted, on P9b:** on the old behaviour the marker landed in the file opened afterwards (`file=0x70 stderrAfter=0x70`, `LIRO-STDERR-AFTER-FREECONSOLE runtime` in it). That is D44's mechanism reproduced on CI for the first time; P3's run had not reused the number. So the old half of the test, which "could not fail", failed this time, by luck of the numbering. The new half fails whatever the numbering.
 
 The rest of M's run (Linux jobs, macOS, the PR run) is read with F's, below.
+
+## P9, read on F — run 38243584334 (push), `584e019`
+
+All ten jobs green. Windows from its first test line: `internal/ui` and `cmd/liro-bridge` `ok`, no `--- FAIL`, SDK 110 passed, 0 failed, 3 skipped. The per-user MSI installed and uninstalled, the key gone. The measurement commit's own runs (38242378820, 38242385215) ended with only `windows` red, every other job green, as P9h said. P9 holds on every row.

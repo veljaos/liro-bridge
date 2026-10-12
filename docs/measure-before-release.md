@@ -4,16 +4,20 @@ The owner's worklist, from `docs/s33-what-ran.md` (D-472). Work it **top to bott
 
 Group 0 is mine and needs no hardware; it comes first because the rest are read through tests, and a test that cannot fail measures nothing. Everything not on this page can wait behind it.
 
-## 0. CI — mine, before yours
+## 0. CI — mine, before yours — **done (D-473)**
 
-| # | claimed | what would show it false |
-|---|---|---|
-| 0.1 | Navigate re-registers drop targets on the window's own thread (C21) | **Its test passes with or without the fix.** Rewrite it to observe the thread `RegisterDragDrop` ran on (or a drop arriving after a navigation). Red on `48e53ce`'s code, green on this. |
-| 0.2 | After `FreeConsole`, standard error goes to NUL, not into the next file opened (C21) | **Its test passes with or without the fix.** Assert the handle is NUL, and re-read the file half (P3f) under `-v`. Red on the old code, or the test is withdrawn as unable to measure it. |
-| 0.3 | A failed `add_*` releases its handler; `WM_QUIT` ends the PIN dialog as a cancel (C21) | No test exists. A fake `ICoreWebView2` failing the call; a `WM_QUIT` posted to the dialog's thread (D-471). |
-| 0.4 | The origin question, the one-window slot, a good `open-link`, the tray picking up a link (F14) | Compiled, never run. Tests with a fake window and fake inbox: the question asked once, refused on close, a second window waiting for the first. |
-| 0.5 | The Windows scheme key is written at start and removed by `uninstall-notice`, and the MSI removes it | Never run: the test uses a scratch key, and the MSI has never been installed. Install and uninstall the MSI on the runner, reading `HKCU\Software\Classes\liro-bridge` before and after. |
-| 0.6 | A link dropped because eight are waiting is **said** to the person (D-461's rule) | **Found writing this page: it is only logged** (`cloudlink.go` `offer`). Say it, as a refused link is said, and test that the outcome reaches the notifier. |
+Each test was seen red on the code before its fix, then green after it. For the Windows rows that was on CI's runner (P9: run 38242378820 on the measurement commit `b5b3151`, run 38243584334 on the fix `584e019`); for the rest, in the container.
+
+| # | claimed | what shows it false now | measured |
+|---|---|---|---|
+| 0.1 | Navigate re-registers drop targets on the window's own thread (C21) | The test reads the thread each target was registered on | Red on the old code: `5 of 5 … on another thread ([7088 …]), not the window's own (8056)`. green after (run 38243584334) |
+| 0.2 | After `FreeConsole`, standard error goes to NUL, not into the next file opened (C21) | The child reads standard error before opening anything: it must be NUL, and `os.Stderr` must follow it | Red on the old code: `stderrAfterDetach=invalid`, and this time the marker landed in the file (D44 reproduced). green after (run 38243584334) |
+| 0.3 | A failed `add_*` releases its handler; `WM_QUIT` ends the PIN dialog as a cancel; a failed build gives its fonts back (C21) | A stand-in `ICoreWebView2` failing every call; `WM_QUIT` posted to the dialog's thread; GDI count over ten failed builds | Red on the old code: 3 handlers kept; dialog left up with 4 characters; 2.0 GDI objects per dialog. green after (run 38243584334) |
+| 0.4 | The origin question, the one-window slot, a good `open-link`, the tray picking up a link (F14) | Tests with a fake window, the real inbox and the real queue; the question's four answers; the slot `Sign` holds | Container, all three CI jobs that test `cmd`. **Still not a real window or a real desktop** (2.x, 3.1) |
+| 0.5 | The scheme key is written at start and removed by `uninstall-notice`, and the MSI removes it | The real `HKCU` key on CI's runner; the per-user MSI installed and removed with `/qn` | Red on the old code (key left); green after (run 38243584334). The MSI removes the key **on its own**, even with `uninstall-notice` not unregistering. Never a person's install, with dialogs |
+| 0.6 | A link dropped because eight are waiting is said to the person | The outcome reaches the notifier once per burst | Red on the old `offer` (only logged); green after, in the container and on CI |
+
+**Not a row, asked for alongside group 0:** a stand-in Liro Business, run end to end (P8, D-473). It shows the path runs: link → inbox → queue → channel → signer → result. **It does not show** real HTTPS, a browser, any window, a card or the real server, so **no row below moves.**
 
 ## 1. A card, on Windows (v1)
 

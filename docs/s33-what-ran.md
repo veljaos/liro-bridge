@@ -109,6 +109,10 @@ It was built from four read-only inventories, one per area: the test files, `ci.
 | The bundle: plist, scheme, universal binary, `--version`, system frameworks only | the bundle step | CI macOS | yes: the Homebrew link was caught by the check | Gatekeeper; LaunchServices; the x86_64 half ever running |
 | File drop, NSAlert, open panel, **PIN dialog**, status-bar item, osascript notifications, an Apple Event link | none | — | — | **all of them** |
 
+## Since this table: group 0 (D-473)
+
+The two tests that passed with or without their fix, and the three C21 fixes with no test, now each have a test that was **red on the old behaviour on CI's Windows runner** (P9, run 38242378820) and green after (run 38243584334). The cloud rows that were "nothing" (the origin question, the slot, the good `open-link`, the watcher's tick) now run against stand-ins in every job that tests `cmd`. The Windows scheme is written and removed under the real key, and the per-user MSI is installed and removed on CI. The rows above are left as they were read; `docs/measure-before-release.md` group 0 has the readings.
+
 ## What this table says, in one paragraph
 
 **Measured with a control** (red on the old code, green on the new):
