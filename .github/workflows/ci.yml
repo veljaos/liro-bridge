@@ -719,6 +719,11 @@ jobs:
         run: go test -tags softtoken ./... -count=1
         env:
           CGO_ENABLED: 0
+          # This runner's user profile is thrown away with it, so the
+          # test that writes and removes the real
+          # HKCU\Software\Classes\liro-bridge may run here and nowhere
+          # else (worklist 0.5, D-473).
+          LIRO_TOUCH_REAL_HKCU: "1"
           # The agent says why it gave up in its own log, and until now
           # not one line of that log reached this job. config.SetupLogging
           # slog.SetDefault()s a JSON handler over a file under
@@ -868,6 +873,42 @@ jobs:
               Write-Host ("{0,-44} {1} [{2}]" -f $msi.Name, $subject, $template)
               if (-not $template) { throw "$($msi.Name) has no platform/language template" }
           }
+
+      # Worklist 0.5 (D-473): the per-user package installed and removed
+      # for real, quietly, which no step had ever done. /qn is UILevel 2:
+      # no agent is launched (LaunchAgent needs 3) and the uninstall runs
+      # `uninstall-notice --quiet` before RemoveFiles, beside the
+      # package's own RemoveRegistryKey for the link scheme. The key is
+      # written here in the shape the agent writes it at every start —
+      # that the agent writes it is the windows job's
+      # TestTheLinkSchemeIsWrittenAtStartAndRemovedByTheUninstallNotice.
+      # Not a person's install: no dialogs, no WebView2 check seen, no
+      # Start menu looked at.
+      - name: the per-user package installs, and its uninstall removes the link scheme
+        shell: pwsh
+        run: |
+          $msi = (Resolve-Path dist/ci/liro-bridge-dev-x64.msi).Path
+          $installLog = Join-Path $env:RUNNER_TEMP "msi-install.log"
+          $p = Start-Process msiexec.exe -ArgumentList @("/i", "`"$msi`"", "/qn", "/l*v", "`"$installLog`"") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content $installLog -Tail 80; throw "the per-user package did not install: exit $($p.ExitCode)" }
+          $exe = Join-Path $env:LOCALAPPDATA "Programs\Liro Bridge\liro-bridge.exe"
+          if (-not (Test-Path $exe)) { throw "installed, but $exe is not there" }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "the installed binary did not answer --version" }
+
+          $key = "HKCU:\Software\Classes\liro-bridge"
+          New-Item -Path "$key\shell\open\command" -Force | Out-Null
+          Set-ItemProperty -Path $key -Name "(default)" -Value "URL:Liro Bridge"
+          Set-ItemProperty -Path $key -Name "URL Protocol" -Value ""
+          Set-ItemProperty -Path "$key\shell\open\command" -Name "(default)" -Value "`"$exe`" open-link `"%1`""
+          if (-not (Test-Path "$key\shell\open\command")) { throw "the link scheme's key could not be written for this step" }
+
+          $uninstallLog = Join-Path $env:RUNNER_TEMP "msi-uninstall.log"
+          $p = Start-Process msiexec.exe -ArgumentList @("/x", "`"$msi`"", "/qn", "/l*v", "`"$uninstallLog`"") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content $uninstallLog -Tail 80; throw "the uninstall exited $($p.ExitCode)" }
+          if (Test-Path $key) { throw "the uninstall left HKCU\Software\Classes\liro-bridge behind" }
+          if (Test-Path $exe) { throw "the uninstall left $exe behind" }
+          Write-Host "installed, ran --version, uninstalled; the link scheme's key is gone"
 
   # F12 §8: the .deb and the .rpm, built the way a release builds them.
   #

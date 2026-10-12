@@ -47950,3 +47950,52 @@ The owner asked for "one short document — not an entry, a page a person can ac
 - each row stating the claim and what would show it false.
 
 **Found while writing it:** a cloud link dropped because eight are already waiting is only logged (`cloudlink.go` `offer`), against D-461's rule that a link which comes to nothing is said. It is worklist item 0.6, not fixed here.
+
+## D-473 — group 0 of the worklist: the tests that could not fail made to, the rows that were "nothing" given tests, a dropped cloud link said, and a stand-in Liro Business
+
+**The owner** (2026-10-12): "Take it now, starting with the two tests that cannot fail. Everything else in the worklist is read through them, so they go first. Row 0.6 as well." And, mid-way: "stand up a stand-in server in the container that behaves like Liro Business, and run the whole cloud path against it end to end … Say what it would and would not show before you build it, and leave the worklist rows where they are."
+
+**0.1, Navigate.** Its test passed with or without the fix, because a registration off the window's thread succeeded on the runner. What the fix changes is the thread each drop target is bound to, which decides where OLE delivers its drops. Each `dropTarget` now records the thread `RegisterDragDrop` ran on, and the test asserts that it is the window's own.
+
+**0.2, `FreeConsole`.** Its test passed with or without the fix, because no file happened to be given the console's old number. The child now reads standard error right after the console is given back, before anything is opened. It must be NUL (a character device that is not a console), and `os.Stderr` must follow it. On the old code the handle is the console's closed number, which `GetFileType` refuses.
+
+**0.3.**
+- **A failed `add_*`:** a stand-in `ICoreWebView2`, whose 64 methods all return `E_FAIL`, makes all three subscriptions fail. The handler-pin bookkeeping must hold none of them afterwards.
+- **`WM_QUIT`:** the test types four characters, posts `WM_QUIT` to the dialog's thread, and asserts a cancel, then that the window is gone. The old code left it up on a thread that no longer reads its messages, with the characters still in the field. The decision D-471 left open is taken: the `WM_QUIT` is **not** posted on again. The login's thread has no outer loop, and a `WM_QUIT` left in its queue would end the next PIN dialog on that thread the moment it opened.
+- **The fonts:** no seam was needed, contrary to D-471. A heading with a NUL in it fails `build` after both fonts exist, the same path as a refused `CreateWindowExW`, and the process's GDI count over ten failed dialogs shows whether they were given back.
+
+**These five are measured on CI's Windows runner against the old behaviour first (P9).** The commit pushed with them switches each fix off behind `p9Unfixed`; the next removes that switch.
+
+**0.4, the cloud wiring.** These run on every job that tests `cmd`, Linux included; each test names what it does not show.
+- **Seams that change no behaviour:** `open-link`'s two ways on (`agentIsRunning`, `becomeAgent`); the origin window (`newOriginWindow`); `newCloudLinks` split so its parts can be stood in (`cloudParts`, `wireCloudLinks`); the watcher's tick (`offerInboxLinks`); and `cloud.Client.TrustingRoots`, which replaces the system's roots and still verifies.
+- **The tests:**
+  - open-link's good path, both with an agent running and without one;
+  - the origin question answered by allow, deny, a closed window, and nobody;
+  - the question waiting for, and holding, the one-window slot that `Sign` holds.
+
+**0.5, the scheme on Windows.**
+- `TestTheLinkSchemeIsWrittenAtStartAndRemovedByTheUninstallNotice` runs the real start-up registrations and the real `uninstall-notice --quiet` against the **real** `HKCU\Software\Classes\liro-bridge`. It runs only where `LIRO_TOUCH_REAL_HKCU=1`, which CI's windows job sets and a person's machine does not.
+- The packaging job now installs and uninstalls the per-user MSI with `/qn`, writing the key in the agent's shape in between and checking that it is gone afterwards.
+
+**0.6, a dropped link.** It was only logged, under a comment saying it was said. It is now said, as `cloud.OutcomeDropped` with its own sentence in three locales, once per burst (on Windows each saying is a box that waits), and off the inbox watcher's goroutine. The control, the old `offer`, fails the new test.
+
+**The stand-in Liro Business (P8, written and committed before it was built):** `TestTheWholeCloudPathAgainstAStandInLiroBusiness`, run in this container under `-race`, three times.
+- What it runs: open-link → the inbox → the watcher's tick → the queue → the real channel, client, store of allowed servers and job registry → a stand-in signer (an RSA key; no window, no card) → the result posted to a TLS server in the test.
+- What it checks: two jobs end with signatures that verify against the stand-in certificate; the server is asked about once; the signer is asked once per job.
+- Its control, as P8 named: before the watcher's tick, nothing reaches the server.
+- `TestARefusedServerIsNeverFetchedFrom`: a refusal means nothing is fetched and nothing posted.
+- **What it does not show, as P8 said:** real HTTPS (the server is trusted by name), a browser, any window, a card, a PAdES signature, or the real Liro Business. **No worklist row moves.**
+
+**The default level** is its own decision, as the owner asked: `docs/decision-default-level.md`, D-474.
+
+## D-474 — the default signature level: B-LT, which the citizens' ID card cannot reach; the owner's decision
+
+The owner: "SPEC §12.6 makes B-LT the default, and one of the two issuers we have measured cannot reach it … Bring me that as its own decision, with what each option costs … Do not fold it into C26."
+
+`docs/decision-default-level.md` sets out the options and what each costs:
+- A: a B-T default;
+- B: keep B-LT with the warning, which is what is built;
+- C: "best available" as the default, with a chosen level held to C26 as a request;
+- D: a default per issuer.
+
+Found writing it: **a default install reaches neither B-T nor B-LT on its own**, because no timestamp authority is built in. **Recommended: C; A if C costs too much now.** SPEC §12.6's draft is brought up to C26 and to the LDAP ruling, and points at this decision.

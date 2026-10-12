@@ -37,6 +37,11 @@ const (
 	// OutcomeUndelivered: the person answered and the server would not
 	// take the answer. Nothing is kept: the documents were the server's.
 	OutcomeUndelivered
+	// OutcomeDropped: the link never reached Handle — the agent already
+	// had cloudLinkQueue links waiting, and this one was let go. Not
+	// Handle's to return; the agent's queue says it (worklist 0.6,
+	// D-473).
+	OutcomeDropped
 )
 
 // Channel turns links into requests in front of the person. Every field

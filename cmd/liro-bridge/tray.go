@@ -272,13 +272,7 @@ func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct
 		case <-quit:
 			return
 		case <-ticker.C:
-			links, err := box.TakeLinks()
-			if err != nil {
-				slog.Warn("tray: reading the links left for the agent failed", "error", err)
-			}
-			for _, link := range links {
-				offerLink(link)
-			}
+			offerInboxLinks(box, offerLink)
 			asked, err := agentWindowWanted(box)
 			if err != nil {
 				slog.Warn("tray: reading the handover request failed", "error", err)
@@ -291,6 +285,19 @@ func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct
 				slog.Debug("tray: a launch handed over while the window was already up")
 			}
 		}
+	}
+}
+
+// offerInboxLinks hands the running agent every link a launch left in the
+// inbox (open-link, F14 §1). One tick of watchForHandovers' loop, on its
+// own so a test can run it without a tray (worklist 0.4, D-473).
+func offerInboxLinks(box *jobs.Inbox, offerLink func(string)) {
+	links, err := box.TakeLinks()
+	if err != nil {
+		slog.Warn("tray: reading the links left for the agent failed", "error", err)
+	}
+	for _, link := range links {
+		offerLink(link)
 	}
 }
 

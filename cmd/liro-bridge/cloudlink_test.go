@@ -32,7 +32,7 @@ func TestTheLinkSchemeIsOneString(t *testing.T) {
 // or refused the server themselves).
 func TestEveryCloudOutcomeIsSaidOrDeliberatelySilent(t *testing.T) {
 	silent := map[cloud.Outcome]bool{cloud.OutcomeOriginRefused: true, cloud.OutcomeAnswered: true}
-	for o := cloud.OutcomeLinkUnusable; o <= cloud.OutcomeUndelivered; o++ {
+	for o := cloud.OutcomeLinkUnusable; o <= cloud.OutcomeDropped; o++ {
 		for _, loc := range []string{"en", "sr-Latn", "sr-Cyrl"} {
 			c := i18n.Load(loc)
 			text := cloudOutcomeText(c, o, "https://erp.example.com")
@@ -184,6 +184,42 @@ func TestAFullQueueDropsALinkRatherThanBlocking(t *testing.T) {
 	if got := <-l.queue; got != "one" || len(l.queue) != 0 {
 		t.Fatalf("the queue holds %q and %d more, want only the first link", got, len(l.queue))
 	}
+}
+
+// A link let go because the queue is full is said, once for a burst —
+// a person who clicked and saw nothing was told nothing (worklist 0.6,
+// D-473). The control is the old offer, which only logged: red.
+func TestADroppedLinkIsSaidOnceForABurst(t *testing.T) {
+	said := make(chan cloud.Outcome, 8)
+	release := make(chan struct{})
+	l := &cloudLinks{
+		queue: make(chan string, 1),
+		outcome: func(o cloud.Outcome, origin string) {
+			said <- o
+			if origin != "https://erp.example.com" {
+				t.Errorf("the dropped link was said without its server: %q", origin)
+			}
+			<-release // a box on Windows: up until dismissed
+		},
+	}
+	link := "liro-bridge://sign?job=https://erp.example.com/jobs/1"
+	l.offer(link) // queued
+	l.offer(link) // dropped, said
+	l.offer(link) // dropped while the first saying is up: not said again
+	select {
+	case o := <-said:
+		if o != cloud.OutcomeDropped {
+			t.Fatalf("a dropped link was said as outcome %d", o)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a link dropped because the queue was full was not said")
+	}
+	select {
+	case o := <-said:
+		t.Fatalf("a burst was said twice (second: %d)", o)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
 }
 
 // The origin window's payload has every string it shows, in every

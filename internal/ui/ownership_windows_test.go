@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -215,10 +216,27 @@ func TestNavigatingRegistersTheNewTreesDropTargetsOnTheWindowsOwnThread(t *testi
 	}
 	var registered int
 	var tree []uintptr
+	var uiThreadID uintptr
+	var offThread []uintptr
 	onUIThread(t, win, func() {
 		registered = len(win.dropTargets)
 		tree = append([]uintptr{win.hwnd}, descendantWindows(win.hwnd)...)
+		uiThreadID = currentThreadID()
+		for _, target := range win.dropTargets {
+			if target.thread != uiThreadID {
+				offThread = append(offThread, target.thread)
+			}
+		}
 	})
+
+	// The measurement this test was missing (worklist 0.1, D-473): it
+	// passed before the fix too, because a registration off the window's
+	// thread succeeded on the runner. What the fix changed is the thread
+	// each target is bound to, and that is read here.
+	if len(offThread) > 0 {
+		t.Errorf("%d of %d drop targets were registered on another thread (%v), not the window's own (%d): OLE delivers their drops to that thread's apartment",
+			len(offThread), registered, offThread, uiThreadID)
+	}
 
 	var failures []string
 	for _, rec := range warnings() {
@@ -415,3 +433,175 @@ func TestAPINDialogWhoseOwnerIsDestroyedReturns(t *testing.T) {
 var procPeekMessageW = user32DLL.NewProc("PeekMessageW")
 
 const pmRemove = 0x0001
+
+// A stand-in ICoreWebView2 whose every method fails, so that the add_*
+// calls fail where a real one would — the one way to reach their error
+// paths without a browser that refuses (worklist 0.3, D-473). Package
+// variables, so that nothing the callback or comCall reads can move or
+// be collected.
+var (
+	failingCW2Vtbl [64]uintptr
+	failingCW2     struct{ vtbl uintptr }
+)
+
+func failingCoreWebView2() uintptr {
+	eFail := syscall.NewCallback(func(this, handler, token uintptr) uintptr { return 0x80004005 })
+	for i := range failingCW2Vtbl {
+		failingCW2Vtbl[i] = eFail
+	}
+	failingCW2.vtbl = uintptr(unsafe.Pointer(&failingCW2Vtbl[0]))
+	return uintptr(unsafe.Pointer(&failingCW2))
+}
+
+// pinnedHandlers is every handler this package holds pinned right now.
+func pinnedHandlers() map[uintptr]bool {
+	handlerPinsMu.Lock()
+	defer handlerPinsMu.Unlock()
+	out := make(map[uintptr]bool, len(handlerPins))
+	for a := range handlerPins {
+		out[a] = true
+	}
+	return out
+}
+
+// TestAFailedSubscriptionGivesItsHandlerBack is C21's row on add_*
+// failing: the handler was made and pinned for the call, and when the
+// call failed nothing would ever release it — pinned for the life of
+// the process. Untested until the owner asked why (D-471): it could be,
+// with a browser that refuses, and this is one.
+func TestAFailedSubscriptionGivesItsHandlerBack(t *testing.T) {
+	cw2 := failingCoreWebView2()
+	before := pinnedHandlers()
+
+	if _, err := coreWebView2AddNavigationStarting(cw2, "fail.liro.invalid"); err == nil {
+		t.Fatal("add_NavigationStarting on the failing stand-in succeeded; this test measures nothing")
+	}
+	if _, err := coreWebView2AddFrameNavigationStarting(cw2, "fail.liro.invalid"); err == nil {
+		t.Fatal("add_FrameNavigationStarting on the failing stand-in succeeded")
+	}
+	if _, err := coreWebView2AddNewWindowRequested(cw2); err == nil {
+		t.Fatal("add_NewWindowRequested on the failing stand-in succeeded")
+	}
+
+	var kept []uintptr
+	for a := range pinnedHandlers() {
+		if !before[a] {
+			kept = append(kept, a)
+		}
+	}
+	if len(kept) > 0 {
+		t.Errorf("%d handler(s) whose add_* failed are still pinned: nothing will ever release them", len(kept))
+	}
+}
+
+var (
+	procQuitTestFindWindowExW        = user32DLL.NewProc("FindWindowExW")
+	procQuitTestGetWindowTextLengthW = user32DLL.NewProc("GetWindowTextLengthW")
+	quitTestEditClass                = windows.StringToUTF16Ptr("Edit")
+	quitTestTyped                    = windows.StringToUTF16Ptr("1234")
+)
+
+// quitTestWMQuit is WM_QUIT, which this package never posts.
+const quitTestWMQuit = 0x0012
+
+// TestAQuitReachingThePINLoopIsACancel is C21's WM_QUIT row (D-471: it
+// could be tested and was not). A WM_QUIT is the one way out of the
+// dialog's GetMessage loop that sets nothing; before the fix the loop
+// ended, CollectPIN returned, and the dialog stayed up on a thread that
+// no longer read its messages, with what had been typed still in its
+// field. Now it is a cancel: the window is destroyed and the field
+// cleared first.
+//
+// It does not post the WM_QUIT on again for an outer loop, the usual
+// rule for a nested one: the login's thread has none, and a WM_QUIT
+// left in its queue would end the next PIN dialog on that thread the
+// moment it opened (D-473).
+func TestAQuitReachingThePINLoopIsACancel(t *testing.T) {
+	type result struct {
+		n   int
+		ok  bool
+		err error
+	}
+	returned := make(chan result, 1)
+	go func() {
+		dst := make([]byte, 16)
+		n, ok, err := CollectPIN(0, PINPrompt{
+			Title: "liro-bridge PIN quit test", Heading: "Liro Bridge",
+			Label: "PIN", OK: "OK", Cancel: "Cancel",
+		}, 15, dst)
+		returned <- result{n, ok, err}
+	}()
+
+	var dialog uintptr
+	deadline := time.Now().Add(30 * time.Second)
+	for dialog == 0 {
+		dialog, _, _ = procFindWindowW.Call(uintptr(unsafe.Pointer(pinClassName)), 0)
+		if dialog == 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("the PIN dialog never appeared")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	edit, _, _ := procQuitTestFindWindowExW.Call(dialog, 0, uintptr(unsafe.Pointer(quitTestEditClass)), 0)
+	if edit == 0 {
+		t.Fatal("the PIN dialog has no edit control to type into")
+	}
+	_, _, _ = procSendMessageW.Call(edit, wmSetText, 0, uintptr(unsafe.Pointer(quitTestTyped)))
+	if n, _, _ := procQuitTestGetWindowTextLengthW.Call(edit); n != 4 {
+		t.Fatalf("typing into the field left %d characters, want 4; this test measures nothing", n)
+	}
+	tid, _, _ := procGetWindowThreadPID.Call(dialog, 0)
+	if r, _, err := procPostThreadMessageW.Call(tid, quitTestWMQuit, 0, 0); r == 0 {
+		t.Fatalf("PostThreadMessage(WM_QUIT): %v", err)
+	}
+
+	select {
+	case r := <-returned:
+		if r.err != nil || r.ok || r.n != 0 {
+			t.Fatalf("CollectPIN returned (%d, %v, %v) after a WM_QUIT; want a cancel", r.n, r.ok, r.err)
+		}
+	case <-time.After(15 * time.Second):
+		postMessage(dialog, wmClose, 0, 0)
+		t.Fatal("CollectPIN did not return within 15 s of a WM_QUIT reaching its loop")
+	}
+	if alive, _, _ := procIsWindowForTest.Call(dialog); alive != 0 {
+		left, _, _ := procQuitTestGetWindowTextLengthW.Call(edit)
+		// The thread that owns it no longer pumps; a posted close would
+		// sit in a queue nobody reads. It goes with the test process.
+		t.Errorf("after a WM_QUIT the dialog is still up, on a thread that no longer reads its messages, with %d typed characters in its field", left)
+	}
+}
+
+// TestAPINDialogThatFailsToBuildGivesItsFontsBack is C21's row on the
+// PIN dialog's fonts (D-471 said it needed a seam; it does not). build
+// makes both fonts first and then the controls; a heading with a NUL in
+// it cannot become a control's text, so build fails after the fonts
+// exist — the same path a refused CreateWindowExW takes. The success
+// path deletes the fonts after the loop, which this path never reached:
+// two GDI objects per failed dialog, for the life of the process.
+func TestAPINDialogThatFailsToBuildGivesItsFontsBack(t *testing.T) {
+	bad := PINPrompt{
+		Title: "liro-bridge PIN font test", Heading: "Liro\x00Bridge",
+		Label: "PIN", OK: "OK", Cancel: "Cancel",
+	}
+	dst := make([]byte, 16)
+	// Once first, so that whatever the class and the DPI awareness make
+	// the first time is not counted as the dialog's.
+	if _, _, err := CollectPIN(0, bad, 15, dst); err == nil {
+		t.Fatal("a heading with a NUL in it built a dialog; this test measures nothing")
+	}
+	before := gdiObjects()
+	const runs = 10
+	for i := 0; i < runs; i++ {
+		if _, _, err := CollectPIN(0, bad, 15, dst); err == nil {
+			t.Fatal("a heading with a NUL in it built a dialog")
+		}
+	}
+	after := gdiObjects()
+	t.Logf("GDI objects: %d before, %d after %d failed dialogs", before, after, runs)
+	if after-before >= runs {
+		t.Errorf("%d failed PIN dialogs kept %d GDI objects (%.1f each): their fonts were never deleted",
+			runs, after-before, float64(after-before)/runs)
+	}
+}

@@ -3,6 +3,8 @@ package cloud
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -49,6 +51,22 @@ func NewClient(agentVersion string) *Client {
 		userAgent: "LiroBridge/" + agentVersion + " " + "liro-cloud/1",
 		retryWait: time.Second,
 	}
+}
+
+// TrustingRoots returns c checking certificates against roots instead of
+// the system's — still checking them, with no way to turn that off. It
+// is for tests outside this package that stand a TLS server up in the
+// process, whose certificate no system trusts (the stand-in Liro
+// Business, P8, D-473); production never calls it.
+func (c *Client) TrustingRoots(roots *x509.CertPool) *Client {
+	t, ok := c.http.Transport.(*http.Transport)
+	if !ok {
+		return c
+	}
+	t = t.Clone()
+	t.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	c.http.Transport = t
+	return c
 }
 
 // withHTTPClient is for tests: an httptest server's client trusts its own

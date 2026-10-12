@@ -156,3 +156,22 @@ It runs against a **stand-in server** in the same process: Go's `httptest` TLS s
 - **Liro Business itself**: the stand-in is written from F14's description of the protocol, not from the real server's code. Where the two differ, this test cannot see it.
 
 **Predicted:** green in the container and on every CI job that runs `cmd`. Its control: the same test with the queue's watcher never started must fail on the server not receiving a result. If it passes without the watcher, it measures nothing about the path.
+
+## P7, read — runs 38233120579 (push) and 38233125458 (PR), `1abc206`
+
+All jobs green in both. P7b reads only as `ok`: the Windows step is not `-v`.
+
+## P9 — group 0's Windows rows, measured on the old behaviour first (written before the push)
+
+Two runs. **M** carries the new tests, with each fix switched back to its old behaviour by a variable named `p9Unfixed` (internal/ui, cmd/liro-bridge). **F** removes the variable and nothing else.
+
+| | test | predicted on M | predicted on F |
+|---|---|---|---|
+| P9a | `TestNavigatingRegistersTheNewTreesDropTargetsOnTheWindowsOwnThread` (0.1) | **red**: targets registered on the test goroutine's thread, not the UI thread's | green |
+| P9b | `TestNothingWrittenToStderrAfterTheConsoleIsGivenBackLandsInAFile` (0.2) | **red**: `stderrAfterDetach=invalid` (the console's closed number) | green: `nul` |
+| P9c | `TestAFailedSubscriptionGivesItsHandlerBack` (0.3) | **red**: 3 handlers kept | green |
+| P9d | `TestAQuitReachingThePINLoopIsACancel` (0.3) | **red**: the dialog still up, with 4 characters in its field | green |
+| P9e | `TestAPINDialogThatFailsToBuildGivesItsFontsBack` (0.3) | **red**: about 20 GDI objects kept over 10 dialogs | green |
+| P9f | `TestTheLinkSchemeIsWrittenAtStartAndRemovedByTheUninstallNotice` (0.5) | **red**: the key left behind | green |
+| P9g | the packaging job's install/uninstall step (0.5) | **green on M too**, the least certain row: the first install this project has ever run on CI. If green on M, where `uninstall-notice` does not unregister, it shows the package's own `RemoveRegistryKey` removes the key by itself | green |
+| P9h | everything else, including group 0's Linux-run tests (0.4, 0.6, the stand-in Liro Business) | green on both | green |

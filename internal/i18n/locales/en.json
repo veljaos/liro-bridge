@@ -65,6 +65,7 @@
   "chooser.folder_failed": "The window for choosing a folder could not be opened. Nothing was changed.",
   "cloud.notice_summary": "Liro Bridge",
   "cloud.outcome_busy": "A request from %s is already waiting for you.",
+  "cloud.outcome_dropped": "Too many requests were already waiting, so this one from %s was not shown. Answer those first, then try again from its page.",
   "cloud.outcome_job_gone": "That request from %s has expired or was already answered.",
   "cloud.outcome_job_refused": "The request from %s could not be shown.",
   "cloud.outcome_link_unusable": "This link could not be used. Ask the page that showed it for a new one.",

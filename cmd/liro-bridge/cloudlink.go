@@ -16,8 +16,10 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/veljaos/liro-bridge/internal/api"
 	"github.com/veljaos/liro-bridge/internal/cloud"
 	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/i18n"
@@ -44,7 +46,7 @@ const (
 // own, for the same reason — a question nobody answers is a refusal, and
 // a link clicked and walked away from must not leave a window up for
 // ever.
-const originAskTimeout = ConsentTimeout
+var originAskTimeout = ConsentTimeout
 
 // cloudLinkQueue is how many links can wait behind the one being
 // handled. Two clicks in a row are two requests; twenty are a page
@@ -97,13 +99,21 @@ func runOpenLink(args []string, out io.Writer, cfg config.Config, version string
 		fprintf(out, "%s\n", c.T("startup.handover_failed"))
 		return 1
 	}
-	if _, live := liveAgent(); live {
+	if agentIsRunning() {
 		slog.Info("open-link: an agent is running, so the link was left for it")
 		return 0
 	}
 	slog.Info("open-link: no agent is running, so this launch becomes it and takes the link")
-	return runTray(cfg, version)
+	return becomeAgent(cfg, version)
 }
+
+// agentIsRunning and becomeAgent are open-link's two ways on, variables
+// so that a test can run open-link's good path without starting a tray
+// (worklist 0.4, D-473).
+var (
+	agentIsRunning = func() bool { _, live := liveAgent(); return live }
+	becomeAgent    = runTray
+)
 
 // cloudLinks is the running agent's half: links in, one at a time,
 // through the channel.
@@ -111,41 +121,89 @@ type cloudLinks struct {
 	queue   chan string
 	handle  func(ctx context.Context, link string) cloud.Outcome
 	outcome func(o cloud.Outcome, origin string)
+
+	// sayingDropped is true while a dropped link is being said, so a
+	// burst of links past the queue is said once rather than once each
+	// — on Windows each saying is a box that waits to be dismissed.
+	sayingDropped atomic.Bool
 }
 
 // newCloudLinks wires the channel to this agent's own signer and job
 // registry — the loopback protocol's, so a cloud request and a loopback
 // one share one consent window at a time, one audit log and one card.
 func newCloudLinks(fallback config.Config, version string, signer *protocolSigner, registry *jobs.Registry) *cloudLinks {
+	return wireCloudLinks(cloudParts{
+		client:          cloud.NewClient(version),
+		origins:         cloudOrigins(),
+		ask:             func(origin string) bool { return askOrigin(fallback, origin) },
+		slot:            signer.holdSlot,
+		signer:          signer,
+		registry:        registry,
+		documentSigning: func() bool { return currentConfig(fallback).DocumentSigningEnabled },
+		tell: func(o cloud.Outcome, origin string) {
+			tellCloudOutcome(i18n.Load(currentConfig(fallback).Locale), o, origin)
+		},
+	})
+}
+
+// cloudParts is what the channel is made of: newCloudLinks gives the
+// agent's own, and a test the same real channel, client, store, registry
+// and queue with stand-ins for the windows and the card (P8, D-473).
+type cloudParts struct {
+	client          *cloud.Client
+	origins         *cloud.Origins
+	ask             func(origin string) bool
+	slot            func(func())
+	signer          api.Signer
+	registry        *jobs.Registry
+	documentSigning func() bool
+	tell            func(o cloud.Outcome, origin string)
+}
+
+func wireCloudLinks(p cloudParts) *cloudLinks {
 	ch := &cloud.Channel{
-		Client:  cloud.NewClient(version),
-		Origins: cloudOrigins(),
+		Client:  p.client,
+		Origins: p.origins,
 		AllowOrigin: func(origin string) bool {
 			// The question waits for the slot like a consent window: it
 			// never opens over a window somebody is reading.
 			allowed := false
-			signer.holdSlot(func() { allowed = askOrigin(fallback, origin) })
+			p.slot(func() { allowed = p.ask(origin) })
 			return allowed
 		},
-		Signer:          signer,
-		Jobs:            registry,
-		DocumentSigning: func() bool { return currentConfig(fallback).DocumentSigningEnabled },
+		Signer:          p.signer,
+		Jobs:            p.registry,
+		DocumentSigning: p.documentSigning,
 	}
 	return &cloudLinks{
-		queue:  make(chan string, cloudLinkQueue),
-		handle: ch.Handle,
-		outcome: func(o cloud.Outcome, origin string) {
-			tellCloudOutcome(i18n.Load(currentConfig(fallback).Locale), o, origin)
-		},
+		queue:   make(chan string, cloudLinkQueue),
+		handle:  ch.Handle,
+		outcome: p.tell,
 	}
 }
 
-// offer queues a link, or drops it when the queue is full.
+// offer queues a link, or drops it when the queue is full — and says
+// so: a person who clicked a link and saw nothing has been told nothing
+// (worklist 0.6, D-473; this used to be a log line only, under a comment
+// that said it was said). Said on its own goroutine, because offer runs
+// on the inbox watcher and a box on Windows waits to be dismissed; and
+// once for a burst, while the first saying is still up.
 func (l *cloudLinks) offer(link string) {
 	select {
 	case l.queue <- link:
 	default:
 		slog.Warn("cloud: a link was dropped: too many are already waiting", "waiting", cap(l.queue))
+		if l.outcome == nil || !l.sayingDropped.CompareAndSwap(false, true) {
+			return
+		}
+		origin := ""
+		if parsed, err := cloud.ParseLink(link); err == nil {
+			origin = parsed.Origin
+		}
+		go func() {
+			defer l.sayingDropped.Store(false)
+			l.outcome(cloud.OutcomeDropped, origin)
+		}()
 	}
 }
 
@@ -181,6 +239,7 @@ var cloudOutcomeKeys = map[cloud.Outcome]string{
 	cloud.OutcomeJobRefused:   "cloud.outcome_job_refused",
 	cloud.OutcomeBusy:         "cloud.outcome_busy",
 	cloud.OutcomeUndelivered:  "cloud.outcome_undelivered",
+	cloud.OutcomeDropped:      "cloud.outcome_dropped",
 }
 
 // cloudOutcomeText is the sentence for o, or "" for none.
@@ -228,7 +287,7 @@ func askOrigin(fallback config.Config, origin string) bool {
 	var once sync.Once
 	decide := func(v bool) { once.Do(func() { answer <- v }) }
 
-	win, err := ui.NewWindow(ui.Options{
+	win, err := newOriginWindow(ui.Options{
 		Title:       c.T("origin.window_title"),
 		Width:       originWindowWidth,
 		Height:      originWindowHeight,
@@ -265,6 +324,10 @@ func askOrigin(fallback config.Config, origin string) bool {
 		return false
 	}
 }
+
+// newOriginWindow is ui.NewWindow, a variable so that a test can answer
+// the question as the person would without a window (worklist 0.4).
+var newOriginWindow = ui.NewWindow
 
 // buildOriginInit is the payload origin.html renders.
 func buildOriginInit(c *i18n.Catalogue, origin string) map[string]any {

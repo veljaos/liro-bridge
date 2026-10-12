@@ -65,6 +65,7 @@
   "chooser.folder_failed": "Prozor za izbor fascikle nije mogao da se otvori. Ništa nije promenjeno.",
   "cloud.notice_summary": "Liro Bridge",
   "cloud.outcome_busy": "Jedan zahtev sa servera %s već čeka na vas.",
+  "cloud.outcome_dropped": "Već je čekalo previše zahteva, pa ovaj od %s nije prikazan. Prvo odgovorite na njih, pa pokušajte ponovo sa njegove stranice.",
   "cloud.outcome_job_gone": "Taj zahtev sa servera %s je istekao ili je već odgovoren.",
   "cloud.outcome_job_refused": "Zahtev sa servera %s nije mogao da se prikaže.",
   "cloud.outcome_link_unusable": "Ovaj link nije mogao da se upotrebi. Zatražite novi od stranice koja ga je prikazala.",

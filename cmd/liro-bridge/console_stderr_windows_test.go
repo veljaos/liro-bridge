@@ -41,6 +41,11 @@ func TestStaleStderrHelper(t *testing.T) {
 	n, _, _ := procGetConsoleProcessList.Call(uintptr(unsafe.Pointer(&attached[0])), 2)
 
 	detachAllocatedConsole()
+	// Read before anything is opened, so a reused number cannot stand in
+	// for the answer (worklist 0.2, D-473).
+	errDetached, _ := windows.GetStdHandle(windows.STD_ERROR_HANDLE)
+	stderrKind := handleKind(errDetached)
+	osStderrFollows := os.Stderr.Fd() == uintptr(errDetached)
 
 	f, err := os.Create(filepath.Join(dir, "opened-after.log"))
 	if err != nil {
@@ -54,8 +59,8 @@ func TestStaleStderrHelper(t *testing.T) {
 	fmt.Fprintln(os.Stderr, staleStderrMarker+" os.Stderr")
 	_ = f.Close()
 
-	diag := fmt.Sprintf("consoleProcesses=%d stderrBefore=%#x file=%#x stderrAfter=%#x",
-		n, uintptr(errBefore), fileHandle, uintptr(errAfter))
+	diag := fmt.Sprintf("consoleProcesses=%d stderrBefore=%#x file=%#x stderrAfter=%#x stderrAfterDetach=%s osStderrFollows=%v ",
+		n, uintptr(errBefore), fileHandle, uintptr(errAfter), stderrKind, osStderrFollows)
 	_ = os.WriteFile(filepath.Join(dir, "diag.txt"), []byte(diag), 0o644)
 }
 
@@ -122,9 +127,49 @@ func TestNothingWrittenToStderrAfterTheConsoleIsGivenBackLandsInAFile(t *testing
 	if err != nil {
 		t.Fatalf("reading the file the helper opened: %v", err)
 	}
+	// What the fix does, read directly: this test passed on the code
+	// before it, because no file happened to be given the console's old
+	// number on the runner (D-457, P3f). So it is not enough that the
+	// marker missed the file; standard error must have been re-pointed
+	// at NUL — a character device that is not a console — and os.Stderr
+	// with it. On the old code the handle still named the closed
+	// console, which GetFileType refuses (worklist 0.2, D-473).
+	if !strings.Contains(string(diag), "stderrAfterDetach=nul ") {
+		t.Errorf("after the console was given back, standard error is not NUL: %s", diag)
+	}
+	if !strings.Contains(string(diag), "osStderrFollows=true ") {
+		t.Errorf("os.Stderr does not write where standard error now points: %s", diag)
+	}
 	if strings.Contains(string(opened), staleStderrMarker) {
 		t.Errorf("standard error, written after the console was given back, landed in a file the process opened afterwards:\n%s\n"+
 			"after FreeConsole the standard handles named a number the next file was given", opened)
+	}
+}
+
+// handleKind says what a handle is: "invalid" when the system refuses it
+// (a closed number), "console" for a console's own buffer, "nul" for a
+// character device that is not a console, or the file type otherwise.
+func handleKind(h windows.Handle) string {
+	if h == 0 || h == windows.InvalidHandle {
+		return "none"
+	}
+	ft, err := windows.GetFileType(h)
+	if err != nil {
+		return "invalid"
+	}
+	switch ft {
+	case windows.FILE_TYPE_CHAR:
+		var mode uint32
+		if windows.GetConsoleMode(h, &mode) == nil {
+			return "console"
+		}
+		return "nul"
+	case windows.FILE_TYPE_DISK:
+		return "disk"
+	case windows.FILE_TYPE_PIPE:
+		return "pipe"
+	default:
+		return fmt.Sprintf("type%d", ft)
 	}
 }
 
