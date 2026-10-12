@@ -48081,3 +48081,13 @@ Found writing it: **a default install reaches neither B-T nor B-LT on its own**,
 - **The line in `mainwindow.go` that carries the rule into a batch** (`keepBTIfBLTFails: !m.levelRequested`), and the two calls that pass it to the timestamp question. They are read, not run. A batch needs a card session. Rows 1.2 and 1.3 measure the result with a MUP card.
 - The Windows Settings test, updated to four choices, runs on CI.
 - No person has seen the fourth choice.
+
+## D-479 — D-478 shipped a label the page could not show: Settings' fourth choice read `settings.level_best`, in every language
+
+**Found by CI,** not by me: push run 38258566744 and PR run 38258572976 on `9ad71a8`. Both are red on windows only, in `TestSettingsWindowRendersLocalisedText`, for sr-Latn, sr-Cyrl and en: `label "settings.level_best" rendered "settings.level_best"`. Every other job, the three `linux-install` included, was green.
+
+**Cause.** The Settings page shows only the strings Go sends it in `buildSettingsInit`. I added the label to the page, the three catalogues and the Windows test's list of labels, and not to the strings Go sends. The test that saw it runs only in WebView2. My WebKitGTK test checked which radio was checked and what came back, not what the label said. So a person would have seen the key as the label of the default choice.
+
+**Fixed:** the string is sent. **And a check that runs everywhere:** `TestSettingsSendsEveryLabelItsPageNames` reads every `data-i18n` key in `settings.html` and requires `buildSettingsInit` to send it. It was red in the container with the line removed, naming `settings.level_best`, and green with it.
+
+**What P12 said, against what happened:** I expected any red on windows to be in `TestSettingsOffersFourLevelsWithBBFirst`, and that test passed. The red was in a test I had edited (to add the key to its list) without asking what it would then check.

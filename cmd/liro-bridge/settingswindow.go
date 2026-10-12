@@ -351,6 +351,7 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.level_bb":                       c.T("settings.level_bb"),
 			"settings.level_bt":                       c.T("settings.level_bt"),
 			"settings.level_blt":                      c.T("settings.level_blt"),
+			"settings.level_best":                     c.T("settings.level_best"),
 			"settings.export_audit_log":               c.T("settings.export_audit_log"),
 			"settings.check_updates_now":              c.T("settings.check_updates_now"),
 			"settings.check_updates_daily":            c.T("settings.check_updates_daily"),

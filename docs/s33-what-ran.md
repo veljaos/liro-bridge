@@ -123,7 +123,8 @@ The two tests that passed with or without their fix, and the three C21 fixes wit
 | CI publishes the MSIs and the exe per commit | the packaging step | CI | — | a person installing one |
 | The default is the best available; a `b-lt` from before is read as it | config tests | container; CI | yes (P11a, P11b) | — |
 | A level chosen in Settings, or named by a caller, is a request | `TestALevelSomebodyChoseIsARequest` (the rule only) | container; CI | yes, against a stand-in for the old window (P11c) | **the line that carries it into a batch**, and the two that pass it to the timestamp question: read, not run. Rows 1.2 and 1.3 |
-| Settings' fourth choice, checked by default, saved back empty | `TestSettingsShowsAndCollectsTheBestAvailable` (WebKitGTK); `TestSettingsOffersFourLevelsWithBBFirst` (WebView2) | container under Xvfb; CI Windows (run on `9ad71a8`, being read) | yes, the WebKitGTK one against the old page (not predicted in writing first) | a person seeing it |
+| Settings' fourth choice, checked by default, saved back empty | `TestSettingsShowsAndCollectsTheBestAvailable` (WebKitGTK); `TestSettingsOffersFourLevelsWithBBFirst` (WebView2) | container under Xvfb; CI Windows | yes, the WebKitGTK one against the old page (not predicted in writing first). **CI Windows then found the label showing its key (D-479).** | a person seeing it |
+| Every label on the Settings page is sent by Go | `TestSettingsSendsEveryLabelItsPageNames` | container; CI | yes, with the new key's line removed | — |
 
 ## What this table says, in one paragraph
 
