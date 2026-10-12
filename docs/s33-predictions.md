@@ -241,4 +241,4 @@ check.sh on `3b3f3bc`: ci 4–14 and linux-gui 4–6 passed.
 
 - **P10b, as predicted:** "publish the packages for the card rows" succeeded (13:34:28–13:34:30Z).
 - **P10c and P10d, as predicted, with a limit:** windows `ok` for `cmd/liro-bridge` (136.1 s), `internal/pades/dss` (4.7 s), `internal/config` and `internal/ui`. No `--- FAIL`, `--- SKIP` or `panic:` anywhere in the log. The step runs without `-v`, so the two new tests are known to have run only because neither can skip and their packages passed.
-- **P10a:** written in when the last job ends.
+- **P10a, as predicted:** both runs green, every job, `linux-install` included (push run ended 13:50:23Z, PR run 38256491696 ended 13:49:37Z). The artifact `liro-bridge-windows-21624f24e1b2dc742f81c3ec902f50631af7d23c`, 14.8 MB, is kept until 2026-11-11.

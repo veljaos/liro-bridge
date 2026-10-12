@@ -113,6 +113,18 @@ It was built from four read-only inventories, one per area: the test files, `ci.
 
 The two tests that passed with or without their fix, and the three C21 fixes with no test, now each have a test that was **red on the old behaviour on CI's Windows runner** (P9, run 38242378820) and green after (run 38243584334). The cloud rows that were "nothing" (the origin question, the slot, the good `open-link`, the watcher's tick) now run against stand-ins in every job that tests `cmd`. The Windows scheme is written and removed under the real key, and the per-user MSI is installed and removed on CI. The rows above are left as they were read; `docs/measure-before-release.md` group 0 has the readings.
 
+## Since this table: card row 1.1's preconditions (D-477) and decision C (D-478)
+
+| change | test | where | seen failing without it | never run |
+|---|---|---|---|---|
+| The log names each certificate that got no evidence, by **thumbprint**, with its role and the OCSP/CRL addresses asked | `TestTheLogNamesTheCertificateThatGotNoEvidence` | container; CI (all three OSes, `ok`, no `-v`) | yes, twice: against the old `gather.go`, and against my draft that logged subjects (SPEC §18.3) | a real issuer's certificate; that is row 1.1 |
+| The window logs the signer's notes | `TestTheWindowLogsTheSignersNotes` | container; CI Windows (`ok`, no `-v`) | yes: with the call removed | — |
+| The protocol path logs the signer's notes | none | — | — | **the call** (one line, read) |
+| CI publishes the MSIs and the exe per commit | the packaging step | CI | — | a person installing one |
+| The default is the best available; a `b-lt` from before is read as it | config tests | container; CI | yes (P11a, P11b) | — |
+| A level chosen in Settings, or named by a caller, is a request | `TestALevelSomebodyChoseIsARequest` (the rule only) | container; CI | yes, against a stand-in for the old window (P11c) | **the line that carries it into a batch**, and the two that pass it to the timestamp question: read, not run. Rows 1.2 and 1.3 |
+| Settings' fourth choice, checked by default, saved back empty | `TestSettingsShowsAndCollectsTheBestAvailable` (WebKitGTK); `TestSettingsOffersFourLevelsWithBBFirst` (WebView2) | container under Xvfb; CI Windows (run on `9ad71a8`, being read) | yes, the WebKitGTK one against the old page (not predicted in writing first) | a person seeing it |
+
 ## What this table says, in one paragraph
 
 **Measured with a control** (red on the old code, green on the new):
