@@ -47656,3 +47656,127 @@ The branch is the owner's to push; its CI run is read to its end before the
 tag, as D-455 set out.
 
 ---
+
+## D-457 — C21, the memory-ownership audit, finished: every function the Windows binary imports read against its ownership rule; six rows made into tests that can fail and measured on CI's Windows runner **before** any fix — five red as predicted, one (Navigate off the UI thread) found no defect, one half-measured — and the fixes pushed under them; two defects of my own in the harness, said
+
+**Date:** 2026-10-12
+**Phase:** session 33 (cloud, Linux; no Windows machine, no card). Method D-412's: every function the binary imports × its ownership rule, reading what the binding does with each pointer. Rows 1–2 were D-453/D-454's.
+
+**The reading, rows 3 onward, clean** (each read in the code, not inferred): WebView2's environment, controller and `ICoreWebView2`/`_2`/`_3`/`Controller4` references released on every path; every `LPWSTR` the runtime returns freed with `CoTaskMemFree`; `ExecuteScript`'s result an `[in]` string, not ours; `HDROP` released by `ReleaseStgMedium` and the `STGMEDIUM` with it; the file and folder dialogs' `OleInitialize`/`OleUninitialize` paired and their PIDLs freed; the smart-card context released; certificate stores closed with `CERT_CLOSE_STORE_FORCE_FLAG`; DPAPI's output `LocalFree`d; registry keys closed; `OpenProcess` handles closed; the PKCS#11 structures at one-byte packing measured by size (`CK_ATTRIBUTE` 16, `CK_INFO` 72, `CK_TOKEN_INFO` 160, the function list's offset +2, the init arguments 44); `openFolder`'s process handle released by its cleanup; WebView2's event tokens never removed, which is safe because the controller that holds them is closed.
+
+**The six that were not, made into tests (commit 48e53ce), predicted in `docs/s33-predictions.md` before CI ran them (P1), with no fix beside them:**
+
+| row | test | P1 predicted | CI run 38183853425 | CI run 38185042718 (harness fixed) |
+|---|---|---|---|---|
+| the audit lock's mutex, one handle per lock | `TestLockingTheSameDirectoryManyTimesKeepsAtMostOneHandle` | FAIL | **FAIL**: 133 → 333 handles in 200 locks | FAIL, the same |
+| drop targets revoked after `Controller::Close` | `TestAClosedWindowGivesBackEveryDropTargetItRegistered` | FAIL, 4 of 5 (least certain) | **FAIL: 4 of 5 pinned** | FAIL, the same |
+| Navigate's re-registration off the UI thread | `TestNavigatingRegistersTheNewTreesDropTargetsOnTheWindowsOwnThread` | FAIL | **hung ten minutes — my harness** (below) | **PASS — no defect found** (P3c predicted it from the hang's stack) |
+| a window that fails to open, its icons | `TestAWindowThatFailsToOpenGivesBackItsIcons` | FAIL, ~30 GDI | never ran (package timed out) | **FAIL: 15 → 45, 6.0 each** |
+| a PIN dialog whose owner is destroyed | `TestAPINDialogWhoseOwnerIsDestroyedReturns` | FAIL | never ran | **FAIL: not returned in 15 s** |
+| standard error after `FreeConsole` | `TestNothingWrittenToStderrAfterTheConsoleIsGivenBackLandsInAFile` | FAIL | **PASS — the prediction failed** | passed; its diagnosis, read with `-v` for one run: `stderrBefore=0x74 stderrAfter=0x74`, the marker in no file, `file=0xffffffffffffffff` |
+
+**Two defects of mine, in the harness, not in the product.** (1) `recordWarnings` forwarded to `slog`'s own default handler, which writes through `log.Default()` — and `SetDefault` points `log.Default()` back at the new handler, so a record went round into `log.Logger`'s mutex twice and the test hung until the package's ten-minute alarm, taking the icon and PIN rows with it. Fixed in a commit that changed nothing else (7cd0a8b), and the rows re-measured. (2) The stderr helper read `f.Fd()` **after** `f.Close()`, so the file's handle printed as -1 and that half of the reading measured nothing; fixed (182eb48), not yet re-read.
+
+**What the readings say.** The stderr row found no defect on Server 2025: `FreeConsole` left `STD_ERROR_HANDLE`'s value as it was and no later file received the marker. D-454's reasoning — the number reused by the next file opened — is **not shown** by this; it may need a heavier process (many files opened) or a different Windows. The Navigate row found no defect either: off the UI thread `RegisterDragDrop` succeeded. **Both fixes are kept** (the stderr handles pointed at NUL after `FreeConsole`; the re-registration on the window's own thread), because each is what the code's own comments state as the rule, and P1's own text said so before the run: "if P1b or P1c pass on the unfixed code, the fix still goes in, and the entry says the measurement found no defect for that row."
+
+**The fixes** (fcd1dd5): one mutex handle per directory per process, kept for the process's life on purpose (it is what lets a later lock hear of an abandoned writer); drop targets revoked before `Controller::Close`, and a refused revoke logged; Navigate's re-registration inside the UI-thread closure, guarded against a window being torn down; a failed window's icons destroyed; a failed `add_*` releases its handler (three sites); the PIN dialog's fonts deleted on every path, the dialog ending as a cancel when its owner is destroyed or a `WM_QUIT` reaches its loop; the tray's own icon destroyed; after `FreeConsole` the standard handles that named the console are pointed at NUL and the old `os.File`s kept alive so their collection cannot close another file's reused number; **a CNG key whose certificate context owns it (`fCallerFree` FALSE) keeps that context until the session closes — never run: it needs a provider that answers FALSE, which neither the runner nor the soft token is.** Two test comments that said the Windows suite runs under `-race` corrected (it runs `CGO_ENABLED=0`).
+
+**P4** (the fixes on CI, written before the push of 55a582e): read in D-463's addendum.
+
+---
+
+## D-458 — D39 and D45 read to their causes, both in the tests; neither re-run away
+
+**Date:** 2026-10-12
+**Phase:** session 33.
+
+**D39 — the sign window that hung 60 s, twenty failures.** Read from CI run 37833946737, job 113506104715, not re-run. All twenty used `sharedMainWindow` ("Liro Bridge"). The navguard test's last window A had slot `0x02c2`; the next window B was `0x4e02c2` — the same slot, reused. `liroWindowsTitled` walked `FindWindowExW` with the last window found as its cursor; **a cursor destroyed mid-walk ends the walk**, so when A was being destroyed "before" missed the shared main window M, the test took M for the new sign window, closed it, and never touched B — whose sign then waited its 60 s. A test-harness defect. **Fixed** (b68f056): an `EnumWindows` snapshot, filtered by PID; and **`TestAFindWindowWalkLosesItsPlaceWhenItsCursorIsDestroyed`** puts the mechanism itself on the runner, so the explanation is a measurement rather than a reading.
+
+**D45 — `TestSourcesAreOnePerUsableModule`, 10.4 s and two discoveries that disagreed.** 10.4 s is `ProbeTimeout`'s 10 s plus a normal probe: the second discovery's probe of one real module timed out where the first's did not, and the test indexed past the shorter list. **Inferred, not measured** — it happened on the owner's machine and needs it to confirm. The test now asks `Sources`' own rule of one source per usable module (`sourcesFor`) on one discovery, stops rather than indexing past unequal lengths, and logs every failure with its reason. **Left open, for the owner:** whether 10 s is right for NetSeT, whose probe was the slow one (D-305).
+
+---
+
+## D-459 — D6: the four examples that knew only Windows' discovery path read SPEC §14's on all three platforms; `sign.php` and `Sign.java` executed for the first time (C13, in part)
+
+**Date:** 2026-10-12
+**Phase:** session 33.
+
+`sign.php`, `Sign.java`, `Sign.cs` and `liro-test-client.ps1` now read the discovery file where `platform.DiscoveryPath` puts it on Linux and macOS as well as Windows; PROTOCOL.md §9 and the SDK README no longer teach Windows' path alone. **A guard** reads every example for all four pieces (red on the old files, green on these). **`examples-run.test.mjs`** runs `sign.php`, `Sign.java` and `sign.py` against the SDK's stand-in agent through Linux's discovery file — the first time the PHP and Java examples ran at all: red on the old two ("no /Liro/bridge.json"), green on these. **Against the stand-in, not the real agent**, and the examples README says so. **`Sign.cs` was not compiled** — no C# compiler here; its platform test uses only what .NET Framework 4's `csc.exe` has (`Environment.OSVersion.Platform`, a directory check for macOS), because the README says it is compiled with the compiler inside Windows.
+
+---
+
+## D-460 — D23 read to its cause in WebKit's source and fixed: the `bwrap → bwrap → xdg-dbus-proxy` chain each window left is ended when the window's web process has gone; and a second finding, larger than D23 — **this binding never finalizes any wrapped object**
+
+**Date:** 2026-10-12
+**Phase:** session 33. Measured under Xvfb on WebKitGTK 2.52.6 in this container.
+
+**Reproduced first:** under Xvfb every window left its chain — the owner's count on Fedora (D-420, D-423), not D-397's "one in two".
+
+**The cause, read in WebKit 2.52.6's source:** `XDGDBusProxy` holds the proxy's sync pipe (`m_syncFD`) in the web process's `ProcessLauncher` (`m_dbusProxy`), released only in `~AuxiliaryProcessProxy`; the proxy exits when that pipe closes. The launcher lives as long as the `WebKitWebView`. **And the `WebKitWebView` is never finalized**: measured with a bare view and with a hundred labels, **gotk4 v0.3.1 finalizes no box at all on this build** — its toggle references never drop. So every window's proxy outlives the window.
+
+**The fix** (db1e3a0, `dbusproxy_linux.go`): after a window closes, the agent finds orphaned proxies — each live web process paired with the proxy started just before it, by start time — and on the UI thread replaces **its own** end of an orphan's sync pipe with `/dev/null` (`Dup3`); the proxy sees the pipe close and exits as it does at the agent's exit. `TestClosingAWindowLeavesNoDBusProxyBehind`: **red** with the release removed ("1 D-Bus proxies still running" 10 s after the first close), **green** with it, three windows in a row. **CI cannot run it** (no display, no user namespace) and it skips there, saying so. **Not counted on the owner's Fedora or Ubuntu VM**, which D23's own close condition asks for — the owner's hands.
+
+**The larger finding, a new open item:** if gotk4 finalizes nothing, every GObject this program wraps — windows, views, labels — is kept for the process's life. D23 was the visible case because it held processes; the rest is memory. Not measured beyond the two probes above.
+
+**Also found running check.sh in a container, each said rather than smoothed:** the two layout tests failed on a machine whose bubblewrap could make a sandbox but had no display, where every other window test skips — they skip on `ErrNoDisplay` now (a83b135); `TestOnlyTheChooserHelperKeepsItsDumpableFlag` fails as root (root reads a non-dumpable process's `/proc`) and passes as an ordinary user — environmental; `TestSignDocumentBTWithRealTSA` fails where DNS to `test-tsa.ca.posta.rs` is blocked — environmental, CI reaches it; `check.sh --only ci:N` needs `ci:2` selected too, because later steps read its package list — a limitation of check.py, a new open item.
+
+---
+
+## D-461 — The cloud channel (A32) built to F14, with protocol version negotiation; SPEC §2 now says cloud signing is out of scope permanently and the channel is not it
+
+**Date:** 2026-10-12
+**Phase:** session 33. F14 written first (`docs/phases/F14.md`), then built.
+
+**Negotiation** (be06005): `GET /v2/health` and `bridge.json` list every version the agent speaks (`protocolVersions`); a request may name one in `X-Liro-Protocol`, and one the agent does not speak is refused **426 `PROTOCOL_UNSUPPORTED`** with the list. The TypeScript SDK picks the highest shared version and sends it; it used to refuse any agent whose newest version was not exactly its own — **red on the old SDK** (an agent speaking 2 and 3 refused `VERSION_TOO_OLD`), green now.
+
+**The channel** (0c4bee8 and after): a `liro-bridge://sign?job=https://…` link runs `liro-bridge open-link`, which reads the link strictly and leaves it for the running agent, or becomes the agent. The agent takes links **one at a time** (a queue of eight; past it a link is dropped and logged), asks the person **once per server** in a window that names only the origin it will connect to, fetches the job over HTTPS (system roots, no redirects, no cookies, 30 s, size-limited), reads it **by the loopback protocol's own rules** (`api.ParseCloudJob`: the same fields, limits and refusals), puts it through **the same signer, consent window, job registry and audit log** as a loopback request, and posts the answer **only to the same origin**. Settings lists the allowed servers with Remove. The scheme is registered per user on Windows at every start (removed by `uninstall-notice` and by the MSI) and by the package's `liro-bridge-open-link.desktop` on Linux.
+
+**Decided while building it, each for the reason given:**
+- **No device secret for a server** (F14 §2): the signature, made by the person's own certificate, is the proof the server needs.
+- **No new audit field**: the request's application is the origin, which is what the consent window showed and what the audit record carries; the job URL goes to the log without its query or fragment (`cloud.Redacted`), never to the audit chain. F14 §4 corrected to say so.
+- **The origin question waits for the one-window slot** (`protocolSigner.holdSlot`), so it never opens over a batch somebody is reading.
+- **A link that comes to nothing is said**: a desktop notification where the platform posts one, and the native box where it does not — Windows posts none (SPEC §6.5.2), so without the box a failed link there was silence (7345c33).
+- **The origin window is 406 points high**, measured under Xvfb in all three locales with the whole origin visible: a 255-character origin needs 354/372/390 (en/sr-Latn/sr-Cyrl), plus D-202's slack; at 300 it was cut to 62 of 152 points. My first measurement said "fits from 160" in every case — the resize had not reached the page when it was read, and then the region had shrunk and hidden the origin; both found by the test, both fixed in it. **Not measured in WebView2.**
+- **`internal/cloud` is held to the API door's rule** (SPEC §4.2 rule 4): it may import `internal/api`, not `internal/ui` or `internal/cli` — checkdeps red without the rule.
+
+**SPEC amended:** §2's first row is now *signing in the cloud — a key anywhere but the person's own card, or a signature with nobody present* — out of scope permanently, with the sentence that the channel is a way for a server's request to reach the person; the "nothing leaves the machine" row says a request's answer goes back to whoever sent it, nowhere else; §4.3 has five entry points.
+
+**Never run against a real server, nor with a card, nor by a person clicking a link in a browser.** Measured: the link parser, the client, the channel end to end against `httptest` TLS servers, the origin list, the queue (one at a time — red with the queue handled concurrently), the scheme's registry round trip (Windows, P4d), the desktop entry installed and removed (Linux packaging jobs, P4g). **The consent window naming an origin of 255 characters has not been measured** (open item).
+
+---
+
+## D-462 — A2/E2: B-LT written after reading how DSS 6.5 reaches BASELINE-LT; a revoked signer saves nothing (`CERT_REVOKED`'s first producer); the two timestamp presets removed; SPEC §12.6 rewritten as a draft for the owner
+
+**Date:** 2026-10-12
+**Phase:** session 33, block 5's code. DSS 6.5 read (its `PAdESLevelBaselineLT` and the revocation sources under it); Java and LGPL, so nothing used.
+
+**What B-LT now collects** (`internal/pades/dss`, `gather.go`, `evidence.go`):
+- evidence for the signer's certificate and each issuer up to an **anchor** — self-signed, or listed in the Trusted List — and none for an anchor (DSS's rule);
+- **for the timestamp authority's chain too**: B-LT is the validation data for the signature and its timestamp, and a timestamp whose authority cannot be checked proves no time. A token that carries no authority certificate leaves the document at B-T;
+- for a **delegated OCSP responder**, unless it carries ocsp-nocheck;
+- each issuer found among the certificates at hand, then in the trust store, then at AIA over HTTP, and **used only if it signed the certificate** (it used to be matched by name);
+- OCSP first, then the CRL; an OCSP answer used only if it verifies and says **good or revoked** (Unknown proves nothing); a CRL only if the issuer signed it, its issuer is the certificate's, and the issuer may sign CRLs; indirect CRLs refused, as DSS refuses them;
+- evidence no newer than the timestamp's genTime asked for **once more**, then embedded and reported (DSS's behaviour);
+- duplicates written once; **a `/DSS` already in the document kept and added to** — it was replaced, so a second B-LT signature took the first one's validation data away (red with the merge removed);
+- **only `http` and `https` dialled.** `ldap://` is skipped and not remembered as silent. **Not built: an LDAP reader** — D-281's option (b) adds an outbound protocol SPEC §6.8 enumerates, which is the owner's decision. Option (a), the Trusted List's CAs as issuers, was already in place; read for this entry: **"Pošta Srbije CA 1" is in the seed Trusted List**, with HTTP addresses for its own CRL and issuer beside the LDAP ones.
+
+**A revoked certificate.** If the evidence says the signer's certificate or an issuer of it is revoked, **nothing is saved** and the document fails `CERT_REVOKED` — saving it would hand the person a document carrying the proof it is invalid (D4 closes: the code has its producer). A revoked timestamp authority or responder keeps the document at B-T, B-LT not claimed, and the note says why.
+
+**Each rule has a test against local OCSP, CRL and AIA servers, and each test was seen red with its rule removed** (the CRL signature check, the responder followed, the merge, the revoked-signer refusal). `TestSignDocumentBLTAchievedWithOCSPEvidence` was rewritten: its stand-in TSA now carries the authority's certificate, and the responder answers for both. **Never run against a real Serbian responder, nor with a card.** Whether a Serbian signature reaches B-LT is still not answered: MUP's OCSP refused and its CRL over the cap (D-076); Pošta's chain completes from the Trusted List, and no Pošta B-LT signature has been made since that was read.
+
+**The presets** (D-434): `freetsa.org` and `tsa.gov.rs` removed from Settings — no radios, an empty field, and a sentence: no service is built in; enter your provider's address; with none the signing window asks each time whether to sign without a timestamp (it does: `resolveTSAChoice`). **The Settings window's 880 points were not re-measured** after this and D-461's list were added.
+
+**SPEC §12.6** rewritten to describe what the program does — B-LT requested by default and reached only when every certificate that needs validation data got it; B-LTA not produced; the revoked rule; the unanswered Serbian question — **marked as a draft for the owner**, whom A2 asked to see it first; I could not show it, so it is in the tree and marked.
+
+---
+
+## D-463 — F13, macOS, written without a Mac, with a CI job that is its first compiler
+
+**Date:** 2026-10-12
+**Phase:** session 33. `docs/phases/F13.md` is the full account; this entry is the decisions and what was measured.
+
+**Built** (61b78ca): the window host in AppKit and WKWebView, the Linux host's shape so no page changes (`liro://` assets through the shared `resolveAsset`, messages through `webkit.messageHandlers.liro`); `ui.RunMain` keeps the main thread AppKit's on macOS and is `f()` elsewhere; dialogs, PIN, open panel and the status-bar tray; the Keychain secret store through `SecItem`; the PKCS#11 layer is Linux's, renamed `_unix` and built for darwin with cgo; a LaunchAgent; notifications through `osascript`; a link as an Apple Event goes where `open-link`'s argument goes, and a bundle launched bare is the agent; `build/macos/build.sh` builds a universal, **unsigned** `.app`; a `macos` CI job.
+
+**Decided, each because nothing better exists without a signature or a Mac:** notifications through `osascript` (attributed to Script Editor, cannot be withdrawn) until a signed bundle can use `UNUserNotificationCenter`; the login keychain, not the data-protection keychain (which needs an entitlement); **unsigned** — signing needs the owner's Apple Developer ID; no PDF filter in the open panel; the LaunchAgent written, not loaded; module paths for SafeSign and OpenSC **recalled from documentation, not read**.
+
+**Measured:** only on CI's `macos` job — read in the addendum below. **Never:** a person, a card, Gatekeeper, a link clicked, the window sizes in macOS's fonts.
