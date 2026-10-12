@@ -92,21 +92,16 @@ func fakeConcat(parts ...[]byte) []byte {
 	return out
 }
 
-// buildFakeTSTResponse builds a well-formed (definite-length DER),
+// buildFakeTSTResponseWithCerts builds a well-formed (definite-length DER),
 // PKIStatus-granted TimeStampResp over digest/nonce with the given
 // genTime — enough for internal/pades/tsa.Client's own validation
 // (nonce echo, message imprint, ±10 minute skew) to accept, without a
 // real TSA's signature (unsignerInfos is empty; nothing here verifies
 // the token's own CMS signature).
-func buildFakeTSTResponse(t *testing.T, digest []byte, nonce *big.Int, genTime time.Time) []byte {
-	t.Helper()
-	return buildFakeTSTResponseWithCerts(t, digest, nonce, genTime, nil)
-}
-
-// buildFakeTSTResponseWithCerts is buildFakeTSTResponse with the
-// token's SignedData carrying certs in its certificates field, as a TSA
-// that honours certReq does — what B-LT needs to give the timestamp's
-// own chain validation data ([[D-462]]).
+//
+// certs, when there are any, go in the SignedData's certificates field,
+// as a TSA that honours certReq puts them — what B-LT needs to give the
+// timestamp's own chain validation data ([[D-462]]).
 func buildFakeTSTResponseWithCerts(t *testing.T, digest []byte, nonce *big.Int, genTime time.Time, certs [][]byte) []byte {
 	t.Helper()
 	messageImprintDER := fakeDERSeq(fakeDERSeq(fakeMarshal(t, oidSHA256Test), []byte{0x05, 0x00}), fakeDEROctet(digest))
