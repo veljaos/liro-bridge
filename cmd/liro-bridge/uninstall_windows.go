@@ -79,14 +79,15 @@ var derivedStatePrefixes = []string{
 // name in one and not the other would be a sentence about a file that
 // was deleted, or a file kept in silence.
 var keptState = []string{
-	"audit",             // F10 §3.3: never removed, and said so
-	"config.json",       // the person's own settings
-	"pairings.json",     // which applications may ask
-	"secrets.json",      // and the secrets that let them
-	"secrets.entropy",   //
-	"update-state.json", // when the update check last ran
-	"tsl-cache.xml",     // the Trusted List, which is not ours either
-	"logs",              //
+	"audit",              // F10 §3.3: never removed, and said so
+	"config.json",        // the person's own settings
+	"pairings.json",      // which applications may ask
+	"cloud-origins.json", // which servers may hand this agent a job (F14)
+	"secrets.json",       // and the secrets that let them
+	"secrets.entropy",    //
+	"update-state.json",  // when the update check last ran
+	"tsl-cache.xml",      // the Trusted List, which is not ours either
+	"logs",               //
 }
 
 // runUninstallNotice is the installer's last act before it removes the

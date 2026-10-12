@@ -47685,14 +47685,14 @@ tag, as D-455 set out.
 
 ---
 
-## D-458 — D39 and D45 read to their causes, both in the tests; neither re-run away
+## D-458 — D39 read to its cause; D45's cause inferred, not measured; both tests corrected, neither re-run away
 
 **Date:** 2026-10-12
 **Phase:** session 33.
 
 **D39 — the sign window that hung 60 s, twenty failures.** Read from CI run 37833946737, job 113506104715, not re-run. All twenty used `sharedMainWindow` ("Liro Bridge"). The navguard test's last window A had slot `0x02c2`; the next window B was `0x4e02c2` — the same slot, reused. `liroWindowsTitled` walked `FindWindowExW` with the last window found as its cursor; **a cursor destroyed mid-walk ends the walk**, so when A was being destroyed "before" missed the shared main window M, the test took M for the new sign window, closed it, and never touched B — whose sign then waited its 60 s. A test-harness defect. **Fixed** (b68f056): an `EnumWindows` snapshot, filtered by PID; and **`TestAFindWindowWalkLosesItsPlaceWhenItsCursorIsDestroyed`** puts the mechanism itself on the runner, so the explanation is a measurement rather than a reading.
 
-**D45 — `TestSourcesAreOnePerUsableModule`, 10.4 s and two discoveries that disagreed.** 10.4 s is `ProbeTimeout`'s 10 s plus a normal probe: the second discovery's probe of one real module timed out where the first's did not, and the test indexed past the shorter list. **Inferred, not measured** — it happened on the owner's machine and needs it to confirm. The test now asks `Sources`' own rule of one source per usable module (`sourcesFor`) on one discovery, stops rather than indexing past unequal lengths, and logs every failure with its reason. **Left open, for the owner:** whether 10 s is right for NetSeT, whose probe was the slow one (D-305).
+**D45 — `TestSourcesAreOnePerUsableModule`, 10.4 s and two discoveries that disagreed.** **Inferred, not measured.** 10.4 s fits `ProbeTimeout`'s 10 s plus a normal probe. If that is what happened, the second discovery's probe of one real module timed out where the first's did not, and the test indexed past the shorter list. Nothing here observed a timeout: the run was on the owner's machine, and the arithmetic is the only evidence. It is not a cause until that machine shows one (the owner, D-467). The test now asks `Sources`' own rule of one source per usable module (`sourcesFor`) on one discovery, stops rather than indexing past unequal lengths, and logs every failure with its reason. **Left open, for the owner:** whether 10 s is right for NetSeT, whose probe was the slow one (D-305).
 
 ---
 
@@ -47802,3 +47802,95 @@ tag, as D-455 set out.
 **Swept again, this time for any read after a submission:** four other sites GET a job's endpoint right after submitting (`TestAnotherApplicationsJobIsNotFound`, `TestJobEndpointsRequireAuthentication`, `TestTheJobEndpointsWorkWithNoContentTypeAtAll`, `TestAPageStillCannotReachTheJobEndpoints`). Each asserts something that does not depend on the job's state: 404 to another application, 401 unauthenticated, no 400 for a missing Content-Type, no CORS header. None has the defect.
 
 Not this session's code, and not in what the session was asked for. Fixed because it turned the branch red and the cause was in hand.
+
+## D-465 — C25: the real-TSA test skips only when this machine cannot reach the server, and fails otherwise; and "a failed timestamp is saved as B-B" was my error, read now in every caller, with the downgrade that does happen given its own item (C26)
+
+**The owner's ruling** (2026-10-12): make the test skip when the network is unreachable and fail when the server answers wrongly — "a test that cannot skip is a test that teaches people to ignore it". And open the B-B finding as its own item, with options, "I would rather it refuse than quietly downgrade".
+
+**The test.** `TestSignDocumentBTWithRealTSA` now:
+- dials the server's host and port first, directly, as `tsa.Client` does (it has no proxy);
+- skips, with the dial's error, when that fails;
+- otherwise signs with `OnTSAFailureAbort: true`, so a failed stamp is an error and the test fails on it.
+
+Both paths were measured in this container:
+- **skip:** no DNS here, so `lookup test-tsa.ca.posta.rs … no such host`;
+- **fail:** a local server that accepts the connection and answers garbage, pointed at by a temporary edit (reverted), gives `FAIL … TSA_UNAVAILABLE: tsa: parsing TimeStampResp`.
+
+**What it costs.** On CI, a green job used to prove Pošta's test server was reached (D-463's note). If a runner ever loses that network, the test now skips and the job stays green. A CI-only switch could make it fail instead; I have not added one, because the owner asked for a skip.
+
+**The finding, corrected.** I told the owner a failed timestamp is saved as B-B rather than reported. I took that from this test, which left `OnTSAFailureAbort` at its zero value. Every caller in a release build sets it:
+- the window aborts and asks the person (SPEC §12.8's three-way choice);
+- the protocol fails the document to the caller with `TSA_UNAVAILABLE` or `TSA_REJECTED`, unless the person chose B-B;
+- the CLI's `sign` is not in a release build.
+
+B-B is reached only by asking for it, or by answering the question; and it is shown in the warning colour with "Level B-B — no timestamp".
+
+What remains is in `docs/decision-timestamp-failure.md` and open item C26:
+1. The library's safe behaviour is not its zero value.
+2. Whether "sign without a timestamp" should be offered after a failure at all.
+3. **The downgrade people actually meet: B-LT is the default, B-T is what a Serbian card gets, and the report shows B-T in the positive colour without saying it fell short.**
+
+The paper recommends options; nothing is built.
+
+## D-466 — D-462, said plainly: B-LT has reached no Serbian card; LDAP stands in front of one certificate, which the bundled Trusted List already carries; the owner's LDAP decision, with the route that avoids it measured against stand-ins
+
+**The owner** (2026-10-12): LDAP is "the half that matters here … So B-LT now works for cases we do not have. Say that plainly in the entry rather than letting D-462 read as closed", and bring the LDAP decision properly: what it costs, what it opens, and whether a route avoids it, bundling the chain for instance.
+
+**Plainly, as an addendum to D-462:** D-462 built B-LT and measured it only against stand-in servers on loopback. **No Serbian card has reached B-LT**, before or since.
+- **MUP** cannot reach it with this code, and LDAP has nothing to do with that. Its OCSP refuses TCP (D-076, re-run), and its CRL is 30,017,248 bytes against the 5 MB cap.
+- **Pošta** can, by reading and now on a stand-in of its shape (below). Never with the card.
+- **Halcom, PKS and E-Smart Systems** are unmeasured.
+
+**What the record says about LDAP is narrower than the premise.** Only Pošta's intermediate, *Pošta Srbije CA 1*, is published over LDAP alone (D-281); Pošta's revocation is HTTP (SPEC §11.9). MUP's chain is HTTP.
+
+I read the bundled Trusted List (`internal/trust/tsl/seed/TSL-RS.xml`, 2026-05-20). It carries the intermediates of all five issuers: Pošta CA 1 and CA 2, MUP Gradjani CA 4, Halcom's e-signature CAs, PKS CA Class1, and ESS IQCA1/2 V3. Production passes the list's CA certificates as the trust store (`interactive.go:495`), and D-462's walk treats them as anchors (`dss/gather.go:180–195`). **So the bundled chain the owner proposed already exists, and the code uses it.**
+
+**Measured against stand-ins, in this container** (`internal/pades/trustlist_blt_test.go`). Pošta's shape: root → intermediate → signer; the token carries the signer and the root; the AIA is `ldap://`; revocation is HTTP.
+- With the intermediate in the trust store: **B-LT**, nothing asked of AIA, no revocation asked for the anchor, two OCSP responses in `/DSS`.
+- The control, without it: **B-T**.
+- Under `-race`, with all of `internal/pades`, green.
+
+**The decision is the owner's.** `docs/decision-ldap.md` gives:
+- what LDAP costs: a SPEC §6.8 amendment; a dependency or a parser of our own fed by the network; port 389, which does not pass a proxy;
+- what it would buy: under SPEC §11.1, nothing the Trusted List does not already give for a qualified signature;
+- the options.
+
+**Recommended: no LDAP; the Trusted List route; one signing at B-LT with the Pošta card to settle it.** MUP's ceiling (B-T) is recorded as a separate question.
+
+## D-467 — the owner's rulings of 2026-10-12, recorded
+
+- **macOS signing waits.** "I am not buying an Apple Developer ID before a Mac has opened the program once." F13 §6 and §8 and open item C24 say so. Until then the bundle is unsigned and only CI has run it.
+- **D45 stays inferred, and marked as such.** "Do not let 10.4 s reasoning read as a cause."
+  - D-458's heading and its D45 paragraph now say "inferred, not measured", and lead with that rather than ending with it.
+  - The handover's title had "D39/D45/D23 read to their causes"; it is now "D39 and D23 read to their causes, D45 inferred only".
+  - Open item D45 states the ruling.
+- **The owner's own work is left as it is:** the macOS photograph, the Windows windows with a screen, the VM counts for D23, and the card work. Nothing here was changed to anticipate them.
+
+## D-468 — what has actually run against each change: the table the owner asked for before anything merges, and four things its inventories found
+
+**The owner:** "How would I tell, reading this, which parts are measured and which are only compiled? Give me that as a table."
+
+**`docs/s33-what-ran.md`** has one row per change, with four columns: the test, where it runs, whether it was seen failing without the change, and what no test has executed.
+
+How it was built:
+- four read-only inventories (C21/D39/D45/D23/D6/negotiation; the cloud channel; B-LT; macOS), from the test files, `ci.yml` and the CI logs;
+- then checked by me where a row rests on a claim: every cited test name exists; `ci.yml` has no display for Linux; `holdSlot` has no test; the good-link test does not call `runOpenLink`; the committed consent-layout test has no 200-point control; the dyld test asserted nothing about the kind.
+
+**What it says that my records did not say plainly:**
+- **Every Linux window test skips on CI.** The Linux window measurements (D23's proxy, the origin and consent layouts) were made in this container only.
+- Two C21 tests pass with or without their fix: Navigate, and `FreeConsole`.
+- In the cloud channel:
+  - the origin question, the one-window slot, the tray's link pickup and the good-link `open-link` path have **never executed**;
+  - the Windows scheme was tested under a scratch registry key, never the real one;
+  - the MSI has never been installed.
+- On macOS:
+  - the PIN dialog, the alerts, the open panel, the status item, notifications and Apple Event links have never executed;
+  - the window's photograph is taken only in the suite step, and the test passes without one.
+
+**Found and fixed in this commit:**
+1. `cloud-origins.json`, the servers a person allowed, was in neither of the uninstall's lists, so the notice did not name a file it leaves behind. It is now in `keptState`, beside `pairings.json`.
+2. `TestDyldsWordsAreReadIntoTheKinds` logged the real `dlopen` failure and asserted only that one came back, while its comment and D-463 called the case measured. It now asserts `LoadNoFile`. CI's earlier log showed that kind's own sentence, so it is predicted to pass (P6).
+3. `startup_other.go` still said macOS's autostart call refuses, and logged a darwin failure at Debug. F13 writes a LaunchAgent, so a failure there is now a warning, as on Linux.
+4. F13 §1's "not measured" list named four things; it now names all that the inventory found.
+
+**Not fixed, recorded:** the tests that pass without their fix, and every "never run" row. They are what the table is for.

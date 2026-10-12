@@ -1,10 +1,18 @@
-# F12 — session 33 (cloud): C21 finished, D39/D45/D23 read to their causes, D6, the cloud channel, B-LT after DSS, F13 written blind
+# F12 — session 33 (cloud): C21 finished, D39 and D23 read to their causes, D45 inferred only, D6, the cloud channel, B-LT after DSS, F13 written blind
 
-**What this is:** the handover after a session run in Anthropic's cloud on a Linux container — **no Windows, no macOS, no card, no reader, no screen** — asked to work through six tasks without asking anything, record every decision, and bring back the whole thing. **Written:** 2026-10-12. Branch `claude/wizardly-clarke-rmvkdt`, not merged, no PR. Entries **D-457 to D-464**; predictions in `docs/s33-predictions.md`, each block committed before the run it predicts.
+**What this is:** the handover after a session run in Anthropic's cloud on a Linux container — **no Windows, no macOS, no card, no reader, no screen** — asked to work through six tasks without asking anything, record every decision, and bring back the whole thing. **Written:** 2026-10-12. Branch `claude/wizardly-clarke-rmvkdt`, not merged; the owner opened PR veljaos/liro-bridge#1 from it. Entries **D-457 to D-468**; predictions in `docs/s33-predictions.md`, each block committed before the run it predicts.
 
-**Read first:** D-457 … D-464, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C25, D4, D6, D23, D39, D44–D48, B32–B33).
+**Read first:** D-457 … D-468, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C25, D4, D6, D23, D39, D44–D48, B32–B33).
 
 ---
+
+## After the owner's review (2026-10-12): D-465 … D-468
+
+**Before reading anything below, read `docs/s33-what-ran.md`.** It has every change, what has actually run against it, and what has never run. Where this handover says "measured", that table says where, and whether the test was ever seen failing without the change. Where the two differ, the table is the later reading.
+
+- C25 is fixed as the owner ruled (D-465). The B-B finding I reported was wrong; what is true is in `docs/decision-timestamp-failure.md` (C26).
+- LDAP, and what B-LT reaches: `docs/decision-ldap.md` (D-466). No Serbian card has reached B-LT.
+- The owner's rulings are recorded (D-467): macOS signing waits; D45 stays inferred.
 
 ## A. What was done
 
@@ -12,7 +20,7 @@
 |---|---|---|
 | **C21**, the memory-ownership audit, every remaining row | D-457 | **done.** Six rows made into tests and measured on CI's Windows runner before any fix; fixes under them. |
 | **D39** (sign window hung 60 s) | D-458 | **cause read** from CI's log: the test's `FindWindowExW` walk lost its place; fixed, and the mechanism is a test. |
-| **D45** (two discoveries disagreed) | D-458 | **cause inferred** (10.4 s = the 10 s probe timeout + a probe); the test fixed. Needs the owner's machine to confirm. |
+| **D45** (two discoveries disagreed) | D-458 | **cause inferred, not measured.** The arithmetic (10.4 s = the 10 s probe timeout + a probe) fits a timeout. It is not a reading of one, and nothing here could observe it. The test is corrected. It stays open until the owner's machine shows it (the owner, D-467). |
 | **D23** (`xdg-dbus-proxy` chains) | D-460 | **cause read in WebKit's source and fixed**, red/green under Xvfb; new finding: gotk4 finalizes nothing. |
 | **D6** (examples' discovery path) | D-459 | **closed**; `sign.php` and `Sign.java` run for the first time (against the stand-in). |
 | **A2/E2** (timestamp and B-LT) | D-462 | **built** after reading DSS 6.5; `CERT_REVOKED` has its producer; presets removed; SPEC §12.6 rewritten **as a draft for the owner**. |

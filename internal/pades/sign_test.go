@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -208,19 +210,32 @@ func TestSignDocumentBBWithNoTSA(t *testing.T) {
 	}
 }
 
+// postaTestTSA is Pošta's public test timestamp authority (D-045).
+const postaTestTSA = "https://test-tsa.ca.posta.rs/timestamp1"
+
+// TestSignDocumentBTWithRealTSA skips when this machine cannot reach the
+// server, and fails when it can and the timestamp does not come back
+// (C25, D-465). Its earlier skip waited for an error SignDocument never
+// returned — a failed stamp was saved at B-B, because Options' zero
+// value does not abort — so it failed on every machine without the
+// network, which teaches people to ignore it.
 func TestSignDocumentBTWithRealTSA(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping network integration test in -short mode")
 	}
+	if err := dialable(postaTestTSA); err != nil {
+		t.Skipf("Pošta's test TSA cannot be reached from this machine, so nothing about it is measured here: %v", err)
+	}
 	sess := newFakeSession(t)
-	client := tsa.NewClient("https://test-tsa.ca.posta.rs/timestamp1", tsa.Auth{BasicUsername: "Test.Korisnik", BasicPassword: "123456"})
+	client := tsa.NewClient(postaTestTSA, tsa.Auth{BasicUsername: "Test.Korisnik", BasicPassword: "123456"})
 
 	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		RequestedLevel: LevelBT,
-		TSA:            client,
+		RequestedLevel:    LevelBT,
+		TSA:               client,
+		OnTSAFailureAbort: true,
 	})
 	if err != nil {
-		t.Skipf("Pošta test TSA unreachable, skipping: %v", err)
+		t.Fatalf("the server accepts connections from here, and the timestamp failed: %v", err)
 	}
 	if result.AchievedLevel != LevelBT {
 		t.Fatalf("AchievedLevel = %s, want B-T (notes: %v)", result.AchievedLevel, result.Notes)
@@ -232,6 +247,30 @@ func TestSignDocumentBTWithRealTSA(t *testing.T) {
 	if !r.HasTimestamp || !r.TimestampOK {
 		t.Fatalf("Result = %+v, want a validated timestamp", r)
 	}
+}
+
+// dialable opens a TCP connection to the URL's host and port, the way
+// tsa.Client does (directly, with no proxy). It separates a machine
+// that cannot reach the server — no DNS, no route, a firewall — which
+// measures nothing, from a server that answers wrongly, which is a
+// failure.
+func dialable(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	port := u.Port()
+	if port == "" {
+		port = "80"
+		if u.Scheme == "https" {
+			port = "443"
+		}
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(u.Hostname(), port), 10*time.Second)
+	if err != nil {
+		return err
+	}
+	return conn.Close()
 }
 
 // brokenTSAClient always fails, simulating an unreachable TSA without

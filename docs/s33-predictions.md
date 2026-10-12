@@ -102,3 +102,13 @@ Written before the push that carries both.
 - **P5b failed on two rows that were not "as before"**: `internal/cloud`'s own test and the LaunchAgent's path rule, both of which assumed `/`. These were new tests, so P5b's "as in run 38186918219" could not cover them. Fixed in `5e187d9`.
 - **P5c failed in its detail.** The job was red, as predicted, but not where predicted. `internal/ui`'s Objective-C and both cgo halves compiled the first time. The first failures were in PKCS#11, a package P5c did not name: darwin forms were missing, and then the link failed (D-463).
 - **No prediction block was written for the three macOS runs after this one** (`3f8b65d`, `ac20812`, `38bbcfa`). I treated them as fix-and-retry runs and did not write down beforehand what each would show. This breaks the session's rule, and I am stating it here rather than writing predictions after the fact. What each run showed is in D-463, read from its log. The last run, 38188278943 on `38bbcfa`, was read to its conclusion: all ten jobs green; Windows read from its first test line (every Go package `ok`; the SDK 110 passed, 0 failed); every macOS test named in the `-v` step reported as run, none skipped.
+
+## P6 — D-465 … D-468, every job (written before the push)
+
+| | what | predicted |
+|---|---|---|
+| P6a | `TestThePostaShape…` (both) | pass on `ci` (Linux, `-race`), `windows`, `macos`, as they did here |
+| P6b | `TestDyldsWordsAreReadIntoTheKinds`, now asserting `LoadNoFile` | passes on `macos`. Run 38188278943's log printed LoadNoFile's own sentence ("there is no file at this path"), so the kind was already right; only the assertion is new |
+| P6c | `TestNothingIsBothKeptAndRemoved` with `cloud-origins.json` kept | passes on `windows` |
+| P6d | `TestSignDocumentBTWithRealTSA` | `ok` everywhere. **The least certain row, and one I cannot read:** on CI it either runs (the server reachable) or now skips, and without `-v` the two look the same. That cost is the one D-465 names |
+| P6e | everything else | as in run 38190929428: all ten jobs green |

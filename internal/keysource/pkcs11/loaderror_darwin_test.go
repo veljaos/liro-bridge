@@ -2,7 +2,10 @@
 
 package pkcs11
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // dyld's wordings, as recalled, read into the kinds; and a module that
 // does not exist, dlopened for real on the runner, is LoadNoFile — the
@@ -25,4 +28,11 @@ func TestDyldsWordsAreReadIntoTheKinds(t *testing.T) {
 		t.Fatal("a module that does not exist opened")
 	}
 	t.Logf("dyld said: %v", err)
+	// Asserted, not only logged: until session 33's review the comment
+	// above claimed this case as measured while the test checked only
+	// that some error came back.
+	var le *LoadError
+	if !errors.As(err, &le) || le.Kind != LoadNoFile {
+		t.Fatalf("a module that does not exist was not read as LoadNoFile: %v", err)
+	}
 }
