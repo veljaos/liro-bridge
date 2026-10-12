@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -217,5 +218,22 @@ func TestTheOriginWindowSizeIsOneNumber(t *testing.T) {
 		if want := fmt.Sprintf("%s = %d", name, v); !strings.Contains(strings.Join(strings.Fields(src), " "), want) {
 			t.Errorf("internal/ui's layout test does not measure %q", want)
 		}
+	}
+}
+
+// Where no notification can be posted (Windows posts none), the sentence
+// is shown in the native box rather than only logged.
+func TestAnOutcomeWithNoNotifierIsShownInABox(t *testing.T) {
+	n := useFakeNotifier(t)
+	n.err = errors.New("no notifier here")
+	var shown string
+	original := showCloudNotice
+	t.Cleanup(func() { showCloudNotice = original })
+	showCloudNotice = func(_, body string) { shown = body }
+
+	c := i18n.Load("en")
+	tellCloudOutcome(c, cloud.OutcomeUnreachable, "https://erp.example.com")
+	if want := cloudOutcomeText(c, cloud.OutcomeUnreachable, "https://erp.example.com"); shown != want {
+		t.Fatalf("the box said %q, want %q", shown, want)
 	}
 }

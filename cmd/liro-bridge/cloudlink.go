@@ -195,20 +195,28 @@ func cloudOutcomeText(c *i18n.Catalogue, o cloud.Outcome, origin string) string 
 	return fmt.Sprintf(c.T(key), origin)
 }
 
-// tellCloudOutcome posts the sentence as a desktop notification. A link
-// that came to nothing is otherwise silence — the person clicked, and no
-// window came — so this is the one place in the program a notification
-// says something other than "look at the window" (SPEC §6.5.2). Best
-// effort, like that one: no notification service means a line in the log.
+// tellCloudOutcome says the sentence. A link that came to nothing is
+// otherwise silence — the person clicked, and no window came — so it is
+// said as a desktop notification where the platform posts them (Linux,
+// macOS), and where it does not (Windows, which posts none, SPEC §6.5.2)
+// in the native message box instead. The box waits to be dismissed, and
+// the next link waits with it: links are one at a time anyway, and a
+// second link's window opening behind an unread "unreachable" would be
+// two things on screen where one is meant.
 func tellCloudOutcome(c *i18n.Catalogue, o cloud.Outcome, origin string) {
 	text := cloudOutcomeText(c, o, origin)
 	if text == "" {
 		return
 	}
 	if _, err := newNotifier().Notify(c.T("cloud.notice_summary"), text); err != nil {
-		slog.Info("cloud: no desktop notification was posted for a link's outcome", "outcome", int(o), "error", err)
+		slog.Info("cloud: no desktop notification was posted for a link's outcome, so it is shown in a box", "outcome", int(o), "error", err)
+		showCloudNotice(c.T("cloud.notice_summary"), text)
 	}
 }
+
+// showCloudNotice is ui.ShowWarning, and a variable so that a test can
+// see what would have been shown without a box appearing.
+var showCloudNotice = ui.ShowWarning
 
 // askOrigin is the window of F14 §2: may origin send requests? It names
 // the origin and nothing else, and blocks until the person answers;
