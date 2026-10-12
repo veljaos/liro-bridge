@@ -175,3 +175,18 @@ Two runs. **M** carries the new tests, with each fix switched back to its old be
 | P9f | `TestTheLinkSchemeIsWrittenAtStartAndRemovedByTheUninstallNotice` (0.5) | **red**: the key left behind | green |
 | P9g | the packaging job's install/uninstall step (0.5) | **green on M too**, the least certain row: the first install this project has ever run on CI. If green on M, where `uninstall-notice` does not unregister, it shows the package's own `RemoveRegistryKey` removes the key by itself | green |
 | P9h | everything else, including group 0's Linux-run tests (0.4, 0.6, the stand-in Liro Business) | green on both | green |
+
+## P9, read on M — run 38242378820 (push), `b5b3151`, the windows and packaging jobs
+
+**Every row as predicted:**
+- P9a: `5 of 5 drop targets were registered on another thread ([7088 7088 7088 7088 7088]), not the window's own (8056)`.
+- P9b: `stderrAfterDetach=invalid`.
+- P9c: `3 handler(s) whose add_* failed are still pinned`.
+- P9d: `the dialog is still up … with 4 typed characters in its field`.
+- P9e: `GDI objects: 11 before, 31 after 10 failed dialogs` (2.0 each).
+- P9f: `uninstall-notice left HKCU\Software\Classes\liro-bridge behind`, after the switch's own log line `P9 measurement run, the link scheme is left`.
+- **P9g: green on M.** The per-user MSI installed (`liro-bridge dev (commit b5b3151 …)`) and uninstalled, and the key was gone. `uninstall-notice` did not unregister on M, so **the package's own `RemoveRegistryKey` removes the key by itself.**
+
+**More than predicted, on P9b:** on the old behaviour the marker landed in the file opened afterwards (`file=0x70 stderrAfter=0x70`, `LIRO-STDERR-AFTER-FREECONSOLE runtime` in it). That is D44's mechanism reproduced on CI for the first time; P3's run had not reused the number. So the old half of the test, which "could not fail", failed this time, by luck of the numbering. The new half fails whatever the numbering.
+
+The rest of M's run (Linux jobs, macOS, the PR run) is read with F's, below.

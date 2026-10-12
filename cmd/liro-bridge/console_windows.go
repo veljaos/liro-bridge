@@ -84,9 +84,7 @@ func detachAllocatedConsole() {
 	if r, _, _ := procFreeConsole.Call(); r == 0 {
 		return
 	}
-	if !p9Unfixed {
-		pointStandardHandlesAtNUL(onConsole)
-	}
+	pointStandardHandlesAtNUL(onConsole)
 }
 
 // stdHandles are the three standard handles, in os.Stdin, os.Stdout,

@@ -231,9 +231,7 @@ func runPINDialog(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (int,
 		// build made both fonts before the control that failed; the
 		// success path deletes them after the loop, which this path
 		// never reaches (C21, [[D-457]]).
-		if !p9Unfixed {
-			d.deleteFonts()
-		}
+		d.deleteFonts()
 		return 0, false, err
 	}
 	d.centreOn(owner, dpi)
@@ -262,7 +260,7 @@ func runPINDialog(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (int,
 	// anything ever did, the window would be left up on a thread that no
 	// longer reads its messages, with what was typed still in the field.
 	// So that ending is a cancel too.
-	if !d.closed && !p9Unfixed {
+	if !d.closed {
 		d.cancel()
 	}
 

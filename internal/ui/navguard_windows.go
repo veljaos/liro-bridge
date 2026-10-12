@@ -217,9 +217,7 @@ func coreWebView2AddNavigationStarting(cw2 uintptr, virtualHost string) (*naviga
 		// Not subscribed, so this package's reference is the only one:
 		// dropping it unpins the handler. Returning without it kept the
 		// object pinned for the life of the process (C21, [[D-457]]).
-		if !p9Unfixed {
-			h.release()
-		}
+		h.release()
 		return nil, err
 	}
 	return h, nil
@@ -237,9 +235,7 @@ func coreWebView2AddFrameNavigationStarting(cw2 uintptr, virtualHost string) (*n
 		// Not subscribed, so this package's reference is the only one:
 		// dropping it unpins the handler. Returning without it kept the
 		// object pinned for the life of the process (C21, [[D-457]]).
-		if !p9Unfixed {
-			h.release()
-		}
+		h.release()
 		return nil, err
 	}
 	return h, nil
@@ -257,9 +253,7 @@ func coreWebView2AddNewWindowRequested(cw2 uintptr) (*newWindowRequestedHandler,
 		// Not subscribed, so this package's reference is the only one:
 		// dropping it unpins the handler. Returning without it kept the
 		// object pinned for the life of the process (C21, [[D-457]]).
-		if !p9Unfixed {
-			h.release()
-		}
+		h.release()
 		return nil, err
 	}
 	return h, nil
