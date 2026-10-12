@@ -3,9 +3,13 @@ package dss
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -88,6 +92,28 @@ const (
 	RoleTimestamp             // the timestamp authority's, or one of its issuers
 	RoleResponder             // a delegated OCSP responder's
 )
+
+// thumbprint is how the log names a certificate: its SHA-1, uppercase
+// hex, as everywhere in the agent. Never the subject, which for a
+// signer is a person's name and, on a MUP card, their JMBG (SPEC
+// §18.3).
+func thumbprint(c *x509.Certificate) string {
+	sum := sha1.Sum(c.Raw) //nolint:gosec // an identifier, as in dss.go
+	return strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+// String names the role in the log.
+func (r Role) String() string {
+	switch r {
+	case RoleSigner:
+		return "signer"
+	case RoleTimestamp:
+		return "timestamp"
+	case RoleResponder:
+		return "responder"
+	}
+	return fmt.Sprintf("Role(%d)", int(r))
+}
 
 // RevokedCertificate is one certificate the evidence says is revoked.
 type RevokedCertificate struct {
@@ -198,7 +224,7 @@ func (g *gatherer) visit(ctx context.Context, item gatherItem) []gatherItem {
 		issuer = g.findIssuer(ctx, c)
 	}
 	if issuer == nil {
-		slog.Warn("pades/dss: no issuer found for a certificate that needs validation data", "subject", c.Subject.String())
+		slog.Warn("pades/dss: no issuer found for a certificate that needs validation data", "thumbprint", thumbprint(c), "role", item.role.String())
 		g.material.Complete = false
 		g.material.Missing = append(g.material.Missing, c)
 		return nil
@@ -212,6 +238,8 @@ func (g *gatherer) visit(ctx context.Context, item gatherItem) []gatherItem {
 	case len(e.CRL) > 0:
 		g.addCRL(e.CRL)
 	case e.TooLarge:
+		slog.Warn("pades/dss: the evidence for a certificate is larger than the cap, so it was left out",
+			"thumbprint", thumbprint(c), "role", item.role.String(), "bytes", e.SkippedBytes, "cap", g.maxSize)
 		g.material.Complete = false
 		g.material.TooLarge = true
 		if e.SkippedBytes > g.material.LargestSkippedBytes {
@@ -219,6 +247,9 @@ func (g *gatherer) visit(ctx context.Context, item gatherItem) []gatherItem {
 		}
 		return next
 	default:
+		slog.Warn("pades/dss: no OCSP response or CRL could be had for a certificate",
+			"thumbprint", thumbprint(c), "role", item.role.String(),
+			"ocsp", c.OCSPServer, "crl", c.CRLDistributionPoints)
 		g.material.Complete = false
 		g.material.Missing = append(g.material.Missing, c)
 		return next

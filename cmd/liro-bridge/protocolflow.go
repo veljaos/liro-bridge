@@ -230,6 +230,7 @@ func (m *mainWindow) signRemoteOne(ctx context.Context, index int, session keyso
 	if err != nil {
 		return jobs.Outcome{}, err
 	}
+	logSignNotes("protocol", opts.level, result)
 	m.remote.outcomes[index] = api.SignOutcome{
 		Document:      result.Bytes,
 		AchievedLevel: string(result.AchievedLevel),

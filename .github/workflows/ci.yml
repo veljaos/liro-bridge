@@ -856,6 +856,22 @@ jobs:
             *) echo "::error::an unversioned build reports '$got', which should begin with 'liro-bridge dev'"; exit 1 ;;
           esac
 
+      # The card rows of docs/measure-before-release.md (group 1) are run
+      # by hand on a machine with a reader. Published here so that what
+      # is measured there is the binary CI built from a named commit, not
+      # one built on that machine from a tree no one recorded (D-477).
+      # Unsigned dev builds: SmartScreen will warn.
+      - name: publish the packages for the card rows
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-bridge-windows-${{ github.sha }}
+          path: |
+            dist/ci/liro-bridge-dev-x64.msi
+            dist/ci/liro-bridge-dev-x64-per-machine.msi
+            dist/ci/liro-bridge-dev-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
       # An MSI that Windows Installer itself will not read is a file
       # every ICE check in build.ps1 has already passed over, so the
       # summary information stream is read here through the same COM

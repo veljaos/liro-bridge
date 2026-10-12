@@ -573,6 +573,7 @@ func signInteractiveOne(ctx context.Context, inPath string, session keysource.Se
 	if err != nil {
 		return nil, err
 	}
+	logSignNotes("window", opts.level, result)
 	// Written beside the target and renamed over it, never straight
 	// onto it (J-8): a program watching the output folder must not be
 	// able to pick up an empty or partial signed document, and a write
@@ -866,4 +867,19 @@ func auditDir() string {
 
 func newAuditStore() (*audit.Store, error) {
 	return audit.NewStore(auditDir())
+}
+
+// logSignNotes puts the signer's notes on one signature in the agent's
+// log: a level not reached and why, stale or oversized revocation data,
+// a clock that disagrees with the timestamp. The report shows the
+// level; until now only the CLI printed the notes, so a window or a
+// calling program's signature that fell short left no reason anywhere
+// (worklist 1.1, D-477).
+func logSignNotes(path string, requested pades.Level, result *pades.Result) {
+	if len(result.Notes) == 0 {
+		return
+	}
+	slog.Warn("the signer's notes on this signature", "path", path,
+		"requested", string(requested), "achieved", string(result.AchievedLevel),
+		"notes", strings.Join(result.Notes, "; "))
 }

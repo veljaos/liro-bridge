@@ -7,9 +7,11 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -331,5 +333,62 @@ func TestApplyMaterialKeepsTheDSSAlreadyThere(t *testing.T) {
 	}
 	if len(vri) != 2 {
 		t.Errorf("/VRI has %d entries, want both signatures'", len(vri))
+	}
+}
+
+// When a certificate gets no evidence, the log names it by thumbprint
+// (never by subject, SPEC §18.3), with its role and where its evidence
+// was asked for: card row 1.1 is read from the log (D-477). Before,
+// only "OCSP/CRL unavailable for at least one certificate" reached
+// anyone.
+func TestTheLogNamesTheCertificateThatGotNoEvidence(t *testing.T) {
+	var logBuf bytes.Buffer
+	old := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(old) })
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
+
+	ca := newCA(t, "Anchor", nil)
+	refused := httptest.NewServer(http.NotFoundHandler())
+	refusedURL := refused.URL + "/ocsp"
+	refused.Close()
+	garbage := serve(t, func() []byte { return []byte("not a CRL") }, nil)
+	leaf := ca.issue(t, 21, x509.Certificate{
+		Subject:               pkix.Name{CommonName: "Holder Without Evidence"},
+		OCSPServer:            []string{refusedURL},
+		CRLDistributionPoints: []string{garbage.URL},
+	})
+	m := Gather(context.Background(), GatherRequest{Signer: leaf, TrustStore: []*x509.Certificate{ca.cert}})
+	if m.Complete {
+		t.Fatal("complete, although the leaf's responder is closed and its CRL is not one")
+	}
+	got := logBuf.String()
+	for _, want := range []string{"no OCSP response or CRL could be had", "thumbprint=" + thumbprint(leaf), "role=signer", refusedURL, garbage.URL} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the log does not say %q; it says:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Holder Without Evidence") {
+		t.Errorf("the log names the signer by subject, a person's name (SPEC §18.3):\n%s", got)
+	}
+
+	// A CRL over the cap is named too, with its size.
+	logBuf.Reset()
+	big := serve(t, func() []byte { return ca.crl(t, nil) }, nil)
+	leaf = ca.issue(t, 22, x509.Certificate{
+		Subject:               pkix.Name{CommonName: "Holder With A Large CRL"},
+		CRLDistributionPoints: []string{big.URL},
+	})
+	m = Gather(context.Background(), GatherRequest{Signer: leaf, TrustStore: []*x509.Certificate{ca.cert}, MaxArtefactSize: 16})
+	if !m.TooLarge {
+		t.Fatal("a CRL over a 16-byte cap was not reported too large")
+	}
+	got = logBuf.String()
+	for _, want := range []string{"larger than the cap", "thumbprint=" + thumbprint(leaf), "role=signer", "cap=16"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the log does not say %q; it says:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Holder With A Large CRL") {
+		t.Errorf("the log names the signer by subject, a person's name (SPEC §18.3):\n%s", got)
 	}
 }

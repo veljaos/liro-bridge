@@ -4,7 +4,7 @@ The owner's worklist, from `docs/s33-what-ran.md` (D-472). Work it **top to bott
 
 Group 0 is mine and needs no hardware; it comes first because the rest are read through tests, and a test that cannot fail measures nothing. Everything not on this page can wait behind it.
 
-## 0. CI — mine, before yours — **done (D-473)**
+## 0. CI — mine, before yours — **0.1–0.6 done (D-473); 0.7 to do (D-476)**
 
 Each test was seen red on the code before its fix, then green after it. For the Windows rows that was on CI's runner (P9: run 38242378820 on the measurement commit `b5b3151`, run 38243584334 on the fix `584e019`); for the rest, in the container.
 
@@ -17,14 +17,16 @@ Each test was seen red on the code before its fix, then green after it. For the 
 | 0.5 | The scheme key is written at start and removed by `uninstall-notice`, and the MSI removes it | The real `HKCU` key on CI's runner; the per-user MSI installed and removed with `/qn` | Red on the old code (key left); green after (run 38243584334). The MSI removes the key **on its own**, even with `uninstall-notice` not unregistering. Never a person's install, with dialogs |
 | 0.6 | A link dropped because eight are waiting is said to the person | The outcome reaches the notifier once per burst | Red on the old `offer` (only logged); green after, in the container and on CI |
 
+| 0.7 | **The default is "the best available" and a chosen level is a request (D-476)** — not built yet | Default: B-T on a MUP card with **no** warning. A B-LT chosen in Settings: refused with `LEVEL_NOT_REACHED`. A configuration from before: read as the best available. Each red on today's code, green after | **To do, before 1.2 and 1.3**, whose claims it changes. 1.1 does not depend on it |
+
 **Not a row, asked for alongside group 0:** a stand-in Liro Business, run end to end (P8, D-473). It shows the path runs: link → inbox → queue → channel → signer → result. **It does not show** real HTTPS, a browser, any window, a card or the real server, so **no row below moves.**
 
 ## 1. A card, on Windows (v1)
 
 | # | claimed | what would show it false |
 |---|---|---|
-| 1.1 | **A Pošta card reaches B-LT through the bundled Trusted List, with no LDAP** (D-466) | One signature at B-LT. False if the report says B-T, if a named `b-lt` comes back `LEVEL_NOT_REACHED`, or if DSS's validator or Adobe does not read the `/DSS` as B-LT. The notes say which certificate lacked evidence. |
-| 1.2 | A MUP card stops at B-T, and the report **says** it fell short, in the warning colour (C26) | False if the level shows in the positive colour, or if the window refuses where Settings (not a caller) set B-LT. |
+| 1.1 | **A Pošta card reaches B-LT through the bundled Trusted List, with no LDAP** (D-466) | One signature at B-LT. False if the report says B-T, if a named `b-lt` comes back `LEVEL_NOT_REACHED`, or if DSS's validator or Adobe does not read the `/DSS` as B-LT. The agent's log names each certificate that got no evidence, and where it was asked (D-477). Run the MSI CI published for the commit (`liro-bridge-windows-<sha>`). |
+| 1.2 | **After 0.7:** a MUP card on the default stops at B-T with **no** warning; with B-LT **chosen** in Settings it is refused with `LEVEL_NOT_REACHED` and nothing is saved | False if the default warns, or if a chosen B-LT is saved at B-T. |
 | 1.3 | A program that names `b-lt` gets `LEVEL_NOT_REACHED` on a MUP card, and nothing is saved (C26) | False if a document comes back at B-T. |
 | 1.4 | B-T against Pošta's **test** TSA with the card, verified by both tools (A2 case ii) | False if `achievedLevel` is not B-T, or either verifier rejects the timestamp. |
 | 1.5 | When the TSA stops answering mid-batch, the question offers only *Configure* and *Cancel* (C26) | False if *Sign without a timestamp* is on screen. Point Settings at a dead URL to provoke it. |

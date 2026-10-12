@@ -808,7 +808,7 @@ For MUP the chain must be built by the agent, from AIA `caIssuers` or from a bun
 
 ### 11.9 Revocation endpoints
 
-All three support OCSP, so B-LT is achievable for all of them.
+All three publish an OCSP address. **That does not make B-LT achievable for all of them**, which this sentence claimed from F0 (2026-08-31) until D-476: MUP's OCSP responder refuses a TCP connection, measured two days after it was written and again seventeen days later (D-076), and its CRL is 30 MB, against a 5 MB cap. Pošta's is reachable over HTTP. Halcom's has never been measured.
 
 | Issuer | OCSP | CRL |
 |---|---|---|
@@ -921,8 +921,12 @@ Output that we generate is DER.
 |---|---|---|
 | B-B | Signature only | Produced when the person chooses B-B in Settings, when the request asks for it, on the hash-only path (the caller timestamps its own CMS), and when no timestamp could be had and the person agreed to sign without one — the signing window asks every time. |
 | B-T | + signature timestamp | Produced when the timestamp authority the person entered in Settings answered. **No authority is built in** (D-433, D-434): the field is empty out of the box. |
-| B-LT | + `/DSS` with certificates, OCSP responses, CRLs | **Requested by default** (`signatureLevel` is `b-lt`), **reached only when every certificate that needs validation data got it** — see below. Otherwise: a level a calling program **named** is refused with `LEVEL_NOT_REACHED` and nothing is saved; the level Settings holds is saved at B-T and the report says it fell short, in the warning colour (C26, D-469). **Whether B-LT should be the default at all, when the citizens' ID card cannot reach it, is the owner's open decision (D-474).** |
+| B-LT | + `/DSS` with certificates, OCSP responses, CRLs | **Reached only when every certificate that needs validation data got it** — see below. A level a calling program names, or a person **chooses** in Settings, is reached or refused with `LEVEL_NOT_REACHED`, and nothing weaker is saved (C26, D-469; D-476). |
 | B-LTA | + archive timestamp | Not produced. |
+
+**The default is "the best available", not a level (the owner, D-476).** Out of the box `signatureLevel` is empty, which means the most the evidence allows: B-LT where the issuer's revocation evidence can be had, B-T where it cannot, with no warning, because nobody asked for more. The report states the level reached. A level the person picks in Settings (B-B, B-T or B-LT) is a request and is held to the rule above. A configuration written before this rule, which cannot say whether its `b-lt` was chosen or was the old default, is read as the best available; a person who wants B-LT held as a request picks it again. **Until this is built, the program does what D-469 built:** the Settings level is kept at B-T with a warning when B-LT falls short (`docs/measure-before-release.md` 0.7).
+
+**What this replaces, and for how long.** From F0 (2026-08-31) until session 33 (2026-10-11), this table called B-T the "minimum" and B-LT the "default". The program could keep neither for anyone: no timestamp authority is built in, so a default install reaches neither B-T nor B-LT until the person configures one, and the citizens' ID card (MUP) cannot reach B-LT at all (D-076, D-466). The session 33 draft kept "requested by default" until D-476.
 
 **What B-LT collects**, after reading how DSS 6.5 reaches BASELINE-LT (nothing of DSS is used; it is Java and LGPL): the signer's certificate and each issuer up to a trust anchor; the signature timestamp's authority and its issuers; and each delegated OCSP responder, unless its certificate carries ocsp-nocheck. An issuer is found among the certificates at hand, then in the Trusted List's CA certificates, then at the certificate's AIA address over HTTP, and is used only if it signed the certificate. A self-signed certificate, or one listed in the Trusted List, is an anchor and needs no evidence. For each of the rest: OCSP first, then the CRL; an answer is used only if its signature verifies under the issuer (or a responder the issuer certified) and it says good or revoked — *unknown* proves nothing. Evidence no newer than the timestamp is asked for once more and, if still no newer, embedded and reported. A `/DSS` already in the document is kept and added to. Only `http` and `https` are dialled: `ldap://` addresses are skipped, and **LDAP is not to be built** (the owner, D-470): the one Serbian certificate published only over LDAP, Pošta's intermediate, is in the Trusted List.
 
