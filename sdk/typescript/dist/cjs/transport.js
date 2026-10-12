@@ -34,6 +34,17 @@ class Transport {
         this.defaultTimeoutMs = defaultTimeoutMs;
         this.pairing = pairing;
     }
+    /**
+     * The protocol version chosen with the agent, sent on every request
+     * as `X-Liro-Protocol` once there is one (`PROTOCOL.md` §4.1). Null
+     * until `connect` has negotiated it; a request without the header is
+     * version 2 to every agent.
+     */
+    protocolVersion = null;
+    /** Sets the version every later request names. */
+    setProtocolVersion(version) {
+        this.protocolVersion = version;
+    }
     /** The pairing requests are signed with, once there is one. */
     setPairing(pairing) {
         this.pairing = pairing;
@@ -167,6 +178,9 @@ class Transport {
         const headers = { Accept: 'application/json' };
         if (body !== undefined) {
             headers['Content-Type'] = 'application/json';
+        }
+        if (this.protocolVersion !== null) {
+            headers['X-Liro-Protocol'] = String(this.protocolVersion);
         }
         if (spec.unauthenticated !== true) {
             const pairing = this.pairing;

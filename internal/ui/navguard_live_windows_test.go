@@ -47,7 +47,8 @@ func guardedWindow(t *testing.T) *window {
 
 // refusals reads the guards' counters on the thread that writes them.
 // Reading them from the test's own goroutine would be a data race, and
-// this suite runs under -race on the Windows runner (D-257 met the same
+// it would be one under -race — which CI's Windows job does not run,
+// CGO_ENABLED=0 having no race detector ([[D-457]]) (D-257 met the same
 // thing and answered it the same way).
 func refusals(w *window) (nav, frame, newWin int) {
 	done := make(chan struct{})

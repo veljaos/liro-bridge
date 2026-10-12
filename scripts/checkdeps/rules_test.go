@@ -142,3 +142,17 @@ func TestRelativeStripsModulePrefix(t *testing.T) {
 		t.Fatalf("relative() should reject a non-module import path")
 	}
 }
+
+// The cloud channel is part of the API door: it may use internal/api,
+// and may not reach into the window or the command line any more than
+// internal/api may.
+func TestTheCloudChannelIsHeldToTheAPIDoorsRule(t *testing.T) {
+	if v := checkPackage("internal/cloud", []string{"internal/api", "internal/jobs"}); len(v) != 0 {
+		t.Fatalf("internal/cloud importing internal/api was refused: %v", v)
+	}
+	for _, forbidden := range []string{"internal/ui", "internal/cli"} {
+		if v := checkPackage("internal/cloud", []string{forbidden}); len(v) != 1 || v[0].Forbidden != forbidden {
+			t.Errorf("internal/cloud importing %s gave %v, want one violation", forbidden, v)
+		}
+	}
+}

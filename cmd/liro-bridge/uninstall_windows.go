@@ -79,14 +79,15 @@ var derivedStatePrefixes = []string{
 // name in one and not the other would be a sentence about a file that
 // was deleted, or a file kept in silence.
 var keptState = []string{
-	"audit",             // F10 §3.3: never removed, and said so
-	"config.json",       // the person's own settings
-	"pairings.json",     // which applications may ask
-	"secrets.json",      // and the secrets that let them
-	"secrets.entropy",   //
-	"update-state.json", // when the update check last ran
-	"tsl-cache.xml",     // the Trusted List, which is not ours either
-	"logs",              //
+	"audit",              // F10 §3.3: never removed, and said so
+	"config.json",        // the person's own settings
+	"pairings.json",      // which applications may ask
+	"cloud-origins.json", // which servers may hand this agent a job (F14)
+	"secrets.json",       // and the secrets that let them
+	"secrets.entropy",    //
+	"update-state.json",  // when the update check last ran
+	"tsl-cache.xml",      // the Trusted List, which is not ours either
+	"logs",               //
 }
 
 // runUninstallNotice is the installer's last act before it removes the
@@ -118,7 +119,7 @@ func runUninstallNotice(args []string, out io.Writer, cfg config.Config) int {
 	slog.Info("uninstall: derived state removed", "removed", removed, "failed", failed, "dir", dir)
 	fprintf(out, "removed %d of %d derived items from %s\n", removed, removed+failed, dir)
 
-	// The two registrations the agent makes for itself. It is the only
+	// The three registrations the agent makes for itself. It is the only
 	// thing that knows how to unmake them, and after RemoveFiles it
 	// will not be here to be asked — so this is where they go. The
 	// per-user installer also removes them declaratively, because a
@@ -126,6 +127,9 @@ func runUninstallNotice(args []string, out io.Writer, cfg config.Config) int {
 	// binary that no longer exists.
 	if err := platform.NewShellMenu().Unregister(); err != nil {
 		slog.Warn("uninstall: could not remove the Explorer menu entry", "error", err)
+	}
+	if err := platform.NewURLScheme().Unregister(); err != nil {
+		slog.Warn("uninstall: could not remove the liro-bridge:// link scheme", "error", err)
 	}
 	if err := platform.NewAutostart().SetEnabled(false, ""); err != nil {
 		slog.Warn("uninstall: could not remove the autostart entry", "error", err)

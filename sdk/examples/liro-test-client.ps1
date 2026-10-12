@@ -3,7 +3,16 @@ $inv  = [Globalization.CultureInfo]::InvariantCulture
 $utf8 = New-Object Text.UTF8Encoding($false)
 
 # ---------------------------------------------------------------- find agent
-$disco = Join-Path $env:LOCALAPPDATA "Liro\bridge.json"
+# Where the agent writes its port, per SPEC §14 — one path per platform
+# (PowerShell 7 runs on all three). This knew only the Windows one (D6).
+if ($IsLinux) {
+  if ($env:XDG_RUNTIME_DIR) { $disco = Join-Path $env:XDG_RUNTIME_DIR "liro/bridge.json" }
+  else { $disco = Join-Path $HOME ".local/state/liro/bridge.json" }
+} elseif ($IsMacOS) {
+  $disco = Join-Path $HOME "Library/Application Support/Liro/bridge.json"
+} else {
+  $disco = Join-Path $env:LOCALAPPDATA "Liro\bridge.json"
+}
 if (-not (Test-Path $disco)) { throw "Agent not running: $disco not found" }
 $port = (Get-Content $disco -Raw | ConvertFrom-Json).port
 $base = "http://127.0.0.1:$port"

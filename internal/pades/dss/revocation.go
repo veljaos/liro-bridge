@@ -10,8 +10,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	"golang.org/x/crypto/ocsp"
 )
 
 // F3 §7.2's explicit numbers.
@@ -66,6 +64,16 @@ type Entry struct {
 	// (Task 1c: "Revocation data was too large to embed (32 MB)").
 	TooLarge     bool
 	SkippedBytes int64
+
+	// Revoked is evidence that says the certificate is revoked, at
+	// RevokedAt; the evidence is in OCSPResponse or CRL all the same
+	// ([[D-462]]). Stale is evidence no newer than the notBefore the
+	// caller asked for, after asking once more. Responder is a delegated
+	// OCSP responder's certificate, which needs evidence of its own.
+	Revoked   bool
+	RevokedAt time.Time
+	Stale     bool
+	Responder *x509.Certificate
 }
 
 // CollectRevocation fetches revocation evidence for every certificate
@@ -105,111 +113,20 @@ func CollectRevocation(ctx context.Context, certs []*x509.Certificate, maxArtefa
 			continue // no issuer available (it was the excluded root): leave empty
 		}
 		issuer := certs[i+1]
-
-		if resp, skipped := fetchOCSP(ctx, cert, issuer, maxArtefactSize, mem); resp != nil {
-			out[i].OCSPResponse = resp
-			continue
-		} else if skipped > 0 {
-			// An oversized OCSP response is not expected in practice —
-			// real responses are a few KB — but is handled the same way
-			// as an oversized CRL for symmetry. This project does not
-			// additionally try a CRL after an oversized OCSP response:
-			// a responder returning megabytes of OCSP data is anomalous
-			// enough on its own, and trying every remaining fallback
-			// after every possible oversized artefact multiplies this
-			// function's cases for a scenario that has never been
-			// measured to occur.
-			out[i].TooLarge = true
-			out[i].SkippedBytes = skipped
-			continue
-		}
-
-		if crl, skipped := fetchCRL(ctx, cert, maxArtefactSize, mem); crl != nil {
-			out[i].CRL = crl
-		} else if skipped > 0 {
-			out[i].TooLarge = true
-			out[i].SkippedBytes = skipped
+		e := collectOne(ctx, cert, issuer, time.Time{}, maxArtefactSize, mem)
+		out[i] = Entry{
+			Certificate:  cert,
+			OCSPResponse: e.OCSPResponse,
+			CRL:          e.CRL,
+			TooLarge:     e.TooLarge,
+			SkippedBytes: e.SkippedBytes,
+			Revoked:      e.Revoked,
+			RevokedAt:    e.RevokedAt,
+			Stale:        e.Stale,
+			Responder:    e.Responder,
 		}
 	}
 	return out
-}
-
-// fetchOCSP tries every OCSP responder URL the certificate's AIA
-// extension names, up to ocspAttempts times each, with a ocspTimeout
-// per attempt. skipped is non-zero only when a response was obtained and
-// validated but exceeded maxArtefactSize (Task 1b) — in which case resp
-// is nil and the certificate's OCSP evidence is not embedded.
-//
-// A URL mem already knows did not answer is skipped without a request,
-// and a URL that produces no usable answer after every attempt is
-// recorded in mem before moving on: within one batch, that turns 20 s
-// per document into 20 s once.
-func fetchOCSP(ctx context.Context, cert, issuer *x509.Certificate, maxArtefactSize int64, mem *EndpointMemory) (resp []byte, skipped int64) {
-	if len(cert.OCSPServer) == 0 {
-		return nil, 0
-	}
-	reqDER, err := ocsp.CreateRequest(cert, issuer, nil)
-	if err != nil {
-		return nil, 0
-	}
-	for _, url := range cert.OCSPServer {
-		if mem.silent(url) {
-			continue
-		}
-		answered := false
-		for attempt := 0; attempt < ocspAttempts; attempt++ {
-			body, err := postWithTimeout(ctx, url, "application/ocsp-request", reqDER, ocspTimeout, maxOCSPResponseSize)
-			if err != nil {
-				continue
-			}
-			// The endpoint answered. Whether the answer is usable is a
-			// separate question — a malformed response is not a reason
-			// to stop asking a responder that is plainly up, and it is
-			// not the twenty-second cost this memory exists to remove.
-			answered = true
-			if _, err := ocsp.ParseResponseForCert(body, cert, issuer); err != nil {
-				continue // malformed or not-for-this-cert: try again/next
-			}
-			if int64(len(body)) > maxArtefactSize {
-				return nil, int64(len(body))
-			}
-			return body, 0
-		}
-		if !answered {
-			mem.remember(url)
-		}
-	}
-	return nil, 0
-}
-
-// fetchCRL tries every CRL distribution point the certificate names,
-// once each, with crlTimeout. skipped is non-zero only when a CRL was
-// downloaded and parsed successfully but exceeded maxArtefactSize (Task
-// 1b: MUP Gradjani CA 4's CRL measured 30,136,214 bytes) — in which case
-// crl is nil and the certificate's CRL evidence is not embedded.
-//
-// A distribution point that did not answer is remembered for the rest of
-// the batch, exactly as an OCSP responder is: crlTimeout is 30 s, so the
-// cost of asking a dead host again is larger here, not smaller.
-func fetchCRL(ctx context.Context, cert *x509.Certificate, maxArtefactSize int64, mem *EndpointMemory) (crl []byte, skipped int64) {
-	for _, url := range cert.CRLDistributionPoints {
-		if mem.silent(url) {
-			continue
-		}
-		body, err := getWithTimeout(ctx, url, crlTimeout, maxCRLSize)
-		if err != nil {
-			mem.remember(url)
-			continue
-		}
-		if _, err := x509.ParseRevocationList(body); err != nil {
-			continue // not a parseable CRL: do not embed it
-		}
-		if int64(len(body)) > maxArtefactSize {
-			return nil, int64(len(body))
-		}
-		return body, 0
-	}
-	return nil, 0
 }
 
 func postWithTimeout(ctx context.Context, url, contentType string, body []byte, timeout time.Duration, maxResp int64) ([]byte, error) {

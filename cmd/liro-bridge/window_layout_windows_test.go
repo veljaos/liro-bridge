@@ -478,7 +478,7 @@ func questionsAfterApproval(t *testing.T, locale string) {
 		name    string
 		payload map[string]any
 	}{
-		{"tsaChoice", askTSAChoicePayload(consent.TSAReasonNotConfigured, c)},
+		{"tsaChoice", askTSAChoicePayload(consent.TSAReasonNotConfigured, c, true)},
 		{"outputExists", askOutputExistsPayload(
 			`C:\Users\Veljko\Documents\Ugovori\ugovor-potpisan.pdf`,
 			`C:\Users\Veljko\Documents\Ugovori\ugovor-potpisan-2.pdf`, c)},

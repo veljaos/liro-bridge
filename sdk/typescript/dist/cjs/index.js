@@ -25,7 +25,7 @@
  * own consent window.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MINIMUM_NODE_MAJOR = exports.newNonce = exports.sha256Hex = exports.signCanonical = exports.canonicalString = exports.HEADER_TIMESTAMP = exports.HEADER_SIGNATURE = exports.HEADER_NONCE = exports.HEADER_APP_ID = exports.MAX_NONCE_LENGTH = exports.EMPTY_BODY_SHA256 = exports.PROTOCOL_VERSION = exports.readBridgeFile = exports.defaultBridgeFilePath = exports.REDACTED_SECRET = exports.StoredPairing = exports.FileSecretStore = exports.messageForCode = exports.allKnownAgentCodes = exports.isKnownAgentCode = exports.LiroError = exports.SDK_VERSION = exports.DEFAULT_ORIGIN = exports.LiroBridge = void 0;
+exports.MINIMUM_NODE_MAJOR = exports.newNonce = exports.sha256Hex = exports.signCanonical = exports.canonicalString = exports.HEADER_TIMESTAMP = exports.HEADER_SIGNATURE = exports.HEADER_NONCE = exports.HEADER_APP_ID = exports.MAX_NONCE_LENGTH = exports.EMPTY_BODY_SHA256 = exports.PROTOCOL_VERSIONS = exports.PROTOCOL_VERSION = exports.readBridgeFile = exports.negotiateProtocol = exports.defaultBridgeFilePath = exports.REDACTED_SECRET = exports.StoredPairing = exports.FileSecretStore = exports.messageForCode = exports.allKnownAgentCodes = exports.isKnownAgentCode = exports.LiroError = exports.SDK_VERSION = exports.DEFAULT_ORIGIN = exports.LiroBridge = void 0;
 var bridge_js_1 = require("./bridge.js");
 Object.defineProperty(exports, "LiroBridge", { enumerable: true, get: function () { return bridge_js_1.LiroBridge; } });
 Object.defineProperty(exports, "DEFAULT_ORIGIN", { enumerable: true, get: function () { return bridge_js_1.DEFAULT_ORIGIN; } });
@@ -42,8 +42,10 @@ Object.defineProperty(exports, "StoredPairing", { enumerable: true, get: functio
 Object.defineProperty(exports, "REDACTED_SECRET", { enumerable: true, get: function () { return secrets_js_1.REDACTED_SECRET; } });
 var discovery_js_1 = require("./discovery.js");
 Object.defineProperty(exports, "defaultBridgeFilePath", { enumerable: true, get: function () { return discovery_js_1.defaultBridgeFilePath; } });
+Object.defineProperty(exports, "negotiateProtocol", { enumerable: true, get: function () { return discovery_js_1.negotiateProtocol; } });
 Object.defineProperty(exports, "readBridgeFile", { enumerable: true, get: function () { return discovery_js_1.readBridgeFile; } });
 Object.defineProperty(exports, "PROTOCOL_VERSION", { enumerable: true, get: function () { return discovery_js_1.PROTOCOL_VERSION; } });
+Object.defineProperty(exports, "PROTOCOL_VERSIONS", { enumerable: true, get: function () { return discovery_js_1.PROTOCOL_VERSIONS; } });
 var canonical_js_1 = require("./canonical.js");
 Object.defineProperty(exports, "EMPTY_BODY_SHA256", { enumerable: true, get: function () { return canonical_js_1.EMPTY_BODY_SHA256; } });
 Object.defineProperty(exports, "MAX_NONCE_LENGTH", { enumerable: true, get: function () { return canonical_js_1.MAX_NONCE_LENGTH; } });

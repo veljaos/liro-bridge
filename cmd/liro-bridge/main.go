@@ -24,6 +24,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
+	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
 // pkcs11ShutdownGrace is how long a PKCS#11 worker is given to finalise its
@@ -103,7 +104,13 @@ func main() {
 	crashOutputErr = config.SetupCrashOutput(platform.DefaultLogDir())
 
 	enableChooserHelper()
-	os.Exit(run(os.Args[1:], os.Stdout))
+	// On macOS the main thread is AppKit's and the program runs beside
+	// it (F13, ui.RunMain); everywhere else this is run itself.
+	// A link the system hands this process itself (macOS) goes where
+	// open-link's argument would.
+	ui.SetURLHandler(acceptSystemLink)
+	args := launchArgs(runtime.GOOS, exePath(), os.Args[1:])
+	os.Exit(ui.RunMain(func() int { return run(args, os.Stdout) }))
 }
 
 // crashOutputErr is SetupCrashOutput's failure in main, if it had one,
@@ -205,7 +212,7 @@ func run(args []string, out io.Writer) int {
 	// There is one `sign` and it shows the consent window. SPEC §18.2
 	// admits no exception — "No signature without human approval. No
 	// flag, no configuration, no header bypasses the consent screen" —
-	// and SPEC §4.3 puts all four entry points through the same consent
+	// and SPEC §4.3 puts every entry point through the same consent
 	// screen, the same session and the same audit log. `--interactive`
 	// used to be what made the difference; it is not a distinction any
 	// more, and parseSignArgs says so to anyone who still passes it.
@@ -237,6 +244,13 @@ func run(args []string, out io.Writer) int {
 			return 1
 		}
 		return runShellVerb(context.Background(), args[1:], cfg)
+	}
+	// F14 §1: what the desktop runs for a liro-bridge:// link.
+	if len(args) > 0 && args[0] == platform.LinkSubcommand {
+		if !requireWebView2(i18n.Load(cfg.Locale)) {
+			return 1
+		}
+		return runOpenLink(args[1:], out, cfg, version)
 	}
 	if len(args) > 0 && args[0] == "tray" {
 		// F5 §3: the agent starts minimised to tray with no window. Not
@@ -324,6 +338,7 @@ var topLevelCommands = []command{
 	{"sign", "Sign a PDF file"},
 	{"open", "Open the main window to sign documents"},
 	{"tray", "Run the agent in the system tray"},
+	{"open-link", "Open a liro-bridge:// link from a server (run by the desktop)"},
 	{"uninstall-notice", "Clear what this agent extracted and say what an uninstall keeps (run by the installer)"},
 }
 

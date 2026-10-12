@@ -76,10 +76,10 @@ func FuzzSignMalformedDocument(f *testing.F) {
 		before, _ := verify.FindSignatures(data)
 
 		res, err := SignDocument(context.Background(), data, session, Options{
-			RequestedLevel:    LevelBT,
-			OnTSAFailureAbort: false,
-			Now:               fixedNow,
-			ReservedBytes:     4096,
+			RequestedLevel:       LevelBT,
+			SaveWithoutTimestamp: true,
+			Now:                  fixedNow,
+			ReservedBytes:        4096,
 		})
 		if err != nil {
 			return

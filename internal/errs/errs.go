@@ -30,9 +30,17 @@ const (
 	CodeCertRevoked          Code = "CERT_REVOKED"
 	CodeTSAUnavailable       Code = "TSA_UNAVAILABLE"
 	CodeTSARejected          Code = "TSA_REJECTED"
-	CodePDFInvalid           Code = "PDF_INVALID"
-	CodePDFEncrypted         Code = "PDF_ENCRYPTED"
-	CodeSignFailed           Code = "SIGN_FAILED"
+
+	// CodeLevelNotReached means a signature level was asked for and the
+	// evidence it needs could not be had, so nothing was saved rather
+	// than a weaker signature handed back as if it were the one asked
+	// for (C26, D-469). Today: B-LT asked, the revocation evidence for
+	// some certificate unavailable. The level below is reachable by
+	// asking for it.
+	CodeLevelNotReached Code = "LEVEL_NOT_REACHED"
+	CodePDFInvalid      Code = "PDF_INVALID"
+	CodePDFEncrypted    Code = "PDF_ENCRYPTED"
+	CodeSignFailed      Code = "SIGN_FAILED"
 
 	// CodeStampGlyphMissing means the visual signature stamp needs a
 	// character the embedded font subset does not contain. This is
@@ -205,6 +213,13 @@ const (
 	// thing PROTOCOL.md §7 says can never happen (D-264).
 	CodeEndpointNotFound Code = "ENDPOINT_NOT_FOUND"
 
+	// CodeProtocolUnsupported: the client named a protocol version
+	// (X-Liro-Protocol) this agent does not speak; details carry the
+	// versions it does (F14 §8, [[D-461]]). Not VERSION_TOO_OLD, which
+	// is a client below minimumClientVersion: here neither side is old,
+	// they share no version, and the remedy is whichever is behind.
+	CodeProtocolUnsupported Code = "PROTOCOL_UNSUPPORTED"
+
 	CodeInternal Code = "INTERNAL"
 )
 
@@ -231,6 +246,7 @@ func AllCodes() []Code {
 		CodeCertRevoked,
 		CodeTSAUnavailable,
 		CodeTSARejected,
+		CodeLevelNotReached,
 		CodePDFInvalid,
 		CodePDFEncrypted,
 		CodeSignFailed,
@@ -254,6 +270,7 @@ func AllCodes() []Code {
 		CodeDocumentSigningDisabled,
 		CodeCertificateListingDisabled,
 		CodeEndpointNotFound,
+		CodeProtocolUnsupported,
 		CodeInternal,
 	}
 }

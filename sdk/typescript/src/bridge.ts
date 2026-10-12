@@ -16,7 +16,7 @@ import { assertUsableEnvironment } from './environment.js';
 import { LiroError } from './errors.js';
 import type { LiroErrorCode } from './errors.js';
 import { isKnownAgentCode } from './errors.js';
-import { PROTOCOL_VERSION, baseUrlFor, defaultBridgeFilePath, readBridgeFile } from './discovery.js';
+import { PROTOCOL_VERSIONS, baseUrlFor, defaultBridgeFilePath, negotiateProtocol, readBridgeFile, versionList } from './discovery.js';
 import { readEventStream } from './events.js';
 import type { RawEvent } from './events.js';
 import { pair } from './pairing.js';
@@ -71,6 +71,7 @@ const SHA256_DIGEST_BYTES = 32;
 interface HealthBody {
   agentVersion?: unknown;
   protocolVersion?: unknown;
+  protocolVersions?: unknown;
   minimumClientVersion?: unknown;
 }
 
@@ -177,13 +178,21 @@ export class LiroBridge {
     const transport = new Transport(baseUrlFor(info.port), resolved.requestTimeoutMs);
 
     const agent = await fetchHealth(transport);
-    if (info.protocolVersion !== 0 && info.protocolVersion !== PROTOCOL_VERSION) {
-      throw new LiroError('VERSION_TOO_OLD', {
+    // Negotiated, not compared: this used to refuse any agent whose
+    // newest version was not exactly this SDK's, which would have
+    // refused the first agent to speak a version 3 even while it still
+    // spoke 2 (F14 §8). The health answer is the authority; the
+    // discovery file is the fallback for an agent that predates it.
+    const offered = agent.protocolVersions.length > 0 ? agent.protocolVersions : info.protocolVersions;
+    const chosen = negotiateProtocol(offered);
+    if (chosen === null) {
+      throw new LiroError('PROTOCOL_UNSUPPORTED', {
         detail:
-          `the agent speaks protocol version ${info.protocolVersion} and this SDK speaks ${PROTOCOL_VERSION}. ` +
-          'Update whichever is older',
+          `the agent speaks protocol version${offered.length === 1 ? '' : 's'} ${offered.join(', ')} and this SDK ` +
+          `speaks ${PROTOCOL_VERSIONS.join(', ')}. Update whichever is older`,
       });
     }
+    transport.setProtocolVersion(chosen);
 
     let pairing = await loadPairing(resolved.secretStore, resolved.applicationName);
     if (pairing === null) {
@@ -716,9 +725,14 @@ async function fetchHealth(transport: Transport): Promise<Health> {
     retryable: true,
   });
   const body = parseJSON<HealthBody>(response, 'GET /v2/health');
+  const protocolVersion = typeof body.protocolVersion === 'number' ? body.protocolVersion : 0;
+  const listed = versionList(body.protocolVersions);
   return {
     agentVersion: typeof body.agentVersion === 'string' ? body.agentVersion : '',
-    protocolVersion: typeof body.protocolVersion === 'number' ? body.protocolVersion : 0,
+    protocolVersion,
+    // An agent older than the list says only its one version; one that
+    // says neither is version 2, which every agent before both fields was.
+    protocolVersions: listed.length > 0 ? listed : [protocolVersion > 0 ? protocolVersion : 2],
     minimumClientVersion: typeof body.minimumClientVersion === 'string' ? body.minimumClientVersion : '0.0.0',
   };
 }

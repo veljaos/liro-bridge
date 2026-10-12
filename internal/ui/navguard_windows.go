@@ -214,6 +214,10 @@ func coreWebView2AddNavigationStarting(cw2 uintptr, virtualHost string) (*naviga
 	defer pin.Unpin()
 	var token int64
 	if _, err := comCall(cw2, 7, uintptr(unsafe.Pointer(h)), pinPtr(&pin, &token)); err != nil {
+		// Not subscribed, so this package's reference is the only one:
+		// dropping it unpins the handler. Returning without it kept the
+		// object pinned for the life of the process (C21, [[D-457]]).
+		h.release()
 		return nil, err
 	}
 	return h, nil
@@ -228,6 +232,10 @@ func coreWebView2AddFrameNavigationStarting(cw2 uintptr, virtualHost string) (*n
 	defer pin.Unpin()
 	var token int64
 	if _, err := comCall(cw2, 17, uintptr(unsafe.Pointer(h)), pinPtr(&pin, &token)); err != nil {
+		// Not subscribed, so this package's reference is the only one:
+		// dropping it unpins the handler. Returning without it kept the
+		// object pinned for the life of the process (C21, [[D-457]]).
+		h.release()
 		return nil, err
 	}
 	return h, nil
@@ -242,6 +250,10 @@ func coreWebView2AddNewWindowRequested(cw2 uintptr) (*newWindowRequestedHandler,
 	defer pin.Unpin()
 	var token int64
 	if _, err := comCall(cw2, 44, uintptr(unsafe.Pointer(h)), pinPtr(&pin, &token)); err != nil {
+		// Not subscribed, so this package's reference is the only one:
+		// dropping it unpins the handler. Returning without it kept the
+		// object pinned for the life of the process (C21, [[D-457]]).
+		h.release()
 		return nil, err
 	}
 	return h, nil

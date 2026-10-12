@@ -380,12 +380,22 @@ GET /v2/health
 ```
 
 ```json
-{ "agentVersion": "1.4.0", "protocolVersion": 2, "minimumClientVersion": "0.0.0" }
+{ "agentVersion": "1.4.0", "protocolVersion": 2, "protocolVersions": [2], "minimumClientVersion": "0.0.0" }
 ```
 
 No authentication, no body, and no `Content-Type` (§2.5). It reveals
 nothing else — not certificates, not pairings, not the name of the person
 at the machine.
+
+**`protocolVersions` is every version of this protocol the agent speaks**, ascending,
+and `protocolVersion` is the newest of them. Pick the highest version on both your
+list and the agent's, and send it on every request as `X-Liro-Protocol: <n>`; an
+agent that does not speak `n` answers `426 PROTOCOL_UNSUPPORTED` with the versions
+it does. A request with no header is version 2, which is what every client written
+before this header existed sends. Refuse an agent only when the two lists share
+nothing — never because the agent's newest version is not yours (F14 §8). An agent
+older than this field sends no `protocolVersions`; read its `protocolVersion` as a
+list of one.
 
 `minimumClientVersion` is the oldest SDK this agent will serve. If your
 version is below it, tell the person to update the agent rather than
@@ -501,9 +511,17 @@ memory: `REQUEST_INVALID` with `details.maxBytes`.
   so any usable certificate produces a valid document; leaving it out means
   the person chooses, exactly as they do when they sign something
   themselves.
-- `level` is `b-b`, `b-t` or `b-lt`. Leaving it out means "whatever this
-  agent is configured to produce", which is the person's own standing
-  answer to the same question.
+- `level` is `b-b`, `b-t` or `b-lt`. **A level you name is a level you
+  get or an error**: a document that cannot reach it fails with
+  `TSA_UNAVAILABLE` or `TSA_REJECTED` (no timestamp) or `LEVEL_NOT_REACHED`
+  (`b-lt` without its revocation evidence), and nothing weaker is handed
+  back. The person is not offered a way to sign it lower either. Leaving
+  `level` out means "whatever this agent is configured to produce", which
+  is the person's own standing answer to the same question. By default
+  that is the best available: B-LT where the certificate's issuer allows
+  it, B-T where it does not, and `achievedLevel` says which. A level the
+  person **chose** in Settings is held to the same rule as one you name
+  (D-476).
 - `stamp` is your answer to how the signature should look: `visible` (a
   boolean, required if `stamp` is present at all) and `position`
   (`bottom-right`, `bottom-left`, `top-right`, `top-left`). Supplying it in
@@ -537,9 +555,9 @@ or check that `content` is present, before you touch it.
 same is true of `/v2/sign`.
 
 `achievedLevel` is the level the document **actually reached**, never the
-one you asked for. A timestamp authority that did not answer produces a
-B-B signature and says so; nothing in this project ever claims a level it
-did not reach.
+one you asked for; nothing in this project ever claims a level it did not
+reach. It can be below the agent's configured level only when you named
+none — see `level` above.
 
 ### 5.3 The batch fingerprint
 
@@ -772,6 +790,7 @@ it was.
 |---|---|---|---|
 | `REQUEST_INVALID` | 400 | Wrong method, a body that is not JSON, a missing or unacceptable field, a body over the limit. `details.field` or `details.maxBytes` says which. | Fix the request. |
 | `ENDPOINT_NOT_FOUND` | 404 | This agent has no such endpoint. `details.path` and `details.method` say which call. | Almost always an agent older than your SDK: check `agentVersion` from §4.1 and update it. See the note below. |
+| `PROTOCOL_UNSUPPORTED` | 426 | The request named a protocol version in `X-Liro-Protocol` that this agent does not speak. `details.protocolVersions` lists the ones it does. | Pick the highest version in both lists (§4.1); if there is none, update whichever side is older. |
 | `NOT_PAIRED` | 401 | No live pairing for this `appId`. | Pair again. |
 | `AUTH_FAILED` | 401 | The request did not authenticate. | See §3.3. |
 | `PAIRING_CODE_INCORRECT` | 401 | Wrong six-digit code; the request is still live. `details.attemptsRemaining`. | Ask the person to read the code again. |
@@ -810,6 +829,7 @@ it was.
 | `PDF_ENCRYPTED` | 422 | A document is password-protected. | Decrypt it first; the agent never will. |
 | `TSA_UNAVAILABLE` | 422 | The timestamp authority did not answer after three attempts. | Retry later, or ask for `b-b`. |
 | `TSA_REJECTED` | 422 | It refused the request. | Check the agent's timestamp settings. |
+| `LEVEL_NOT_REACHED` | 422 | The level you named could not be reached — today, `b-lt` whose revocation evidence was unavailable for some certificate — so nothing was saved. | Ask for the level below, knowingly, or leave `level` out. |
 | `TSA_CLIENT_CERT_UNREADABLE` | 422 | The configured TSA client certificate could not be read. | The person's Settings, not your request. |
 | `TSA_CLIENT_CERT_INVALID` | 422 | It was read and would not open — almost always a wrong password. | The person's Settings. |
 | `STAMP_GLYPH_MISSING` | 422 | The visible stamp needs a character the embedded font does not have. `details.character`, `details.codePoint`. | Change the text. |
@@ -854,7 +874,9 @@ requests it allowed does not limit a caller in a loop.
 ## 9. A whole integration, start to finish
 
 ```
-1. Read %LOCALAPPDATA%\Liro\bridge.json for the port. Never scan.
+1. Read the discovery file for the port (§4: %LOCALAPPDATA%\Liro\bridge.json
+   on Windows, $XDG_RUNTIME_DIR/liro/bridge.json on Linux, ~/Library/
+   Application Support/Liro/bridge.json on macOS). Never scan.
 
 2. GET /v2/health
    -> 200 {"agentVersion":"...","protocolVersion":2,"minimumClientVersion":"0.0.0"}

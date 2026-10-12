@@ -221,16 +221,17 @@ func isTSAFailure(err error) bool {
 // client — so a user who fills in a URL there continues at the level
 // they asked for, and one who closes Settings without setting anything
 // is asked the same question again rather than silently continuing.
-func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue, cfg config.Config, locale string, reason consent.TSAReason) (config.Config, *tsa.Client, bool, bool) {
+func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue, cfg config.Config, locale string, reason consent.TSAReason, levelRequested bool) (config.Config, *tsa.Client, bool, bool) {
+	offerBB := offersWithoutTimestamp(reason, levelRequested)
 	for {
-		_ = win.PostJSON(askTSAChoicePayload(reason, c))
+		_ = win.PostJSON(askTSAChoicePayload(reason, c, offerBB))
 
 		msg := <-messages
 		if msg.Type != ui.MessageTypeApprove {
 			// Cancel, Escape, or the window being closed.
 			return cfg, nil, false, false
 		}
-		switch readTSAChoice(win) {
+		switch acceptedTSAChoice(readTSAChoice(win), offerBB) {
 		case "withoutTimestamp":
 			// The client is dropped, not kept: the user asked to sign
 			// without a timestamp, and a batch of a hundred documents
@@ -518,6 +519,12 @@ type interactiveSignOptions struct {
 	// silently (SPEC §18.11).
 	allowBB bool
 
+	// keepBTIfBLTFails is true only for the best available, the
+	// default: a level somebody chose or named is a request, refused
+	// with LEVEL_NOT_REACHED rather than saved weaker (levelIsARequest,
+	// D-476).
+	keepBTIfBLTFails bool
+
 	// stamp is Task 1's visible stamp, or nil for an invisible
 	// signature. Nil leaves SPEC §13.4's default path untouched, byte
 	// for byte.
@@ -555,17 +562,22 @@ func signInteractiveOne(ctx context.Context, inPath string, session keysource.Se
 		}
 	}
 	result, err := pades.SignDocument(ctx, pdfBytes, session, pades.Options{
-		RequestedLevel:    opts.level,
-		OnTSAFailureAbort: !opts.allowBB,
-		TSA:               opts.tsaClient,
-		TrustStore:        opts.trustStore,
-		Now:               time.Now(),
-		Stamp:             opts.stamp,
-		RevocationMemory:  opts.revocationMemory,
+		RequestedLevel:       opts.level,
+		SaveWithoutTimestamp: opts.allowBB,
+		// Only the best available keeps B-T when B-LT's evidence is
+		// missing; a level chosen in Settings is refused instead
+		// (levelIsARequest, D-476).
+		SaveAtBTIfBLTFails: opts.keepBTIfBLTFails,
+		TSA:                opts.tsaClient,
+		TrustStore:         opts.trustStore,
+		Now:                time.Now(),
+		Stamp:              opts.stamp,
+		RevocationMemory:   opts.revocationMemory,
 	})
 	if err != nil {
 		return nil, err
 	}
+	logSignNotes("window", opts.level, result)
 	// Written beside the target and renamed over it, never straight
 	// onto it (J-8): a program watching the output folder must not be
 	// able to pick up an empty or partial signed document, and a write
@@ -859,4 +871,19 @@ func auditDir() string {
 
 func newAuditStore() (*audit.Store, error) {
 	return audit.NewStore(auditDir())
+}
+
+// logSignNotes puts the signer's notes on one signature in the agent's
+// log: a level not reached and why, stale or oversized revocation data,
+// a clock that disagrees with the timestamp. The report shows the
+// level; until now only the CLI printed the notes, so a window or a
+// calling program's signature that fell short left no reason anywhere
+// (worklist 1.1, D-477).
+func logSignNotes(path string, requested pades.Level, result *pades.Result) {
+	if len(result.Notes) == 0 {
+		return
+	}
+	slog.Warn("the signer's notes on this signature", "path", path,
+		"requested", string(requested), "achieved", string(result.AchievedLevel),
+		"notes", strings.Join(result.Notes, "; "))
 }

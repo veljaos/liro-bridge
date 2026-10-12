@@ -331,6 +331,11 @@ func (w *window) create(t *uiThread, opts Options) error {
 		// thread, which is what closes closedCh (wndProc's wmDestroy
 		// case, below) — no separate call needed here.
 		_, _, _ = procDestroyWindow.Call(hwnd)
+		// This path never reaches WM_CLOSE, which is where the success
+		// path gives the two icons back; without this a window that
+		// failed to open kept six GDI objects (C21, [[D-457]]).
+		destroyWindowIcons(w.iconSmall, w.iconBig)
+		w.iconSmall, w.iconBig = 0, 0
 		return err
 	}
 
@@ -696,9 +701,14 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		if w.owner != 0 {
 			enableWindow(w.owner, true)
 		}
-		w.closeWebView()
-		// Give the drop registrations back before the apartment holding
-		// them goes away. Harmless when nothing was registered.
+		// Give the drop registrations back while the windows they are on
+		// still exist — before the controller is closed, not after.
+		// ICoreWebView2Controller::Close takes the browser's own windows
+		// away, and four of the five targets are on those; a revoke on a
+		// window that is gone fails, OLE keeps the reference
+		// RegisterDragDrop took, and the target — with this *window its
+		// callback captures — stayed pinned for the life of the process
+		// (C21, [[D-457]]). Harmless when nothing was registered.
 		if w.onFilesDropped != nil {
 			// The watch first: it is the only thing that adds to
 			// dropTargets after creation, and it must not run again
@@ -708,6 +718,7 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			w.dropTargets = nil
 			setDragAcceptFiles(hwnd, false)
 		}
+		w.closeWebView()
 		_, _, _ = procDestroyWindow.Call(hwnd)
 		// The two icons WM_SETICON handed this window are this
 		// package's to free, and only now that the window is gone —
@@ -870,33 +881,36 @@ func (w *window) Navigate(page string) error {
 			return
 		}
 		pumpUntil(func() bool { return w.navHandler.done || w.tearingDown })
+
+		// The browser's own child windows are what a drop lands on, and a
+		// navigation rebuilds that tree — so the registrations made for
+		// the previous page are given back and made again for this one.
+		// Without this, dropping a file worked until the first step of a
+		// flow and never again.
+		//
+		// Here, on the window's own thread, and not after the wait on the
+		// caller's goroutine where it used to be: RegisterDragDrop binds a
+		// target to the calling thread's OLE apartment and fails on a
+		// thread with none, and w.dropTargets is the UI thread's — the
+		// drop watch reads and appends to it there (C21, [[D-457]]).
+		if w.onFilesDropped != nil && !w.tearingDown {
+			revokeDropTargets(w.dropTargets)
+			w.dropTargets = registerDropTargets(w.hwnd, func(paths []string) {
+				w.queueEvent(windowEvent{dropped: paths})
+			})
+			if len(w.dropTargets) == 0 {
+				slog.Error("ui: this window will not accept dropped files after navigating", "page", page)
+			}
+		}
 		result <- nil
 	})
 
 	select {
 	case err := <-result:
-		if err != nil {
-			return err
-		}
+		return err
 	case <-w.closedCh:
 		return ErrWindowClosed
 	}
-
-	// The browser's own child windows are what a drop lands on, and a
-	// navigation rebuilds that tree — so the registrations made for the
-	// previous page are given back and made again for this one.
-	// Without this, dropping a file worked until the first step of a
-	// flow and never again.
-	if w.onFilesDropped != nil {
-		revokeDropTargets(w.dropTargets)
-		w.dropTargets = registerDropTargets(w.hwnd, func(paths []string) {
-			w.queueEvent(windowEvent{dropped: paths})
-		})
-		if len(w.dropTargets) == 0 {
-			slog.Error("ui: this window will not accept dropped files after navigating", "page", page)
-		}
-	}
-	return nil
 }
 
 // Resize implements Window.Resize (window.go).

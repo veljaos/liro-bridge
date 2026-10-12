@@ -27,6 +27,6 @@ export { LiroBridge, DEFAULT_ORIGIN } from './bridge.js';
 export { SDK_VERSION } from './version.js';
 export { LiroError, isKnownAgentCode, allKnownAgentCodes, messageForCode } from './errors.js';
 export { FileSecretStore, StoredPairing, REDACTED_SECRET } from './secrets.js';
-export { defaultBridgeFilePath, readBridgeFile, PROTOCOL_VERSION } from './discovery.js';
+export { defaultBridgeFilePath, negotiateProtocol, readBridgeFile, PROTOCOL_VERSION, PROTOCOL_VERSIONS } from './discovery.js';
 export { EMPTY_BODY_SHA256, MAX_NONCE_LENGTH, HEADER_APP_ID, HEADER_NONCE, HEADER_SIGNATURE, HEADER_TIMESTAMP, canonicalString, signCanonical, sha256Hex, newNonce, } from './canonical.js';
 export { MINIMUM_NODE_MAJOR } from './environment.js';

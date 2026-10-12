@@ -719,6 +719,11 @@ jobs:
         run: go test -tags softtoken ./... -count=1
         env:
           CGO_ENABLED: 0
+          # This runner's user profile is thrown away with it, so the
+          # test that writes and removes the real
+          # HKCU\Software\Classes\liro-bridge may run here and nowhere
+          # else (worklist 0.5, D-473).
+          LIRO_TOUCH_REAL_HKCU: "1"
           # The agent says why it gave up in its own log, and until now
           # not one line of that log reached this job. config.SetupLogging
           # slog.SetDefault()s a JSON handler over a file under
@@ -851,6 +856,22 @@ jobs:
             *) echo "::error::an unversioned build reports '$got', which should begin with 'liro-bridge dev'"; exit 1 ;;
           esac
 
+      # The card rows of docs/measure-before-release.md (group 1) are run
+      # by hand on a machine with a reader. Published here so that what
+      # is measured there is the binary CI built from a named commit, not
+      # one built on that machine from a tree no one recorded (D-477).
+      # Unsigned dev builds: SmartScreen will warn.
+      - name: publish the packages for the card rows
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-bridge-windows-${{ github.sha }}
+          path: |
+            dist/ci/liro-bridge-dev-x64.msi
+            dist/ci/liro-bridge-dev-x64-per-machine.msi
+            dist/ci/liro-bridge-dev-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
       # An MSI that Windows Installer itself will not read is a file
       # every ICE check in build.ps1 has already passed over, so the
       # summary information stream is read here through the same COM
@@ -868,6 +889,42 @@ jobs:
               Write-Host ("{0,-44} {1} [{2}]" -f $msi.Name, $subject, $template)
               if (-not $template) { throw "$($msi.Name) has no platform/language template" }
           }
+
+      # Worklist 0.5 (D-473): the per-user package installed and removed
+      # for real, quietly, which no step had ever done. /qn is UILevel 2:
+      # no agent is launched (LaunchAgent needs 3) and the uninstall runs
+      # `uninstall-notice --quiet` before RemoveFiles, beside the
+      # package's own RemoveRegistryKey for the link scheme. The key is
+      # written here in the shape the agent writes it at every start —
+      # that the agent writes it is the windows job's
+      # TestTheLinkSchemeIsWrittenAtStartAndRemovedByTheUninstallNotice.
+      # Not a person's install: no dialogs, no WebView2 check seen, no
+      # Start menu looked at.
+      - name: the per-user package installs, and its uninstall removes the link scheme
+        shell: pwsh
+        run: |
+          $msi = (Resolve-Path dist/ci/liro-bridge-dev-x64.msi).Path
+          $installLog = Join-Path $env:RUNNER_TEMP "msi-install.log"
+          $p = Start-Process msiexec.exe -ArgumentList @("/i", "`"$msi`"", "/qn", "/l*v", "`"$installLog`"") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content $installLog -Tail 80; throw "the per-user package did not install: exit $($p.ExitCode)" }
+          $exe = Join-Path $env:LOCALAPPDATA "Programs\Liro Bridge\liro-bridge.exe"
+          if (-not (Test-Path $exe)) { throw "installed, but $exe is not there" }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "the installed binary did not answer --version" }
+
+          $key = "HKCU:\Software\Classes\liro-bridge"
+          New-Item -Path "$key\shell\open\command" -Force | Out-Null
+          Set-ItemProperty -Path $key -Name "(default)" -Value "URL:Liro Bridge"
+          Set-ItemProperty -Path $key -Name "URL Protocol" -Value ""
+          Set-ItemProperty -Path "$key\shell\open\command" -Name "(default)" -Value "`"$exe`" open-link `"%1`""
+          if (-not (Test-Path "$key\shell\open\command")) { throw "the link scheme's key could not be written for this step" }
+
+          $uninstallLog = Join-Path $env:RUNNER_TEMP "msi-uninstall.log"
+          $p = Start-Process msiexec.exe -ArgumentList @("/x", "`"$msi`"", "/qn", "/l*v", "`"$uninstallLog`"") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content $uninstallLog -Tail 80; throw "the uninstall exited $($p.ExitCode)" }
+          if (Test-Path $key) { throw "the uninstall left HKCU\Software\Classes\liro-bridge behind" }
+          if (Test-Path $exe) { throw "the uninstall left $exe behind" }
+          Write-Host "installed, ran --version, uninstalled; the link scheme's key is gone"
 
   # F12 §8: the .deb and the .rpm, built the way a release builds them.
   #
@@ -1138,11 +1195,14 @@ jobs:
           set -eu
           for f in /usr/share/applications/liro-bridge.desktop \
                    /usr/share/applications/liro-bridge-open-pdf.desktop \
+                   /usr/share/applications/liro-bridge-open-link.desktop \
                    /usr/share/icons/hicolor/48x48/apps/liro-bridge.png \
                    /usr/share/icons/hicolor/256x256/apps/liro-bridge.png; do
             test -s "$f" || { echo "::error::$f is missing"; exit 1; }
           done
           grep -qx 'MimeType=application/pdf;' /usr/share/applications/liro-bridge-open-pdf.desktop
+          grep -qx 'MimeType=x-scheme-handler/liro-bridge;' /usr/share/applications/liro-bridge-open-link.desktop
+          grep -qx 'Exec=liro-bridge open-link %u' /usr/share/applications/liro-bridge-open-link.desktop
 
       # The profile on Debian and Ubuntu, and not on Fedora. Its syntax is
       # checked with the distribution's own parser, without loading it:
@@ -1177,6 +1237,77 @@ jobs:
             test ! -e /usr/bin/liro-bridge
           fi
           test ! -e /usr/share/applications/liro-bridge.desktop
+          test ! -e /usr/share/applications/liro-bridge-open-link.desktop
+
+  # F13, macOS, written without a Mac ([[D-463]]). This job is the Mac:
+  # the darwin code is compiled first here, with cgo (AppKit, WKWebView,
+  # Security.framework), and what it can measure it measures — the whole
+  # suite, a real window loading a real page and photographed, the
+  # Keychain store's round trip, the PKCS#11 layer against SoftHSM, and
+  # the application bundle. What it cannot measure is in F13 §4: a person
+  # clicking Approve, a card, and Gatekeeper meeting an unsigned program.
+  # Pinned for D-442's reason: the label is what the job checks against.
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # p11-kit for its pkcs11.h only (the code links nothing of it on
+      # macOS); SoftHSM and OpenSC for a real module to test against.
+      - name: SoftHSM, OpenSC and p11-kit's header, and a token with one key and its certificate
+        run: |
+          set -eu
+          brew install p11-kit softhsm opensc
+          module=$(build/macos/ci-softhsm.sh "$RUNNER_TEMP/softhsm" 648219)
+          echo "SOFTHSM2_CONF=$RUNNER_TEMP/softhsm/softhsm2.conf" >> "$GITHUB_ENV"
+          echo "LIRO_SOFTHSM_MODULE=$module" >> "$GITHUB_ENV"
+          echo "LIRO_SOFTHSM_PIN=648219" >> "$GITHUB_ENV"
+
+      - name: go vet (cgo, darwin)
+        run: go vet -unsafeptr=false ./...
+
+      - name: test (real WKWebView windows, the Keychain, SoftHSM)
+        run: |
+          mkdir -p "$RUNNER_TEMP/screenshots"
+          LIRO_SCREENSHOT_DIR="$RUNNER_TEMP/screenshots" go test -tags softtoken ./... -count=1
+
+      # The same tests the suite ran, again with -v, so that the log says
+      # they ran rather than skipped: a skip and a pass both read "ok".
+      - name: "said, not inferred: the window, the Keychain and SoftHSM (-v)"
+        run: |
+          go test ./internal/ui -run 'TestAMacWindow' -count=1 -v
+          go test ./internal/platform -run 'TestTheKeychainStoreRoundTrips|TestTheLaunchAgent' -count=1 -v
+          go test ./internal/keysource/pkcs11 -run 'TestTheLinuxLayerReachesARealToken|TestAWrongPINIsOneAttemptAndNothingRetries|TestTheLayoutIsTheCompilers|TestTheSlotSurveyReadsARealModulesFlags|TestDyldsWordsAreReadIntoTheKinds' -count=1 -v
+
+      - name: the application bundle
+        run: |
+          set -eu
+          build/macos/build.sh 0.0.0-ci dist/macos
+          app="dist/macos/Liro Bridge.app"
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$app/Contents/Info.plist")" = liro-bridge
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$app/Contents/Info.plist")" = true
+          lipo -archs "$app/Contents/MacOS/liro-bridge" | tee /dev/stderr | grep -q arm64
+          lipo -archs "$app/Contents/MacOS/liro-bridge" | grep -q x86_64
+          "$app/Contents/MacOS/liro-bridge" --version
+          # Nothing from Homebrew: a bundle that loads a library from
+          # /opt/homebrew runs on this runner and on no other Mac.
+          otool -L "$app/Contents/MacOS/liro-bridge" | tee /dev/stderr | { ! grep -E '/opt/homebrew|/usr/local'; }
+
+      - name: what a person would see, and the bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liro-macos
+          path: |
+            ${{ runner.temp }}/screenshots
+            dist/macos/*.zip
+          if-no-files-found: warn
+          retention-days: 14
 
   # The TypeScript SDK. Its own job rather than steps on the ubuntu one,
   # because it needs Node rather than Go and because a red SDK should

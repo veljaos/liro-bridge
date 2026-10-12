@@ -128,7 +128,8 @@ func TestWhetherADropWouldReachThisWindow(t *testing.T) {
 //
 // The target is read from outside with GetPropW rather than from
 // w.dropTargets, which belongs to the UI thread and would be a data
-// race under -race, which is where this suite actually runs.
+// race under -race. (CI's Windows job builds with CGO_ENABLED=0 and so
+// runs no race detector at all ([[D-457]]); the rule is kept anyway.)
 func TestAWindowThatAppearsAfterTheSnapshotStillGetsADropTarget(t *testing.T) {
 	w, err := NewWindow(Options{
 		Title:          "liro-bridge drop watch test",

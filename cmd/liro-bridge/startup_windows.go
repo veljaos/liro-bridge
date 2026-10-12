@@ -40,6 +40,12 @@ func applyStartupRegistrations(cfg config.Config) {
 	if err := applyAutostart(cfg); err != nil {
 		slog.Warn("startup: could not apply the autostart setting", "error", err)
 	}
+	// F14 §1: the liro-bridge:// scheme, per user, pointing at the
+	// binary actually running — rewritten at every start for the reason
+	// the Explorer verb is.
+	if err := platform.NewURLScheme().Register(exePath()); err != nil {
+		slog.Warn("startup: could not register the liro-bridge:// link scheme", "error", err)
+	}
 	// Not a registration, and here because this is the one place both
 	// commands that mean "the agent is being used as an agent" already
 	// go through. What it collects is pictures of somebody's documents

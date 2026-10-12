@@ -122,7 +122,42 @@ func (l *windowsDirLock) openMutex() {
 // attached — CreateMutexW returns one to every caller and uses the last
 // error only to say who created it, which is not a question this lock
 // asks.
+//
+// One handle per name for the whole process, kept for its life. Each
+// lock object used to open its own and never close it, and the agent
+// makes a lock per audit record — so one kernel handle per record,
+// never given back (C21 row 2, [[D-453]], [[D-457]]). Closing the
+// handle at Unlock instead would bound the count and narrow the
+// signal: the object lives only while some handle to it is open, and a
+// writer that dies holding it is reported to a later Lock only if
+// somebody kept a handle across the death. Keeping one per process
+// keeps exactly the reach the leak happened to give — any process that
+// has written to this directory keeps the object, and so the news of an
+// abandoned writer, alive — on purpose and at a fixed cost.
+//
+// Sharing the handle between lock objects changes nothing about who
+// owns the mutex: ownership is a thread's, of the object, not of a
+// handle, and Lock pins each holder to its thread.
+var (
+	processMutexesMu sync.Mutex
+	processMutexes   = map[string]windows.Handle{}
+)
+
 func createMutex(name string) (windows.Handle, error) {
+	processMutexesMu.Lock()
+	defer processMutexesMu.Unlock()
+	if h, ok := processMutexes[name]; ok {
+		return h, nil
+	}
+	h, err := openNamedMutex(name)
+	if err != nil {
+		return 0, err
+	}
+	processMutexes[name] = h
+	return h, nil
+}
+
+func openNamedMutex(name string) (windows.Handle, error) {
 	p, err := windows.UTF16PtrFromString(name)
 	if err != nil {
 		return 0, err

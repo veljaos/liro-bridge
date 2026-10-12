@@ -151,9 +151,17 @@ func fileExists(path string) bool {
 // caller's job and the thumbprint is what makes it possible (F11 §4).
 func Sources(configured string, stderr func(modulePath string) io.Writer) ([]Source, []Failure) {
 	usable, failures := Modules(configured, stderr)
+	return sourcesFor(usable), failures
+}
+
+// sourcesFor is Sources' own rule, apart from the discovery it follows,
+// so that the rule can be checked against one discovery's answer rather
+// than against a second discovery that may not agree with the first
+// (D45, [[D-458]]).
+func sourcesFor(usable []Candidate) []Source {
 	out := make([]Source, 0, len(usable))
 	for _, c := range usable {
 		out = append(out, NewSource(c.Path))
 	}
-	return out, failures
+	return out
 }

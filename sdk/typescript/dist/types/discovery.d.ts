@@ -19,9 +19,24 @@ export interface BridgeInfo {
     readonly agentVersion: string;
     /** The protocol version it speaks. `2` for everything this SDK does. */
     readonly protocolVersion: number;
+    /** Every version it speaks, when it says; empty from an agent older than the field. */
+    readonly protocolVersions: readonly number[];
 }
-/** The protocol version this SDK is written against. */
+/** The newest protocol version this SDK is written against. */
 export declare const PROTOCOL_VERSION = 2;
+/**
+ * Every protocol version this SDK speaks, ascending. It picks the
+ * highest one the agent also speaks (`PROTOCOL.md` §4.1, F14 §8) and
+ * refuses an agent only when the two lists share nothing.
+ */
+export declare const PROTOCOL_VERSIONS: readonly number[];
+/**
+ * The version both sides speak, or `null` when they share none. An
+ * agent older than the list advertises only `protocolVersion`, read as
+ * a list of one; one that advertises neither is read as version 2,
+ * which is every agent before the field existed.
+ */
+export declare function negotiateProtocol(agentVersions: readonly number[], ours?: readonly number[]): number | null;
 /**
  * The per-user discovery file for the current platform.
  *
@@ -40,5 +55,7 @@ export declare function defaultBridgeFilePath(): string;
  * Both are the same fact to a caller, and both are `AGENT_NOT_RUNNING`.
  */
 export declare function readBridgeFile(path: string): Promise<BridgeInfo>;
+/** A `protocolVersions` value as sent, keeping only whole numbers. */
+export declare function versionList(value: unknown): number[];
 /** `http://127.0.0.1:<port>` — loopback, always, with no way to ask for anything else. */
 export declare function baseUrlFor(port: number): string;

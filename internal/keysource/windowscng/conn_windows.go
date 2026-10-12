@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -139,8 +140,15 @@ func (realConn) findAndAcquire(thumbprintHex string) ([]byte, ncryptKeyHandle, b
 	if err != nil {
 		return nil, 0, false, err
 	}
-	defer cleanup()
-	defer func() { _ = windows.CertFreeCertificateContext(certCtx) }()
+	// The context and its store are given back on return unless the key
+	// handle turns out to be theirs (retain, below).
+	retain := false
+	defer func() {
+		if !retain {
+			_ = windows.CertFreeCertificateContext(certCtx)
+			cleanup()
+		}
+	}()
 
 	der := make([]byte, certCtx.Length)
 	copy(der, unsafe.Slice(certCtx.EncodedCert, certCtx.Length))
@@ -170,7 +178,50 @@ func (realConn) findAndAcquire(thumbprintHex string) ([]byte, ncryptKeyHandle, b
 			map[string]any{"keySpec": fmt.Sprintf("0x%08X", keySpec)})
 	}
 
+	if !callerFree {
+		// fCallerFree FALSE says the handle belongs to the certificate
+		// context — cached on it (CERT_KEY_CONTEXT_PROP_ID) and freed
+		// when the context is freed — and the documentation says to keep
+		// the context for as long as the key is in use. Freeing it here,
+		// on return, as this function did on every path, would hand the
+		// session a handle already freed. With only
+		// CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, and neither
+		// CRYPT_ACQUIRE_CACHE_FLAG nor CRYPT_ACQUIRE_USE_PROV_INFO_FLAG,
+		// it is documented not to happen; it is kept until the session
+		// closes rather than trusted never to (C21, [[D-457]]). Never
+		// run: it needs a provider that answers FALSE.
+		retain = true
+		retainContext(ncryptKeyHandle(hKey), func() {
+			_ = windows.CertFreeCertificateContext(certCtx)
+			cleanup()
+		})
+	}
+
 	return der, ncryptKeyHandle(hKey), callerFree, nil
+}
+
+// retained holds, per key handle, the release of a certificate context
+// that owns that handle (findAndAcquire, fCallerFree FALSE).
+var (
+	retainedMu sync.Mutex
+	retained   = map[ncryptKeyHandle]func(){}
+)
+
+func retainContext(key ncryptKeyHandle, release func()) {
+	retainedMu.Lock()
+	retained[key] = release
+	retainedMu.Unlock()
+}
+
+// releaseRetained implements ncryptConn.releaseRetained.
+func (realConn) releaseRetained(key ncryptKeyHandle) {
+	retainedMu.Lock()
+	release := retained[key]
+	delete(retained, key)
+	retainedMu.Unlock()
+	if release != nil {
+		release()
+	}
 }
 
 // probePresence implements ncryptConn.probePresence (Task 2 / SPEC

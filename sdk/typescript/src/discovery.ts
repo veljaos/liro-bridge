@@ -25,10 +25,35 @@ export interface BridgeInfo {
   readonly agentVersion: string;
   /** The protocol version it speaks. `2` for everything this SDK does. */
   readonly protocolVersion: number;
+  /** Every version it speaks, when it says; empty from an agent older than the field. */
+  readonly protocolVersions: readonly number[];
 }
 
-/** The protocol version this SDK is written against. */
+/** The newest protocol version this SDK is written against. */
 export const PROTOCOL_VERSION = 2;
+
+/**
+ * Every protocol version this SDK speaks, ascending. It picks the
+ * highest one the agent also speaks (`PROTOCOL.md` §4.1, F14 §8) and
+ * refuses an agent only when the two lists share nothing.
+ */
+export const PROTOCOL_VERSIONS: readonly number[] = [2];
+
+/**
+ * The version both sides speak, or `null` when they share none. An
+ * agent older than the list advertises only `protocolVersion`, read as
+ * a list of one; one that advertises neither is read as version 2,
+ * which is every agent before the field existed.
+ */
+export function negotiateProtocol(agentVersions: readonly number[], ours: readonly number[] = PROTOCOL_VERSIONS): number | null {
+  let best: number | null = null;
+  for (const v of ours) {
+    if (agentVersions.includes(v) && (best === null || v > best)) {
+      best = v;
+    }
+  }
+  return best;
+}
 
 /**
  * The per-user discovery file for the current platform.
@@ -98,7 +123,16 @@ export async function readBridgeFile(path: string): Promise<BridgeInfo> {
     port: info.port,
     agentVersion: typeof info.agentVersion === 'string' ? info.agentVersion : '',
     protocolVersion: typeof info.protocolVersion === 'number' ? info.protocolVersion : 0,
+    protocolVersions: versionList((info as { protocolVersions?: unknown }).protocolVersions),
   };
+}
+
+/** A `protocolVersions` value as sent, keeping only whole numbers. */
+export function versionList(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((v): v is number => typeof v === 'number' && Number.isInteger(v));
 }
 
 /** `http://127.0.0.1:<port>` — loopback, always, with no way to ask for anything else. */

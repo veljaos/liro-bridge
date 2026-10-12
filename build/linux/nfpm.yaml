@@ -41,6 +41,13 @@ contents:
     dst: /usr/share/applications/liro-bridge-open-pdf.desktop
     file_info:
       mode: 0644
+  # F14 §1: the liro-bridge:// link. A desktop learns the scheme from
+  # this entry's MimeType through the distribution's own desktop
+  # database, as it learns the PDF entry's.
+  - src: build/linux/liro-bridge-open-link.desktop
+    dst: /usr/share/applications/liro-bridge-open-link.desktop
+    file_info:
+      mode: 0644
 
   - src: dist/linux/stage/icons/16x16/apps/liro-bridge.png
     dst: /usr/share/icons/hicolor/16x16/apps/liro-bridge.png

@@ -31,6 +31,7 @@ import (
 type settingsFormState struct {
 	Action                string `json:"action"`
 	RevokeAppID           string `json:"revokeAppId"`
+	RemoveOrigin          string `json:"removeOrigin"`
 	Locale                string `json:"locale"`
 	StartWithWindows      bool   `json:"startWithWindows"`
 	TSAURL                string `json:"tsaURL"`
@@ -203,6 +204,9 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		newCfg.DocumentSigningEnabled = state.DocumentSigning
 		newCfg.CertificateListingEnabled = state.CertificateListing
 		newCfg.SignatureLevel = state.SignatureLevel
+		// A level saved from here was chosen (D-476); only the best
+		// available, the empty value, was not.
+		newCfg.SignatureLevelChosen = state.SignatureLevel != ""
 		newCfg.UpdateCheckEnabled = state.CheckUpdatesDaily
 		if err := config.Save(config.DefaultPath(), newCfg); err != nil {
 			slog.Warn("settings: saving config failed", "error", err)
@@ -242,6 +246,19 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 			"pairings": jsPairings(c, listPairings(pairings)),
 		})
 		postWindowStatus(win, text, ui.IntentPositive)
+		return false
+	case "removeCloudOrigin":
+		// F14 §2: the server's next link asks again. A request of its
+		// already on screen is not touched — it was allowed when it came.
+		if err := cloudOrigins().Remove(state.RemoveOrigin); err != nil {
+			slog.Warn("settings: removing an allowed server failed", "error", err)
+			return false
+		}
+		slog.Info("settings: an allowed server was removed", "origin", state.RemoveOrigin)
+		_ = win.PostJSON(map[string]any{
+			"type":         "cloudOrigins",
+			"cloudOrigins": jsCloudOrigins(cloudOrigins()),
+		})
 		return false
 	case "stampSettings":
 		// F6 §6: the stamp window, reachable from Settings as well as
@@ -313,11 +330,8 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.start_with_windows":             c.T(startAtLoginKey(runtime.GOOS)),
 			"settings.tsa_label":                      c.T("settings.tsa_label"),
 			"settings.tsa_custom_url_placeholder":     c.T("settings.tsa_custom_url_placeholder"),
-			"settings.tsa_preset_freetsa":             c.T("settings.tsa_preset_freetsa"),
-			"settings.tsa_preset_freetsa_warning":     c.T("settings.tsa_preset_freetsa_warning"),
-			"settings.tsa_preset_rsgov":               c.T("settings.tsa_preset_rsgov"),
-			"settings.tsa_preset_rsgov_note":          c.T("settings.tsa_preset_rsgov_note"),
 			"settings.tsa_url_label":                  c.T("settings.tsa_url_label"),
+			"settings.tsa_url_hint":                   c.T("settings.tsa_url_hint"),
 			"settings.export_choose_folder":           c.T("settings.export_choose_folder"),
 			"settings.tsa_user_label":                 c.T("settings.tsa_user_label"),
 			"settings.tsa_password_label":             c.T("settings.tsa_password_label"),
@@ -337,6 +351,7 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.level_bb":                       c.T("settings.level_bb"),
 			"settings.level_bt":                       c.T("settings.level_bt"),
 			"settings.level_blt":                      c.T("settings.level_blt"),
+			"settings.level_best":                     c.T("settings.level_best"),
 			"settings.export_audit_log":               c.T("settings.export_audit_log"),
 			"settings.check_updates_now":              c.T("settings.check_updates_now"),
 			"settings.check_updates_daily":            c.T("settings.check_updates_daily"),
@@ -348,9 +363,11 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"settings.pairings_empty":                 c.T("settings.pairings_empty"),
 			"settings.pairings_revoke":                c.T("settings.pairings_revoke"),
 			"settings.secret_store_label":             c.T("settings.secret_store_label"),
+			"settings.cloud_origins_title":            c.T("settings.cloud_origins_title"),
+			"settings.cloud_origins_empty":            c.T("settings.cloud_origins_empty"),
+			"settings.cloud_origins_remove":           c.T("settings.cloud_origins_remove"),
 		},
 		"model": map[string]any{
-			"tsaPresets":            tsaPresets(),
 			"locale":                cfg.Locale,
 			"startWithWindows":      cfg.StartWithWindows,
 			"tsaURL":                cfg.TSAURL,
@@ -370,42 +387,8 @@ func buildSettingsInit(c *i18n.Catalogue, cfg config.Config, pairings []api.Pair
 			"secretStoreText":       secretStoreSentence(c, secrets),
 			"secretStoreFallback":   secrets.Mechanism == "" || secrets.Fallback,
 			"pairings":              jsPairings(c, pairings),
+			"cloudOrigins":          jsCloudOrigins(cloudOrigins()),
 		},
-	}
-}
-
-// tsaPresetFreeTSA and tsaPresetRSGOV are Task 1c's two named timestamp
-// authorities. Neither is a default: config.Default's TSAURL is empty
-// and stays empty, and neither radio is preselected — these are
-// shortcuts for filling in the URL field, not a policy about which
-// authority to use (Task 1a).
-//
-// freetsa.org's endpoint was verified directly: one RFC 3161 request
-// over SHA-256 returned HTTP 200, Content-Type
-// application/timestamp-reply, PKIStatus granted.
-//
-// tsa.gov.rs is the RS-GOV TSA of the Office for Information
-// Technologies and eGovernment — the authority that timestamped the
-// real MUP-signed document in testdata/pdfs/local/mup.pdf (signer
-// certificate CN "RS-GOV TSA-3 200103828", TSTInfo policy
-// 1.3.6.1.4.1.55016.1.1.0, exactly SPEC §12.7's OID). The address is
-// the one its operator publishes on the eUprava service page for the
-// service; probing it is recorded in docs/decisions.md, including that
-// it is contract-gated and was returning a maintenance page when
-// probed.
-const (
-	tsaPresetFreeTSA = "https://freetsa.org/tsr"
-	tsaPresetRSGOV   = "https://tsa.gov.rs/"
-)
-
-// tsaPresets is what the settings page renders as its two preset rows.
-// The URL travels to the page so the page never has to know one, and
-// so a preset row and the free-text field can never disagree about
-// what a preset means.
-func tsaPresets() []map[string]string {
-	return []map[string]string{
-		{"id": "freetsa", "url": tsaPresetFreeTSA},
-		{"id": "rsgov", "url": tsaPresetRSGOV},
 	}
 }
 
@@ -435,6 +418,8 @@ func secretStoreSentence(c *i18n.Catalogue, d platform.SecretStoreDescription) s
 		return c.T("settings.secret_store_keyring")
 	case platform.MechanismDPAPI:
 		return c.T("settings.secret_store_dpapi")
+	case platform.MechanismKeychain:
+		return c.T("settings.secret_store_keychain")
 	case platform.MechanismEncryptedFile:
 		if d.Reason != "" {
 			return c.T("settings.secret_store_file") + ": " + d.Reason

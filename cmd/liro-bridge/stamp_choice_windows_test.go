@@ -218,17 +218,18 @@ func TestInteractiveLevelMapsConfiguredLevels(t *testing.T) {
 	}
 }
 
-// TestSettingsOffersThreeLevelsWithBBFirst is Task 3 in the window: the
+// TestSettingsOffersFourLevelsWithBBFirst is Task 3 in the window: the
 // user who does not want a timestamp has something to choose, and it
-// is the first option.
-func TestSettingsOffersThreeLevelsWithBBFirst(t *testing.T) {
+// is the first option. Since D-476 the best available is the fourth,
+// and the default.
+func TestSettingsOffersFourLevelsWithBBFirst(t *testing.T) {
 	c := i18n.Load("sr-Latn")
 	cfg := populatedSettings() // SignatureLevel "b-b"
 	win, _ := sharedSettingsWindow(t, c, cfg)
 
 	values := evalString(t, win,
 		"Array.prototype.map.call(document.querySelectorAll('input[name=level]'),function(r){return r.value}).join(',')")
-	if want := "b-b,b-t,b-lt"; values != want {
+	if want := "b-b,b-t,b-lt,"; values != want {
 		t.Errorf("level radios = %q, want %q (B-B first)", values, want)
 	}
 	if got := evalString(t, win, "document.querySelector('input[name=level]:checked').value"); got != "b-b" {
@@ -242,6 +243,18 @@ func TestSettingsOffersThreeLevelsWithBBFirst(t *testing.T) {
 	state := collectSettingsState(t, win)
 	if state.SignatureLevel != "b-b" {
 		t.Errorf("__liroCollectState reported level %q, want b-b", state.SignatureLevel)
+	}
+
+	// The default checks the best available, and saves it back empty,
+	// not as a level (D-476).
+	best := populatedSettings()
+	best.SignatureLevel = ""
+	win, _ = sharedSettingsWindow(t, c, best)
+	if got := evalString(t, win, "document.querySelector('input[name=level]:checked').id"); got != "level-best" {
+		t.Errorf("with the best available configured, the checked radio is %q", got)
+	}
+	if state := collectSettingsState(t, win); state.SignatureLevel != "" {
+		t.Errorf("the best available was collected as %q, want empty", state.SignatureLevel)
 	}
 }
 

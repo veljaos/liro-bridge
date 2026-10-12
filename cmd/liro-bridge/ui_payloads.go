@@ -147,6 +147,10 @@ type jsAsk struct {
 	State string `json:"state"`
 
 	TSAReasonText string `json:"tsaReasonText"`
+	// OfferWithoutTimestamp is whether the timestamp question offers
+	// "Sign without a timestamp" at all (C26, D-469): not after an
+	// authority has failed, and not when a caller named the level.
+	OfferWithoutTimestamp bool `json:"offerWithoutTimestamp"`
 
 	// Task 4: the existing file's path, and the label of the button
 	// that saves under a different name — which names the name it would
@@ -172,17 +176,25 @@ type jsAsk struct {
 // achievedLevelIntent is the intent family that colours the level a
 // batch actually reached (Task 1, F5 second-real-run review). B-B — a
 // signature with no timestamp, and so no proof of when it was made — is
-// the warning family; B-T and B-LT are positive.
+// the warning family; so is any level below the one the batch was set
+// to reach (C26, D-469): B-T where B-LT was set was shown in the
+// positive colour, as if it were what had been asked for. B-T reached
+// where B-T was set, and B-LT, are positive.
 //
 // The level is always stated, never inferred from its absence: SPEC
 // §18.11 forbids claiming a level that was not reached, and stating
 // nothing at all is how a previous build managed to be silent about a
 // downgrade it had already performed.
-func achievedLevelIntent(level string) string {
+func achievedLevelIntent(level, requested string) string {
 	switch pades.Level(level) {
 	case pades.LevelBB:
 		return string(ui.IntentWarning)
-	case pades.LevelBT, pades.LevelBLT:
+	case pades.LevelBT:
+		if pades.Level(requested) == pades.LevelBLT {
+			return string(ui.IntentWarning)
+		}
+		return string(ui.IntentPositive)
+	case pades.LevelBLT:
 		return string(ui.IntentPositive)
 	default:
 		return ""
@@ -194,11 +206,18 @@ func achievedLevelIntent(level string) string {
 // knows the profile and a two-letter code to everyone else; what it
 // means — a valid signature with no proof of when it was made — is what
 // belongs on the screen.
-func achievedLevelNote(c *i18n.Catalogue, level string) string {
-	if pades.Level(level) != pades.LevelBB {
+func achievedLevelNote(c *i18n.Catalogue, level, requested string) string {
+	switch {
+	case pades.Level(level) == pades.LevelBB:
+		return c.T("consent.level_bb")
+	case pades.Level(level) == pades.LevelBT && pades.Level(requested) == pades.LevelBLT:
+		// The shortfall people meet today: every Serbian card stops at
+		// B-T (D-466), and the report said so in the positive colour
+		// with nothing beside it (C26).
+		return c.T("consent.level_blt_short")
+	default:
 		return ""
 	}
-	return c.T("consent.level_bb")
 }
 
 // askTSAChoicePayload puts the window into SPEC §12.8's choice (Task
@@ -209,15 +228,37 @@ func achievedLevelNote(c *i18n.Catalogue, level string) string {
 // The three "ask" payloads all render on the page that carries the
 // progress and the report, because that is where the flow is by the
 // time they are asked — after the approval, before the card.
-func askTSAChoicePayload(reason consent.TSAReason, c *i18n.Catalogue) map[string]any {
+func askTSAChoicePayload(reason consent.TSAReason, c *i18n.Catalogue, offerWithoutTimestamp bool) map[string]any {
 	key := "consent.tsa_reason_unreachable"
 	if reason == consent.TSAReasonNotConfigured {
 		key = "consent.tsa_reason_not_configured"
 	}
 	return map[string]any{"type": "ask", "ask": jsAsk{
-		State:         string(consent.StateTSAChoice),
-		TSAReasonText: c.T(key),
+		State:                 string(consent.StateTSAChoice),
+		TSAReasonText:         c.T(key),
+		OfferWithoutTimestamp: offerWithoutTimestamp,
 	}}
+}
+
+// offersWithoutTimestamp is when the timestamp question may offer
+// "Sign without a timestamp" (C26, D-469, the owner's ruling: refuse
+// wherever someone asked for a specific level). Never after an
+// authority that was configured has failed — then the choice is to fix
+// it or stop, not to take less. Never when a level was asked for: named
+// by a calling program, or, since D-476, chosen in Settings. Only before
+// a batch, with no authority configured at all, at the best available.
+func offersWithoutTimestamp(reason consent.TSAReason, levelRequested bool) bool {
+	return reason == consent.TSAReasonNotConfigured && !levelRequested
+}
+
+// acceptedTSAChoice is the page's recorded answer, or "" for one the
+// question did not offer: a page that sent "withoutTimestamp" where it
+// was not on screen is not a decision.
+func acceptedTSAChoice(choice string, offeredWithoutTimestamp bool) string {
+	if choice == "withoutTimestamp" && !offeredWithoutTimestamp {
+		return ""
+	}
+	return choice
 }
 
 // askOutputExistsPayload puts the window into Task 4's choice:

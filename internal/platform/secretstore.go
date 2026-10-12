@@ -64,6 +64,10 @@ const (
 	// MechanismEncryptedFile is §6.4's Linux fallback: an encrypted
 	// file with a key derived from machine-id and user.
 	MechanismEncryptedFile SecretStoreMechanism = "encrypted-file"
+
+	// MechanismKeychain is §6.4's macOS row: the person's login
+	// Keychain (F13, [[D-463]]).
+	MechanismKeychain SecretStoreMechanism = "keychain"
 )
 
 // SecretStoreDescription is what a store answers about itself.

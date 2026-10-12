@@ -24,6 +24,7 @@ type fakeConn struct {
 	signFunc func(digest []byte) ([]byte, error)
 	freed    []ncryptKeyHandle
 	freeErr  error
+	released []ncryptKeyHandle
 
 	presencePresent bool
 	presenceErr     error
@@ -51,6 +52,10 @@ func (f *fakeConn) signHash(_ ncryptKeyHandle, digest []byte) ([]byte, error) {
 func (f *fakeConn) freeKey(key ncryptKeyHandle) error {
 	f.freed = append(f.freed, key)
 	return f.freeErr
+}
+
+func (f *fakeConn) releaseRetained(key ncryptKeyHandle) {
+	f.released = append(f.released, key)
 }
 
 func (f *fakeConn) probePresence(string) (bool, error) {
@@ -193,8 +198,9 @@ func TestCloseHonoursCallerFreeTrue(t *testing.T) {
 }
 
 // TestCloseHonoursCallerFreeFalse is the failing test for F2 §2.1: a
-// cached handle (fCallerFree == false) must never be freed, or it
-// corrupts the handle cache for every other process using the same key.
+// handle acquired with fCallerFree == false must never be freed with
+// NCryptFreeObject — it is the certificate context's — and the context
+// that owns it is given back at Close instead.
 func TestCloseHonoursCallerFreeFalse(t *testing.T) {
 	conn := &fakeConn{der: []byte("cert"), key: 42, callerFree: false}
 	sess, err := openSession(conn, "ABC", 0)
@@ -205,7 +211,12 @@ func TestCloseHonoursCallerFreeFalse(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 	if len(conn.freed) != 0 {
-		t.Fatalf("freed = %v, want none — fCallerFree was false, freeing corrupts Windows's cache", conn.freed)
+		t.Fatalf("freed = %v, want none — fCallerFree was false, the handle is the certificate context's", conn.freed)
+	}
+	// The handle is the certificate context's, and that context is kept
+	// until here; Close is what gives it back ([[D-457]]).
+	if len(conn.released) != 1 || conn.released[0] != 42 {
+		t.Fatalf("released = %v, want [42]: the context that owns the handle was never given back", conn.released)
 	}
 }
 

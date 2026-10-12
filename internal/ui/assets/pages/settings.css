@@ -44,32 +44,6 @@ fieldset {
   margin-top: var(--liro-space-2);
 }
 
-/* Task 1c (F5 second-real-run review): a timestamp-authority preset is
-   a radio, its name, and — for freetsa.org — the one warning it must
-   carry. The row wraps rather than pushing the fieldset wider. */
-.tsa-preset {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--liro-space-2);
-}
-
-.tsa-preset > span {
-  display: flex;
-  flex-direction: column;
-  gap: var(--liro-space-1);
-  align-items: flex-start;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.tsa-preset-name {
-  font-weight: var(--liro-font-weight-semibold);
-}
-
-.tsa-preset-note {
-  color: var(--liro-color-text-tertiary);
-}
-
 /* Task 3: the one line that says what Export audit log / Check for
    updates actually did. */
 #action-status {
