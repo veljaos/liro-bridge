@@ -1218,6 +1218,14 @@ jobs:
           mkdir -p "$RUNNER_TEMP/screenshots"
           LIRO_SCREENSHOT_DIR="$RUNNER_TEMP/screenshots" go test -tags softtoken ./... -count=1
 
+      # The same tests the suite ran, again with -v, so that the log says
+      # they ran rather than skipped: a skip and a pass both read "ok".
+      - name: "said, not inferred: the window, the Keychain and SoftHSM (-v)"
+        run: |
+          go test ./internal/ui -run 'TestAMacWindow' -count=1 -v
+          go test ./internal/platform -run 'TestTheKeychainStoreRoundTrips|TestTheLaunchAgent' -count=1 -v
+          go test ./internal/keysource/pkcs11 -run 'TestTheLinuxLayerReachesARealToken|TestAWrongPINIsOneAttemptAndNothingRetries|TestTheLayoutIsTheCompilers|TestTheSlotSurveyReadsARealModulesFlags|TestDyldsWordsAreReadIntoTheKinds' -count=1 -v
+
       - name: the application bundle
         run: |
           set -eu
