@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/veljaos/liro-bridge/internal/keysource"
+	"github.com/veljaos/liro-bridge/internal/logcheck"
 	"github.com/veljaos/liro-bridge/internal/pades"
 )
 
@@ -80,9 +81,11 @@ func TestTheWindowLogsTheSignersNotes(t *testing.T) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(77),
-		Subject:      pkix.Name{CommonName: "notes test signer"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
+		// A person's subject, so the scan below has something to find
+		// if the window ever logs it (D-482).
+		Subject:   pkix.Name{Country: []string{"RS"}, CommonName: "Петар Петровић", SerialNumber: "PNORS-0101990710006"},
+		NotBefore: time.Now().Add(-time.Hour),
+		NotAfter:  time.Now().Add(time.Hour),
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
@@ -110,6 +113,9 @@ func TestTheWindowLogsTheSignersNotes(t *testing.T) {
 		t.Fatalf("achieved %s with %d notes; the test needs a B-B with a note to read", result.AchievedLevel, len(result.Notes))
 	}
 	got := logBuf.String()
+	for _, found := range logcheck.Find(got, cert.Subject.String(), cert.Subject.CommonName, cert.Subject.SerialNumber) {
+		t.Errorf("the window's log carries %s", found)
+	}
 	for _, want := range []string{"the signer's notes on this signature", "path=window", "requested=B-T", "achieved=B-B", "no timestamp (saved at B-B)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the log does not say %q; it says:\n%s", want, got)

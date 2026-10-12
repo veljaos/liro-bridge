@@ -1,5 +1,7 @@
 # F12 — session 33 (cloud): C21 finished, D39 and D23 read to their causes, D45 inferred only, D6, the cloud channel, B-LT after DSS, F13 written blind
 
+> **Superseded at the session's end by `docs/handover-session-33.md`**: what is done, what has never run, and the worklist with card rows first. Read that first.
+
 **What this is:** the handover after a session run in Anthropic's cloud on a Linux container — **no Windows, no macOS, no card, no reader, no screen** — asked to work through six tasks without asking anything, record every decision, and bring back the whole thing. **Written:** 2026-10-12. Branch `claude/wizardly-clarke-rmvkdt`, not merged; the owner opened PR veljaos/liro-bridge#1 from it. Entries **D-457 to D-472**; predictions in `docs/s33-predictions.md`, each block committed before the run it predicts.
 
 **Read first:** D-457 … D-472, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C25, D4, D6, D23, D39, D44–D48, B32–B33).

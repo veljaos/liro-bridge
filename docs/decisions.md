@@ -48145,3 +48145,27 @@ The first person to see it would have been someone reading a log: most likely th
 - In (a), the row can be read without a production authority.
 - In (b), it cannot: only its card half can, and the row stays open until a timestamp authority whose chain the list anchors is available. The list also names qualified timestamp units of other providers; I do not know their terms.
 - **Which case it is, is one B-T signature away.**
+
+## D-482 — the owner's three answers: the old artifacts (not deleted: no tool here can), a check that reads the log for personal data, and the test authority's issuer read from a real signature
+
+**1. "Delete the artifacts. All thirteen heads' worth."** **Not done, because I cannot.** The GitHub tools in this session can list runs and artifacts, and delete a run's logs, but not delete an artifact, and the session has no `gh`. I did not look for another way round. The runs, all on this branch, whose builds carry D-480's line:
+- **push runs (13):** 38186918219 (`55a582e`), 38187564063 (`e131e3f`), 38187726349 (`3f8b65d`), 38187982282 (`ac20812`), 38188278943 (`38bbcfa`), 38189507427 (`a5a8e45`), 38190929428 (`edbbcb2`), 38225585797 (`feed7e8`), 38233120579 (`1abc206`), 38242378820 (`b5b3151`), 38243584334 (`584e019`), 38246379093 (`b550e53`), 38248820871 (`aaa1c01`);
+- **PR runs (7):** 38222413736 (`edbbcb2`), 38225591952 (`feed7e8`), 38233125458 (`1abc206`), 38242385215 (`b5b3151`), 38243591029 (`584e019`), 38246385773 (`b550e53`), 38248827713 (`aaa1c01`). The PR was opened after `a5a8e45`.
+
+Deleting them takes one command where `gh` is signed in, given in the handover.
+
+**2. "Build the check."** `internal/logcheck.Find` reads text for personal data in the audit log's shape, and two tests use it:
+- **What it finds:** a run of 13 or more digits that is not part of a hex token (a JMBG; a thumbprint is not flagged for the digits inside it), `SERIALNUMBER=` or `2.5.4.5=` (a written-out subject's serial-number attribute), and any known value the test passes.
+- **`TestTheLogCarriesNoPersonalData`** (`internal/pades`) runs every path in `SignDocument` that touches a certificate, with a signer whose subject is a person's (a made-up Cyrillic name and JMBG), through the agent's real logger into a real `bridge.log`. The paths: B-LT reached, signer revoked, authority revoked, no evidence, no issuer. It then reads the log, every note and every error, with every certificate's subject and name as known values. It fails if any path did not say what it should, so it cannot pass by reading nothing.
+- **`TestTheWindowLogsTheSignersNotes`** (`cmd`) now gives its signer a person's subject and scans what the window logs.
+- **Measured (P16):** with D-480's three lines put back, the pades test is red on exactly the three paths predicted: the name and JMBG in `bridge.log`, the signer's name in the error, the authority's name in the note. It is green with them out. The window scan has no red: the window never logged a subject, so it guards the future and measures nothing yet. `logcheck`'s own tests pass a thumbprint with 37 digits inside it and catch `PNORS-0101990710006`.
+
+**What it misses, as the owner asked:**
+- **Any path it does not drive.** It reads text, not code. The protocol path's and the window's own log lines beyond the notes, the cloud channel, PKCS#11 and the API are not driven.
+- **A name that is not one of the known values.** A person's name in some other certificate's place would pass.
+- **A JMBG glued to a letter a–f, or split** by spaces or dashes.
+- **Email addresses, file names and document contents**, which §18.3 also forbids.
+
+A static rule over every log call would cover the first miss for subjects written directly. It is not built.
+
+**3. The test authority.** As the owner chose: one B-T signature with the test server on the owner's machine, which is row 1.4, and the timestamp unit's certificate read out of that PDF. Its issuer decides whether row 1.1 needs the contract (D-481). The domain is not added to this environment.

@@ -129,13 +129,20 @@ func newTestCA(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
 // chainedSession.
 func newChainedSession(t *testing.T, ca *x509.Certificate, caKey *rsa.PrivateKey, ocspURLs, crlURLs []string) *chainedSession {
 	t.Helper()
+	return newChainedSessionFor(t, pkix.Name{CommonName: "pades.SignDocument test signer"}, ca, caKey, ocspURLs, crlURLs)
+}
+
+// newChainedSessionFor is newChainedSession for a signer with the given
+// subject: a person's, in the log privacy test (D-482).
+func newChainedSessionFor(t *testing.T, subject pkix.Name, ca *x509.Certificate, caKey *rsa.PrivateKey, ocspURLs, crlURLs []string) *chainedSession {
+	t.Helper()
 	leafKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(2),
-		Subject:               pkix.Name{CommonName: "pades.SignDocument test signer"},
+		Subject:               subject,
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageContentCommitment,

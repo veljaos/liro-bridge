@@ -297,3 +297,18 @@ The test drives `SignDocument` through the real logger (`config.SetupLogging`, a
 - **P16b, the control:** green on the reached B-LT and on the signer whose OCSP never answers. Neither ever logged a subject.
 - **P16c:** all five paths green after.
 - **P16d:** `logcheck`'s own tests: a thumbprint with digits in it is not flagged; `PNORS-0101990710006` is.
+
+## P16, read (container)
+
+- **P16a, as predicted:** red on exactly the three paths.
+  - **The signer with no issuer:** `bridge.log carries a run of 13 digits, the shape of a JMBG: 0101990710006`, the `SERIALNUMBER=` attribute, and the name `Петар Петровић`.
+  - **The revoked signer:** `CERT_REVOKED: … says "Петар Петровић" was revoked`.
+  - **The revoked authority:** `… says "pades.SignDocument test TSA" …`.
+- **P16b, as predicted:** the reached and no-evidence paths carried nothing.
+- **P16c, as predicted:** all five paths green with the fixes in place, and each path confirmed to have run.
+- **P16d, as predicted.**
+
+## P17 — the handover push, written before it
+
+- **P17a:** check.sh passes the ci job and linux-gui 4–6.
+- **P17b:** both runs green, all ten jobs. The new `internal/pades` test runs on all three OSes; it uses only local servers.
