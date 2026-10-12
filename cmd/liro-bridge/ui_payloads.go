@@ -244,11 +244,11 @@ func askTSAChoicePayload(reason consent.TSAReason, c *i18n.Catalogue, offerWitho
 // "Sign without a timestamp" (C26, D-469, the owner's ruling: refuse
 // wherever someone asked for a specific level). Never after an
 // authority that was configured has failed — then the choice is to fix
-// it or stop, not to take less. Never when a calling program named the
-// level it wants. Only before a batch, with no authority configured at
-// all, and the level the agent's own Settings hold.
-func offersWithoutTimestamp(reason consent.TSAReason, callerNamedLevel bool) bool {
-	return reason == consent.TSAReasonNotConfigured && !callerNamedLevel
+// it or stop, not to take less. Never when a level was asked for: named
+// by a calling program, or, since D-476, chosen in Settings. Only before
+// a batch, with no authority configured at all, at the best available.
+func offersWithoutTimestamp(reason consent.TSAReason, levelRequested bool) bool {
+	return reason == consent.TSAReasonNotConfigured && !levelRequested
 }
 
 // acceptedTSAChoice is the page's recorded answer, or "" for one the

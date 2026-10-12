@@ -294,6 +294,7 @@
   "settings.export_failed": "Dnevnik revizije nije mogao biti izvezen.",
   "settings.language_label": "Jezik",
   "settings.level_bb": "B-B (potpis bez vremenskog žiga)",
+  "settings.level_best": "Najbolji dostupan (B-LT gde izdavalac sertifikata to omogućava, inače B-T)",
   "settings.level_blt": "B-LT (potpis + vremenski žig + dokazi o opozivu)",
   "settings.level_bt": "B-T (potpis + vremenski žig)",
   "settings.output_folder_default": "Ostavite prazno da se čuva pored svakog dokumenta.",

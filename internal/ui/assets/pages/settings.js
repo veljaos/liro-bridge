@@ -133,13 +133,14 @@
       : "liro-text-small liro-text-secondary";
     renderPairings(m.pairings);
     renderCloudOrigins(m.cloudOrigins);
-    // Task 3 (F5 fourth-real-run review): three levels, B-B included.
-    // An unrecognised saved value falls back to the project's default
-    // rather than leaving every radio unchecked — Go validates the
-    // same way (config.validate), so this only ever fires for a value
-    // that was already replaced there.
-    var levelIDs = { "b-b": "level-bb", "b-t": "level-bt", "b-lt": "level-blt" };
-    document.getElementById(levelIDs[m.signatureLevel] || "level-blt").checked = true;
+    // Task 3 (F5 fourth-real-run review): B-B included; and since
+    // D-476 the best available, the empty value and the default. An
+    // unrecognised saved value falls back to it rather than leaving
+    // every radio unchecked — Go validates the same way
+    // (config.validate), so this only ever fires for a value that was
+    // already replaced there.
+    var levelIDs = { "": "level-best", "b-b": "level-bb", "b-t": "level-bt", "b-lt": "level-blt" };
+    document.getElementById(levelIDs[m.signatureLevel] || "level-best").checked = true;
   };
 
   // __liroCollectState is read back by Go via Window.Eval (never a
@@ -147,7 +148,7 @@
   // D-08x) after the page sends "approve" with a pendingAction set.
   window.__liroCollectState = function () {
     var checkedLevel = document.querySelector("input[name=level]:checked");
-    var level = checkedLevel ? checkedLevel.value : "b-lt";
+    var level = checkedLevel ? checkedLevel.value : "";
     return JSON.stringify({
       action: pendingAction,
       revokeAppId: pendingAppID,

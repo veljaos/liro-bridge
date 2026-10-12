@@ -48057,3 +48057,27 @@ Found writing it: **a default install reaches neither B-T nor B-LT on its own**,
 - **The protocol path's call has no test.** `signRemoteOne` needs a whole `mainWindow` with a remote request, and the call is the same line as the window's. It is read, not run.
 - **A B-LT shortfall's notes have not been seen through the agent.** Seeing them is row 1.1 itself.
 - **The artifact step** has not run until this push's CI does.
+
+## D-478 — decision C built (worklist 0.7): the default is the best available, a level chosen in Settings is a request, and a `b-lt` from before is read as the best available
+
+**What changed:**
+- **`config`.** `signatureLevel` defaults to `""`, the best available, and `""` is valid. A new field, `signatureLevelChosen`, marks a level as chosen. `Load` reads a `b-lt` without that mark as the best available, because it may have been the old default. It treats `b-t` and `b-b` as chosen, because neither was ever a default. After loading, any level that is set counts as chosen.
+- **The agent.** `levelIsARequest(cfg)` is true for any level that is set: one a calling program named (`protocolserver.go` puts it into the batch's configuration) or one chosen in Settings. It is decided once, when a batch starts, because configuring a timestamp authority mid-batch reloads the configuration from disk, which would lose a caller's level. It decides three things:
+  - whether a B-LT that falls short is kept at B-T or refused, on the window path and the protocol path alike;
+  - whether the timestamp question offers signing without a timestamp;
+  - whether the report has a level to measure the result against. The best available has none, so a B-T is shown as what it is, with no warning.
+- **Settings** has a fourth choice, *Najbolji dostupan* / the best available, last, so that B-B stays first (Task 3). It is checked by default, and a save marks any other level as chosen.
+- **The SPEC (§12.6), `PROTOCOL.md` and the guide** say so.
+
+**One consequence, said rather than left to be found.** A person who chose B-T in Settings and has no timestamp authority configured is no longer offered "sign without a timestamp". They are offered *Configure* or *Cancel*. That is the owner's rule (refuse wherever someone asked for a specific level) applied to a level chosen in Settings, which D-476 made a request. The offer remains at the best available. (`consent.level_blt_short`, the warning for "B-LT set, B-T reached", can no longer be reached from the window: a chosen B-LT is refused, and the best available sets no level. Nothing in the agent reaches it now. I left it in place, and its removal belongs with the SPEC-against-the-program reading (E10), not with C.)
+
+**Measured, in the container,** each red on the old behaviour before it was green (P11):
+- **The configuration** (`internal/config`): the default, and six saved files read back. On the old behaviour, with only the new field declared: the default came back `b-lt`, and five of six files read wrong. The one green row is the `b-lt` that carries its mark, which was only being read back. All as P11a and P11b predicted.
+- **The rule** (`TestALevelSomebodyChoseIsARequest`): red on the three chosen levels with a stand-in that answers as the old window did. Green after.
+- **The Settings page in WebKitGTK under Xvfb** (`TestSettingsShowsAndCollectsTheBestAvailable`): the old page checked B-LT for an empty level and handed back `b-lt`. The new one checks *the best available* and hands back `""`, and the other three levels round-trip. **This test was written after P11, so its red was not predicted in writing first.**
+- `internal/ui`'s two Linux layout tests that touch Settings still pass with the fourth row. Neither checks that the whole page fits. That is the Windows layout test's job, and it runs on CI only (P11e's wording overstated what the Linux tests check).
+
+**Not run:**
+- **The line in `mainwindow.go` that carries the rule into a batch** (`keepBTIfBLTFails: !m.levelRequested`), and the two calls that pass it to the timestamp question. They are read, not run. A batch needs a card session. Rows 1.2 and 1.3 measure the result with a MUP card.
+- The Windows Settings test, updated to four choices, runs on CI.
+- No person has seen the fourth choice.

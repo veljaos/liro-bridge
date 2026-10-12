@@ -221,8 +221,8 @@ func isTSAFailure(err error) bool {
 // client — so a user who fills in a URL there continues at the level
 // they asked for, and one who closes Settings without setting anything
 // is asked the same question again rather than silently continuing.
-func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue, cfg config.Config, locale string, reason consent.TSAReason, callerNamedLevel bool) (config.Config, *tsa.Client, bool, bool) {
-	offerBB := offersWithoutTimestamp(reason, callerNamedLevel)
+func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue, cfg config.Config, locale string, reason consent.TSAReason, levelRequested bool) (config.Config, *tsa.Client, bool, bool) {
+	offerBB := offersWithoutTimestamp(reason, levelRequested)
 	for {
 		_ = win.PostJSON(askTSAChoicePayload(reason, c, offerBB))
 
@@ -519,6 +519,12 @@ type interactiveSignOptions struct {
 	// silently (SPEC §18.11).
 	allowBB bool
 
+	// keepBTIfBLTFails is true only for the best available, the
+	// default: a level somebody chose or named is a request, refused
+	// with LEVEL_NOT_REACHED rather than saved weaker (levelIsARequest,
+	// D-476).
+	keepBTIfBLTFails bool
+
 	// stamp is Task 1's visible stamp, or nil for an invisible
 	// signature. Nil leaves SPEC §13.4's default path untouched, byte
 	// for byte.
@@ -558,12 +564,10 @@ func signInteractiveOne(ctx context.Context, inPath string, session keysource.Se
 	result, err := pades.SignDocument(ctx, pdfBytes, session, pades.Options{
 		RequestedLevel:       opts.level,
 		SaveWithoutTimestamp: opts.allowBB,
-		// The window signs at the level Settings holds — the agent's
-		// standing configuration, which config cannot tell from the
-		// default — so a B-LT that cannot gather its evidence is kept at
-		// B-T, and the report says it fell short (achievedLevelNote).
-		// A level a caller asked for is refused instead: protocolflow.go.
-		SaveAtBTIfBLTFails: true,
+		// Only the best available keeps B-T when B-LT's evidence is
+		// missing; a level chosen in Settings is refused instead
+		// (levelIsARequest, D-476).
+		SaveAtBTIfBLTFails: opts.keepBTIfBLTFails,
 		TSA:                opts.tsaClient,
 		TrustStore:         opts.trustStore,
 		Now:                time.Now(),

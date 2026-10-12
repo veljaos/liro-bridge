@@ -204,6 +204,9 @@ func handleSettingsAction(win ui.Window, c *i18n.Catalogue, cfg config.Config, p
 		newCfg.DocumentSigningEnabled = state.DocumentSigning
 		newCfg.CertificateListingEnabled = state.CertificateListing
 		newCfg.SignatureLevel = state.SignatureLevel
+		// A level saved from here was chosen (D-476); only the best
+		// available, the empty value, was not.
+		newCfg.SignatureLevelChosen = state.SignatureLevel != ""
 		newCfg.UpdateCheckEnabled = state.CheckUpdatesDaily
 		if err := config.Save(config.DefaultPath(), newCfg); err != nil {
 			slog.Warn("settings: saving config failed", "error", err)

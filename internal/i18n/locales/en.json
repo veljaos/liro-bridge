@@ -294,6 +294,7 @@
   "settings.export_failed": "The audit log could not be exported.",
   "settings.language_label": "Language",
   "settings.level_bb": "B-B (signature without a timestamp)",
+  "settings.level_best": "The best available (B-LT where the certificate's issuer allows it, otherwise B-T)",
   "settings.level_blt": "B-LT (signature + timestamp + revocation evidence)",
   "settings.level_bt": "B-T (signature + timestamp)",
   "settings.output_folder_default": "Leave empty to save beside each document.",

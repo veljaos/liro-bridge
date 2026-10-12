@@ -51,6 +51,7 @@ var settingsDataI18nKeys = []string{
 	"settings.level_bb",
 	"settings.level_bt",
 	"settings.level_blt",
+	"settings.level_best",
 	"settings.export_audit_log",
 	"settings.check_updates_daily",
 	"settings.check_updates_now",

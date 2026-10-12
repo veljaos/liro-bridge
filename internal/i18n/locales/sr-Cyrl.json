@@ -294,6 +294,7 @@
   "settings.export_failed": "Дневник ревизије није могао бити извезен.",
   "settings.language_label": "Језик",
   "settings.level_bb": "B-B (потпис без временског жига)",
+  "settings.level_best": "Најбољи доступан (B-LT где издавалац сертификата то омогућава, иначе B-T)",
   "settings.level_blt": "B-LT (потпис + временски жиг + докази о опозиву)",
   "settings.level_bt": "B-T (потпис + временски жиг)",
   "settings.output_folder_default": "Оставите празно да се чува поред сваког документа.",

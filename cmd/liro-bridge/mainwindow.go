@@ -144,8 +144,13 @@ type mainWindow struct {
 
 	// requestedLevel is the level this batch was set to reach, kept so
 	// the report can say when what was reached fell short of it (C26,
-	// D-469). Empty until a batch starts.
+	// D-469). Empty until a batch starts, and for the best available,
+	// which asked for no level (D-476).
 	requestedLevel pades.Level
+
+	// levelRequested is levelIsARequest for this batch, decided when it
+	// starts (D-476).
+	levelRequested bool
 
 	// signedAnything is true once the run has begun, which is what
 	// separates "the person did not approve" from "the batch happened
@@ -1115,6 +1120,7 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 	m.postPreparingCard()
 
 	level := interactiveLevel(m.cfg)
+	m.levelRequested = levelIsARequest(m.cfg)
 	var tsaClient *tsa.Client
 	allowBB := level == pades.LevelBB
 	if m.hashesOnly {
@@ -1132,7 +1138,7 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 		}
 		tsaClient = client
 		if tsaClient == nil {
-			cfg, next, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonNotConfigured, m.remote != nil && m.remote.req.Level != "")
+			cfg, next, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonNotConfigured, m.levelRequested)
 			if !proceed {
 				m.deny()
 				m.backToStart()
@@ -1208,6 +1214,11 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 	m.signedAnything = true
 
 	m.requestedLevel = level
+	if !m.levelRequested {
+		// The best available asked for no level, so the report has
+		// none to measure what it reached against (D-476).
+		m.requestedLevel = ""
+	}
 	m.runBatch(ctx, consentDecision{
 		approved:   true,
 		thumbprint: m.selected,
@@ -1315,6 +1326,8 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 				allowBB:    allowBB,
 				stamp:      stampOpts,
 
+				keepBTIfBLTFails: !m.levelRequested,
+
 				revocationMemory: revocationMemory,
 			}
 			if m.remote != nil {
@@ -1407,7 +1420,7 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 			// The timestamp authority stopped answering. The same three
 			// actions as before signing began, now about an authority
 			// that was actually tried.
-			cfg, client, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonUnreachable, m.remote != nil && m.remote.req.Level != "")
+			cfg, client, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonUnreachable, m.levelRequested)
 			m.cfg = cfg
 			reply <- tsaAnswer{client: client, allowBB: bb, proceed: proceed}
 			if proceed {

@@ -138,7 +138,9 @@
          who has decided against a timestamp has something to choose
          and is never asked again mid-signature. Each level says what
          it contains, in words, because "B-T" alone tells a
-         non-specialist nothing. -->
+         non-specialist nothing. The best available, the default, is
+         last: it is what is left when nobody picks a level, and B-B
+         stays first (D-476). -->
     <fieldset>
       <legend data-i18n="settings.signature_level_label"></legend>
       <label class="liro-check">
@@ -152,6 +154,10 @@
       <label class="liro-check">
         <input type="radio" name="level" value="b-lt" id="level-blt" />
         <span data-i18n="settings.level_blt"></span>
+      </label>
+      <label class="liro-check">
+        <input type="radio" name="level" value="" id="level-best" />
+        <span data-i18n="settings.level_best"></span>
       </label>
     </fieldset>
 

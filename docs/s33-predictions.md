@@ -218,3 +218,12 @@ All ten jobs green. Windows from its first test line: `internal/ui` and `cmd/lir
 - **P11c** (`TestALevelSomebodyChoseIsARequest`, control returning `false`): red on the three chosen levels, green on the default.
 - **P11d:** all three green after the change. The existing C26 tests are unchanged apart from the replaced protocol test.
 - **P11e:** `internal/ui`'s Linux layout test, under Xvfb here, still passes with the fourth radio: Settings scrolls inside `.settings-form`.
+
+## P11, read (container)
+
+- **P11a, as predicted:** `the default signatureLevel is "b-lt"`.
+- **P11b, as predicted:** five rows red (`b-lt` → kept, `b-t` and `b-b` not chosen, `""` and `{}` → `b-lt`); the `b-lt` row that carries its mark green.
+- **P11c, as predicted:** red on `b-lt`, `b-t` and `b-b` (`a request false, want true`); green on the default.
+- **P11d, as predicted:** all three green after the change. The full `cmd` suite passed in the container except `TestOnlyTheChooserHelperKeepsItsDumpableFlag`, which fails as root and passes as `runner`: root is never refused the ptrace the test needs refused.
+- **P11e held, but it predicted less than it seemed to.** The two Linux layout tests that touch Settings pass with the fourth row. Neither checks that the whole page fits, so the fit is still the Windows layout test's on CI.
+- **Not predicted:** `TestSettingsShowsAndCollectsTheBestAvailable`, written after P11, was red on the old page (`level-blt` checked, `b-lt` handed back) and green on the new one.

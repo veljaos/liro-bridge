@@ -517,9 +517,11 @@ memory: `REQUEST_INVALID` with `details.maxBytes`.
   (`b-lt` without its revocation evidence), and nothing weaker is handed
   back. The person is not offered a way to sign it lower either. Leaving
   `level` out means "whatever this agent is configured to produce", which
-  is the person's own standing answer to the same question; a `b-lt`
-  configured there that falls short comes back as B-T, and
-  `achievedLevel` says so.
+  is the person's own standing answer to the same question. By default
+  that is the best available: B-LT where the certificate's issuer allows
+  it, B-T where it does not, and `achievedLevel` says which. A level the
+  person **chose** in Settings is held to the same rule as one you name
+  (D-476).
 - `stamp` is your answer to how the signature should look: `visible` (a
   boolean, required if `stamp` is present at all) and `position`
   (`bottom-right`, `bottom-left`, `top-right`, `top-left`). Supplying it in

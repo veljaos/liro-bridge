@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/veljaos/liro-bridge/internal/api"
+	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/consent"
 	"github.com/veljaos/liro-bridge/internal/i18n"
 	"github.com/veljaos/liro-bridge/internal/pades"
@@ -42,7 +42,8 @@ func TestALevelBelowTheOneSetIsNeverShownAsPositive(t *testing.T) {
 
 // TestSigningWithoutATimestampIsOfferedOnlyWhenNobodyAskedForMore is the
 // other half of C26 (D-469): after a configured authority has failed,
-// and whenever a calling program named its level, the question offers
+// and whenever a level was asked for (a calling program's, or since D-476
+// one chosen in Settings), the question offers
 // fixing it or stopping — never taking less. And an answer the page
 // sent for a button it was not showing is not a decision.
 func TestSigningWithoutATimestampIsOfferedOnlyWhenNobodyAskedForMore(t *testing.T) {
@@ -72,15 +73,29 @@ func TestSigningWithoutATimestampIsOfferedOnlyWhenNobodyAskedForMore(t *testing.
 	}
 }
 
-// TestACallerThatNamedALevelIsRefusedBelowIt is the protocol's half of
-// C26 (D-469): only a request that named no level may come back below
-// B-LT; one that named B-LT gets LEVEL_NOT_REACHED from the library,
-// whose refusal internal/pades tests.
-func TestACallerThatNamedALevelIsRefusedBelowIt(t *testing.T) {
-	if keepsBTWhenBLTFallsShort(api.SignRequest{Level: "b-lt"}) {
-		t.Error("a caller that asked for b-lt would be handed B-T")
-	}
-	if !keepsBTWhenBLTFallsShort(api.SignRequest{}) {
-		t.Error("a caller that named no level would be refused where the window keeps B-T")
+// TestALevelSomebodyChoseIsARequest is C26 with D-476 (worklist 0.7):
+// a level a calling program named, or a person chose in Settings, is a
+// request, reached or refused with LEVEL_NOT_REACHED, and the timestamp
+// question does not offer less. Only the best available, the default,
+// keeps B-T where B-LT's evidence is missing, and may offer signing
+// without a timestamp when no authority is configured. The cfg here is
+// the batch's: protocolserver.go has already put a caller's named level
+// into it.
+func TestALevelSomebodyChoseIsARequest(t *testing.T) {
+	for _, tc := range []struct {
+		why     string
+		level   string
+		request bool
+	}{
+		{"the default, the best available", "", false},
+		{"B-LT chosen in Settings, or named by a caller", "b-lt", true},
+		{"B-T chosen in Settings, or named by a caller", "b-t", true},
+		{"B-B chosen in Settings", "b-b", true},
+	} {
+		cfg := config.Default()
+		cfg.SignatureLevel = tc.level
+		if got := levelIsARequest(cfg); got != tc.request {
+			t.Errorf("%s: a request %v, want %v", tc.why, got, tc.request)
+		}
 	}
 }
