@@ -6,13 +6,16 @@
 
 ---
 
-## After the owner's review (2026-10-12): D-465 … D-472
+## After the owner's review (2026-10-12): D-465 … D-477
 
 **The owner's worklist is `docs/measure-before-release.md`** (D-472): what must be measured before any of this reaches a person, in order. **Then read `docs/s33-what-ran.md`.** It has every change, what has actually run against it, and what has never run. Where this handover says "measured", that table says where, and whether the test was ever seen failing without the change. Where the two differ, the table is the later reading.
 
 - C25 is fixed as the owner ruled (D-465). The B-B finding I reported was wrong; what is true is in `docs/decision-timestamp-failure.md` (C26).
 - LDAP, and what B-LT reaches: `docs/decision-ldap.md` (D-466). No Serbian card has reached B-LT.
 - The owner's rulings are recorded (D-467): macOS signing waits; D45 stays inferred.
+- **Group 0 of the worklist is done** (D-473): each test was seen red on the old behaviour, then green. D-475 fixed a race in one of those tests.
+- **The default level is decided: C** (D-474, D-476). It is "the best available", and a level chosen in Settings is a request. SPEC §12.6 is amended and marked not built; building it is worklist 0.7, before card rows 1.2 and 1.3.
+- **Card row 1.1's preconditions** (D-477): the log names each certificate that got no evidence, by thumbprint. The window and protocol paths log the signer's notes. CI publishes the MSIs as `liro-bridge-windows-<sha>`. Writing them, I found that my own D-462 code logged a certificate's **subject**, against SPEC §18.3. It is fixed, and the test now checks that the subject is absent.
 
 ## A. What was done
 
