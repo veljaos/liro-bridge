@@ -203,3 +203,18 @@ All ten jobs green. Windows from its first test line: `internal/ui` and `cmd/lir
 - **P10b:** the packaging step "publish the packages for the card rows" succeeds, and each run lists an artifact `liro-bridge-windows-21624f24e1b2dc742f81c3ec902f50631af7d23c` holding the two MSIs and the exe.
 - **P10c:** windows runs `cmd/liro-bridge` with `TestTheWindowLogsTheSignersNotes` in it, and it passes. That is its first run on Windows, where the PDF path, the temp directory and the atomic write differ from the container's. If anything in the new code is red, I expect it to be this test.
 - **P10d:** `internal/pades/dss`'s new test passes in ci, windows and macos. It uses local `httptest` servers only.
+
+## P11 — worklist 0.7, decision C (D-476), written before any of its tests has run
+
+**Method, and where it falls short of group 0's.** The new tests name things that do not exist yet: the config field `signatureLevelChosen` and the helper `levelIsARequest`. So "red on today's code" means today's behaviour with those two names added and nothing else: the default `b-lt`, no migration, and a helper that answers as today's code does (the window never treats a Settings level as a request). So the control is a helper that returns `false` for everything.
+
+- **P11a** (`TestTheDefaultLevelIsTheBestAvailable`, control): red, `the default signatureLevel is "b-lt"`.
+- **P11b** (`TestALevelFromBeforeTheBestAvailableIsReadByWhatItCouldHaveMeant`, control): **red on five of six rows, green on one.**
+  - Row 1 (`b-lt` → `""`): red, since there is no migration.
+  - Rows 2 and 3 (`b-t`, `b-b` → chosen): red, since nothing sets `chosen`.
+  - Row 4 (`b-lt` with `chosen` written): green, since the field is only read back.
+  - Row 5 (`""`): red, since `""` is invalid today and becomes `b-lt`.
+  - Row 6 (`{}`): red, since it gives the default `b-lt`.
+- **P11c** (`TestALevelSomebodyChoseIsARequest`, control returning `false`): red on the three chosen levels, green on the default.
+- **P11d:** all three green after the change. The existing C26 tests are unchanged apart from the replaced protocol test.
+- **P11e:** `internal/ui`'s Linux layout test, under Xvfb here, still passes with the fourth radio: Settings scrolls inside `.settings-form`.
