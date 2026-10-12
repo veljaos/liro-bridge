@@ -254,3 +254,8 @@ check.sh on `3b3f3bc`: ci 4–14 and linux-gui 4–6 passed.
 
 - **P13a:** all ten jobs green in the push run and the PR run. On windows that includes `TestSettingsWindowRendersLocalisedText` in all three languages, the four-level test, and the new every-label test.
 - **P13b:** packaging publishes `liro-bridge-windows-<head sha>`, and that build is the one for rows 1.2 and 1.3.
+
+## P13, read — push run 38262581893, PR run 38262587715, on `07598f2`
+
+- **P13a, as predicted:** both runs green in all ten jobs, the three `linux-install` included. Windows: `cmd/liro-bridge`, `internal/config`, `internal/pades/dss` and `internal/ui` `ok`, and no `--- FAIL`, `--- SKIP` or `panic:` in either log.
+- **P13b, as predicted:** `liro-bridge-windows-07598f2f504408a82b7bd71fd0d5e68a375295b2`, 14.8 MB, kept until 2026-11-11. **This is the build for card rows 1.1, 1.2 and 1.3.**

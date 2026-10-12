@@ -24,7 +24,7 @@ Each test was seen red on the code before its fix, then green after it. For the 
 
 | # | claimed | what would show it false |
 |---|---|---|
-| 1.1 | **A Pošta card reaches B-LT through the bundled Trusted List, with no LDAP** (D-466) | One signature at B-LT. False if the report says B-T, if a named `b-lt` comes back `LEVEL_NOT_REACHED`, or if DSS's validator or Adobe does not read the `/DSS` as B-LT. The agent's log names each certificate that got no evidence, and where it was asked (D-477). Run the MSI CI published for the commit (`liro-bridge-windows-<sha>`). |
+| 1.1 | **A Pošta card reaches B-LT through the bundled Trusted List, with no LDAP** (D-466) | One signature at B-LT. False if the report says B-T, if a named `b-lt` comes back `LEVEL_NOT_REACHED`, or if DSS's validator or Adobe does not read the `/DSS` as B-LT. The agent's log names each certificate that got no evidence, and where it was asked (D-477). Run the MSI CI published for the commit: `liro-bridge-windows-07598f2…` (push run 38262581893), which carries D-477 and D-478. |
 | 1.2 | **After 0.7:** a MUP card on the default stops at B-T with **no** warning; with B-LT **chosen** in Settings it is refused with `LEVEL_NOT_REACHED` and nothing is saved | False if the default warns, or if a chosen B-LT is saved at B-T. |
 | 1.3 | A program that names `b-lt` gets `LEVEL_NOT_REACHED` on a MUP card, and nothing is saved (C26) | False if a document comes back at B-T. |
 | 1.4 | B-T against Pošta's **test** TSA with the card, verified by both tools (A2 case ii) | False if `achievedLevel` is not B-T, or either verifier rejects the timestamp. |
