@@ -227,3 +227,18 @@ All ten jobs green. Windows from its first test line: `internal/ui` and `cmd/lir
 - **P11d, as predicted:** all three green after the change. The full `cmd` suite passed in the container except `TestOnlyTheChooserHelperKeepsItsDumpableFlag`, which fails as root and passes as `runner`: root is never refused the ptrace the test needs refused.
 - **P11e held, but it predicted less than it seemed to.** The two Linux layout tests that touch Settings pass with the fourth row. Neither checks that the whole page fits, so the fit is still the Windows layout test's on CI.
 - **Not predicted:** `TestSettingsShowsAndCollectsTheBestAvailable`, written after P11, was red on the old page (`level-blt` checked, `b-lt` handed back) and green on the new one.
+
+## P12 — `3b3f3bc` and the commits under it (D-478), written before the push
+
+check.sh on `3b3f3bc`: ci 4–14 and linux-gui 4–6 passed.
+
+- **P12a:** all ten jobs green in the push run and the PR run.
+- **P12b:** windows passes `cmd/liro-bridge` with `TestSettingsOffersFourLevelsWithBBFirst` in it. It is the first time the fourth radio meets WebView2. If anything is red, I expect it here: the second `sharedSettingsWindow` post, read straight after, is the one new ordering in that test.
+- **P12c:** in linux-gui's `-race -v` probe, `TestSettingsShowsAndCollectsTheBestAvailable` is a **SKIP**: CI's linux-gui has no display. That test has run only in this container, under Xvfb.
+- **P12d:** packaging publishes `liro-bridge-windows-<sha of the pushed head>`. That build is the one for rows 1.2 and 1.3.
+
+## P10, read — push run 38256486886 on `21624f2` (PR run 38256491696 read below)
+
+- **P10b, as predicted:** "publish the packages for the card rows" succeeded (13:34:28–13:34:30Z).
+- **P10c and P10d, as predicted, with a limit:** windows `ok` for `cmd/liro-bridge` (136.1 s), `internal/pades/dss` (4.7 s), `internal/config` and `internal/ui`. No `--- FAIL`, `--- SKIP` or `panic:` anywhere in the log. The step runs without `-v`, so the two new tests are known to have run only because neither can skip and their packages passed.
+- **P10a:** written in when the last job ends.
