@@ -279,3 +279,19 @@ func buildOriginInit(c *i18n.Catalogue, origin string) map[string]any {
 		"model":   map[string]any{"origin": origin},
 	}
 }
+
+// acceptSystemLink is a link the operating system handed this process
+// itself — macOS's Apple Event (F13, ui.SetURLHandler) — rather than in
+// argv. It is what open-link does with its argument, inside the process
+// that received it: checked, then left for the agent's watcher, which in
+// a bundle launched by the link is this process too.
+func acceptSystemLink(link string) {
+	if _, err := cloud.ParseLink(link); err != nil {
+		slog.Warn("open-link: a link from the system could not be used", "error", err)
+		tellCloudOutcome(i18n.Load(currentConfig(config.Default()).Locale), cloud.OutcomeLinkUnusable, "")
+		return
+	}
+	if err := jobs.NewInbox(shellInboxDir()).AppendLink(link); err != nil {
+		slog.Error("open-link: a link from the system could not be left for the agent", "error", err)
+	}
+}

@@ -414,6 +414,8 @@ func secretStoreSentence(c *i18n.Catalogue, d platform.SecretStoreDescription) s
 		return c.T("settings.secret_store_keyring")
 	case platform.MechanismDPAPI:
 		return c.T("settings.secret_store_dpapi")
+	case platform.MechanismKeychain:
+		return c.T("settings.secret_store_keychain")
 	case platform.MechanismEncryptedFile:
 		if d.Reason != "" {
 			return c.T("settings.secret_store_file") + ": " + d.Reason

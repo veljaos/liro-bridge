@@ -305,6 +305,7 @@
   "settings.save": "Save",
   "settings.secret_store_dpapi": "Kept encrypted by Windows",
   "settings.secret_store_file": "Kept in an encrypted file — this desktop’s keyring is not being used",
+  "settings.secret_store_keychain": "Kept in your macOS Keychain",
   "settings.secret_store_keyring": "Kept in this desktop’s keyring",
   "settings.secret_store_label": "Device secrets",
   "settings.secret_store_unavailable": "No secret store could be opened, so no application can connect",

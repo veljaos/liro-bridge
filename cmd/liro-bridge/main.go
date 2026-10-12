@@ -24,6 +24,7 @@ import (
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 	"github.com/veljaos/liro-bridge/internal/platform"
 	"github.com/veljaos/liro-bridge/internal/trust/tsl"
+	"github.com/veljaos/liro-bridge/internal/ui"
 )
 
 // pkcs11ShutdownGrace is how long a PKCS#11 worker is given to finalise its
@@ -103,7 +104,13 @@ func main() {
 	crashOutputErr = config.SetupCrashOutput(platform.DefaultLogDir())
 
 	enableChooserHelper()
-	os.Exit(run(os.Args[1:], os.Stdout))
+	// On macOS the main thread is AppKit's and the program runs beside
+	// it (F13, ui.RunMain); everywhere else this is run itself.
+	// A link the system hands this process itself (macOS) goes where
+	// open-link's argument would.
+	ui.SetURLHandler(acceptSystemLink)
+	args := launchArgs(runtime.GOOS, exePath(), os.Args[1:])
+	os.Exit(ui.RunMain(func() int { return run(args, os.Stdout) }))
 }
 
 // crashOutputErr is SetupCrashOutput's failure in main, if it had one,

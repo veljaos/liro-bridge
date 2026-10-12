@@ -305,6 +305,7 @@
   "settings.save": "Sačuvaj",
   "settings.secret_store_dpapi": "Windows ih čuva šifrovane",
   "settings.secret_store_file": "Čuvaju se u šifrovanoj datoteci — privezak ključeva ove radne površine se ne koristi",
+  "settings.secret_store_keychain": "Čuvaju se u macOS privesku ključeva (Keychain)",
   "settings.secret_store_keyring": "Čuvaju se u privesku ključeva ove radne površine",
   "settings.secret_store_label": "Tajne uređaja",
   "settings.secret_store_unavailable": "Nijedno skladište tajni nije otvoreno, pa nijedna aplikacija ne može da se poveže",

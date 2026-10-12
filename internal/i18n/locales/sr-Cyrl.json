@@ -305,6 +305,7 @@
   "settings.save": "Сачувај",
   "settings.secret_store_dpapi": "Windows их чува шифроване",
   "settings.secret_store_file": "Чувају се у шифрованој датотеци — привезак кључева ове радне површине се не користи",
+  "settings.secret_store_keychain": "Чувају се у macOS привеску кључева (Keychain)",
   "settings.secret_store_keyring": "Чувају се у привеску кључева ове радне површине",
   "settings.secret_store_label": "Тајне уређаја",
   "settings.secret_store_unavailable": "Ниједно складиште тајни није отворено, па ниједна апликација не може да се повеже",
