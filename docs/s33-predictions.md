@@ -281,3 +281,19 @@ Push run 38264758016 and PR run 38264764850: both green, all ten jobs each.
 - **P15a:** check.sh passes the ci job and linux-gui 4–6.
 - **P15b:** all ten jobs green in both runs. The only code change is in `internal/pades`, which every OS tests.
 - **P15c:** packaging publishes `liro-bridge-windows-<head sha>`, the build for rows 1.1–1.4.
+
+## P15, read
+
+Push run 38291112853, PR run 38291116544, on `446dcd2`: both green, all ten jobs each. Windows: `internal/pades`, `internal/pades/dss` and `cmd/liro-bridge` `ok`, with no `--- FAIL`, `--- SKIP` or `panic:`. Artifact `liro-bridge-windows-446dcd2…`, kept until 2026-11-11.
+
+## P16 — the log's personal-data check (the owner, D-482), written before it runs
+
+The test drives `SignDocument` through the real logger (`config.SetupLogging`, a real `bridge.log`), with a signer whose subject is a person's (a Cyrillic name and a 13-digit JMBG in `serialNumber`). It reads `bridge.log`, every note and every error. The control puts back the three lines D-480 removed.
+
+- **P16a, the control:** red on three paths.
+  - The signer with no issuer: the subject is in `bridge.log`, so both the name and the JMBG are found.
+  - The revoked signer: the CommonName is in the error.
+  - The revoked timestamp authority: its CommonName is in the note. It is not a person, but every certificate in the test counts as known.
+- **P16b, the control:** green on the reached B-LT and on the signer whose OCSP never answers. Neither ever logged a subject.
+- **P16c:** all five paths green after.
+- **P16d:** `logcheck`'s own tests: a thumbprint with digits in it is not flagged; `PNORS-0101990710006` is.
