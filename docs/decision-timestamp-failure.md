@@ -1,6 +1,6 @@
 # A timestamp that is not obtained — what the program does, and the owner's options (C26)
 
-**Status:** for the owner's decision. Written in session 33 at the owner's request (D-465). Nothing here is built.
+**Status: decided by the owner and built (D-469)**: refuse wherever a level was asked for; the library refuses by default; the shortfall is said. Still the owner's: whether Settings counts as asked (it needs the default level changed first). Was: Written in session 33 at the owner's request (D-465). Nothing here is built.
 
 ## 1. I told the owner something the code does not do
 

@@ -160,6 +160,17 @@ func RunSignWithoutConsent(ctx context.Context, args []string, stdout, stderr io
 		fprintln(stderr, "liro-bridge: sign-no-consent:", c.T("sign.on_tsa_failure_invalid"))
 		return 2
 	}
+	// A --level given on the command line is a request for that level,
+	// and one that cannot be reached is refused rather than saved lower
+	// (C26, D-469). The flag's own default is not a request: it keeps
+	// B-T when B-LT's evidence is missing and says so, as the window
+	// does for its configured level.
+	levelAsked := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "level" {
+			levelAsked = true
+		}
+	})
 
 	files, err := expandInput(*inPattern)
 	if err != nil || len(files) == 0 {
@@ -263,7 +274,7 @@ func RunSignWithoutConsent(ctx context.Context, args []string, stdout, stderr io
 			fprintln(stderr, "liro-bridge: sign-no-consent:", in+":", c.T("sign.output_is_another_input"))
 			continue
 		}
-		if err := signOneFile(ctx, in, out, *force, session, client, requestedLevel, abortOnTSAFailure, *reserve, *maxRevocationSize, revocationMemory, deps.TrustStore, stampOpts, stdout, stderr, c); err != nil {
+		if err := signOneFile(ctx, in, out, *force, session, client, requestedLevel, abortOnTSAFailure, !levelAsked, *reserve, *maxRevocationSize, revocationMemory, deps.TrustStore, stampOpts, stdout, stderr, c); err != nil {
 			failures++
 			fprintln(stderr, "liro-bridge: sign-no-consent:", in+":", errMessage(err, c))
 			if len(files) == 1 {
@@ -322,7 +333,7 @@ func alreadySignedNotice(c *i18n.Catalogue, n int, suffix string, resign bool) s
 	return fmt.Sprintf(c.T(key), n, suffix)
 }
 
-func signOneFile(ctx context.Context, in, out string, force bool, session keysource.Session, client *tsa.Client, level pades.Level, abortOnTSAFailure bool, reserve int, maxRevocationSize int64, revocationMemory *dss.EndpointMemory, trustStore []*x509.Certificate, stamp *pades.StampOptions, stdout, stderr io.Writer, c *i18n.Catalogue) error {
+func signOneFile(ctx context.Context, in, out string, force bool, session keysource.Session, client *tsa.Client, level pades.Level, abortOnTSAFailure, keepBTIfBLTFails bool, reserve int, maxRevocationSize int64, revocationMemory *dss.EndpointMemory, trustStore []*x509.Certificate, stamp *pades.StampOptions, stdout, stderr io.Writer, c *i18n.Catalogue) error {
 	if !force {
 		if _, err := os.Stat(out); err == nil {
 			return errors.New(c.T("sign.output_exists"))
@@ -344,7 +355,8 @@ func signOneFile(ctx context.Context, in, out string, force bool, session keysou
 	result, err := pades.SignDocument(ctx, pdfBytes, session, pades.Options{
 		ReservedBytes:             reserve,
 		RequestedLevel:            level,
-		OnTSAFailureAbort:         abortOnTSAFailure,
+		SaveWithoutTimestamp:      !abortOnTSAFailure,
+		SaveAtBTIfBLTFails:        keepBTIfBLTFails,
 		TSA:                       client,
 		TrustStore:                trustStore,
 		Now:                       time.Now(),

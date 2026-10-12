@@ -68,23 +68,23 @@ func TestLowerLevelReportsTheWeakestLevelReached(t *testing.T) {
 func TestAchievedLevelMarksBB(t *testing.T) {
 	c := i18n.Load("en")
 
-	if got := achievedLevelIntent(string(pades.LevelBB)); got != string(ui.IntentWarning) {
+	if got := achievedLevelIntent(string(pades.LevelBB), string(pades.LevelBLT)); got != string(ui.IntentWarning) {
 		t.Errorf("B-B intent = %q, want %q", got, ui.IntentWarning)
 	}
-	if got := achievedLevelNote(c, string(pades.LevelBB)); got != c.T("consent.level_bb") {
+	if got := achievedLevelNote(c, string(pades.LevelBB), string(pades.LevelBLT)); got != c.T("consent.level_bb") {
 		t.Errorf("B-B note = %q, want the catalogue's own %q", got, c.T("consent.level_bb"))
 	}
 
 	for _, level := range []pades.Level{pades.LevelBT, pades.LevelBLT} {
-		if got := achievedLevelIntent(string(level)); got != string(ui.IntentPositive) {
+		if got := achievedLevelIntent(string(level), string(level)); got != string(ui.IntentPositive) {
 			t.Errorf("%s intent = %q, want %q", level, got, ui.IntentPositive)
 		}
-		if got := achievedLevelNote(c, string(level)); got != "" {
+		if got := achievedLevelNote(c, string(level), string(level)); got != "" {
 			t.Errorf("%s carried a warning of its own: %q", level, got)
 		}
 	}
 
-	if got := achievedLevelIntent(""); got != "" {
+	if got := achievedLevelIntent("", ""); got != "" {
 		t.Errorf("no level rendered intent %q, want none rather than a guess", got)
 	}
 }
@@ -133,7 +133,7 @@ func TestTSAChoiceScreenRoundTrips(t *testing.T) {
 	m, messages := testMainWindow(t, "sr-Latn", config.Default(), nil)
 	win := m.win
 
-	if err := win.PostJSON(askTSAChoicePayload(consent.TSAReasonNotConfigured, c)); err != nil {
+	if err := win.PostJSON(askTSAChoicePayload(consent.TSAReasonNotConfigured, c, true)); err != nil {
 		t.Fatalf("PostJSON: %v", err)
 	}
 	if hidden := evalString(t, win, "String(document.getElementById('state-tsachoice').hidden)"); hidden != "false" {
@@ -172,8 +172,13 @@ func TestTSAChoiceScreenRoundTrips(t *testing.T) {
 
 	// Re-entering the screen clears the previous answer: an approve that
 	// arrives with no fresh choice must never replay the last one.
-	if err := win.PostJSON(askTSAChoicePayload(consent.TSAReasonUnreachable, c)); err != nil {
+	if err := win.PostJSON(askTSAChoicePayload(consent.TSAReasonUnreachable, c, false)); err != nil {
 		t.Fatalf("PostJSON: %v", err)
+	}
+	// After an authority has failed, signing without a timestamp is not
+	// on offer (C26, D-469).
+	if got := evalString(t, win, "String(document.getElementById('tsa-without-btn').hidden)"); got != "true" {
+		t.Errorf("after a failed authority, 'sign without a timestamp' is still on screen")
 	}
 	if got := readTSAChoice(win); got != "" {
 		t.Errorf("a freshly shown choice screen already reports %q", got)

@@ -142,6 +142,11 @@ type mainWindow struct {
 	// a stamp on and no method to ask about.
 	hashesOnly bool
 
+	// requestedLevel is the level this batch was set to reach, kept so
+	// the report can say when what was reached fell short of it (C26,
+	// D-469). Empty until a batch starts.
+	requestedLevel pades.Level
+
 	// signedAnything is true once the run has begun, which is what
 	// separates "the person did not approve" from "the batch happened
 	// and this is what came of it". Set at the moment the card session
@@ -1127,7 +1132,7 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 		}
 		tsaClient = client
 		if tsaClient == nil {
-			cfg, next, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonNotConfigured)
+			cfg, next, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonNotConfigured, m.remote != nil && m.remote.req.Level != "")
 			if !proceed {
 				m.deny()
 				m.backToStart()
@@ -1202,6 +1207,7 @@ func (m *mainWindow) startSigning(ctx context.Context) bool {
 	// refusal to.
 	m.signedAnything = true
 
+	m.requestedLevel = level
 	m.runBatch(ctx, consentDecision{
 		approved:   true,
 		thumbprint: m.selected,
@@ -1401,7 +1407,7 @@ func (m *mainWindow) runBatch(ctx context.Context, d consentDecision) {
 			// The timestamp authority stopped answering. The same three
 			// actions as before signing began, now about an authority
 			// that was actually tried.
-			cfg, client, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonUnreachable)
+			cfg, client, bb, proceed := resolveTSAChoice(m.win, m.messages, m.c, m.cfg, m.locale, consent.TSAReasonUnreachable, m.remote != nil && m.remote.req.Level != "")
 			m.cfg = cfg
 			reply <- tsaAnswer{client: client, allowBB: bb, proceed: proceed}
 			if proceed {
@@ -1683,8 +1689,8 @@ func (m *mainWindow) postReport(r jobs.Report) {
 		// and B-B — a signature with no proof of when it was made —
 		// says so in words rather than being left to read as just
 		// another level.
-		"levelIntent": achievedLevelIntent(r.AchievedLevel),
-		"levelNote":   achievedLevelNote(m.c, r.AchievedLevel),
+		"levelIntent": achievedLevelIntent(r.AchievedLevel, string(m.requestedLevel)),
+		"levelNote":   achievedLevelNote(m.c, r.AchievedLevel, string(m.requestedLevel)),
 		// Signing more means going back to a document list, which a run
 		// that brought its own documents does not have.
 		"canSignMore": !m.documentsSupplied,

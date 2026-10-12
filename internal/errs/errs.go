@@ -30,9 +30,17 @@ const (
 	CodeCertRevoked          Code = "CERT_REVOKED"
 	CodeTSAUnavailable       Code = "TSA_UNAVAILABLE"
 	CodeTSARejected          Code = "TSA_REJECTED"
-	CodePDFInvalid           Code = "PDF_INVALID"
-	CodePDFEncrypted         Code = "PDF_ENCRYPTED"
-	CodeSignFailed           Code = "SIGN_FAILED"
+
+	// CodeLevelNotReached means a signature level was asked for and the
+	// evidence it needs could not be had, so nothing was saved rather
+	// than a weaker signature handed back as if it were the one asked
+	// for (C26, D-469). Today: B-LT asked, the revocation evidence for
+	// some certificate unavailable. The level below is reachable by
+	// asking for it.
+	CodeLevelNotReached Code = "LEVEL_NOT_REACHED"
+	CodePDFInvalid      Code = "PDF_INVALID"
+	CodePDFEncrypted    Code = "PDF_ENCRYPTED"
+	CodeSignFailed      Code = "SIGN_FAILED"
 
 	// CodeStampGlyphMissing means the visual signature stamp needs a
 	// character the embedded font subset does not contain. This is
@@ -238,6 +246,7 @@ func AllCodes() []Code {
 		CodeCertRevoked,
 		CodeTSAUnavailable,
 		CodeTSARejected,
+		CodeLevelNotReached,
 		CodePDFInvalid,
 		CodePDFEncrypted,
 		CodeSignFailed,

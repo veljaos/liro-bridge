@@ -59,10 +59,23 @@ type Options struct {
 	// offers b-t/b-lt for exactly that reason).
 	RequestedLevel Level
 
-	// OnTSAFailureAbort selects F3 §6.4/§12.8's required choice: true
-	// (the default) aborts the whole operation on TSA failure; false
-	// saves at B-B instead, with Result.Notes recording why.
-	OnTSAFailureAbort bool
+	// SaveWithoutTimestamp is F3 §6.4/§12.8's choice, made by whoever
+	// asked: true saves at B-B when the timestamp cannot be had, with
+	// Result.Notes saying why. The zero value refuses — the operation
+	// fails with TSA_UNAVAILABLE or TSA_REJECTED — so that a caller who
+	// forgets the option gets an error and not a quietly weaker
+	// signature (C26, D-469: the owner's ruling). It was
+	// OnTSAFailureAbort, whose comment called aborting the default while
+	// its zero value saved at B-B.
+	SaveWithoutTimestamp bool
+
+	// SaveAtBTIfBLTFails is the same choice one level up: true keeps a
+	// B-LT request that could not gather its evidence at B-T, with
+	// Result.Notes saying why. The zero value refuses with
+	// LEVEL_NOT_REACHED and nothing is saved (C26, D-469). A caller that
+	// sets it must say the shortfall where the person or program it
+	// answers will see it; the window does (achievedLevelNote).
+	SaveAtBTIfBLTFails bool
 
 	// TSA is the timestamp client. Nil means no timestamp is attempted
 	// at all — the result is B-B unconditionally, matching
@@ -312,7 +325,7 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 					"machine clock reads %s but the timestamp reads %s (drift %s)",
 					signingDate.Format(time.RFC3339), resp.GenTime.Format(time.RFC3339), drift.Round(time.Second)))
 			}
-		case opts.OnTSAFailureAbort:
+		case !opts.SaveWithoutTimestamp:
 			return nil, errs.New(classifyTSAError(tsaErr), tsaErr)
 		default:
 			result.Notes = append(result.Notes, fmt.Sprintf("no timestamp (saved at B-B): %v", tsaErr))
@@ -343,6 +356,11 @@ func SignDocument(ctx context.Context, pdfBytes []byte, session keysource.Sessio
 			Memory:          opts.RevocationMemory,
 		}); err != nil {
 			return nil, err
+		}
+		if result.AchievedLevel != LevelBLT && !opts.SaveAtBTIfBLTFails {
+			return nil, errs.New(errs.CodeLevelNotReached, fmt.Errorf(
+				"pades: B-LT was requested and not reached, so nothing was saved; the evidence fell short as follows: %s",
+				strings.Join(result.Notes, "; ")))
 		}
 	}
 

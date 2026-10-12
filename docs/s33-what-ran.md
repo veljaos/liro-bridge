@@ -88,6 +88,13 @@ It was built from four read-only inventories, one per area: the test files, `ci.
 | The real-TSA test | `TestSignDocumentBTWithRealTSA` reaches Pošta's **test** TSA. It produces B-T and runs no B-LT code | CI, where a green job before this change meant the server was reached (inferred: no `-v`); here it now skips | its two paths: **yes** (D-465) | — |
 | Presets removed from Settings | `TestSettingsOffersNoTimestampService` | CI Windows | — | Settings' height not re-measured |
 
+## C26 — a level asked for is reached or refused (D-469)
+
+| change | test | where | seen failing without it | never run |
+|---|---|---|---|---|
+| The library refuses by default: no timestamp → `TSA_*`; B-LT short → `LEVEL_NOT_REACHED` | `TestSignDocumentAbortsOnTSAFailureByDefault` (now really the default), `TestABLTThatFallsShortIsRefusedUnlessTheCallerAcceptsBT` (with an unrevoked control) | container; CI all three from the next run | the B-LT refusal: control in the same test | — |
+| B-T below a set B-LT shown as a warning, with a sentence; B-B not offered after a failure or against a named level; a named level refused below | `levelshortfall_test.go` (pure rules); the Windows TSA-choice test now checks the button is hidden | container; CI all three; the button on CI Windows | **yes**: the old rules fail the new tests | **with a card or a screen**: worklist 1.2, 1.3, 1.5 |
+
 ## F13 — macOS (D-463)
 
 | change | test | where | seen failing without it | never run |

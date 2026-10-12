@@ -54,6 +54,7 @@ export type KnownLiroErrorCode =
   | 'PDF_ENCRYPTED'
   | 'TSA_UNAVAILABLE'
   | 'TSA_REJECTED'
+  | 'LEVEL_NOT_REACHED'
   | 'TSA_CLIENT_CERT_UNREADABLE'
   | 'TSA_CLIENT_CERT_INVALID'
   | 'STAMP_GLYPH_MISSING'
@@ -136,6 +137,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<KnownLiroErrorCode>([
   'PDF_ENCRYPTED',
   'TSA_UNAVAILABLE',
   'TSA_REJECTED',
+  'LEVEL_NOT_REACHED',
   'TSA_CLIENT_CERT_UNREADABLE',
   'TSA_CLIENT_CERT_INVALID',
   'STAMP_GLYPH_MISSING',
@@ -235,6 +237,8 @@ const MESSAGES: Record<LiroErrorCode, string> = {
   PDF_ENCRYPTED: 'A document is password-protected. Decrypt it first; the agent never will.',
   TSA_UNAVAILABLE: 'The timestamp authority did not answer after three attempts. Retry later, or ask for level "b-b".',
   TSA_REJECTED: 'The timestamp authority refused the request. Check the agent’s timestamp settings.',
+  LEVEL_NOT_REACHED:
+    'The level you named could not be reached, so nothing was saved. Ask for the level below knowingly, or leave level out.',
   TSA_CLIENT_CERT_UNREADABLE:
     'The TSA client certificate configured on this machine could not be read. That is the person’s Settings, not your request.',
   TSA_CLIENT_CERT_INVALID:

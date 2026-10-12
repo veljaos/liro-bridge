@@ -112,3 +112,17 @@ Written before the push that carries both.
 | P6c | `TestNothingIsBothKeptAndRemoved` with `cloud-origins.json` kept | passes on `windows` |
 | P6d | `TestSignDocumentBTWithRealTSA` | `ok` everywhere. **The least certain row, and one I cannot read:** on CI it either runs (the server reachable) or now skips, and without `-v` the two look the same. That cost is the one D-465 names |
 | P6e | everything else | as in run 38190929428: all ten jobs green |
+
+## P6, read — runs 38225585797 (push) and 38225591952 (PR), `feed7e8`
+
+All ten jobs green in both. P6b passed: the dyld test asserted `LoadNoFile` on the runner, the `-v` step printing the kind's own sentence. P6a and P6c read only as `ok` (no `-v`). P6d could not be read, as predicted.
+
+## P7 — D-469 … D-472 (written before the push)
+
+| | what | predicted |
+|---|---|---|
+| P7a | `levelshortfall_test.go`, `TestABLTThatFallsShortIsRefusedUnlessTheCallerAcceptsBT`, the reworked fallback tests | pass on `ci`, `linux-gui` (the `cmd` tests need no window), `windows`, `macos` |
+| P7b | `TestTSAChoiceScreenRoundTrips` with the button hidden after a failure | passes on `windows`. **The least certain row:** a real WebView2 page, the first time `hidden` is set on that button |
+| P7c | `sdk-typescript` and the Windows SDK step, with `LEVEL_NOT_REACHED` | pass; `dist/` matches `src/` |
+| P7d | `TestEveryErrorCodeHasAMessageInEveryCatalogue` and the catalogue-parity tests | pass with the new code and two keys |
+| P7e | everything else | as in the runs on `feed7e8` |

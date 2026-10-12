@@ -511,9 +511,15 @@ memory: `REQUEST_INVALID` with `details.maxBytes`.
   so any usable certificate produces a valid document; leaving it out means
   the person chooses, exactly as they do when they sign something
   themselves.
-- `level` is `b-b`, `b-t` or `b-lt`. Leaving it out means "whatever this
-  agent is configured to produce", which is the person's own standing
-  answer to the same question.
+- `level` is `b-b`, `b-t` or `b-lt`. **A level you name is a level you
+  get or an error**: a document that cannot reach it fails with
+  `TSA_UNAVAILABLE` or `TSA_REJECTED` (no timestamp) or `LEVEL_NOT_REACHED`
+  (`b-lt` without its revocation evidence), and nothing weaker is handed
+  back. The person is not offered a way to sign it lower either. Leaving
+  `level` out means "whatever this agent is configured to produce", which
+  is the person's own standing answer to the same question; a `b-lt`
+  configured there that falls short comes back as B-T, and
+  `achievedLevel` says so.
 - `stamp` is your answer to how the signature should look: `visible` (a
   boolean, required if `stamp` is present at all) and `position`
   (`bottom-right`, `bottom-left`, `top-right`, `top-left`). Supplying it in
@@ -547,9 +553,9 @@ or check that `content` is present, before you touch it.
 same is true of `/v2/sign`.
 
 `achievedLevel` is the level the document **actually reached**, never the
-one you asked for. A timestamp authority that did not answer produces a
-B-B signature and says so; nothing in this project ever claims a level it
-did not reach.
+one you asked for; nothing in this project ever claims a level it did not
+reach. It can be below the agent's configured level only when you named
+none — see `level` above.
 
 ### 5.3 The batch fingerprint
 
@@ -821,6 +827,7 @@ it was.
 | `PDF_ENCRYPTED` | 422 | A document is password-protected. | Decrypt it first; the agent never will. |
 | `TSA_UNAVAILABLE` | 422 | The timestamp authority did not answer after three attempts. | Retry later, or ask for `b-b`. |
 | `TSA_REJECTED` | 422 | It refused the request. | Check the agent's timestamp settings. |
+| `LEVEL_NOT_REACHED` | 422 | The level you named could not be reached — today, `b-lt` whose revocation evidence was unavailable for some certificate — so nothing was saved. | Ask for the level below, knowingly, or leave `level` out. |
 | `TSA_CLIENT_CERT_UNREADABLE` | 422 | The configured TSA client certificate could not be read. | The person's Settings, not your request. |
 | `TSA_CLIENT_CERT_INVALID` | 422 | It was read and would not open — almost always a wrong password. | The person's Settings. |
 | `STAMP_GLYPH_MISSING` | 422 | The visible stamp needs a character the embedded font does not have. `details.character`, `details.codePoint`. | Change the text. |

@@ -230,9 +230,8 @@ func TestSignDocumentBTWithRealTSA(t *testing.T) {
 	client := tsa.NewClient(postaTestTSA, tsa.Auth{BasicUsername: "Test.Korisnik", BasicPassword: "123456"})
 
 	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		RequestedLevel:    LevelBT,
-		TSA:               client,
-		OnTSAFailureAbort: true,
+		RequestedLevel: LevelBT,
+		TSA:            client,
 	})
 	if err != nil {
 		t.Fatalf("the server accepts connections from here, and the timestamp failed: %v", err)
@@ -282,9 +281,8 @@ func brokenTSAClient() *tsa.Client {
 func TestSignDocumentAbortsOnTSAFailureByDefault(t *testing.T) {
 	sess := newFakeSession(t)
 	_, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		RequestedLevel:    LevelBT,
-		TSA:               brokenTSAClient(),
-		OnTSAFailureAbort: true,
+		RequestedLevel: LevelBT,
+		TSA:            brokenTSAClient(),
 	})
 	var e *errs.Error
 	if !errors.As(err, &e) || e.Code != errs.CodeTSAUnavailable {
@@ -295,9 +293,9 @@ func TestSignDocumentAbortsOnTSAFailureByDefault(t *testing.T) {
 func TestSignDocumentFallsBackToBBOnTSAFailure(t *testing.T) {
 	sess := newFakeSession(t)
 	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		RequestedLevel:    LevelBT,
-		TSA:               brokenTSAClient(),
-		OnTSAFailureAbort: false,
+		RequestedLevel:       LevelBT,
+		TSA:                  brokenTSAClient(),
+		SaveWithoutTimestamp: true,
 	})
 	if err != nil {
 		t.Fatalf("SignDocument: %v", err)
@@ -327,9 +325,8 @@ func TestSignDocumentRejectedTSAMapsToCodeTSARejected(t *testing.T) {
 
 	sess := newFakeSession(t)
 	_, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		RequestedLevel:    LevelBT,
-		TSA:               tsa.NewClient(server.URL, tsa.Auth{}),
-		OnTSAFailureAbort: true,
+		RequestedLevel: LevelBT,
+		TSA:            tsa.NewClient(server.URL, tsa.Auth{}),
 	})
 	var e *errs.Error
 	if !errors.As(err, &e) || e.Code != errs.CodeTSARejected {
@@ -344,9 +341,8 @@ func TestSignDocumentRejectedTSAMapsToCodeTSARejected(t *testing.T) {
 func TestSignDocumentUnavailableTSAStillMapsToCodeTSAUnavailable(t *testing.T) {
 	sess := newFakeSession(t)
 	_, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		RequestedLevel:    LevelBT,
-		TSA:               brokenTSAClient(),
-		OnTSAFailureAbort: true,
+		RequestedLevel: LevelBT,
+		TSA:            brokenTSAClient(),
 	})
 	var e *errs.Error
 	if !errors.As(err, &e) || e.Code != errs.CodeTSAUnavailable {
@@ -363,8 +359,7 @@ func TestSignDocumentUnavailableTSAStillMapsToCodeTSAUnavailable(t *testing.T) {
 func TestSignDocumentFailsWhenLevelRequestedButNoTSAConfigured(t *testing.T) {
 	sess := newFakeSession(t)
 	_, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		RequestedLevel:    LevelBT,
-		OnTSAFailureAbort: true,
+		RequestedLevel: LevelBT,
 	})
 	var e *errs.Error
 	if !errors.As(err, &e) || e.Code != errs.CodeTSAUnavailable {
@@ -374,14 +369,14 @@ func TestSignDocumentFailsWhenLevelRequestedButNoTSAConfigured(t *testing.T) {
 
 // TestSignDocumentNoTSAConfiguredFallsBackToBBWithNote mirrors
 // TestSignDocumentFallsBackToBBOnTSAFailure for the "no TSA at all" case:
-// with OnTSAFailureAbort false, the result is still B-B (never claims
+// with SaveWithoutTimestamp set, the result is still B-B (never claims
 // more than was reached), but now carries a note explaining why —
 // exactly what was missing before Task 7's fix.
 func TestSignDocumentNoTSAConfiguredFallsBackToBBWithNote(t *testing.T) {
 	sess := newFakeSession(t)
 	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		RequestedLevel:    LevelBT,
-		OnTSAFailureAbort: false,
+		RequestedLevel:       LevelBT,
+		SaveWithoutTimestamp: true,
 	})
 	if err != nil {
 		t.Fatalf("SignDocument: %v", err)
@@ -487,6 +482,7 @@ func TestSignDocumentBLTDegradesToBTWhenRevocationTooLarge(t *testing.T) {
 
 	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
 		RequestedLevel:            LevelBLT,
+		SaveAtBTIfBLTFails:        true,
 		TSA:                       fakeTSAClientAt(t, time.Now()),
 		MaxRevocationArtefactSize: 16, // any real CRL exceeds this
 	})
@@ -534,8 +530,9 @@ func TestSignDocumentBLTSkipsDSSWhenNoRevocationEvidence(t *testing.T) {
 
 	sess := newChainedSession(t, ca, caKey, nil, nil) // no OCSP, no CRL DP configured
 	result, err := SignDocument(context.Background(), input, sess, Options{
-		RequestedLevel: LevelBLT,
-		TSA:            fakeTSAClientAt(t, time.Now()),
+		RequestedLevel:     LevelBLT,
+		SaveAtBTIfBLTFails: true,
+		TSA:                fakeTSAClientAt(t, time.Now()),
 	})
 	if err != nil {
 		t.Fatalf("SignDocument: %v", err)
@@ -716,8 +713,9 @@ func TestBLTIsNeverClaimedForADocumentWithNoDSS(t *testing.T) {
 	input := buildMinimalPDF(t)
 
 	result, err := SignDocument(context.Background(), input, sess, Options{
-		RequestedLevel: LevelBLT,
-		TSA:            fakeTSAClientAt(t, time.Now()),
+		RequestedLevel:     LevelBLT,
+		SaveAtBTIfBLTFails: true,
+		TSA:                fakeTSAClientAt(t, time.Now()),
 	})
 	if err != nil {
 		t.Fatalf("SignDocument: %v", err)

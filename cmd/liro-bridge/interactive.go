@@ -221,16 +221,17 @@ func isTSAFailure(err error) bool {
 // client — so a user who fills in a URL there continues at the level
 // they asked for, and one who closes Settings without setting anything
 // is asked the same question again rather than silently continuing.
-func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue, cfg config.Config, locale string, reason consent.TSAReason) (config.Config, *tsa.Client, bool, bool) {
+func resolveTSAChoice(win ui.Window, messages chan ui.Message, c *i18n.Catalogue, cfg config.Config, locale string, reason consent.TSAReason, callerNamedLevel bool) (config.Config, *tsa.Client, bool, bool) {
+	offerBB := offersWithoutTimestamp(reason, callerNamedLevel)
 	for {
-		_ = win.PostJSON(askTSAChoicePayload(reason, c))
+		_ = win.PostJSON(askTSAChoicePayload(reason, c, offerBB))
 
 		msg := <-messages
 		if msg.Type != ui.MessageTypeApprove {
 			// Cancel, Escape, or the window being closed.
 			return cfg, nil, false, false
 		}
-		switch readTSAChoice(win) {
+		switch acceptedTSAChoice(readTSAChoice(win), offerBB) {
 		case "withoutTimestamp":
 			// The client is dropped, not kept: the user asked to sign
 			// without a timestamp, and a batch of a hundred documents
@@ -555,13 +556,19 @@ func signInteractiveOne(ctx context.Context, inPath string, session keysource.Se
 		}
 	}
 	result, err := pades.SignDocument(ctx, pdfBytes, session, pades.Options{
-		RequestedLevel:    opts.level,
-		OnTSAFailureAbort: !opts.allowBB,
-		TSA:               opts.tsaClient,
-		TrustStore:        opts.trustStore,
-		Now:               time.Now(),
-		Stamp:             opts.stamp,
-		RevocationMemory:  opts.revocationMemory,
+		RequestedLevel:       opts.level,
+		SaveWithoutTimestamp: opts.allowBB,
+		// The window signs at the level Settings holds — the agent's
+		// standing configuration, which config cannot tell from the
+		// default — so a B-LT that cannot gather its evidence is kept at
+		// B-T, and the report says it fell short (achievedLevelNote).
+		// A level a caller asked for is refused instead: protocolflow.go.
+		SaveAtBTIfBLTFails: true,
+		TSA:                opts.tsaClient,
+		TrustStore:         opts.trustStore,
+		Now:                time.Now(),
+		Stamp:              opts.stamp,
+		RevocationMemory:   opts.revocationMemory,
 	})
 	if err != nil {
 		return nil, err

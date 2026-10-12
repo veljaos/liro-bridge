@@ -188,6 +188,16 @@ func (m *mainWindow) consentExpired() {
 	// countdown with no number in it.
 }
 
+// keepsBTWhenBLTFallsShort is C26's rule for a protocol batch (D-469):
+// a caller that named a level asked for it, and below it the document
+// fails with LEVEL_NOT_REACHED with nothing handed back. A caller that
+// named none gets the agent's configured level — Settings, the
+// person's standing configuration — kept at B-T when B-LT's evidence
+// is missing, and achievedLevel says which it reached.
+func keepsBTWhenBLTFallsShort(req api.SignRequest) bool {
+	return req.Level == ""
+}
+
 // signRemoteOne signs one document of a protocol batch.
 //
 // Two shapes, one rule. On the hash path the card signs the digest the
@@ -208,13 +218,14 @@ func (m *mainWindow) signRemoteOne(ctx context.Context, index int, session keyso
 	}
 
 	result, err := pades.SignDocument(ctx, req.Documents[index].Content, session, pades.Options{
-		RequestedLevel:    opts.level,
-		OnTSAFailureAbort: !opts.allowBB,
-		TSA:               opts.tsaClient,
-		TrustStore:        opts.trustStore,
-		Now:               time.Now(),
-		Stamp:             opts.stamp,
-		RevocationMemory:  opts.revocationMemory,
+		RequestedLevel:       opts.level,
+		SaveWithoutTimestamp: opts.allowBB,
+		SaveAtBTIfBLTFails:   keepsBTWhenBLTFallsShort(req),
+		TSA:                  opts.tsaClient,
+		TrustStore:           opts.trustStore,
+		Now:                  time.Now(),
+		Stamp:                opts.stamp,
+		RevocationMemory:     opts.revocationMemory,
 	})
 	if err != nil {
 		return jobs.Outcome{}, err

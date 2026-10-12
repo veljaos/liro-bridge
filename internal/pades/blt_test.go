@@ -119,6 +119,18 @@ func (f *bltFixture) sign(t *testing.T) (*Result, error) {
 	})
 }
 
+// signKeepingBT is sign with the caller's permission to keep a B-LT
+// that fell short at B-T — what the window does for its configured
+// level (C26, D-469).
+func (f *bltFixture) signKeepingBT(t *testing.T) (*Result, error) {
+	t.Helper()
+	return SignDocument(context.Background(), buildMinimalPDF(t), f.session, Options{
+		RequestedLevel:     LevelBLT,
+		SaveAtBTIfBLTFails: true,
+		TSA:                f.tsa,
+	})
+}
+
 func dssArray(t *testing.T, signed []byte, key string) pdf.Array {
 	t.Helper()
 	doc, err := pdf.Parse(signed)
@@ -182,7 +194,7 @@ func TestARevokedSignerCertificateSavesNothing(t *testing.T) {
 func TestARevokedTimestampAuthorityKeepsBTAndSaysWhy(t *testing.T) {
 	f := newBLTFixture(t)
 	f.revoke(f.tsaCert)
-	result, err := f.sign(t)
+	result, err := f.signKeepingBT(t)
 	if err != nil {
 		t.Fatalf("SignDocument: %v", err)
 	}
@@ -202,13 +214,37 @@ func TestARevokedTimestampAuthorityKeepsBTAndSaysWhy(t *testing.T) {
 func TestATimestampWithoutItsAuthorityCertificateStopsAtBT(t *testing.T) {
 	f := newBLTFixture(t)
 	result, err := SignDocument(context.Background(), buildMinimalPDF(t), f.session, Options{
-		RequestedLevel: LevelBLT,
-		TSA:            fakeTSAClientAt(t, time.Now().Add(-2*time.Second)),
+		RequestedLevel:     LevelBLT,
+		SaveAtBTIfBLTFails: true,
+		TSA:                fakeTSAClientAt(t, time.Now().Add(-2*time.Second)),
 	})
 	if err != nil {
 		t.Fatalf("SignDocument: %v", err)
 	}
 	if result.AchievedLevel != LevelBT {
 		t.Fatalf("AchievedLevel = %s, want B-T", result.AchievedLevel)
+	}
+}
+
+// The same shortfall, by a caller that did not say it would accept B-T:
+// refused, and nothing handed back (C26, D-469). This is the zero
+// value's behaviour — what a caller who forgets the option gets.
+func TestABLTThatFallsShortIsRefusedUnlessTheCallerAcceptsBT(t *testing.T) {
+	f := newBLTFixture(t)
+	f.revoke(f.tsaCert)
+	result, err := f.sign(t)
+	var coded *errs.Error
+	if !errors.As(err, &coded) || coded.Code != errs.CodeLevelNotReached {
+		t.Fatalf("SignDocument gave %v; want LEVEL_NOT_REACHED", err)
+	}
+	if result != nil {
+		t.Fatalf("a result came back for a refused B-LT: level %s", result.AchievedLevel)
+	}
+	// The control: the same fixture unrevoked reaches B-LT with the
+	// same zero-value options, so it is the shortfall that is refused
+	// and not B-LT itself.
+	g := newBLTFixture(t)
+	if result, err := g.sign(t); err != nil || result.AchievedLevel != LevelBLT {
+		t.Fatalf("the unrevoked control gave %v, %v; want B-LT", result, err)
 	}
 }

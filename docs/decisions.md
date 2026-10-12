@@ -47894,3 +47894,59 @@ How it was built:
 4. F13 §1's "not measured" list named four things; it now names all that the inventory found.
 
 **Not fixed, recorded:** the tests that pass without their fix, and every "never run" row. They are what the table is for.
+
+## D-469 — C26 built: a level that was asked for is reached or refused, the library refuses by default, and a level below the one set is no longer shown as positive
+
+**The owner** (2026-10-12): "refuse wherever someone asked for a specific level. Yes to that, and to changing the library default to refusing. A caller who forgets an option should get an error, not a quietly weaker signature. 'B-LT asked, B-T saved, shown in the positive colour' is the one that would have burned somebody — fix that first."
+
+**Fixed first: the report.** `achievedLevelIntent` and `achievedLevelNote` now take the level the batch was set to reach (`mainWindow.requestedLevel`). B-T where B-LT was set is in the **warning** colour, with a sentence in three locales (`consent.level_blt_short`): "B-LT is set and was not reached: the revocation evidence it needs was not available for every certificate. These signatures are B-T."
+
+**The library refuses by default.** In `pades.Options`:
+- `OnTSAFailureAbort` is gone. Its comment called aborting the default while its zero value saved B-B, which is what misled me in D-465.
+- `SaveWithoutTimestamp`: the zero value refuses with `TSA_UNAVAILABLE` / `TSA_REJECTED`.
+- `SaveAtBTIfBLTFails` (new): the zero value refuses a B-LT that falls short with the new code **`LEVEL_NOT_REACHED`**, and nothing is saved.
+- `TestSignDocumentAbortsOnTSAFailureByDefault` had been passing the abort flag explicitly, so it never tested the default. Now it does.
+- The six tests that check the B-T fallback opt in, as a caller must.
+- A new test refuses a short B-LT under the zero value, with an unrevoked control reaching B-LT under the same options.
+
+**Who counts as having asked, and on what basis:**
+- **A protocol or cloud caller that names `level`** asked. Below it, the document fails (`keepsBTWhenBLTFallsShort`).
+- **The CLI's `--level`, when given**, asked. Its default did not.
+- **The window's level, from Settings,** is the agent's standing configuration. It is kept at B-T and said, not refused.
+
+  I decided this because `config` fills in B-LT on load (`config.go:344`) and cannot tell a level a person chose from the default. Treating it as asked would refuse **every MUP signature on a default install**, since MUP cannot reach B-LT at all (D-466). **If the owner wants Settings treated as asked, the default level must change first** (SPEC §12.6). That is the owner's call, not made here.
+
+**No "sign without a timestamp" after a failure, nor when a caller named the level** (`offersWithoutTimestamp`). The page hides the button, and Go refuses that answer if it arrives anyway (`acceptedTSAChoice`). Only before a batch, with no authority configured and no level named, is it still offered.
+
+**What was measured, in this container:**
+- the controls: the old rules fail the new cross-platform tests (`levelshortfall_test.go`), on both the colour and the offer;
+- `internal/pades` and the whole Go suite green, except `TestOnlyTheChooserHelperKeepsItsDumpableFlag` as root, the known environmental failure (D-460);
+- the SDK: `LEVEL_NOT_REACHED` added, `dist/` rebuilt and matching `src/`, 113 passed, 0 failed, 0 skipped.
+
+**Corrected along the way:** PROTOCOL.md said a TSA that does not answer produces B-B for a protocol caller. That was untrue before today, since the protocol path failed the document. It now states the rule.
+
+**Not measured:** any of it with a card or a screen (worklist 1.2, 1.3, 1.5). The Windows test of the hidden button runs on CI only.
+
+## D-470 — the owner's rulings: no LDAP; macOS signing still waits
+
+- **LDAP is not built** (the owner, on D-466): "Pošta needs one certificate we already carry, and the test in its shape reaches B-LT fetching nothing. One signature with my card settles it, and that is mine to do." `docs/decision-ldap.md` is now a record, not a question. SPEC §6.8 stays as it is.
+- **macOS signing still waits** (D-467 stands).
+
+## D-471 — why three of C21's fixes have no test
+
+The owner: "if they cannot be tested, that is a fact about them worth knowing, and if they simply were not, that is worth knowing too." Read again at each site for this entry:
+
+- **A failed `add_*` releases its handler** (`navguard_windows.go`, three sites). **Testable; simply not tested.** A fake `ICoreWebView2`, whose vtable slots 7, 17 and 44 return a failing HRESULT, would make `comCall` fail. The handler's own reference count would then show the release. Windows tests here already build callbacks with `NewCallback` (`dropwatch_windows_test.go`, `navguard_windows_test.go`). I measured the six rows the inventory had flagged, and treated these as error paths to fix by reading. That was a choice, not a limit.
+- **A failed PIN dialog deletes its fonts** (`pindialog_windows.go`, `build`'s error path). **Not testable as written.** `build` fails only when `CreateWindowExW` refuses a control, and nothing lets a test make it refuse, short of exhausting the session's USER/GDI handles, which no CI runner should be asked to do. Testing it needs a seam: a function variable for control creation. Not added.
+- **`WM_QUIT` reaching the PIN loop ends the dialog as a cancel** (`runPINDialog`). **Testable; simply not tested.** Post `WM_QUIT` to the dialog's thread with `PostThreadMessageW`, then assert that `CollectPIN` returns a cancel and the field is cleared. **Found reading it for this entry:** the fix ends the dialog but **swallows** the `WM_QUIT`. The usual rule for a nested loop is to post it again for whatever loop is outside. By reading, the login's thread has no outer loop, so nothing is lost today. A test would have to decide which behaviour it asserts. Recorded, not changed.
+
+The two tests that pass with or without their fix (Navigate, `FreeConsole`) are worklist items 0.1 and 0.2. These three are 0.3, except the fonts, which wait on the seam.
+
+## D-472 — the worklist: what must be measured before any of this reaches a person
+
+The owner asked for "one short document — not an entry, a page a person can act on". It is **`docs/measure-before-release.md`**:
+- grouped by what each row needs: CI, which is mine and comes first; a card; a screen; a server; a VM; a Mac;
+- ordered within each group by what a person meets first;
+- each row stating the claim and what would show it false.
+
+**Found while writing it:** a cloud link dropped because eight are already waiting is only logged (`cloudlink.go` `offer`), against D-461's rule that a link which comes to nothing is said. It is worklist item 0.6, not fixed here.

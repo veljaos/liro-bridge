@@ -1,14 +1,14 @@
 # F12 — session 33 (cloud): C21 finished, D39 and D23 read to their causes, D45 inferred only, D6, the cloud channel, B-LT after DSS, F13 written blind
 
-**What this is:** the handover after a session run in Anthropic's cloud on a Linux container — **no Windows, no macOS, no card, no reader, no screen** — asked to work through six tasks without asking anything, record every decision, and bring back the whole thing. **Written:** 2026-10-12. Branch `claude/wizardly-clarke-rmvkdt`, not merged; the owner opened PR veljaos/liro-bridge#1 from it. Entries **D-457 to D-468**; predictions in `docs/s33-predictions.md`, each block committed before the run it predicts.
+**What this is:** the handover after a session run in Anthropic's cloud on a Linux container — **no Windows, no macOS, no card, no reader, no screen** — asked to work through six tasks without asking anything, record every decision, and bring back the whole thing. **Written:** 2026-10-12. Branch `claude/wizardly-clarke-rmvkdt`, not merged; the owner opened PR veljaos/liro-bridge#1 from it. Entries **D-457 to D-472**; predictions in `docs/s33-predictions.md`, each block committed before the run it predicts.
 
-**Read first:** D-457 … D-468, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C25, D4, D6, D23, D39, D44–D48, B32–B33).
+**Read first:** D-457 … D-472, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C25, D4, D6, D23, D39, D44–D48, B32–B33).
 
 ---
 
-## After the owner's review (2026-10-12): D-465 … D-468
+## After the owner's review (2026-10-12): D-465 … D-472
 
-**Before reading anything below, read `docs/s33-what-ran.md`.** It has every change, what has actually run against it, and what has never run. Where this handover says "measured", that table says where, and whether the test was ever seen failing without the change. Where the two differ, the table is the later reading.
+**The owner's worklist is `docs/measure-before-release.md`** (D-472): what must be measured before any of this reaches a person, in order. **Then read `docs/s33-what-ran.md`.** It has every change, what has actually run against it, and what has never run. Where this handover says "measured", that table says where, and whether the test was ever seen failing without the change. Where the two differ, the table is the later reading.
 
 - C25 is fixed as the owner ruled (D-465). The B-B finding I reported was wrong; what is true is in `docs/decision-timestamp-failure.md` (C26).
 - LDAP, and what B-LT reaches: `docs/decision-ldap.md` (D-466). No Serbian card has reached B-LT.

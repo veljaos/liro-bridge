@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/crypto/ocsp"
 
+	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
 )
 
@@ -141,13 +142,12 @@ func issue(t *testing.T, tmpl *x509.Certificate, pub *rsa.PublicKey, parent *x50
 	return c
 }
 
-func (p *postaShape) sign(t *testing.T, trustStore []*x509.Certificate) *Result {
+func (p *postaShape) sign(t *testing.T, trustStore []*x509.Certificate) (*Result, error) {
 	t.Helper()
-	result, err := SignDocument(context.Background(), buildMinimalPDF(t), p.session, Options{
-		RequestedLevel:    LevelBLT,
-		OnTSAFailureAbort: true,
-		TSA:               p.tsa,
-		TrustStore:        trustStore,
+	return SignDocument(context.Background(), buildMinimalPDF(t), p.session, Options{
+		RequestedLevel: LevelBLT,
+		TSA:            p.tsa,
+		TrustStore:     trustStore,
 		AIAFetch: func(_ context.Context, url string) ([]byte, error) {
 			p.mu.Lock()
 			p.aiaAsked = append(p.aiaAsked, url)
@@ -155,15 +155,14 @@ func (p *postaShape) sign(t *testing.T, trustStore []*x509.Certificate) *Result 
 			return nil, errors.New("this test fetches nothing by AIA")
 		},
 	})
-	if err != nil {
-		t.Fatalf("SignDocument: %v", err)
-	}
-	return result
 }
 
 func TestThePostaShapeReachesBLTThroughTheTrustedListWithoutLDAP(t *testing.T) {
 	p := newPostaShape(t)
-	result := p.sign(t, []*x509.Certificate{p.intermediate})
+	result, err := p.sign(t, []*x509.Certificate{p.intermediate})
+	if err != nil {
+		t.Fatalf("SignDocument: %v", err)
+	}
 	if result.AchievedLevel != LevelBLT {
 		t.Fatalf("AchievedLevel = %s, want B-LT with the intermediate in the trust store (notes: %v)", result.AchievedLevel, result.Notes)
 	}
@@ -180,9 +179,15 @@ func TestThePostaShapeReachesBLTThroughTheTrustedListWithoutLDAP(t *testing.T) {
 
 func TestThePostaShapeWithoutTheTrustedListDoesNotReachBLT(t *testing.T) {
 	p := newPostaShape(t)
-	result := p.sign(t, nil)
-	if result.AchievedLevel == LevelBLT {
+	result, err := p.sign(t, nil)
+	if err == nil && result.AchievedLevel == LevelBLT {
 		t.Fatalf("B-LT without the trust store: the fixture does not depend on it, so the test above proves nothing (notes: %v)", result.Notes)
 	}
-	t.Logf("without the trust store: %s, notes %v", result.AchievedLevel, result.Notes)
+	// Since C26 (D-469) a B-LT that falls short is refused rather than
+	// kept at B-T, so the control's answer is that refusal.
+	var coded *errs.Error
+	if !errors.As(err, &coded) || coded.Code != errs.CodeLevelNotReached {
+		t.Fatalf("without the trust store: %v; want LEVEL_NOT_REACHED", err)
+	}
+	t.Logf("without the trust store: %v", err)
 }

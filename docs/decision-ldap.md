@@ -1,6 +1,6 @@
 # LDAP, and whether B-LT needs it — the owner's decision (D-466)
 
-**Status:** for the owner's decision. Written in session 33 at the owner's request. Nothing here is built. Every claim says where it comes from: **measured** (with the entry), **read** (in the code or in a file in the repository, today), or **not known**.
+**Status: decided by the owner (D-470): no LDAP.** One signature at B-LT with the Pošta card settles the route (`docs/measure-before-release.md` 1.1). Was: Written in session 33 at the owner's request. Nothing here is built. Every claim says where it comes from: **measured** (with the entry), **read** (in the code or in a file in the repository, today), or **not known**.
 
 ## 1. The premise, checked against the record
 
