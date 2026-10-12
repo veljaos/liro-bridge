@@ -1,3 +1,5 @@
+//go:build linux || (darwin && cgo)
+
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>

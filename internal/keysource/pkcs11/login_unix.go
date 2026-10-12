@@ -3,7 +3,8 @@
 package pkcs11
 
 /*
-#cgo pkg-config: p11-kit-1
+#cgo linux pkg-config: p11-kit-1
+#cgo darwin CFLAGS: -I/opt/homebrew/include/p11-kit-1 -I/usr/local/include/p11-kit-1
 #include "pkcs11_linux.h"
 */
 import "C"

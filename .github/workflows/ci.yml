@@ -1199,17 +1199,19 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: go vet (cgo, darwin)
-        run: go vet -unsafeptr=false ./...
-
-      - name: SoftHSM and OpenSC, and a token with one key and its certificate
+      # p11-kit for its pkcs11.h only (the code links nothing of it on
+      # macOS); SoftHSM and OpenSC for a real module to test against.
+      - name: SoftHSM, OpenSC and p11-kit's header, and a token with one key and its certificate
         run: |
           set -eu
-          brew install softhsm opensc
+          brew install p11-kit softhsm opensc
           module=$(build/macos/ci-softhsm.sh "$RUNNER_TEMP/softhsm" 648219)
           echo "SOFTHSM2_CONF=$RUNNER_TEMP/softhsm/softhsm2.conf" >> "$GITHUB_ENV"
           echo "LIRO_SOFTHSM_MODULE=$module" >> "$GITHUB_ENV"
           echo "LIRO_SOFTHSM_PIN=648219" >> "$GITHUB_ENV"
+
+      - name: go vet (cgo, darwin)
+        run: go vet -unsafeptr=false ./...
 
       - name: test (real WKWebView windows, the Keychain, SoftHSM)
         run: |
@@ -1227,6 +1229,9 @@ jobs:
           lipo -archs "$app/Contents/MacOS/liro-bridge" | tee /dev/stderr | grep -q arm64
           lipo -archs "$app/Contents/MacOS/liro-bridge" | grep -q x86_64
           "$app/Contents/MacOS/liro-bridge" --version
+          # Nothing from Homebrew: a bundle that loads a library from
+          # /opt/homebrew runs on this runner and on no other Mac.
+          otool -L "$app/Contents/MacOS/liro-bridge" | tee /dev/stderr | { ! grep -E '/opt/homebrew|/usr/local'; }
 
       - name: what a person would see, and the bundle
         if: always()

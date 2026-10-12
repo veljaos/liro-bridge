@@ -3,7 +3,11 @@
 package pkcs11
 
 /*
-#cgo pkg-config: p11-kit-1
+#cgo linux pkg-config: p11-kit-1
+// macOS takes p11-kit's pkcs11.h and nothing else: linking libp11-kit
+// from Homebrew would make the bundle need Homebrew on every Mac it runs
+// on, and the code calls nothing of p11-kit's (F13 §3, [[D-463]]).
+#cgo darwin CFLAGS: -I/opt/homebrew/include/p11-kit-1 -I/usr/local/include/p11-kit-1
 #cgo LDFLAGS: -ldl
 
 #include <dlfcn.h>
