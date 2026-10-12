@@ -1,8 +1,8 @@
 # F12 — session 33 (cloud): C21 finished, D39/D45/D23 read to their causes, D6, the cloud channel, B-LT after DSS, F13 written blind
 
-**What this is:** the handover after a session run in Anthropic's cloud on a Linux container — **no Windows, no macOS, no card, no reader, no screen** — asked to work through six tasks without asking anything, record every decision, and bring back the whole thing. **Written:** 2026-10-12. Branch `claude/wizardly-clarke-rmvkdt`, not merged, no PR. Entries **D-457 to D-463**; predictions in `docs/s33-predictions.md`, each block committed before the run it predicts.
+**What this is:** the handover after a session run in Anthropic's cloud on a Linux container — **no Windows, no macOS, no card, no reader, no screen** — asked to work through six tasks without asking anything, record every decision, and bring back the whole thing. **Written:** 2026-10-12. Branch `claude/wizardly-clarke-rmvkdt`, not merged, no PR. Entries **D-457 to D-464**; predictions in `docs/s33-predictions.md`, each block committed before the run it predicts.
 
-**Read first:** D-457 … D-463, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C25, D4, D6, D23, D39, D44–D48, B32–B33).
+**Read first:** D-457 … D-464, then `docs/phases/F14.md` and `docs/phases/F13.md`, then the open items they touched (A2, A32, C13, C21, C22–C25, D4, D6, D23, D39, D44–D48, B32–B33).
 
 ---
 
@@ -18,6 +18,7 @@
 | **A2/E2** (timestamp and B-LT) | D-462 | **built** after reading DSS 6.5; `CERT_REVOKED` has its producer; presets removed; SPEC §12.6 rewritten **as a draft for the owner**. |
 | **A32** (the cloud channel) | D-461 | **built to F14**, with protocol version negotiation; SPEC §2/§4.3 amended. |
 | **F13** (macOS) | D-463 | **written blind**, with a `macos` CI job as its compiler. Still outside v1 (SPEC §19). |
+| (unasked) a racy API test | D-464 | a docs-only push went red on `TestTheResultAnswers202WhileTheJobIsStillRunning`: D-252's defect at a site its sweep missed. Reproduced 7/1200, fixed, 0/1200. |
 
 ## B. CI, read to the end of each run
 
@@ -30,6 +31,8 @@
 | 38187726349 | `3f8b65d` | macOS, second | macos: **`internal/ui` and `internal/platform` green** (the window, the Keychain, the LaunchAgent); PKCS#11 failed to link (`pkcs11_linux.c`'s `liro_*` symbols missing — in its own test binary and in the three that import it, `cmd/liro-bridge`, `pkcs11/worker`, `pinscreen`; and `-lp11-kit` from Homebrew, found here). windows red on the same two test bugs as `e131e3f` (`5e187d9`). The Linux jobs and the three `linux-install` green. |
 | 38187982282 | `ac20812` | macOS, third | **macos green**: the suite, and the bundle — universal, `--version`, only system frameworks. windows red on the two test bugs fixed in `5e187d9` (read from its log: `internal/cloud`'s `filepathDir` and the LaunchAgent's two tests, nothing else). The Linux jobs and the three `linux-install` green. |
 | 38188278943 | `38bbcfa` | everything, and the macOS tests with `-v` | **all ten jobs green**: `ci` (the real-TSA test cannot skip on an unreachable server — `SignDocument` saves at B-B and the test fails, as it does in this container — so green there means Pošta's test TSA was reached and a B-T signature verified; inferred from the test's code and the result, the log being not `-v`), `linux-gui` with its race probe, `linux-packages` and the three `linux-install`, `packaging`, `sdk-typescript`; **`windows` green from its first test line** — every Go package `ok`, the SDK 110 passed, 0 failed, 3 skipped by design (the discovery-file examples place the file on Linux and macOS only); **`macos` green, and the `-v` step says every named test ran, none skipped**: the window, the Keychain, both LaunchAgent tests, and SoftHSM 2.7 — token read, a 256-byte signature verified against the certificate, one wrong PIN one `CKR_PIN_INCORRECT`. |
+| 38189507427 | `a5a8e45` | the docs | **ci red** on `TestTheResultAnswers202WhileTheJobIsStillRunning`, a test race: the job was still `queued` when read. D-464; reproduced locally 7/1200, fixed. The other nine jobs green. |
+| the next | D-464's commit | the fix | **not in this file**: a file cannot carry the result of the run its own push starts. It is read to its end in the session's closing report. |
 
 **check.sh, cited before each push** (run as an ordinary user; root fails one test for an environmental reason, D-460):
 - `48e53ce`: all of `ci` except the real-TSA test (DNS to `test-tsa.ca.posta.rs` blocked here; CI reaches it — see run 38188278943's row for how that is known). That test's `Skip` branch is dead: an unreachable TSA is not an error from `SignDocument` but a B-B result, so the test fails rather than skips (C25).
@@ -37,6 +40,8 @@
 - `0e3935a`: **lint red in both views** — an unused test helper of mine — fixed before pushing (`55a582e`).
 - `55a582e`: every `ci` and `linux-gui` step green except the DNS-blocked test; fuzz and the three builds re-run separately, green.
 - `61b78ca`/`e131e3f`: the same, the same one environmental failure; `ci:2,4–8,11–14` green on `e131e3f`.
+- `a5a8e45` (docs): `ci:2,4–8,12–14` green.
+- D-464's commit: `ci:2,4–8,12–14` green, recorded in the closing report; `internal/api` under `-race` green, and the test 0/1200 at `GOMAXPROCS=4`.
 - `3f8b65d`, `ac20812`, `38bbcfa`: `ci:2,4–8,12–14` (and `linux-gui:4,5` where the PKCS#11 package changed) green; on `38bbcfa` `ci:9` red only on the DNS-blocked test.
 
 ## C. Decided, and on what basis (each in its entry)
