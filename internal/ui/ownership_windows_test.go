@@ -497,6 +497,7 @@ func TestAFailedSubscriptionGivesItsHandlerBack(t *testing.T) {
 var (
 	procQuitTestFindWindowExW        = user32DLL.NewProc("FindWindowExW")
 	procQuitTestGetWindowTextLengthW = user32DLL.NewProc("GetWindowTextLengthW")
+	procQuitTestIsWindowVisible      = user32DLL.NewProc("IsWindowVisible")
 	quitTestEditClass                = windows.StringToUTF16Ptr("Edit")
 	quitTestTyped                    = windows.StringToUTF16Ptr("1234")
 )
@@ -532,20 +533,27 @@ func TestAQuitReachingThePINLoopIsACancel(t *testing.T) {
 		returned <- result{n, ok, err}
 	}()
 
-	var dialog uintptr
+	// Wait until the dialog is shown, not merely made: runPINDialog
+	// creates the window and only then builds its controls, and shows it
+	// after the build. Finding it by class as soon as it existed raced the
+	// build — the PR run on b550e53 found the window before its edit
+	// control (run 38246385773, D-475).
+	var dialog, edit uintptr
 	deadline := time.Now().Add(30 * time.Second)
-	for dialog == 0 {
+	for {
 		dialog, _, _ = procFindWindowW.Call(uintptr(unsafe.Pointer(pinClassName)), 0)
-		if dialog == 0 {
-			if time.Now().After(deadline) {
-				t.Fatal("the PIN dialog never appeared")
+		if dialog != 0 {
+			if visible, _, _ := procQuitTestIsWindowVisible.Call(dialog); visible != 0 {
+				edit, _, _ = procQuitTestFindWindowExW.Call(dialog, 0, uintptr(unsafe.Pointer(quitTestEditClass)), 0)
+				if edit != 0 {
+					break
+				}
 			}
-			time.Sleep(20 * time.Millisecond)
 		}
-	}
-	edit, _, _ := procQuitTestFindWindowExW.Call(dialog, 0, uintptr(unsafe.Pointer(quitTestEditClass)), 0)
-	if edit == 0 {
-		t.Fatal("the PIN dialog has no edit control to type into")
+		if time.Now().After(deadline) {
+			t.Fatalf("the PIN dialog was not up with its edit control within 30 s (window %#x, edit %#x)", dialog, edit)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	_, _, _ = procSendMessageW.Call(edit, wmSetText, 0, uintptr(unsafe.Pointer(quitTestTyped)))
 	if n, _, _ := procQuitTestGetWindowTextLengthW.Call(edit); n != 4 {

@@ -47999,3 +47999,13 @@ The owner: "SPEC §12.6 makes B-LT the default, and one of the two issuers we ha
 - D: a default per issuer.
 
 Found writing it: **a default install reaches neither B-T nor B-LT on its own**, because no timestamp authority is built in. **Recommended: C; A if C costs too much now.** SPEC §12.6's draft is brought up to C26 and to the LDAP ruling, and points at this decision.
+
+## D-475 — a race in one of group 0's own tests: the PR run on `b550e53` found the PIN dialog before its edit control
+
+**What happened.** Run 38246385773, the PR run on `b550e53` (a docs-only commit whose code had passed three times), went red on `windows` in `TestAQuitReachingThePINLoopIsACancel`: `the PIN dialog has no edit control to type into`. The push run on the same commit was green. The owner saw it before I had read it.
+
+**Cause, read in the code.** `runPINDialog` creates the dialog's window, then builds its controls, then shows it. The test found the window by its class as soon as it existed, and looked once for the edit control. When the test ran between creation and the build, the control was not there yet. This is a defect in the test, of the "read before it is there" kind this session has recorded before (D-464, F §2 rule 2): the product code is not involved.
+
+**Fix.** The test waits until the dialog is **shown** (`IsWindowVisible`), which happens only after `build` has made every control, and until its edit control is found, with a 30-second bound. What the test measures is unchanged: a `WM_QUIT` ends the dialog as a cancel and takes the window down.
+
+**Not reproduced here.** It is a Windows test, and this container has no Windows. The fix rests on reading `runPINDialog`'s order. The next runs will show whether that reading was right.
