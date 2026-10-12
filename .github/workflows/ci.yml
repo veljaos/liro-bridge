@@ -707,15 +707,6 @@ jobs:
       - name: go vet
         run: go vet -unsafeptr=false ./...
 
-      # Session 33's reading, for one run and then removed: the stderr
-      # test passed where it was predicted to fail (P1f), and a passing
-      # test's own diagnosis is not printed without -v. Before the suite,
-      # so the suite's own failures cannot skip it.
-      - name: "reading (s33 P1f): the standard handles after FreeConsole"
-        run: go test -tags softtoken ./cmd/liro-bridge -run '^TestNothingWrittenToStderrAfterTheConsoleIsGivenBackLandsInAFile$' -count=1 -v
-        env:
-          CGO_ENABLED: 0
-
       - name: test (real WebView2 windows, no hardware)
         # -tags softtoken so the interactive consent/sign path
         # (cmd/liro-bridge's *_windows_test.go) can exercise a real

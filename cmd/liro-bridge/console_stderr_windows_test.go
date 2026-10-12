@@ -47,12 +47,15 @@ func TestStaleStderrHelper(t *testing.T) {
 		t.Fatalf("creating the file: %v", err)
 	}
 	errAfter, _ := windows.GetStdHandle(windows.STD_ERROR_HANDLE)
+	// Read before Close: a closed os.File's Fd is -1, which is what the
+	// first run of this printed (session 33), measuring nothing.
+	fileHandle := f.Fd()
 	println(staleStderrMarker + " runtime")
 	fmt.Fprintln(os.Stderr, staleStderrMarker+" os.Stderr")
 	_ = f.Close()
 
 	diag := fmt.Sprintf("consoleProcesses=%d stderrBefore=%#x file=%#x stderrAfter=%#x",
-		n, uintptr(errBefore), f.Fd(), uintptr(errAfter))
+		n, uintptr(errBefore), fileHandle, uintptr(errAfter))
 	_ = os.WriteFile(filepath.Join(dir, "diag.txt"), []byte(diag), 0o644)
 }
 
