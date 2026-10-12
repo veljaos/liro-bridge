@@ -713,7 +713,7 @@ func CollectPIN(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (n int,
 	case r == -1:
 		return 0, false, nil
 	case r < 0:
-		return 0, false, errors.New("ui: the PIN entered is longer than this token accepts")
+		return 0, false, ErrPINTooLong
 	}
 	copy(dst, unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(r)))
 	return int(r), true, nil
