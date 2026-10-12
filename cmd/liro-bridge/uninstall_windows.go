@@ -128,7 +128,9 @@ func runUninstallNotice(args []string, out io.Writer, cfg config.Config) int {
 	if err := platform.NewShellMenu().Unregister(); err != nil {
 		slog.Warn("uninstall: could not remove the Explorer menu entry", "error", err)
 	}
-	if err := platform.NewURLScheme().Unregister(); err != nil {
+	if p9Unfixed {
+		slog.Info("uninstall: P9 measurement run, the link scheme is left")
+	} else if err := platform.NewURLScheme().Unregister(); err != nil {
 		slog.Warn("uninstall: could not remove the liro-bridge:// link scheme", "error", err)
 	}
 	if err := platform.NewAutostart().SetEnabled(false, ""); err != nil {

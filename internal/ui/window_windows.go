@@ -893,7 +893,7 @@ func (w *window) Navigate(page string) error {
 		// target to the calling thread's OLE apartment and fails on a
 		// thread with none, and w.dropTargets is the UI thread's — the
 		// drop watch reads and appends to it there (C21, [[D-457]]).
-		if w.onFilesDropped != nil && !w.tearingDown {
+		if w.onFilesDropped != nil && !w.tearingDown && !p9Unfixed {
 			revokeDropTargets(w.dropTargets)
 			w.dropTargets = registerDropTargets(w.hwnd, func(paths []string) {
 				w.queueEvent(windowEvent{dropped: paths})
@@ -907,10 +907,21 @@ func (w *window) Navigate(page string) error {
 
 	select {
 	case err := <-result:
-		return err
+		if err != nil || !p9Unfixed {
+			return err
+		}
 	case <-w.closedCh:
 		return ErrWindowClosed
 	}
+	// P9 only: the registration where it was before the fix, on the
+	// caller's goroutine after the wait.
+	if w.onFilesDropped != nil {
+		revokeDropTargets(w.dropTargets)
+		w.dropTargets = registerDropTargets(w.hwnd, func(paths []string) {
+			w.queueEvent(windowEvent{dropped: paths})
+		})
+	}
+	return nil
 }
 
 // Resize implements Window.Resize (window.go).
