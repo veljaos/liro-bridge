@@ -76,3 +76,22 @@ Written before the push.
 | P4f | the cloud, B-LT and negotiation tests in `ci`, `linux-gui` and the SDK job | pass |
 | P4g | `linux-packages` and `linux-install` with the new desktop entry | pass, the entry found and removed with the package |
 | P4h | `packaging` (the MSI with one more RemoveRegistryKey) | passes |
+
+## P4, read — CI run 38186918219 on 55a582e
+
+All P4 rows as predicted **except P4a's PIN-dialog row**: still red,
+"CollectPIN did not return within 15 s of its owner being destroyed (the
+dialog's window still exists)". P1e's mechanism was wrong — a window
+destroyed on one thread does not destroy the windows it owns on another,
+so the WM_DESTROY branch the fix added never ran there. (The other jobs:
+read in D-457's addendum.)
+
+## P5 — the owner watched on a timer, and F13's first macOS run
+
+Written before the push that carries both.
+
+| | what | predicted |
+|---|---|---|
+| P5a | `TestAPINDialogWhoseOwnerIsDestroyedReturns` | passes: within ~250 ms of the owner's destruction `IsWindow` is false and the dialog cancels |
+| P5b | every other Windows test | as in run 38186918219 |
+| P5c | the `macos` job | **red**, and where is the least certain thing in this session: code no compiler has seen. Most likely first failures, in order: an Objective-C compile error in `darwin_objc.go`; a cgo type mismatch between the preamble's declarations and `_cgo_export.h`; a test written for Linux or Windows that is untagged and fails on darwin. **Not** predicted: a window that opens and loads on the first attempt |

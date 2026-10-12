@@ -76,11 +76,17 @@ const (
 
 	// Messages. wmCommand is declared in tray_windows.go, which got there
 	// first for the tray menu, and means the same thing here.
-	wmNull         = 0x0000
-	wmSetFont      = 0x0030
-	wmGetText      = 0x000D
-	wmSetText      = 0x000C
-	emSetLimitText = 0x00C5
+	wmNull = 0x0000
+
+	// pinOwnerTimerID and pinOwnerInterval: how often the dialog looks
+	// for its owner. A quarter of a second is quicker than a person
+	// notices and costs nothing.
+	pinOwnerTimerID  = 0x50494e // "PIN"
+	pinOwnerInterval = 250
+	wmSetFont        = 0x0030
+	wmGetText        = 0x000D
+	wmSetText        = 0x000C
+	emSetLimitText   = 0x00C5
 
 	// SetWindowPos flags, named rather than spelled at each call site.
 	swpNoSize   = 0x0001
@@ -115,6 +121,10 @@ type pinDialog struct {
 	n      int
 	ok     bool
 	closed bool
+
+	// owner is the window this dialog belongs to, watched while the
+	// dialog is up (pinOwnerTimerID).
+	owner uintptr
 
 	// tooLong separates "what was typed does not fit the token's buffer" from
 	// "the person pressed Cancel", which were one answer until the dialog
@@ -232,6 +242,16 @@ func runPINDialog(owner uintptr, prompt PINPrompt, maxLen int, dst []byte) (int,
 	_, _, _ = procShowWindow.Call(hwnd, swShow)
 	_, _, _ = procSetForegroundWindow.Call(hwnd)
 	_, _, _ = procSetFocus.Call(d.edit)
+	if owner != 0 {
+		// The owner is watched rather than trusted to take this window
+		// with it: it lives on the UI thread and this dialog on the
+		// login's, and a window destroyed on one thread does not destroy
+		// the windows it owns on another — measured on CI's runner, where
+		// the dialog outlived its owner by the whole 15 s the test waited
+		// ([[D-457]], P4). Its timer dies with the window.
+		d.owner = owner
+		_, _, _ = procSetTimer.Call(hwnd, pinOwnerTimerID, pinOwnerInterval, 0)
+	}
 
 	d.pump()
 	// The loop ends on its own only by OK, Cancel, the close box or the
@@ -556,13 +576,23 @@ func pinWndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		// closed is a person declining, not a failure (D-145).
 		d.cancel()
 		return 0
+	case wmTimer:
+		// The owner gone — the sign window closed while this asked for a
+		// PIN — is a cancel: a PIN prompt for a request whose window has
+		// gone is a prompt nobody can place.
+		if wparam == pinOwnerTimerID && d.owner != 0 {
+			if alive, _, _ := procIsWindow.Call(d.owner); alive == 0 {
+				d.cancel()
+			}
+			return 0
+		}
 	case wmDestroy:
-		// Destroyed by somebody other than accept or cancel — its owner,
-		// the sign window, going away takes its owned windows with it.
-		// Nothing had set closed, so the loop waited in GetMessage for a
-		// message nothing would send and CollectPIN never returned: the
-		// login that asked for the PIN waited for ever (C21, [[D-457]]).
-		// It is a cancel. The field is cleared while it still exists —
+		// Destroyed by somebody other than accept or cancel — an owner on
+		// this same thread takes its owned windows with it (one on another
+		// thread does not; the timer above is for that). Nothing had set
+		// closed, so the loop would wait in GetMessage for a message
+		// nothing would send and CollectPIN would never return (C21,
+		// [[D-457]]). It is a cancel. The field is cleared while it still exists —
 		// a parent's WM_DESTROY comes before its children's — and the
 		// loop is woken, because a sent message does not end GetMessage.
 		if !d.closed {

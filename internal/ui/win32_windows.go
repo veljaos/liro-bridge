@@ -47,6 +47,7 @@ var (
 	procGetClassNameW         = user32DLL.NewProc("GetClassNameW")
 	procSetTimer              = user32DLL.NewProc("SetTimer")
 	procKillTimer             = user32DLL.NewProc("KillTimer")
+	procIsWindow              = user32DLL.NewProc("IsWindow")
 	procWindowFromPoint       = user32DLL.NewProc("WindowFromPoint")
 	procGetWindowThreadPID    = user32DLL.NewProc("GetWindowThreadProcessId")
 	procIsIconic              = user32DLL.NewProc("IsIconic")
