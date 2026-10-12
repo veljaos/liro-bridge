@@ -249,3 +249,8 @@ check.sh on `3b3f3bc`: ci 4–14 and linux-gui 4–6 passed.
 - **P12b:** `TestSettingsOffersFourLevelsWithBBFirst` passed. The red I expected to come from it came from elsewhere.
 - **P12c, the outcome right and the reason wrong:** the WebKitGTK Settings test was a SKIP in the `-race -v` probe. The reason was not "no display" but `bwrap: setting up uid map: Permission denied` (D-324), which `s33-what-ran.md` also names.
 - **P12d:** packaging published `liro-bridge-windows-9ad71a8…`. **It is a red head's build and is not the one for rows 1.2 and 1.3.**
+
+## P13 — the D-479 fix, written before check.sh and the push
+
+- **P13a:** all ten jobs green in the push run and the PR run. On windows that includes `TestSettingsWindowRendersLocalisedText` in all three languages, the four-level test, and the new every-label test.
+- **P13b:** packaging publishes `liro-bridge-windows-<head sha>`, and that build is the one for rows 1.2 and 1.3.
