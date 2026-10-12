@@ -126,3 +126,33 @@ All ten jobs green in both. P6b passed: the dyld test asserted `LoadNoFile` on t
 | P7c | `sdk-typescript` and the Windows SDK step, with `LEVEL_NOT_REACHED` | pass; `dist/` matches `src/` |
 | P7d | `TestEveryErrorCodeHasAMessageInEveryCatalogue` and the catalogue-parity tests | pass with the new code and two keys |
 | P7e | everything else | as in the runs on `feed7e8` |
+
+## P8 — a stand-in Liro Business, end to end (written before it is built; the owner asked for this first)
+
+**What it is.** One Go test in `cmd/liro-bridge`, run in this container and by every CI job that tests `cmd` (Linux, Windows, macOS). It strings together the agent's own code:
+- `open-link` with a good link, an agent reported running, so the link is left in the inbox;
+- the watcher taking it from the inbox;
+- the queue;
+- `cloud.Channel.Handle` with the real client, the real store of allowed servers (in a temporary directory) and the real job registry;
+- the result posted back.
+
+It runs against a **stand-in server** in the same process: Go's `httptest` TLS server, serving a job of digests and recording what is posted. The parts that are not real:
+- a **stand-in for the origin question**, answering allow or deny;
+- a **stand-in signer**, standing for the consent window, the PIN and the card: it signs the digests with an RSA key made in the test;
+- the server checks the returned signatures against that key's certificate.
+
+**What it would show:**
+- that the pieces fit: a link that enters as a command-line argument ends as a signature on the server that served the job, with nothing in between disconnected;
+- that the server is asked about once, and remembered;
+- that a server the person refuses is never fetched from;
+- that the result goes to the job's own origin;
+- that what comes back verifies against the signer's certificate.
+
+**What it would not show** (no worklist row moves; the owner, 2026-10-12):
+- **real HTTPS**: the server's certificate is trusted by name in the test, not by the system's roots;
+- **a browser** handing over the link: no desktop, no scheme registration, no LaunchServices;
+- **any window**: not the origin question, not the consent, not the PIN; each is a function standing in;
+- **a card or a real signature**: the stand-in signer is not the agent's consent flow, and the signatures are not PAdES;
+- **Liro Business itself**: the stand-in is written from F14's description of the protocol, not from the real server's code. Where the two differ, this test cannot see it.
+
+**Predicted:** green in the container and on every CI job that runs `cmd`. Its control: the same test with the queue's watcher never started must fail on the server not receiving a result. If it passes without the watcher, it measures nothing about the path.
