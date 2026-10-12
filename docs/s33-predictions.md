@@ -51,3 +51,28 @@ Written before the commit that carries the harness fix is pushed.
 | P3d | P1d's | **FAIL**, ~30 GDI objects |
 | P3e | P1e's | **FAIL**, CollectPIN does not return in 15 s |
 | P3f | the P1f reading step | passes; its diagnosis shows `stderrAfter` equal to `stderrBefore` and `file` a different value — Server 2025's FreeConsole leaves the console handles as they were, or their numbers are not the first handed out, and the reuse D-454 reasoned from did not happen here |
+
+## P3, read — CI run 38185042718 on 7cd0a8b
+
+P3a, P3b, P3d, P3e red as predicted (200 handles; 4 of 5 pinned; 30 GDI
+objects, 6.0 each; CollectPIN not returned in 15 s). **P3c passed, as
+predicted**: off the UI thread the registration succeeded on the runner, so
+the row is a reading with no defect measured. P3f half right:
+`stderrAfter=0x74` equal to `stderrBefore=0x74`, the marker in no file — but
+`file=0xffffffffffffffff` is a closed file's Fd, read after Close by my own
+helper, so the file half measured nothing.
+
+## P4 — the fixes and the session's code, pushed together (s33-fixes), every job
+
+Written before the push.
+
+| | what | predicted |
+|---|---|---|
+| P4a | the five C21 Windows tests | all pass |
+| P4b | the stderr test, its helper now reading the handle before Close | passes; not printed (no -v), so its numbers are not read |
+| P4c | `TestAFindWindowWalkLosesItsPlaceWhenItsCursorIsDestroyed` (D39's mechanism) | passes — the walk ends early when the cursor is destroyed. **Least certain of P4**: whether the runner's window manager reuses or frees the slot the way the owner's machine did |
+| P4d | `TestURLSchemeRoundTrip` (the cloud channel's registration, HKCU scratch key) | passes |
+| P4e | `TestSettingsOffersNoTimestampService` | passes |
+| P4f | the cloud, B-LT and negotiation tests in `ci`, `linux-gui` and the SDK job | pass |
+| P4g | `linux-packages` and `linux-install` with the new desktop entry | pass, the entry found and removed with the package |
+| P4h | `packaging` (the MSI with one more RemoveRegistryKey) | passes |
