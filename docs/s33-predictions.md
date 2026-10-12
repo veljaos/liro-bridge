@@ -269,3 +269,15 @@ Push run 38264758016 and PR run 38264764850: both green, all ten jobs each.
 - **P14a:** `TestARevokedSignerCertificateSavesNothing`, with the new assertion, is red on today's code: the `CERT_REVOKED` error contains the signer certificate's CommonName and no thumbprint.
 - **P14b:** `TestARevokedTimestampAuthorityKeepsBTAndSaysWhy`, with the new assertion, is red: the note contains the timestamp authority's CommonName and no thumbprint.
 - **P14c:** both green once the two lines name the thumbprint instead.
+
+## P14, read (container)
+
+- **P14a, as predicted:** `the message names the certificate "pades.SignDocument test signer": CERT_REVOKED: pades: the revocation evidence says "pades.SignDocument test signer" was revoked at …`, and no thumbprint.
+- **P14b, as predicted:** `the message names the certificate "pades.SignDocument test TSA": B-LT not claimed: the evidence says "pades.SignDocument test TSA", which vouches for …`, and no thumbprint.
+- **P14c, as predicted:** both green after, and all of `internal/pades/...` passes.
+
+## P15 — the D-480/D-481 push, written before it
+
+- **P15a:** check.sh passes the ci job and linux-gui 4–6.
+- **P15b:** all ten jobs green in both runs. The only code change is in `internal/pades`, which every OS tests.
+- **P15c:** packaging publishes `liro-bridge-windows-<head sha>`, the build for rows 1.1–1.4.

@@ -48091,3 +48091,57 @@ Found writing it: **a default install reaches neither B-T nor B-LT on its own**,
 **Fixed:** the string is sent. **And a check that runs everywhere:** `TestSettingsSendsEveryLabelItsPageNames` reads every `data-i18n` key in `settings.html` and requires `buildSettingsInit` to send it. It was red in the container with the line removed, naming `settings.level_best`, and green with it.
 
 **What P12 said, against what happened:** I expected any red on windows to be in `TestSettingsOffersFourLevelsWithBBFirst`, and that test passed. The red was in a test I had edited (to add the key to its list) without asking what it would then check.
+
+## D-480 — my code wrote a person's name, and on a MUP card their JMBG, into the agent's log; nothing in the project would have found it
+
+**What happened.** On 2026-10-11 (`4b7c60c`, D-462) I wrote a warning in `dss.Gather` that logged a certificate's **subject** whenever no issuer could be found for it. For the signer's certificate, the subject is a person's name, and on a MUP card it carries their JMBG. SPEC §18.3 forbids both in the log. The rule is also written at the top of `internal/config/logging.go`: a certificate is named in the log by its SHA-1 thumbprint, never its subject. My first draft of D-477, the next day, added two more lines that did the same.
+
+**How it was found.** Not by a test, not by a review, not by a rule. I found it on 2026-10-12, writing D-477 about something else: I opened `logging.go` to name the log file for the owner, and its comment states the rule. **Nothing in the project would have found it.**
+- No test reads `bridge.log` for personal data. The audit log has such a check (`internal/audit/store_test.go` fails on a run of 13 digits); the agent's log has none.
+- No lint rule or check script looks at what is passed to a log call.
+- No review step reads a diff for it.
+- My own tests of the new warnings used synthetic certificates and checked that the warnings appeared, not what they carried.
+
+The first person to see it would have been someone reading a log: most likely the owner, sending me `bridge.log` from card row 1.1 with their own name in it.
+
+**Who could have it.** No tag contains `4b7c60c`, and no branch except this one. **Whether anyone ran a build of this branch, I cannot know, and I leave that standing.** What I can say about builds:
+- Thirteen pushed heads carry the line unfixed: `55a582e` to `aaa1c01`, from 2026-10-12 00:09 to 12:24 UTC. Their CI runs built packages.
+- One run checked, 38248820871 on `aaa1c01`, published Linux packages (`.deb` and `.rpm`, kept until 2027-01-10) and the macOS bundle (until 2026-10-26). They can still be downloaded by anyone with access to the repository. I have not listed the other twelve runs' artifacts.
+- The line fires only on a B-LT signature where an issuer cannot be found, so it needs a card or token, a configured timestamp authority and a chain that does not complete.
+- **Whether to delete those artifacts is the owner's decision.** I have not touched them.
+
+**Fixed** (`2ec3055`): all three lines give the thumbprint, and `TestTheLogNamesTheCertificateThatGotNoEvidence` fails if the subject appears. It was red against the subject-logging code.
+
+**And the rule made simple (the owner, 2026-10-12):** "An organisation's name is not the risk, but 'we decided this one was safe to log' is exactly how the first one got in." D-477 had left a revoked timestamp authority's CommonName in a signer note, on the judgement that an organisation's name was safe. It is out. So is the same pattern two lines above it, which I had not been asked about: the `CERT_REVOKED` error named the **signer's** certificate by CommonName. I had judged that safe too, because errors are not logged per document. It went to the person's terminal and to the calling program. Both now give the thumbprint.
+
+**After this, no message in the product names a certificate by anything but its thumbprint.** The remaining uses of a subject are the certificate picker and the visible stamp, which show a person their own name on purpose, and the developer probes in `scripts/`, which print to the terminal of whoever runs them. Measured (P14): both revoked-path tests red on the old lines (the CommonName present, no thumbprint), green after.
+
+**What is still true:** nothing checks for the next one. A test that reads the log, or a rule over log calls, would. I have not built either, because it was not asked. It is in the reply.
+
+## D-481 — card row 1.1 with Pošta's test timestamp authority: what it can show, what it cannot, and the one reading that decides which
+
+**The owner** (2026-10-12): there is no contract for Pošta's production timestamp authority, only the test server at `test-tsa.ca.posta.rs`. "Tell me what row 1.1 gives with a test authority … If the answer is that the row cannot be read without a production authority, say so and I will decide about the contract. Do not work around it."
+
+**What B-LT needs from the timestamp authority, read from the code:**
+- The agent's anchors are the Trusted List's **CA** services (`tsl.List.CACertificates`).
+- A timestamp unit's own certificate is never an anchor. B-LT needs an OCSP response or CRL for it, and for every certificate above it until a listed CA is reached (`dss.Gather`, the timestamp role).
+
+**What the bundled Trusted List says, read from `TSL-RS.xml`:**
+- Pošta's **production** units ("Pošta Srbije TSA 1" and "TSA 2", one pair per year, the current ones granted) are listed as qualified timestamp services (QTST). Each is issued by "Pošta Srbije CA 1", a CA the list carries. So with the production authority, one certificate needs evidence, from the same CA that issues the card.
+- **No test unit is listed.**
+
+**What is not known:** the test unit's certificate has never been read. D-045 reached the server and recorded a 4,196-byte token, not its chain, and I cannot reach it from here (this environment's network policy denies `test-tsa.ca.posta.rs`). So there are two cases:
+- **(a) The test unit is issued by a CA the list carries** (CA 1, say). Then row 1.1 reads in full with the test server: the timestamp half is the same as production's.
+- **(b) It is issued by a test CA the list does not carry.** Then the timestamp's chain ends at a root nothing vouches for. **B-LT is unreachable whatever the card does**, and the row's claim, "a Pošta card reaches B-LT", cannot be shown true. The log would show `role=timestamp` lines.
+
+**What (b) still gives, and what it does not.** It is not row 1.1.
+- With B-LT chosen in Settings, the signature is refused and nothing is saved, so there is nothing to read.
+- At the default, the best available, the agent saves B-T **with the evidence it did gather embedded** (`applyDSS` writes the partial `/DSS`). The card's half can then be read **positively from the document**: whether the signer's certificate's OCSP response or CRL is in `/DSS`, which DSS's validator lists per certificate, and whether the log has any `role=signer` line.
+- That can show the card's half **false**. It cannot show the row true, because the row is about reaching B-LT, and in (b) nothing reaches it.
+
+**The reading that decides between (a) and (b) costs no contract.** One signature with the test server at B-T, which is row 1.4 anyway, carries the unit's certificate inside the PDF. Its issuer settles it: I can read it from the file, or Adobe shows it under the timestamp's certificate. That is a measurement of what is there, not a substitute for the production authority.
+
+**Answer to the owner:**
+- In (a), the row can be read without a production authority.
+- In (b), it cannot: only its card half can, and the row stays open until a timestamp authority whose chain the list anchors is available. The list also names qualified timestamp units of other providers; I do not know their terms.
+- **Which case it is, is one B-T signature away.**

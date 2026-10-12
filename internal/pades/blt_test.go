@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/ocsp"
 
 	"github.com/veljaos/liro-bridge/internal/errs"
+	"github.com/veljaos/liro-bridge/internal/pades/dss"
 	"github.com/veljaos/liro-bridge/internal/pades/pdf"
 	"github.com/veljaos/liro-bridge/internal/pades/tsa"
 )
@@ -187,6 +188,21 @@ func TestARevokedSignerCertificateSavesNothing(t *testing.T) {
 	if result != nil {
 		t.Fatalf("a result came back for a revoked signer: level %s", result.AchievedLevel)
 	}
+	// No certificate is named in a message, only its thumbprint: the
+	// signer's name is a person's (SPEC §18.3, D-480).
+	assertNamesNoCertificate(t, err.Error(), f.session.cert)
+}
+
+// assertNamesNoCertificate is D-480's rule: a message identifies a
+// certificate by its thumbprint, and carries no part of its subject.
+func assertNamesNoCertificate(t *testing.T, msg string, c *x509.Certificate) {
+	t.Helper()
+	if cn := c.Subject.CommonName; cn != "" && strings.Contains(msg, cn) {
+		t.Errorf("the message names the certificate %q: %s", cn, msg)
+	}
+	if want := dss.Thumbprint(c); !strings.Contains(msg, want) {
+		t.Errorf("the message does not give the certificate's thumbprint %s: %s", want, msg)
+	}
 }
 
 // The timestamp authority's certificate revoked: the signature is the
@@ -204,6 +220,7 @@ func TestARevokedTimestampAuthorityKeepsBTAndSaysWhy(t *testing.T) {
 	if !strings.Contains(strings.Join(result.Notes, " "), "revoked") {
 		t.Errorf("the notes do not say why: %v", result.Notes)
 	}
+	assertNamesNoCertificate(t, strings.Join(result.Notes, " "), f.tsaCert)
 	if dssArray(t, result.Bytes, "OCSPs") != nil {
 		t.Errorf("a /DSS was written for a timestamp whose authority is revoked")
 	}

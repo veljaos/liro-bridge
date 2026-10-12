@@ -6,7 +6,7 @@
 
 ---
 
-## After the owner's review (2026-10-12): D-465 … D-477
+## After the owner's review (2026-10-12): D-465 … D-481
 
 **The owner's worklist is `docs/measure-before-release.md`** (D-472): what must be measured before any of this reaches a person, in order. **Then read `docs/s33-what-ran.md`.** It has every change, what has actually run against it, and what has never run. Where this handover says "measured", that table says where, and whether the test was ever seen failing without the change. Where the two differ, the table is the later reading.
 
@@ -15,6 +15,8 @@
 - The owner's rulings are recorded (D-467): macOS signing waits; D45 stays inferred.
 - **Group 0 of the worklist is done** (D-473): each test was seen red on the old behaviour, then green. D-475 fixed a race in one of those tests.
 - **The default level is decided: C** (D-474, D-476). It is "the best available", and a level chosen in Settings is a request. SPEC §12.6 is amended and marked not built; building it is worklist 0.7, before card rows 1.2 and 1.3.
+- **D-480, read this first: my code wrote a person's name, and on a MUP card their JMBG, into the agent's log** (from `4b7c60c` until `2ec3055`). No test, review or rule found it, and nothing in the project would have. Thirteen pushed heads carry it, and their CI packages can still be downloaded. Whether anyone ran one cannot be known. No message in the product now names a certificate by anything but its thumbprint.
+- **Decision C built** (D-478, D-479). **E10 is now "the SPEC has been wrong three times out of three where we checked".** **Row 1.1 with the test timestamp server** (D-481): whether it can be read without a contract depends on the test unit's issuer, which one B-T signature shows.
 - **Card row 1.1's preconditions** (D-477): the log names each certificate that got no evidence, by thumbprint. The window and protocol paths log the signer's notes. CI publishes the MSIs as `liro-bridge-windows-<sha>`. Writing them, I found that my own D-462 code logged a certificate's **subject**, against SPEC §18.3. It is fixed, and the test now checks that the subject is absent.
 
 ## A. What was done

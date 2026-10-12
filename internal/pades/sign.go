@@ -555,6 +555,11 @@ func classifyTSAError(err error) errs.Code {
 // the signer's fault and does not make the signature invalid at B-T: the
 // document is kept at B-T, without that evidence claimed as B-LT, and
 // the note says why.
+//
+// No message here names a certificate by anything but its thumbprint:
+// not the signer, whose name is a person's, and not an organisation's
+// either, so that nobody has to judge which names are safe (SPEC §18.3,
+// D-480).
 func applyDSS(ctx context.Context, result *Result, cmsDER []byte, req dss.GatherRequest) error {
 	doc, err := pdf.Parse(result.Bytes)
 	if err != nil {
@@ -565,14 +570,14 @@ func applyDSS(ctx context.Context, result *Result, cmsDER []byte, req dss.Gather
 	for _, r := range m.Revoked {
 		if r.Role == dss.RoleSigner {
 			return errs.New(errs.CodeCertRevoked, fmt.Errorf(
-				"pades: the revocation evidence says %q was revoked at %s; nothing was saved",
-				r.Certificate.Subject.CommonName, r.RevokedAt.UTC().Format(time.RFC3339)))
+				"pades: the revocation evidence says the signer's certificate %s was revoked at %s; nothing was saved",
+				dss.Thumbprint(r.Certificate), r.RevokedAt.UTC().Format(time.RFC3339)))
 		}
 	}
 	if len(m.Revoked) > 0 {
 		result.Notes = append(result.Notes, fmt.Sprintf(
-			"B-LT not claimed: the evidence says %q, which vouches for the timestamp or a responder, is revoked; saved at B-T",
-			m.Revoked[0].Certificate.Subject.CommonName))
+			"B-LT not claimed: the evidence says certificate %s, which vouches for the timestamp or a responder, is revoked; saved at B-T",
+			dss.Thumbprint(m.Revoked[0].Certificate)))
 		return nil
 	}
 	dssResult, err := dss.ApplyMaterial(doc, cmsDER, m)

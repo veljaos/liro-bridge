@@ -362,7 +362,7 @@ func TestTheLogNamesTheCertificateThatGotNoEvidence(t *testing.T) {
 		t.Fatal("complete, although the leaf's responder is closed and its CRL is not one")
 	}
 	got := logBuf.String()
-	for _, want := range []string{"no OCSP response or CRL could be had", "thumbprint=" + thumbprint(leaf), "role=signer", refusedURL, garbage.URL} {
+	for _, want := range []string{"no OCSP response or CRL could be had", "thumbprint=" + Thumbprint(leaf), "role=signer", refusedURL, garbage.URL} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the log does not say %q; it says:\n%s", want, got)
 		}
@@ -383,7 +383,7 @@ func TestTheLogNamesTheCertificateThatGotNoEvidence(t *testing.T) {
 		t.Fatal("a CRL over a 16-byte cap was not reported too large")
 	}
 	got = logBuf.String()
-	for _, want := range []string{"larger than the cap", "thumbprint=" + thumbprint(leaf), "role=signer", "cap=16"} {
+	for _, want := range []string{"larger than the cap", "thumbprint=" + Thumbprint(leaf), "role=signer", "cap=16"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the log does not say %q; it says:\n%s", want, got)
 		}
