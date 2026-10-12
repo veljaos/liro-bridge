@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -29,7 +30,10 @@ func LaunchAgentFile(env Env) string {
 // chose Quit from the menu bar meant it, and launchd's KeepAlive would
 // bring the agent straight back.
 func launchAgentPlist(exePath string) ([]byte, error) {
-	if !filepath.IsAbs(exePath) {
+	// path, not filepath: the plist is read by launchd, so the rule is
+	// macOS's whatever machine wrote it — and a test of it runs on
+	// Windows too, where filepath.IsAbs refuses every POSIX path.
+	if !path.IsAbs(exePath) {
 		return nil, fmt.Errorf("platform: the LaunchAgent needs an absolute path, not %q", exePath)
 	}
 	if strings.ContainsRune(exePath, 0) {

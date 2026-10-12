@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -97,7 +98,7 @@ func TestTheListOfServersIsTheOnDiskOne(t *testing.T) {
 	}
 }
 
-func filepathDir(o *Origins) string { return o.path[:strings.LastIndex(o.path, "/")] }
+func filepathDir(o *Origins) string { return filepath.Dir(o.path) }
 
 // fakeSigner answers like the agent's consent flow would.
 type fakeSigner struct {
