@@ -259,3 +259,13 @@ check.sh on `3b3f3bc`: ci 4–14 and linux-gui 4–6 passed.
 
 - **P13a, as predicted:** both runs green in all ten jobs, the three `linux-install` included. Windows: `cmd/liro-bridge`, `internal/config`, `internal/pades/dss` and `internal/ui` `ok`, and no `--- FAIL`, `--- SKIP` or `panic:` in either log.
 - **P13b, as predicted:** `liro-bridge-windows-07598f2f504408a82b7bd71fd0d5e68a375295b2`, 14.8 MB, kept until 2026-11-11. **This is the build for card rows 1.1, 1.2 and 1.3.**
+
+## P10–P13 addendum — `8cd5319`'s runs, read
+
+Push run 38264758016 and PR run 38264764850: both green, all ten jobs each.
+
+## P14 — no certificate named in a message (the owner's ruling, D-480), written before the tests run
+
+- **P14a:** `TestARevokedSignerCertificateSavesNothing`, with the new assertion, is red on today's code: the `CERT_REVOKED` error contains the signer certificate's CommonName and no thumbprint.
+- **P14b:** `TestARevokedTimestampAuthorityKeepsBTAndSaysWhy`, with the new assertion, is red: the note contains the timestamp authority's CommonName and no thumbprint.
+- **P14c:** both green once the two lines name the thumbprint instead.
