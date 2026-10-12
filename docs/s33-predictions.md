@@ -194,3 +194,12 @@ The rest of M's run (Linux jobs, macOS, the PR run) is read with F's, below.
 ## P9, read on F — run 38243584334 (push), `584e019`
 
 All ten jobs green. Windows from its first test line: `internal/ui` and `cmd/liro-bridge` `ok`, no `--- FAIL`, SDK 110 passed, 0 failed, 3 skipped. The per-user MSI installed and uninstalled, the key gone. The measurement commit's own runs (38242378820, 38242385215) ended with only `windows` red, every other job green, as P9h said. P9 holds on every row.
+
+## P10 — `21624f2` (D-476, D-477): push run 38256486886, PR run 38256491696
+
+**Written after the push, while both runs were queued and before any job had ended.** The rule is "before the run", and this is as near to it as a push allows. check.sh was run first: the ci job on `2ec3055`, every step passed; linux-gui 4–6 on `21624f2`, passed. The second commit is docs only.
+
+- **P10a:** all ten jobs green in both runs.
+- **P10b:** the packaging step "publish the packages for the card rows" succeeds, and each run lists an artifact `liro-bridge-windows-21624f24e1b2dc742f81c3ec902f50631af7d23c` holding the two MSIs and the exe.
+- **P10c:** windows runs `cmd/liro-bridge` with `TestTheWindowLogsTheSignersNotes` in it, and it passes. That is its first run on Windows, where the PDF path, the temp directory and the atomic write differ from the container's. If anything in the new code is red, I expect it to be this test.
+- **P10d:** `internal/pades/dss`'s new test passes in ci, windows and macos. It uses local `httptest` servers only.
