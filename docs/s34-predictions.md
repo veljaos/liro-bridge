@@ -56,3 +56,23 @@ D-481 says the issuer decides row 1.1: (a) a CA the bundled Trusted List carries
 ## P2, read — in D-484
 
 All five held. The unit's issuer is `TEST 2018 CA 1 - Novo`, under `TEST 2018 CA Root - Novo`; neither is in the Trusted List. That is case (b).
+
+## P3 — the rc out, `67695f6`'s per-user MSI in (the owner: "I do it, silently"; written before any step)
+
+**The steps:**
+1. End the rc's tray by its exact PID, 13936.
+2. `msiexec /x {F18B05B5-5CD6-4FC7-A1DF-DB5A6D477413} /qn /l*v`.
+3. `msiexec /i liro-bridge-dev-x64.msi /qn /l*v`.
+4. Start the installed agent with `tray`, as its Start-menu shortcut does.
+
+Read from the rc's `uninstall_windows.go` and from both `.wxs` files.
+
+**Guard:** `%LOCALAPPDATA%\Liro\audit` is hashed file by file before step 1. It must read identical after step 3, because nothing but a signature may append to it (D-266).
+
+| | measured | predicted |
+|---|---|---|
+| P3a | Step 1 | PID 13936 gone. `bridge.json` stays: TerminateProcess runs no cleanup |
+| P3b | Step 2's exit and its effects | Exit 0, no reboot asked (3010 would mean a file in use).<br>The product is gone from Windows Installer and from the Uninstall key; the install folder is gone.<br>`uninstall-notice --quiet` runs, because UILevel is 2. It removes Run and the verb and logs "removed 7 of 7 derived items": `bridge.json`, `webview2`, `webview2-profile`, `ui-assets` and the three `icon-*.ico`.<br>Kept: `audit`, `logs`, `build`, `config.json`, `pairings.json`, `secrets.*`, `tsl-cache.xml`, `update-state.json`.<br>`bridge.log` gains a `liro-bridge starting` line, 0.9.9-rc1, from the custom action: D38, the start line written before the subcommand is read |
+| P3c | Step 3's exit and its effects | Exit 0. Product 0.0.0, AssignmentType 0 (per-user).<br>The binary at `%LOCALAPPDATA%\Programs\Liro Bridge\liro-bridge.exe` is `ab3e628c…`.<br>**No agent starts**: `LaunchAgent` needs UILevel ≥ 3.<br>No Run value, no verb, no `liro-bridge` scheme key.<br>**Least certain of P3:** the Uninstall entry under **HKLM**, as B31 found for the rc and 0.9.2, which is unexplained |
+| P3d | Step 4 | `bridge.log`: `liro-bridge starting`, `dev`, `67695f6`. `config.json`'s `b-b` read as chosen, with no D-476 line.<br>Run, the verb and `HKCU\Software\Classes\liro-bridge` written from the installed path.<br>`bridge.json` written with `agentVersion` `dev`; protocol listening on 17580.<br>No name or JMBG in any new log line (D-480): there is no card yet, so there is nothing to name |
+| P3e | The guard | Audit directory identical, file by file |
