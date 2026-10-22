@@ -76,3 +76,7 @@ Read from the rc's `uninstall_windows.go` and from both `.wxs` files.
 | P3c | Step 3's exit and its effects | Exit 0. Product 0.0.0, AssignmentType 0 (per-user).<br>The binary at `%LOCALAPPDATA%\Programs\Liro Bridge\liro-bridge.exe` is `ab3e628c…`.<br>**No agent starts**: `LaunchAgent` needs UILevel ≥ 3.<br>No Run value, no verb, no `liro-bridge` scheme key.<br>**Least certain of P3:** the Uninstall entry under **HKLM**, as B31 found for the rc and 0.9.2, which is unexplained |
 | P3d | Step 4 | `bridge.log`: `liro-bridge starting`, `dev`, `67695f6`. `config.json`'s `b-b` read as chosen, with no D-476 line.<br>Run, the verb and `HKCU\Software\Classes\liro-bridge` written from the installed path.<br>`bridge.json` written with `agentVersion` `dev`; protocol listening on 17580.<br>No name or JMBG in any new log line (D-480): there is no card yet, so there is nothing to name |
 | P3e | The guard | Audit directory identical, file by file |
+
+## P3, read — in D-485
+
+All held, B31's HKLM entry included. The premise was wrong in one place: the Start-menu shortcut runs `open`; `tray` is the installer's and the Run entry's.

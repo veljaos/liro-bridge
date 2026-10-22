@@ -48236,3 +48236,30 @@ A static rule over every log call would cover the first miss for subjects writte
 - What the test server still gives row 1.1 is its card half, read from a B-T document's partial `/DSS` (D-481). That can show the row false, never true.
 
 **For row 1.4:** the verifiers meet the same unknown root. D-280 read Adobe's amber "Signature validity unknown" on a Pošta signature as a verdict about the trust anchor, not the signature; red is a broken one. How row 1.4's "rejects the timestamp" is read against that is put to the owner before its predictions are written.
+
+## D-485 — the rc removed and `67695f6`'s per-user MSI installed, silently, on the owner's machine: every line of P3 held, B31's HKLM entry seen a third time
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34). **The owner:** "I do it, silently." **Predictions:** P3, committed in `5aa1d3a` before step 1.
+
+**Each step held as predicted:**
+- **Step 1, P3a:** the rc's tray, PID 13936 (started 18:31:10), was ended by its PID. `bridge.json` stayed; nothing else of ours was running.
+- **Step 2, P3b:** `msiexec /x {F18B05B5…} /qn` exited 0, with no reboot asked.
+  - The product is gone from Windows Installer and the Uninstall key, and the install folder is gone.
+  - `UninstallCleanupQuiet` ran; `UninstallCleanupNotice` was skipped, as UILevel 2 should.
+  - It removed Run, the verb and `HKCU\Software\Liro\Bridge`, and logged `removed 7, failed 0`.
+  - What it kept: `audit`, `build`, `logs`, `config.json`, `pairings.json`, `secrets.*`, `tsl-cache.xml`, `update-state.json`.
+  - **D38, again:** the custom action wrote `liro-bridge starting 0.9.9-rc1` at 20:47:45.80, a start line for an agent that never started.
+- **Step 3, P3c:** `msiexec /i liro-bridge-dev-x64.msi /qn` (`91dc6281…`) exited 0.
+  - Product `{54020A12…}`, 0.0.0, AssignmentType 0 (per-user). The installed `liro-bridge.exe` is `ab3e628c…`, the artifact's (D-483).
+  - `LaunchAgent` was skipped ("condition is false"), so no agent started. No Run, verb or scheme key.
+  - **The least certain line held: the Uninstall entry is under HKLM**, `HKLM\…\Uninstall\{54020A12…}`, for a per-user product. B31's third sighting, after the rc and 0.9.2. Still unexplained; B31 stays open.
+- **Step 4, P3d:** started with `tray`, PID 18848.
+  - The log: `liro-bridge starting dev 67695f6`, WebView2 155.0.4283.62, listening on 17580.
+  - Run (`… tray`), the verb (`--shell-verb "%1"`) and **`HKCU\Software\Classes\liro-bridge`** (`open-link "%1"`) were written from the installed path.
+  - `bridge.json` reads `agentVersion` `dev` with `protocolVersions [2]`.
+  - No D-476 line: the `b-b` is read as chosen.
+  - **P3's premise was wrong on one point:** the Start-menu shortcut runs `open`, not `tray`. `tray` is what `LaunchAgent` and the Run entry run, so that is what was used.
+- **The guard, P3e:** the audit directory is identical file by file. The chain, `2026-09-001.jsonl` (105,436 bytes, last written 2026-09-19), and the empty `.lock`.
+  - The control's first file happened to be the zero-byte `.lock`, whose hash looked at first like a broken read. It is what an empty file hashes to; a byte appended changed it.
+
+**Installed now:** `67695f6`'s per-user package, its agent running as PID 18848. The rc is gone; its MSI is on the release page.
