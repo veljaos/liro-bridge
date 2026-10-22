@@ -30,3 +30,7 @@ Then compare SHA-256.
 | P1g | `go list -deps ./cmd/liro-bridge` at `67695f6` for windows, linux, darwin | no `internal/logcheck` |
 | P1h | The per-user MSI's `liro-bridge.exe`, extracted with `msiexec /a` (an administrative image, not an install), against the artifact `.exe` | byte-identical |
 | P1i | The MSI's `ProductVersion` | `0.0.0`. So installing it over the rc's 0.9.9 hits `DowngradeErrorMessage`: the rc must be uninstalled first, as D-455 found for 0.9.3 |
+
+## P1, read — in D-483
+
+P1a, P1b and P1d–P1h held. P1c failed as written; the cause was the instrument both times (a worktree, then the clone's tags), and with both removed it held.

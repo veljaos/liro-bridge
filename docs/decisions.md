@@ -48169,3 +48169,42 @@ Deleting them takes one command where `gh` is signed in, given in the handover.
 A static rule over every log call would cover the first miss for subjects written directly. It is not built.
 
 **3. The test authority.** As the owner chose: one B-T signature with the test server on the owner's machine, which is row 1.4, and the timestamp unit's certificate read out of that PDF. Its issuer decides whether row 1.1 needs the contract (D-481). The domain is not added to this environment.
+
+## D-483 — `67695f6`'s package is the product `446dcd2` was: the binaries are byte-identical once stamped alike, and CI's own `.exe` is reproduced here byte for byte; the handover's build no longer exists
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34, the owner's Windows machine). **Predictions:** `docs/s34-predictions.md` P1, committed in `f949eab` before anything was downloaded or built.
+
+**What is installed (read first):**
+- v0.9.9-rc1, the per-user MSI of 2026-10-11. Its binary is built from `4e6fd47`, the tag, with `vcs.modified=false` and go1.26.5, read with `go version -m` without running it.
+- Its tray is PID 13936, started 18:31:10 today. It holds Run and the Explorer verb from the installed path; there is no `liro-bridge://` key.
+- `config.json` dates from 2026-09-19: `signatureLevel` `b-b`, no TSA.
+- A discrepancy, explained: `Get-ChildItem` showed `bridge.log` last written 2026-10-19 under a tray started today. NTFS updates the directory entry lazily while a handle is open; the file itself was 819 bytes longer, exactly today's five lines.
+
+**The handover's build is gone.** Run 38291112853 (`446dcd2`) and its PR run 38291116544 have no artifacts. Neither was on D-482's list. Those twenty runs have none either, so the deletion D-482 asked for is done. Who deleted `446dcd2`'s is not recorded here. The only Windows package left in the repository is `67695f6`'s: run 38297486252, artifact 11770596983, expiring 2026-11-11.
+
+**What was measured, against P1:**
+- **P1a, as predicted:** the zip's SHA-256 equals the API's digest, `235aef55…`.
+- **P1b, as predicted:** go1.26.5, `vcs.revision=67695f68…`, `vcs.modified=false`, `-trimpath`. The stamps read out of the binary: `main.commit=67695f6`, `buildDate=2026-10-12T20:06:40Z`.
+- **P1c failed as written, the one named least certain. The cause was my instrument both times, and each cause was removed and the build measured again:**
+  - **First:** built in a `git worktree`, the binary had no VCS stamp at all, even with `-buildvcs=true`, which reported no error. 4,119,213 bytes differed, the shorter build info shifting everything after it. In a local clone the stamp is there. My reading is that Go's lookup wants `.git` to be a directory, and a worktree's is a file; that is not read in Go's source.
+  - **Second:** the clone carried the repository's tags, so Go named the module `v0.9.9-rc1.0.20261012191841-67695f68af01`. CI's shallow checkout has no tags and names it `v0.0.0-…`.
+  - **With the tags removed from the scratch clone:** byte-identical to the artifact `.exe`, `ab3e628c…`. CI's Windows binary is reproducible from its commit on this machine.
+- **P1d, as predicted:** `446dcd2` and `67695f6`, with the same stamps and `-buildvcs=false`, are byte-identical, `82279ac3…`.
+- **P1e, as predicted (control):** `67695f6` again with an empty `GOCACHE` gives `82279ac3…`. The cache filled with 1,969 files (159 MB), so the build ran rather than replayed.
+- **P1f, as predicted (control):** `2ec3055^` (`aaa1c01`) gives `a2280070…`, and `2ec3055` gives `bd89094a…`. A product change moves the hash.
+- **P1g, as predicted:** `internal/logcheck` is not among `./cmd/liro-bridge`'s dependencies on windows, linux or darwin.
+  - Control: it is among `internal/pades`'s test dependencies.
+  - My first linux and darwin listing used `CGO_ENABLED=0` and broke on GTK. Listed again with cgo on: no errors.
+- **P1h, as predicted:** both MSIs, extracted with `msiexec /a` into scratch, hold a `liro-bridge.exe` byte-identical to the artifact `.exe`. Their Guide files equal the tree's. Windows Installer still knows only the rc afterwards.
+- **P1i, read, not tried:** both MSIs are `ProductVersion` 0.0.0 under the rc's UpgradeCode. The installed rc is 0.9.9, per-user (AssignmentType 0). By `MajorUpgrade`'s `DowngradeErrorMessage`, the dev MSI will not install over it. Trying would have meant risking an install if the reading were wrong.
+
+**D-304's five questions:**
+1. **Could it fail?** It did, at P1c, and P1f differs.
+2. **Could the instrument see a difference?** Yes: P1f, and P1g's control.
+3. **Resolution:** byte comparison; not applicable.
+4. **Did it run?** P1e's cache, and distinct commits giving distinct hashes.
+5. **Discrepancies:** each explained above, or, for the deleted artifacts, recorded as unexplained.
+
+**So:** what is installed from `67695f6`'s package is the product `446dcd2` described, and it is the binary of `67695f6`'s source. Nothing D-480 removed is in it: it is after `2ec3055`, and no certificate name is in any message. The worklist's card rows are measured on it.
+
+**Left for the owner:** the rc has to be uninstalled before the dev MSI goes on (P1i).
