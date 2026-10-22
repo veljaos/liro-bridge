@@ -128,3 +128,9 @@ All held, B31's HKLM entry included. The premise was wrong in one place: the Sta
 |---|---|---|
 | P5a | Hits in the 305 files | **None.** The certificate list reaches the page as a web message (`PostJSON`), not over HTTP, so the HTTP cache holds only the static pages. The pages use no browser storage. **Least certain of P5:** Chromium's own files that can hold page memory or text. A crash report under `Crashpad`, a session's restore data, or a leveldb log written for a reason I have not read would each carry the name if anything does |
 | P5b | What the files are | Chromium's ordinary profile: the HTTP and code caches (our `ui-assets` pages), GPU and shader caches, leveldb stores with nothing of ours in them, preferences, locks |
+
+## P5, read — in D-488
+
+- **Both held:** no hits in the 305 files.
+- **Positive controls:** the profile keeps our pages' addresses (`liro.invalid`) and no page text in any encoding checked, not even the window title.
+- **The scan's gap:** the email address and the raw certificate could not be rebuilt.

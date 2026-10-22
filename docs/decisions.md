@@ -48398,3 +48398,32 @@ A second scan of the session's folder after the deletion found nothing.
 - Open-items D50.
 
 **C26's warning colour:** read in D-486, recorded as open-items D49 by the owner's word, "it reads as a safeguard and is not one".
+
+## D-488 — the agent's WebView2 profile holds none of row 1.4's third-party data; it holds no page text at all, only our pages' addresses
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34). **Predictions:** P5, committed in `d7b07e9` before the scan. **The owner** quit the agent and asked for the 43 files D-487 could not read.
+
+**The profile:** `%LOCALAPPDATA%\Liro\webview2-profile`.
+- PID 18848 is gone, and no process names the profile.
+- All 305 files (72.9 MB) open for reading; the 43 included.
+
+**The needles were narrower than D-487's,** because that needles file and the certificate were deleted.
+- **Rebuilt from the lines open-items A36 names:** the name's words with and without diacritics, the number in the CN, the certificate serial and the thumbprint, as text and as raw bytes.
+- **Missing:** the email address and the raw certificate, which nothing I can read holds.
+- **The rebuild's own check:** the first pattern for the serial matched two values, one of them the timestamp unit's serial in D-484, so it was narrowed to D-361's phrase.
+- **Controls:** the three repository files they came from, each hit as it should.
+
+**P5a held: no hits in the 305 files.**
+
+**Could the scan have seen page text here (D-304's second question)?** The positive controls, in UTF-8 and UTF-16LE, any case: our UI's words (`Podešavanja`, `Dnevnik revizije`, `Izaberi`), the window title `Liro Bridge`, and the virtual host `liro.invalid`.
+- **Only the virtual host is there.** It is in `History`, `DIPS`, `Network Action Predictor`, `Preferences`, `Web Data`, and five V8 code-cache entries (our scripts' bytecode, keyed by URL).
+- No UI word, and not the title, is anywhere.
+- So the profile keeps our pages' addresses and no page text. That fits the reading in P5: the certificate list reaches the page as a web message, and the pages use no browser storage.
+- **What the controls cannot exclude:** text held only in a compressed form, such as a compressed cache body or a Snappy-compressed leveldb block. Nothing read says any of ours is held that way.
+
+**P5b held:** Chromium's ordinary profile.
+- **Our pages:** History and the code cache, as above.
+- **Chromium's own:** GPU and shader caches (about 5.4 MB), Widevine and component downloads (about 45 MB), hyphenation data, SmartScreen and PKI metadata, leveldb stores, preferences and locks.
+- `Crashpad` has no reports.
+
+**So D-487's list of what remains loses one line:** the WebView2 profile is checked and holds none of her data. The rebuilt needles were deleted after the scan.
