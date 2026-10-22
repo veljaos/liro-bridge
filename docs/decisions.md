@@ -48449,3 +48449,32 @@ A second scan of the session's folder after the deletion found nothing.
 **What a Windows check would take:** open-items A37, read, not built. The blocker is that CI's `go test ./...` runs on a profile thrown away, and here it would meet the owner's real audit chain (D42) and `HKCU` (D10).
 
 **My own session ran without a local check as well,** and without the Bash guard (D-487, open-items D50). Nothing I committed claimed one.
+
+## D-490 — CI on `d1314f7`: 19 green, macOS on the PR red. The same commit passed on the same image in the same minute; the likeliest cause is a `dlerror` read on another thread, which is our code
+
+**Date:** 2026-10-22. **Phase:** F12 (session 34). **The owner** read CI: "19 green, 1 red", the red being `macos (pull_request)`. **Not fixed tonight, by the owner's word.** Recorded as open-items D51.
+
+**The two runs:**
+- **Push run 39844417353,** `macos` job 120053791355: success, 19:56:07–19:58:46Z.
+- **PR run 39844425344,** `macos` job 120053819277: failure, 19:56:12–19:58:25Z.
+- **The failure:** `TestDyldsWordsAreReadIntoTheKinds` (`loaderror_darwin_test.go:30`, `:36`) got `pkcs11: /nonexistent/liro-test-module.dylib could not be loaded: ` with nothing after the colon. The passing run's line carried dyld's whole message: `… (no such file) …`.
+
+**The same runner image, established by reading each job's own log** (`gh run view --job <id> --log`, the "Set up job" step):
+- both: `Image: macos-15-arm64`, `Version: 20260907.0337.1`, Runner Image Provisioner `20260828.587`, runner `2.338.0`, Azure region `westus`;
+- both: macOS 15.7.9, build `24G830`, and `go version go1.26.5 darwin/arm64`.
+- **Different machines:** runner names `GitHub Actions 1000007835` and `…7836`, both labelled `macos-15`.
+
+**The same commit passing and failing tells that the result is not decided by the commit. It does not put the cause outside the code, and here the code is the likeliest cause (inferred, not measured):**
+- `openModuleWith` calls `C.dlopen`, then `C.dlerror`, as two separate cgo calls (`internal/keysource/pkcs11/module_unix.go:97–99`).
+- `dlerror()` keeps its message per thread, and Go may move a goroutine to another OS thread between two cgo calls. On that thread `dlerror()` returns NULL, and `C.GoString(NULL)` is `""`.
+- `classifyLoadFailure("")` reads no kind, so the error is "could not be loaded: " plus nothing. That is the failure exactly.
+- The test calls `openModule`, unpinned.
+- **The product's probe child does too** (`probechild_unix.go:21`), and the file builds for Linux as well. So a real load failure on Linux or macOS can, now and then, lose the loader's words and the kind they decide. That has not been seen outside this test.
+
+**The owner's third question: assertions on another system's wording, in code written blind.**
+- **In all macOS code, only `loaderror_darwin.go` and its test match on system text.** Read in every `_darwin` file and in all 27 files carrying a darwin build tag; the one other match, `module_other_test.go:22`, checks our own message.
+- **The classifier is product code: it decides the kind a person is shown.** Of its five dyld phrases:
+  - `(no such file)` is measured; tonight's passing run printed it;
+  - "Library not loaded", "Symbol not found", "incompatible architecture" and "not a mach-o file" are recalled. None has been seen from a real dyld.
+
+**Not done tonight:** the fix, and showing the race. The fix is one C helper that calls both, or the goroutine pinned around both. Showing the race comes first, and then CI repeated.

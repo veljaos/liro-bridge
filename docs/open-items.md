@@ -279,6 +279,28 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
     - Nothing else in the session depended on the hook (D-487).
     - *Close:* a command that runs on all three platforms, or a recorded decision; then the guard seen refusing once on this machine. *Needs:* code, Windows.
 
+51. **`TestDyldsWordsAreReadIntoTheKinds` failed once on `d1314f7` and passed on the same commit in the same minute. The likeliest cause is our code, not the runner** (D-490).
+    - **The two runs:** PR run 39844425344 (job 120053819277) failed; push run 39844417353 (job 120053791355) passed. Both ran 19:56–19:58Z.
+    - **The same image, read from each job's "Set up job" log:**
+      - `macos-15-arm64` `20260907.0337.1`, provisioner `20260828.587`, runner `2.338.0`, `westus`;
+      - macOS 15.7.9 (`24G830`), go1.26.5;
+      - only the machine differs (`…7835`, `…7836`).
+    - **What differed:** the passing run's message carried dyld's words. The failing run's ended "could not be loaded: " with nothing after it (`loaderror_darwin_test.go:30`, `:36`).
+    - **Why it is likely the code (inferred, not measured):**
+      - `openModuleWith` calls `C.dlopen` and then `C.dlerror` as **two cgo calls** (`module_unix.go:97–99`).
+      - `dlerror()` is per thread, and Go may move a goroutine to another thread between them. There `dlerror()` returns NULL, `C.GoString(NULL)` is `""`, and nothing after the colon is exactly the failure.
+      - The test calls `openModule` with no thread pinned.
+      - **The same commit passing and failing shows that the result is not decided by the commit. It does not show that the cause is outside the code.**
+    - **The product has the same exposure.**
+      - The probe child calls `openModule` unpinned (`probechild_unix.go:21`).
+      - The file builds for `linux || (darwin && cgo)`, and glibc's `dlerror` is per thread too.
+      - So on Linux and macOS a module that fails to load can, now and then, lose the loader's words and the kind they decide.
+      - Never seen outside this test.
+    - **The test asserts on another system's wording, in code written blind (F13, D-463).** In all macOS code, only `loaderror_darwin.go` and its test do that. The classifier is product code: it decides the kind a person is shown. Of its five dyld phrases:
+      - **measured:** `(no such file)`, which the passing run printed;
+      - **recalled, never seen from a real dyld:** "Library not loaded", "Symbol not found", "incompatible architecture", "not a mach-o file".
+    - *Close:* `dlopen` and `dlerror` read on one thread (one C helper, or the goroutine pinned around both); the race shown first; then the test repeated on CI. The four recalled phrases are measured against a real dyld on a Mac (5.4), or marked as recalled where they are used. *Needs:* code, CI, a Mac. **Not fixed, by the owner's word.**
+
 ## E. Promises in documents that nothing does yet
 
 1. *Package signing: built in D-356; its first real run is C16. Numbering kept, because F1 cites E3 and E4.*
