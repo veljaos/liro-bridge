@@ -80,3 +80,27 @@ Read from the rc's `uninstall_windows.go` and from both `.wxs` files.
 ## P3, read — in D-485
 
 All held, B31's HKLM entry included. The premise was wrong in one place: the Start-menu shortcut runs `open`; `tray` is the installer's and the Run entry's.
+
+## P4 — row 1.4: one B-T signature with the Pošta card against Pošta's test timestamp server (written before the card is plugged in)
+
+**The owner's rulings for this row (2026-10-22):**
+- **"Rejects" is read as D-280 read Adobe: red only.** An unknown root is a verdict about the anchor: Adobe's amber, or DSS's INDETERMINATE / NO_CERTIFICATE_CHAIN_FOUND.
+- **DSS runs locally:** the Commission's 6.5.1 demo bundle, on this machine.
+
+**The setup:**
+- The build is `67695f6`'s per-user MSI (D-485).
+- **Settings, by the owner's hands:**
+  - URL `https://test-tsa.ca.posta.rs/timestamp1`, user `Test.Korisnik`, password `123456` (D-045's);
+  - level **B-T (potpis + vremenski žig)**, so it is chosen, a request (D-476);
+  - Save.
+- The document is `Desktop\liro-s34\row-1.4.pdf`, a copy of `testdata/pdfs/blank.pdf` (`b9749fdb…`). It is signed from the main window with the Pošta card through SafeSign, the PIN typed by the owner.
+- **Baselines:** `bridge.log` 2,195 lines; the audit chain 319 entries.
+
+| | measured | predicted |
+|---|---|---|
+| P4a | `config.json` after Save | `signatureLevel` `b-t`, `signatureLevelChosen` true, the URL and user set |
+| P4b | The report on screen (the owner's eyes), the new audit entry, the log | The report says B-T in the positive colour, with no warning. Audit entry 320: `outcome` signed, `achievedLevel` `b-t`. The log: no `role=signer` or `role=timestamp` lines (nothing is gathered for B-T), and no name or JMBG (D-480) |
+| P4c | `verifypdf` (`67695f6`'s) on the output | `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK` true. `SignerChainTrusted` **true** (CA 1 is in the list). `HasTimestamp` true, `TimestampOK` true, **`TimestampChainTrusted` false**. The timestamp certificate is `TEST Timestamp server 290000560`, issued by `TEST 2018 CA 1 - Novo`: **P2c on the real PDF**. Its genTime is within a minute of the audit entry's time. No `/DSS` |
+| P4d | OpenSSL, independent of our code | `cms -verify` over the `/ByteRange` content succeeds. The token from the signature's unsigned attributes verifies against SHA-256 of the signature value, with the test root as anchor. Controls fail: one byte of content changed; the token checked against another digest |
+| P4e | Adobe Acrobat DC (the owner's eyes) | **Not red.** Amber, "Signature validity is unknown" or the like, as D-280 found, with Pošta not anchored in Adobe. The timestamp is named as embedded, from the TEST unit, and not trusted or not verifiable |
+| P4f | DSS 6.5.1, local, default configuration (the EU's list of lists; Serbia is not in it) | The format is **PAdES-BASELINE-T**. The signature is INDETERMINATE, NO_CERTIFICATE_CHAIN_FOUND; the timestamp also INDETERMINATE, NO_CERTIFICATE_CHAIN_FOUND. No FAILED anywhere. **Least certain of P4:** DSS's exact indications and sub-indications. It may report other sub-indications for the signature, for want of trusted time, and the format reading may depend on the timestamp being judged. Any FAILED would make the row false by the ruling |
