@@ -48263,3 +48263,91 @@ A static rule over every log call would cover the first miss for subjects writte
   - The control's first file happened to be the zero-byte `.lock`, whose hash looked at first like a broken read. It is what an empty file hashes to; a byte appended changed it.
 
 **Installed now:** `67695f6`'s per-user package, its agent running as PID 18848. The rc is gone; its MSI is on the release page.
+
+## D-486 — row 1.4 closed: B-T with a Pošta card against Pošta's test timestamp server, intact by four verifiers, the anchor unknown to the two the row names; the PDF confirms D-484, so row 1.1 needs the contract
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34). **Predictions:** P4, committed in `f918073` before the card was plugged in.
+
+**The owner's rulings for this row:**
+- "Rejects" is red only. An unknown root is a verdict about the anchor (D-280).
+- DSS runs locally.
+- **The signed PDF carries a third party's name, number, certificate and address.** D-361's Pošta card was used; it is issued to someone other than the owner. So:
+  - the PDF stays out of the repository and goes to no external service;
+  - it is deleted with `Desktop\liro-s34`, along with every scratch copy and extract;
+  - **no name, number, serial or thumbprint of hers is written here.**
+
+**The run.** The build is `67695f6`'s per-user MSI (D-485), its agent PID 18848.
+- **Settings, by the owner:**
+  - `https://test-tsa.ca.posta.rs/timestamp1` with D-045's test credentials;
+  - level B-T, so chosen and a request.
+- The document is a copy of `testdata/pdfs/blank.pdf`. The output, `row-1.4-signed.pdf`, is 104,690 bytes, written 20:58:56. The input is unchanged.
+- **The owner's MUP certificate was listed beside the card's, marked "Ovaj sertifikat je istekao", which is true.**
+- **My instruction was wrong:** I wrote "PID 18848, from the tray icon or the main window's footer". The footer never showed a PID; it holds only Podešavanja, Sertifikati, Dnevnik revizije and Izađi. The PID came from `Get-Process`.
+
+**Against P4:**
+- **P4a:** Settings saved at 20:57:14. That is read from the log, not from `config.json`: I did not re-read the file before the run.
+- **P4b held:**
+  - The report, read by the owner: "Sačuvano u C:\Users\Veljko\Desktop\liro-s34", "Nivo potpisa B-T", in green, with nothing in a warning colour.
+  - The audit entry: `achievedLevel` `B-T`, backend `windows-cng`, thumbprint only.
+  - The log: no `role=signer` or `role=timestamp` lines, and no `/DSS` in the PDF.
+  - **Corrections to my own reading:**
+    - The outcome is recorded as `approved`; P4b said `signed`.
+    - The entry went into a new monthly file, `2026-10-001.jsonl`. My baseline counted September's file, so my first scan of "entry 320" read nothing.
+    - The chain is continuous across the files: seq 319's `prevHash` is seq 318's `hash`, `55efe832…`.
+- **P4c held:** `verifypdf` at `67695f6`.
+  - `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK` and `SignerChainTrusted` are all true.
+  - `TimestampOK` is true and `TimestampChainTrusted` is **false**.
+  - The timestamp's genTime is 18:58:48Z, eight seconds before the file was written.
+- **P4d held:** OpenSSL, through a stdlib DER walker of mine that only extracts the bytes.
+  - `cms -verify` over the `/ByteRange` succeeds; one changed byte fails it.
+  - The token's imprint is SHA-256 of the signature value and verifies under `TEST 2018 CA Root - Novo`. Another digest fails; CA 1 as anchor fails.
+- **P4e held:** Adobe Acrobat DC, read by the owner. The banner was blue before Validate All, then amber.
+  - "Signature validity is unknown".
+  - "Document has not been modified since this signature was applied".
+  - "Signer's identity is unknown because it has not been included in your list of trusted certificates and none of its parent certificates are trusted certificates".
+  - "**The signature includes an embedded timestamp but it could not be verified.**"
+  - Not red.
+- **P4f failed as written.** DSS 6.5.1, local, bound to `127.0.0.1`, the EU's list of lists loaded (31 lists) at the second attempt.
+  - **As predicted:**
+    - The format is PAdES-BASELINE-T.
+    - The signature is INDETERMINATE / NO_CERTIFICATE_CHAIN_FOUND, and so is the timestamp ("TEST Timestamp server 290000560", 18:58:48Z).
+    - Every format and cryptographic check passed, for both: the imprint found and intact, the timestamp's signature intact, the signature intact, `/ByteRange` consistent, no undefined modifications.
+    - The only NOT OK, in both, is `BBB_XCV_CCCBB`, "Can the certificate chain be built till a trust anchor?"
+  - **What failed:** P4f said "No FAILED anywhere" and "any FAILED would make the row false". **DSS reports FAILED** in `ValidationSignatureQualification` and `ValidationTimestampQualification`, "Unable to build a certificate chain up to a trusted list!".
+  - That is DSS's EU qualification determination. It fails for any anchor outside the EU lists: a verdict about the anchor, which the owner's ruling exempts. My prediction's criterion was broader than the ruling, and it is what failed.
+
+**The timestamp unit's certificate in the PDF is byte-identical to the one D-484 read from the server's reply:** `CN=TEST Timestamp server 290000560`, serial `29B7B1CEB10D18F299`, SHA-256 `D8:04:54:F3…`, issued by `TEST 2018 CA 1 - Novo` (key `D0:F1:CC:81…`).
+
+**§18.3 against this run's real files (the owner asked; not the unit test):**
+- **The scan:** every log line written since the dev agent's start lines (133) and the audit entry.
+  - **Known values,** from the signing certificate in this PDF: every subject attribute but country and organisation, each word with and without diacritics, the number in the CN, the address from the certificate, its local part, and the certificate serial in hex and decimal.
+  - **Patterns:** 13+ digits, any email address, `SERIALNUMBER=`, `2.5.4.5=`.
+- **Result: nothing, in both.** The control, the certificate's own text dump, hit every kind of value.
+- **One false hit, found on the way:** my first digit pattern counted `0x101000000000000`, a Go stack address.
+- **Two instrument faults of mine, not of the product:**
+  - my first scan did not look for her address at all, which the owner caught;
+  - inline Python passed through the shell lost a backslash twice, failing loudly both times.
+
+**C26's warning colour, read in the code (the owner asked):** `achievedLevelIntent("B-T", "B-LT")` returns the warning (`ui_payloads.go:188`). The spellings match on the way there: `config.json`'s `b-lt` becomes `pades.LevelBLT` (`interactive.go:603`), and the result is `pades.Level` too. **No run through the window reaches it since D-476:**
+- With B-LT chosen, `SaveAtBTIfBLTFails` is false, so a B-LT that falls short returns `LEVEL_NOT_REACHED` and nothing is saved (`sign.go:344–363`). There is no B-T to colour.
+- With the best available, the report gets `requestedLevel = ""` (`mainwindow.go:1216–1221`), so its B-T is green, as decision C intends.
+- So the warning branch for B-T lives only in the function and its unit test (`levelshortfall_test.go`), like `consent.level_blt_short` (session 33's E10 note).
+- What a person can still see in amber is B-B, always, chosen or not.
+- Tonight's green shows only the B-T-requested path. **Row 1.2 measures the refusal that replaced the warning.**
+
+**Also seen:**
+- NetSeT's module under `TrustEdgeID` killed its probe child again: `Exception 0xe06d7363`, a C++ throw in `C_Initialize`, D-315's.
+  - The agent marked it unusable and went on.
+  - Not new: eight times on 2026-09-19 as well.
+  - The child's dying stack went to `bridge.log`, 58 lines; no personal data in them.
+- One WARN per Pošta signature: Pošta CA Root's only AIA is LDAP, which is not built (D-470). So the CMS carries the signer and CA 1.
+
+**Row 1.4: done.**
+- `achievedLevel` is B-T.
+- Neither verifier rejects the timestamp by the owner's ruling. Both find the document and timestamp intact and the anchor unknown.
+
+**What it decides about row 1.1:** the PDF confirms D-484, case (b) of D-481.
+- The test unit is issued by a test CA under a test root, and the Trusted List carries neither.
+- **So row 1.1 cannot be shown true with the test server.** B-LT needs the timestamp's chain to reach a listed CA, and this one never does, whatever the card does.
+- **It needs a timestamp authority the list anchors:** Pošta's production service, which is the contract, or another provider's listed unit. **That is the owner's decision.**
+- What the test server still gives row 1.1 is its card half (D-481): one signature at the best available, with the partial `/DSS` read for the signer's evidence. It can show the row false, never true.

@@ -104,3 +104,10 @@ All held, B31's HKLM entry included. The premise was wrong in one place: the Sta
 | P4d | OpenSSL, independent of our code | `cms -verify` over the `/ByteRange` content succeeds. The token from the signature's unsigned attributes verifies against SHA-256 of the signature value, with the test root as anchor. Controls fail: one byte of content changed; the token checked against another digest |
 | P4e | Adobe Acrobat DC (the owner's eyes) | **Not red.** Amber, "Signature validity is unknown" or the like, as D-280 found, with Pošta not anchored in Adobe. The timestamp is named as embedded, from the TEST unit, and not trusted or not verifiable |
 | P4f | DSS 6.5.1, local, default configuration (the EU's list of lists; Serbia is not in it) | The format is **PAdES-BASELINE-T**. The signature is INDETERMINATE, NO_CERTIFICATE_CHAIN_FOUND; the timestamp also INDETERMINATE, NO_CERTIFICATE_CHAIN_FOUND. No FAILED anywhere. **Least certain of P4:** DSS's exact indications and sub-indications. It may report other sub-indications for the signature, for want of trusted time, and the format reading may depend on the timestamp being judged. Any FAILED would make the row false by the ruling |
+
+## P4, read — in D-486
+
+- **Held:** P4b to P4e. P4b's outcome is `approved`, not `signed`.
+- **P4a:** read from the log, not the file.
+- **P4f failed as written:** DSS reports FAILED in its two EU qualification blocks, for want of an anchor on an EU list. The AdES verdicts and every cryptographic check came out as predicted.
+- **My setup instruction was wrong:** the footer never showed a PID.
