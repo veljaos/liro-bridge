@@ -48427,3 +48427,25 @@ A second scan of the session's folder after the deletion found nothing.
 - `Crashpad` has no reports.
 
 **So D-487's list of what remains loses one line:** the WebView2 profile is checked and holds none of her data. The rebuilt needles were deleted after the scan.
+
+## D-489 — session 34's ten commits pushed with no local check: `check.py` refused go1.27.1, then `dpkg-query`; CI is the only check on them
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34).
+
+**The owner:** "Pushed f949eab..d1314f7. check.py refused to run here: it stands in for CI's Ubuntu host and wants dpkg-query, which Windows has no part of. So nothing was checked locally, and CI is the only check on these ten commits."
+
+**What happened, in the owner's words and read:**
+- **`check.py` refused first on Go.** `go` on PATH is go1.27.1 (`C:\Program Files\Go`, `GOTOOLCHAIN=auto`), and go.mod wants 1.26.5.
+- **The owner installed go1.26.5 alongside** through `golang.org/dl`: `~/go/bin/go1.26.5.exe`, SDK in `~/sdk/go1.26.5`. Read here; the default `go` is unchanged.
+- **Then it refused on `dpkg-query`.** Its apt steps stand in for CI's Ubuntu host. That is the refusal the file means to give, though for the wrong reason here: it reached the Ubuntu jobs at all.
+- **A7 is still undecided.** Installing 1.26.5 got past a refusal and settled nothing (open-items A7).
+
+**There were eleven commits, not ten.** `f949eab` to `d1314f7` is eleven (`git log 67695f6..d1314f7`). I told the owner "ten", I had miscounted, and the owner repeated my number.
+
+**What this means for these eleven commits:**
+- **CI's runs on the push are their only check.** I have not read them; no measuring tonight, by the owner's word.
+- **They touch only `docs/`,** read with `git diff --name-only 67695f6 d1314f7`. The product's code is unchanged since `67695f6`, whose package D-483 showed is `446dcd2`'s.
+
+**What a Windows check would take:** open-items A37, read, not built. The blocker is that CI's `go test ./...` runs on a profile thrown away, and here it would meet the owner's real audit chain (D42) and `HKCU` (D10).
+
+**My own session ran without a local check as well,** and without the Bash guard (D-487, open-items D50). Nothing I committed claimed one.

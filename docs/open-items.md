@@ -69,7 +69,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 4. *Core-dump hardening: the agent forbids its own, measured on the installed package — no core, no report, apport never called (D-376, D-377). Numbering kept.*
 5. **Per-request deadline for the PKCS#11 worker, and a bound on `Close`/`C_Finalize`.** `pkcs11ShutdownGrace` is 5 s "chosen rather than measured"; a login lasts as long as a person takes. — D-297, D-301, D-309, D-313. *Needs:* owner's decision.
 6. **Should SPEC state the source preference (CNG, then PKCS#11, then soft token)?** — D-311. *Needs:* owner's decision. **E7's half closes with it (D-433)**: once SPEC states the order, "why this backend" is answered.
-7. **The icon test that fails on newer Go.** Three answers offered, none chosen. — D-308; still failing per D-318, D-320. **The owner's Windows machine has go1.27.1 with `GOTOOLCHAIN=auto` (D-451)**, so a plain `go test` there is the newer Go; the tests are run on 1.26.5 as CI does and on 1.27.1 as A7's reading (the owner). **Read (D-452)**: on go1.27.1 the whole suite's only failure is this test, with D-308's message to the byte (18579 against 18880); everything else passes. *Needs:* owner's decision, then code.
+7. **The icon test that fails on newer Go.** Three answers offered, none chosen. — D-308; still failing per D-318, D-320. **The owner's Windows machine has go1.27.1 with `GOTOOLCHAIN=auto` (D-451)**, so a plain `go test` there is the newer Go; the tests are run on 1.26.5 as CI does and on 1.27.1 as A7's reading (the owner). **Read (D-452)**: on go1.27.1 the whole suite's only failure is this test, with D-308's message to the byte (18579 against 18880); everything else passes. *Needs:* owner's decision, then code. **2026-10-22 (D-489):** `check.py` refused go1.27.1 on the owner's machine, and the owner installed go1.26.5 alongside it (`golang.org/dl`: `~/go/bin/go1.26.5.exe`, `~/sdk/go1.26.5`). `go` on PATH is still 1.27.1, `GOTOOLCHAIN=auto`. **A7 is still undecided:** installing 1.26.5 got past the refusal and decided nothing.
 8. **A guard that every error code can be produced**, once it is decided which are legitimately unreachable. — D-312. *Needs:* owner's decision, then code.
 9. *A configured module's file name in the audit log: accepted — `auditModule` keeps the file name and drops its directories (`keysources.go:58`); a personal name in a file name is one the person gave it. Closed by decision (D-433). Numbering kept.*
 10. *A pairing made while the keyring was locked: no migration; re-pairing is documented, in E8. Closed by decision (D-433). Numbering kept.*
@@ -111,6 +111,30 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
     - It contradicts the owner's rule that her data does not go into the repository (D-486). D-480's rule covers what the program writes, not what we write.
     - **The decision about the history is the owner's and is not yet made. No history is rewritten and nothing is force-pushed until then.**
     - *Close:* the owner decides (the tree only, or the history too, and what is said to the card's holder); then that, done and read back. *Needs:* owner's decision.
+
+37. **There is no local check on Windows. On the owner's machine, CI is the only check on what is pushed.**
+    - The owner ran `check.py` before pushing `f949eab..d1314f7`, eleven commits (D-489), and it refused twice:
+      - **first on Go:** `go` is 1.27.1, and it wants go.mod's 1.26.5. The owner installed go1.26.5 alongside to get past that (A7);
+      - **then on `dpkg-query`:** it stands in for CI's Ubuntu host, and Windows has no part of that.
+    - **So nothing was checked locally, and CI is the only check on those eleven commits.**
+    - **The Windows pass is the owner's next work** (block 2).
+    - **What it would take to make it usable here (read, not built, by the owner's word):**
+      1. **Run the Windows jobs, not the Ubuntu ones.** `JOBS` is `ci` and `linux-gui`, and `RUNNERS` admits only `ubuntu-*`. On Windows the jobs are `windows` (vet, `go test -tags softtoken ./...`, the SDK's `npm ci` / `check-build` / `test`) and `packaging`. The Ubuntu jobs should be refused there with that reason, not reached through a missing `dpkg-query`.
+      2. **Shells.** A `run:` step with no `shell:` runs under pwsh on a Windows runner, not bash. `check.py` runs every step under bash.
+      3. **Keys and actions it refuses today.** These are in the `windows` job:
+         - `if: failure()` on the two collect-and-upload steps;
+         - `working-directory` on the SDK steps;
+         - `actions/upload-artifact@v4`, to skip;
+         - `actions/setup-node@v4`, to stand in for, with its Node version checked as Go's is.
+      4. **Go.** Use `~/go/bin/go1.26.5.exe` (SDK in `~/sdk/go1.26.5`), with `GOTOOLCHAIN=local`. `go` on PATH is 1.27.1 with `GOTOOLCHAIN=auto`, read 2026-10-22.
+      5. **Python.** `check.sh` would reach `python3`, the Store alias here (D50); the interpreter is `python`, which has PyYAML 6.0.3. GNU `timeout` 8.32 is in Git Bash.
+      6. **The blocker: safety.** CI runs `go test ./...` on a runner whose profile is thrown away. Here it would run against the owner's real `%LOCALAPPDATA%` and `HKCU`.
+         - The suite can reach the real audit chain (D42) and leaves `Run\LiroBridge` behind (D10).
+         - Redirecting `LOCALAPPDATA` and `APPDATA` for every step covers the first half, not HKCU.
+         - So: D42 and D10 closed first, or the check run under a separate Windows user or a VM.
+      7. **Not on a person's machine as written:** `packaging`'s last step installs and removes the per-user MSI. It would replace whatever is installed (now `67695f6`'s dev build, D-485). The WebView2 window tests also open real windows on the owner's desktop, and need the agent quit.
+      8. **Controls as D-447's:** a red tree failing at CI's own step, and each refusal seen once.
+    - *Close:* a check that runs CI's Windows jobs here, or a recorded decision that CI stays the only check on Windows. *Needs:* the owner's decision on its cost, then code; D42 and D10 first. **Block 2.**
 
 ## B. Claims not measured
 
