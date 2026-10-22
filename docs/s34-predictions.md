@@ -52,3 +52,7 @@ D-481 says the issuer decides row 1.1: (a) a CA the bundled Trusted List carries
 | P2c | **The unit's issuer** | **(b): a test CA, not one the Trusted List carries. Least certain of P2,** and the one that matters: a test service is commonly issued by a test hierarchy, but nothing read so far says which this is. If (a), row 1.1 can be done with the test server, with no contract |
 | P2d | The unit's certificate: `extendedKeyUsage` and CRL/OCSP pointers | `timeStamping`, critical. At least one CRL distribution point over `http://`, not only LDAP |
 | P2e | Control for the lookup: "Pošta Srbije CA 1" (the card's issuer, D-361) searched the same way in `TSL-RS.xml` | found as a CA service. If not, the lookup cannot see a listed CA and P2c says nothing |
+
+## P2, read — in D-484
+
+All five held. The unit's issuer is `TEST 2018 CA 1 - Novo`, under `TEST 2018 CA Root - Novo`; neither is in the Trusted List. That is case (b).

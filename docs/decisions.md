@@ -48208,3 +48208,31 @@ A static rule over every log call would cover the first miss for subjects writte
 **So:** what is installed from `67695f6`'s package is the product `446dcd2` described, and it is the binary of `67695f6`'s source. Nothing D-480 removed is in it: it is after `2ec3055`, and no certificate name is in any message. The worklist's card rows are measured on it.
 
 **Left for the owner:** the rc has to be uninstalled before the dev MSI goes on (P1i).
+
+## D-484 — Pošta's test timestamp unit is issued by a test CA the Trusted List does not carry: D-481's case (b), so row 1.1 cannot be read with the test server
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34). **Predictions:** P2 in `docs/s34-predictions.md`, committed in `e0624fd` before the request was sent. Read with OpenSSL, not our code, from a reply to a plain RFC 3161 request with `certReq`. The PDF of row 1.4 carries the same unit's certificate and confirms it on a real signature.
+
+**All five of P2 held:**
+- **P2a:** `https://test-tsa.ca.posta.rs/timestamp1`, with D-045's Basic credentials, answered HTTP 200 `application/timestamp-reply`, status Granted, in 0.31 s, 4,223 bytes.
+  - Policy `1.3.6.1.4.1.99999.11.800.1.0`, an arc no one is assigned.
+  - The token carries one certificate, the unit's.
+- **P2c, the one that matters:** the unit is `CN=TEST Timestamp server 290000560, O=Pošta Srbije d.o.o.`, serial `29B7B1CEB10D18F299`, valid 2026-05-19 to 2032-05-19.
+  - It is issued by `CN=TEST 2018 CA 1 - Novo, O=TEST organizacija ŠĐČĆŽšđčćž, organizationIdentifier=VATRS-123456789`, key `D0:F1:CC:81…`.
+  - That CA is under `CN=TEST 2018 CA Root - Novo`, key `A0:DE:B3:A1…`, both fetched over HTTP from the AIA.
+- **P2e:** none of the three is in `TSL-RS.xml`, by subject or by key identifier. I read all 103 of its certificates; 102 carry a key identifier.
+  - Control: "Pošta Srbije CA 1" is found, a QC service.
+  - Pošta's production units are QTST services, as D-481 read.
+- **P2b:** `openssl ts -verify` against the request:
+  - fails with the token's chain alone ("unable to get local issuer certificate");
+  - is **OK** with the test root as anchor and the test CA as intermediate;
+  - fails against another query (imprint mismatch), the control;
+  - fails with CA 1 as anchor, the control.
+- **P2d:** `timeStamping`, critical. CRL by LDAP **and** `http://repository.ca.posta.rs/crl/TEST2018CA1-Novo.crl`; OCSP `http://ldap-ocsp.ca.posta.rs/ocsp-test-novo`.
+
+**So, by D-481:**
+- **Row 1.1 cannot be shown true with the test server.** The timestamp's chain ends at a root nothing in the list vouches for, so B-LT is unreachable whatever the card does.
+- **It needs a timestamp authority the list anchors: Pošta's production service, which is the contract, or another provider's listed unit.** That decision is the owner's.
+- What the test server still gives row 1.1 is its card half, read from a B-T document's partial `/DSS` (D-481). That can show the row false, never true.
+
+**For row 1.4:** the verifiers meet the same unknown root. D-280 read Adobe's amber "Signature validity unknown" on a Pošta signature as a verdict about the trust anchor, not the signature; red is a broken one. How row 1.4's "rejects the timestamp" is read against that is put to the owner before its predictions are written.
