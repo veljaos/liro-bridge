@@ -111,3 +111,20 @@ All held, B31's HKLM entry included. The premise was wrong in one place: the Sta
 - **P4a:** read from the log, not the file.
 - **P4f failed as written:** DSS reports FAILED in its two EU qualification blocks, for want of an anchor on an EU list. The AdES verdicts and every cryptographic check came out as predicted.
 - **My setup instruction was wrong:** the footer never showed a PID.
+
+## P5 — the agent's WebView2 profile, read for row 1.4's third-party data (written before the scan; the agent quit by the owner)
+
+**The profile:** `%LOCALAPPDATA%\Liro\webview2-profile`, 305 files, 72.9 MB, all readable now. D-487 found 43 of them unreadable.
+
+**The needles are narrower than D-487's.** That needles file and the certificate were deleted. The rebuilt set has:
+- each word of the name with and without diacritics, and the number in the CN, taken from A36's lines in the repository;
+- the certificate serial and thumbprint, as text and as raw bytes, from the same lines.
+
+**Missing:** the email address and the raw certificate. Neither is held anywhere I can read.
+
+**Encodings:** UTF-8 and UTF-16LE, any case.
+
+| | measured | predicted |
+|---|---|---|
+| P5a | Hits in the 305 files | **None.** The certificate list reaches the page as a web message (`PostJSON`), not over HTTP, so the HTTP cache holds only the static pages. The pages use no browser storage. **Least certain of P5:** Chromium's own files that can hold page memory or text. A crash report under `Crashpad`, a session's restore data, or a leveldb log written for a reason I have not read would each carry the name if anything does |
+| P5b | What the files are | Chromium's ordinary profile: the HTTP and code caches (our `ui-assets` pages), GPU and shader caches, leveldb stores with nothing of ours in them, preferences, locks |
