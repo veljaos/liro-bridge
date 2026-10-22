@@ -34,3 +34,21 @@ Then compare SHA-256.
 ## P1, read — in D-483
 
 P1a, P1b and P1d–P1h held. P1c failed as written; the cause was the instrument both times (a worktree, then the clone's tags), and with both removed it held.
+
+## P2 — the test timestamp unit's certificate, read before any card (written before the request is sent)
+
+D-481 says the issuer decides row 1.1: (a) a CA the bundled Trusted List carries, or (b) a test CA it does not. The PDF in row 1.4 carries the unit's certificate. So does a plain RFC 3161 reply with `certReq`, from the same endpoint, and that can be read now, without the card.
+
+**The instrument:** OpenSSL, not our code.
+1. `openssl ts -query -sha256 -cert` over a fresh file.
+2. POSTed with curl to `https://test-tsa.ca.posta.rs/timestamp1`, with D-045's Basic credentials (`Test.Korisnik`, from `integration_test.go`).
+3. The reply read with `openssl ts -reply -text` and the token's certificates printed.
+4. The issuer looked up among `TSL-RS.xml`'s CA services by subject and by key identifier.
+
+| | measured | predicted |
+|---|---|---|
+| P2a | The reply | HTTP 200, `application/timestamp-reply`, status granted, the token carrying the unit's certificate |
+| P2b | `openssl ts -verify` against the request, with the token's own chain | verifies only if the chain to a root is present. Predicted: the token carries the unit's certificate, not its root, so it fails for want of a root. Then the same with the issuer and root fetched from the certificate's AIA, if it has one |
+| P2c | **The unit's issuer** | **(b): a test CA, not one the Trusted List carries. Least certain of P2,** and the one that matters: a test service is commonly issued by a test hierarchy, but nothing read so far says which this is. If (a), row 1.1 can be done with the test server, with no contract |
+| P2d | The unit's certificate: `extendedKeyUsage` and CRL/OCSP pointers | `timeStamping`, critical. At least one CRL distribution point over `http://`, not only LDAP |
+| P2e | Control for the lookup: "Pošta Srbije CA 1" (the card's issuer, D-361) searched the same way in `TSL-RS.xml` | found as a CA service. If not, the lookup cannot see a listed CA and P2c says nothing |
