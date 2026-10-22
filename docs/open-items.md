@@ -99,6 +99,19 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 34. **D-376's costs, in one list.** The agent makes itself non-dumpable (D-376); with `ptrace_scope` 0 that flag is the only thing keeping a same-user program from reading its memory (D-424), so it stays. Each cost so far was worked around, rightly; the owner: three is a pattern, and whoever picks D-376 up should see the list. **To people**: the Fedora file chooser (D-408); the DPI value, every window after the first white (D-424, workaround (c)). **To our instruments**: `ss -p` blind to its sockets (D-396, D-442); `/proc/PID/root` (D-412), `/proc/PID/environ` (D-423) and `/proc/PID/exe` (D-442) unreadable — the last means which binary a running agent is on cannot be read after an upgrade. — D-376, D-408, D-424, D-442. *Close:* the owner's decision whether D-376 is revisited (D-424's options (a), (b)) or the list stands as the price; until then each new cost is added here. *Needs:* owner's decision. **Block 6, placed by me.**
 35. *What the Fedora instructions promise about the signature: **left as written, by the owner's decision (D-445).** On Fedora 44 nothing at install time checks who signed a package installed from a file (dnf's `localpkg_gpgcheck` 0, rpm's `%_pkgverify_level` digest, D-444); on Debian and Ubuntu `apt install ./file.deb` checks none either. The README says so: the signature exists, neither tool checks it at install, and `rpm -K` (or `gpg --verify` and `sha256sum`) is how a person checks it. `--setopt=localpkg_gpgcheck=1` declined: advice nobody would follow, and untested. **What would actually close the gap is a package repository** (dnf with `gpgcheck=1`, apt with `signed-by`), so the package manager checks every install and update; it belongs with the cloud work (A32), not here. "The packages are signed" and "installing them checks the signature" are different claims; only the first is true, and nothing we publish may read as the second (D-445). Closed by decision. Numbering kept.*
 
+36. **A third party's personal data is in this repository, which is public, and has been since `08042d7` (2026-09-19).** The data belongs to the holder of the Pošta card used for measurements (D-361's card), who is not the owner.
+    - **What is there:**
+      - her full name and card number, in comments in product code (`internal/keysource/pkcs11/pinentry.go:56`, `internal/pinscreen/pinscreen.go:151`), in tests (`cmd/liro-bridge/pindialog_windows_test.go`, `internal/keysource/pkcs11/login_windows_test.go`, `…/worker/login_test.go`, `…/worker/pinexchange_test.go`, `…/worker/source_test.go`, `internal/pinscreen/pinscreen_test.go`) and in four documents (`docs/decisions.md`, `docs/f12-linux-session-7.md`, `docs/ftest-report.md`, this file);
+      - her certificate's thumbprint, in `internal/keysource/pkcs11/thumbprint.go:38`, `internal/audit/backend_test.go`, `internal/cli/modulecollapse_test.go`, `scripts/cngprobe/cngprobe_windows.go` and `docs/decisions.md`;
+      - her certificate's serial, in `docs/decisions.md`.
+    - **The thumbprint** entered `thumbprint.go` in `08042d7`. The other lines' first commits are not read.
+    - **It is in every pushed head and in the history.** Removing it from the tree is not enough; removing it from the history means rewriting it and force-pushing, and copies already fetched cannot be recalled.
+    - **Public, established without credentials (D-487):** `GET https://api.github.com/repos/veljaos/liro-bridge` with no token returns 200, `private: false`. The control, a repository that does not exist, returns 404.
+    - **How it was found:** a byte scan for her certificate's values while deleting row 1.4's files (D-487).
+    - It contradicts the owner's rule that her data does not go into the repository (D-486). D-480's rule covers what the program writes, not what we write.
+    - **The decision about the history is the owner's and is not yet made. No history is rewritten and nothing is force-pushed until then.**
+    - *Close:* the owner decides (the tree only, or the history too, and what is said to the card's holder); then that, done and read back. *Needs:* owner's decision.
+
 ## B. Claims not measured
 
 1. *The shipped field sends IBus nothing: never connected to `ibus-daemon` in eight consecutive runs; the `im-module` half is moot — the field uses no input method. The rest of the input path is B23 (D-392, D-394). Numbering kept.*
@@ -227,6 +240,20 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 46. **This binding (gotk4 v0.3.1) finalizes no wrapped object on this build** — measured with a bare web view and a hundred labels (D-460): no toggle reference drops, so every window, view and widget is kept for the agent's life. D23 was the case that held processes; the rest is memory, unmeasured in size. *Needs:* code (an explicit release, or a binding fix), measurement.
 47. **`check.sh --only` needs `ci:2` selected with any later `ci` step**, because the later steps read the package list `ci:2` writes; without it they fail with a missing file rather than saying why (D-460). *Needs:* code (check.py).
 48. **Off-thread `RegisterDragDrop` succeeded on CI's runner** (D-457, P3c) where the code's comment says it cannot; the fix keeps registration on the window's thread anyway. Why the call succeeded — a reused OLE-initialised thread? — is not known. *Needs:* a reading on Windows.
+49. **C26's warning colour is unreachable through the window. It reads as a safeguard and is not one.**
+    - **What exists:** `achievedLevelIntent("B-T", "B-LT")` returns the warning (`cmd/liro-bridge/ui_payloads.go:188`), and its unit test passes (`levelshortfall_test.go`).
+    - **No path through the UI delivers a B-T when B-LT was requested,** so the colour can never be shown (D-486):
+      - with B-LT chosen in Settings, `SaveAtBTIfBLTFails` is false, so a shortfall returns `LEVEL_NOT_REACHED` and nothing is saved (`internal/pades/sign.go:344–363`);
+      - with the best available, the report is passed `requestedLevel = ""` (`mainwindow.go:1216–1221`), so its B-T is green by design.
+    - **The green the owner saw on row 1.4 shows only the B-T-requested path.**
+    - It is the same shape as `consent.level_blt_short` (session 33's E10 note): code and a test for a state decision C removed.
+    - *Close:* the owner decides whether the branch and its test go, or whether they stay with a comment saying no window reaches them. Row 1.2 measures the refusal that replaced it. *Needs:* owner's decision, then code.
+50. **The project's Bash guard (D-422) cannot run on the owner's Windows machine.**
+    - `.claude/settings.json` runs it as `python3 …/bash-guard.py`. Here `python3` is the Microsoft Store alias, which prints "Python was not found"; the real interpreter is `python` (3.11).
+    - A failing hook does not block, so in session 34 every Bash command ran unguarded.
+    - **At least three `go build` commands without `timeout`, which the guard would have refused, ran.** All finished in the foreground.
+    - Nothing else in the session depended on the hook (D-487).
+    - *Close:* a command that runs on all three platforms, or a recorded decision; then the guard seen refusing once on this machine. *Needs:* code, Windows.
 
 ## E. Promises in documents that nothing does yet
 

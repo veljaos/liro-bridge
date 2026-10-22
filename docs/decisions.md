@@ -48351,3 +48351,50 @@ A static rule over every log call would cover the first miss for subjects writte
 - **So row 1.1 cannot be shown true with the test server.** B-LT needs the timestamp's chain to reach a listed CA, and this one never does, whatever the card does.
 - **It needs a timestamp authority the list anchors:** Pošta's production service, which is the contract, or another provider's listed unit. **That is the owner's decision.**
 - What the test server still gives row 1.1 is its card half (D-481): one signature at the best available, with the partial `/DSS` read for the signer's evidence. It can show the row false, never true.
+
+## D-487 — row 1.4's third-party data deleted from this machine where I could reach it; the scan that found it also found her data in the public repository since `08042d7`; the project's Bash guard never ran this session
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34).
+
+**The owner:** "Delete all four you can reach … and anything else under your scratchpad that holds her data. Then tell me what remains and where."
+
+**How it was found.** A byte scan for the values in the signing certificate of row 1.4's PDF:
+- **The values:** each word of the name with and without diacritics, the number in the CN, the email address and its local part, the serial and the thumbprint as text, and the serial, the thumbprint and the whole certificate as raw bytes.
+- **Encodings:** UTF-8 and UTF-16LE, any case.
+- **Where:** the session's folder (scratchpad, task outputs), its tool-results folder, `%LOCALAPPDATA%\Liro` and `Desktop\liro-s34`.
+
+**The first scan found 79 files.**
+- 78 are in five groups. The 79th was the needles file itself.
+- **Not read:** 43 files of the agent's WebView2 profile, locked by the running agent; and 2 skipped for size (DSS's `ROOT.war` and its downloaded bundle, both on disk before the signature existed).
+- **So the count is complete for what was read, and partial for the WebView2 profile.**
+
+**Deleted:**
+- **The files:** `Desktop\liro-s34` (the input and the signed PDF), and the scratchpad's `row14` (every extract, the certificate, the DSS request and report).
+- **DSS:** the scratchpad's `dss`, whose console log held the name. It was stopped with `catalina stop` first; port 8080 closed, its process gone.
+- **My four scratch clones of the repository,** which held what the repository holds. They were `--shared` clones, so the repository was untouched.
+- **The needles file, last.**
+
+A second scan of the session's folder after the deletion found nothing.
+
+**What remains, and where:**
+- **Acrobat's recent files:** the owner's to clear.
+- **`%APPDATA%\Microsoft\Windows\Recent\row-1.4-signed.lnk` and `row-1.4.lnk`:** shortcuts naming the deleted paths, not her data.
+- **The agent's audit chain** (`2026-09-001.jsonl`, `2026-10-001.jsonl`) and `bridge.log` hold her **thumbprint**. That is by design (D-480); the chain cannot be edited without breaking it.
+- **The agent's WebView2 profile:** unchecked, locked by agent 18848.
+- **This session's transcript under `~/.claude/projects/`** holds her name, number, serial and thumbprint, from tool output. The same text went through the API as part of the conversation.
+- **The repository:** open-items A36.
+
+**The repository is public, established twice:**
+- with the owner's token, `gh repo view --json visibility` gave `PUBLIC`;
+- then without credentials: `GET https://api.github.com/repos/veljaos/liro-bridge` returned 200, `private: false`, `visibility: public`. The control, a repository that does not exist, returned 404.
+
+**What the repository holds:** 16 tracked files carry her data, listed in A36. The thumbprint entered `internal/keysource/pkcs11/thumbprint.go` in `08042d7`, on 2026-09-19. **The decision about the history is the owner's, not yet made. Nothing is rewritten and nothing is force-pushed.**
+
+**The Bash guard (D-422) did not run once this session.**
+- `.claude/settings.json` calls it as `python3`. On this machine that is the Microsoft Store alias, which prints "Python was not found".
+- A failing PreToolUse hook does not block, so every Bash command ran unguarded. I do not see hook output; the owner saw five failures.
+- **The scans did not depend on it.** They ran under `python -I` (3.11), and each printed its closing count.
+- **What the guard exists to stop did happen:** at least three `go build` commands without `timeout` ran (the VCS probes, the `-buildvcs=true` probe, `verifypdf`'s build). All finished in the foreground.
+- Open-items D50.
+
+**C26's warning colour:** read in D-486, recorded as open-items D49 by the owner's word, "it reads as a safeguard and is not one".
