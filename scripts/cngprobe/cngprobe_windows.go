@@ -8,7 +8,7 @@
 // so it is measured rather than assumed.
 //
 // It has already answered it once (D-310): run against a Pošta card, this
-// printed AF5063BB74378BD503AB46DD08AEAD205BA2AA54, which is byte-for-byte
+// printed the certificate's thumbprint, which is byte-for-byte
 // what aetpkss1.dll reported through the worker half an hour earlier. The
 // identity `dedupe` asserts in a comment is therefore measured rather than
 // argued, and this is the tool that measures it again on the next card.

@@ -12,7 +12,7 @@ func base() Entry {
 	return Entry{
 		Sequence:      7,
 		Timestamp:     time.Unix(1_700_000_000, 0),
-		Thumbprint:    "AF5063BB74378BD503AB46DD08AEAD205BA2AA54",
+		Thumbprint:    "00112233445566778899AABBCCDDEEFF00112233", // made up (A36)
 		Application:   "local",
 		DocumentCount: 3,
 		Outcome:       OutcomeApproved,

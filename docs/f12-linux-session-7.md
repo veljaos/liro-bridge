@@ -22,7 +22,7 @@ a real card in a real reader**, [[D-362]] load failures translated,
 - **The Pošta card signed on Linux** through SafeSign 4.6, reader passed
   through to this VM, installed agent, PIN in this program's own dialog, no
   vendor window. Verified by `scripts/verifypdf` and OpenSSL with failing
-  controls. The owner read the stamp: "SAVKA ODŽIĆ". A copy of the signed
+  controls. The owner read the stamp: "[name removed]". A copy of the signed
   file is `~/Desktop/ugovor-signed-2026-09-26.pdf`.
 - **§9** tells a person a stopped `pcscd` with the command that starts it;
   **§10** turns a module that will not load into a sentence in their

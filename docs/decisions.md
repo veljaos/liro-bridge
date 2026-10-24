@@ -22147,7 +22147,7 @@ demand, the control becomes cheap and worth taking then.
 Nothing was found that moves the rate. Checked and rejected: something the
 module writes on first contact with an unknown card — the only thing the
 machine wrote in the window was
-`AppData\Roaming\Microsoft\SystemCertificates\My\Certificates\AF5063BB…AA54`,
+`AppData\Roaming\Microsoft\SystemCertificates\My\Certificates\[thumbprint removed]`,
 the Pošta signing certificate, **created 2026-09-05** and merely re-touched
 today by Windows' own `CertPropSvc`, which is that service doing its job with a
 card in the reader and not this session's doing; the preceding module; a second
@@ -22295,8 +22295,8 @@ attempt spent, and none could have been ([[D-268]]'s guard is a property of the
 probe rather than of anybody's discipline).
 
 ```
-slot 52481  label   "Savka Odžić 200100123"
-            serial  "2353120973204924"
+slot 52481  label   "[name and number removed]"
+            serial  "[token serial removed]"
             model   "19C11A06010D0000"
             flags   0x40D   RNG | LOGIN_REQUIRED | USER_PIN_INITIALIZED | TOKEN_INITIALIZED
             PROTECTED_AUTHENTICATION_PATH: false
@@ -22437,11 +22437,11 @@ Measured through SafeSign 3.9.32.1, read-only, and independently re-taken here:
 ```
 slot 52481: 2 certificates on the token, 1 of them CAs
 
-object 10  label    "Savka Odžić 200100123"
-           subject  "Savka Odžić 200100123"
+object 10  label    "[name and number removed]"
+           subject  "[name and number removed]"
            issuer   "Pošta Srbije CA 1"
-           serial   54849CDCD4415E3BCA
-           sha1     AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+           serial   [serial removed]
+           sha1     [thumbprint removed]
            keyUsage 3
 
 object 14  label    "Root CA Certificate"
@@ -22482,7 +22482,7 @@ A chain-completion routine that matched by name, by prefix, by "the token's own
 CA", or by anything short of the exact issuer bytes would build
 
 ```
-Savka Odžić 200100123  ->  Pošta Srbije CA Root
+[name and number removed]  ->  Pošta Srbije CA Root
 ```
 
 which is **a chain that is wrong rather than short**. Nothing signed the first
@@ -23267,7 +23267,7 @@ signature 0: ByteRangeDigestOK=true SignatureOK=true
 
 **That is a real card, a real module, and a card this project had never signed
 with** — F11 §6's condition in its own words. The card is a Pošta e-ID
-("Savka Odžić 200100123", serial 2353120973204924), the module is
+("[name and number removed]", serial [token serial removed]), the module is
 `C:\Windows\System32\aetpkss1.dll`, SafeSign 3.9.32.1, and the path taken is
 PKCS#11 rather than CNG from `C_Initialize` to `C_Sign`.
 
@@ -28286,15 +28286,15 @@ over**, which is the whole reason it was built with one:
 ```
 PIN COUNTER BEFORE  flags=0x40D   COUNT_LOW false  FINAL_TRY false  LOCKED false
 ENUMERATE   2 certificate(s) in 919.0447ms
-  [0]* 2219 bytes  AF5063BB74378BD503AB46DD08AEAD205BA2AA54
-        subject Savka Odžić 200100123   issuer Pošta Srbije CA 1   keyUsage 3
+  [0]* 2219 bytes  [thumbprint removed]
+        subject [name and number removed]   issuer Pošta Srbije CA 1   keyUsage 3
   [1]  1520 bytes  F2E88F597862C490F36C38474C51CC338DCDFB0D
         subject Pošta Srbije CA Root     issuer Pošta Srbije CA Root  keyUsage 96
 ```
 
 Two things fall out of it that are worth more than "it ran".
 
-**Both thumbprints are ones this log already carries.** `AF5063BB…AA54` and
+**Both thumbprints are ones this log already carries.** `[thumbprint removed]` and
 `F2E88F59…FB0D` are exactly what D-274 measured off this card through this
 module, which means the thumbprint this tool computes agrees with the backend
 and with a measurement taken independently four days earlier.
@@ -28568,9 +28568,9 @@ the card, and that the answer would have been measured either way.
 
 ```
 opening a session and logging in, once, at 13:25:01.217
-  THE CARD IS ASKING.  card Savka Odžić 200100123  accepts 5 to 15 characters
+  THE CARD IS ASKING.  card [name and number removed]  accepts 5 to 15 characters
  IT WORKED. The card accepted the PIN and the session is open.
-   certificate  AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+   certificate  [thumbprint removed]
    chain        0 certificate(s) the token supplied
 VERDICT: the token's flags are IDENTICAL before and after (0x40D).
 ```
@@ -29030,9 +29030,9 @@ session, no PIN — was written to answer a planning question, and answered a
 larger one. Five certificates; the two that matter:
 
 ```
-[1] AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+[1] [thumbprint removed]
      provider "Microsoft Smart Card Key Storage Provider"  onHardware true
-     subject  CN=Savka Odžić 200100123      issuer Pošta Srbije CA 1
+     subject  CN=[name and number removed]      issuer Pošta Srbije CA 1
      keyUsage 3     valid 2025-10-08 .. 2030-10-08
 
 [2] 7758D4D4B8973EA619B3225185EDE740B3D1ECCE
@@ -29041,9 +29041,9 @@ larger one. Five certificates; the two that matter:
      serial   20F048A768F56F099E    keyUsage 3     valid 2021-09-23 .. 2026-09-24
 ```
 
-`AF5063BB74378BD503AB46DD08AEAD205BA2AA54` is **byte-for-byte the thumbprint
+`[thumbprint removed]` is **byte-for-byte the thumbprint
 `aetpkss1.dll` reported through the worker 32 minutes earlier** ([[D-309]],
-`[0]* 2219 bytes AF5063BB...`). Two processes, two APIs, two vendors, no shared
+`[0]* 2219 bytes [thumbprint removed]`). Two processes, two APIs, two vendors, no shared
 code path, one number.
 
 `dedupe` in `certificate.go` carries a comment asserting this identity, and
@@ -29646,7 +29646,7 @@ was already in the reader, so it was measured rather than scheduled.
 nothing touched the owner's own configuration:
 
 ```
-AF5063BB74378BD503AB46DD08AEAD205BA2AA54   Savka Odžić / Pošta Srbije CA 1
+[thumbprint removed]   [name removed] / Pošta Srbije CA 1
     backends  ["windows-cng", "pkcs11"]
     modules   ["C:\\WINDOWS\\System32\\aetpkss1.dll"]
     usable    true
@@ -29979,14 +29979,14 @@ would have gone red.
 
 Run by the owner, at the machine, with the Pošta card in the reader.
 
-What he saw, in order: the certificate chooser with `Savka Odžić` selected, the
+What he saw, in order: the certificate chooser with `[name removed]` selected, the
 consent screen, the method screen, an output-file-exists screen, then
 **"Priprema kartice..."** with the document listed as *čeka* — **and the PIN
 dialog immediately, in front, inside the agent's window. He did not have to hunt
 for it.**
 
 The dialog was this program's: title *Unesite PIN*, heading *Liro Bridge traži
-PIN vaše kartice*, *Kartica: Savka Odžić 200100123*, the hint naming 5 to 15
+PIN vaše kartice*, *Kartica: [name and number removed]*, the hint naming 5 to 15
 characters, `Otkaži` / `Potvrdi`.
 
 **He pressed `Otkaži`. Nothing else appeared — no Windows credential dialog, no
@@ -30110,7 +30110,7 @@ the next thing.
 
 The owner opened the certificate chooser with the Pošta card in the reader:
 
-- **`Savka Odžić` appears once. One row.** F11 §4 step 3, on a screen, by a
+- **`[name removed]` appears once. One row.** F11 §4 step 3, on a screen, by a
   person looking at it.
 - The MUP certificate is listed and marked *"Ubacite karticu u čitač"* — that
   card is not in the reader, and the screen says so rather than hiding it.
@@ -30313,7 +30313,7 @@ timestamp     2026-09-19T16:53:07Z
 outcome       approved
 documentCount 1
 achievedLevel B-B
-thumbprint    AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+thumbprint    [thumbprint removed]
 application   local
 backend       pkcs11
 module        C:\WINDOWS\System32\aetpkss1.dll
@@ -30347,9 +30347,9 @@ ByteRangeDigestOK      true   (SHA-256 recomputed over the signed span)
 SignatureOK            true   (RSA over the signed attributes re-tagged as SET OF)
 SigningCertificateOK   true   (signingCertificateV2 certHash against the signer used)
 SignerChainTrusted     true
-signer subject        Savka Odžić 200100123
+signer subject        [name and number removed]
 signer issuer         Pošta Srbije CA 1
-signer serial         54849CDCD4415E3BCA
+signer serial         [serial removed]
 ```
 
 That is the whole claim, end to end: **a private key operation performed on a
@@ -30371,7 +30371,7 @@ kartice..."** with the document listed as *čeka*, then the PIN dialog **within
 about a second, in front, inside the agent's window.**
 
 The dialog was this program's — *Unesite PIN*, *Liro Bridge traži PIN vaše
-kartice*, *Kartica: Savka Odžić 200100123*, the hint naming 5 to 15 characters.
+kartice*, *Kartica: [name and number removed]*, the hint naming 5 to 15 characters.
 SPEC §6.5.1 clause 6 satisfied on hardware, in front of the person it is for.
 
 **No Windows credential dialog appeared at any point**, in either run. That was
@@ -37245,7 +37245,7 @@ The four commits before this entry were pushed from this machine at about
   once ([[D-360]]'s fix, measured before the card went in).
 - **`certs`**, 6.2 s: one certificate offered — signing, qualified on QSCD,
   Pošta Srbije CA 1, 2025-10-08 to 2030-10-08, usable, thumbprint
-  `…5BA2AA54` — and a second, hidden (the card's other certificate). Both
+  `[thumbprint removed]` — and a second, hidden (the card's other certificate). Both
   only through SafeSign; OpenSC sees neither.
 - **Request:** `sdk/examples/sign.py ugovor.pdf` (a copy of
   `testdata/pdfs/blank.pdf`). The first pairing expired: `PairingCodeTTL` is
@@ -37259,7 +37259,7 @@ The four commits before this entry were pushed from this machine at about
 
 | | the signed file | control |
 |---|---|---|
-| `scripts/verifypdf` (SPEC §16.4) | `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`, **`SignerChainTrusted`** all true — signer Savka Odžić, Pošta Srbije CA 1, serial `54849CDCD4415E3BCA` | one byte flipped at offset 100: `ByteRangeDigestOK false`, exit 1 |
+| `scripts/verifypdf` (SPEC §16.4) | `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`, **`SignerChainTrusted`** all true — signer [name removed], Pošta Srbije CA 1, serial `[serial removed]` | one byte flipped at offset 100: `ByteRangeDigestOK false`, exit 1 |
 | OpenSSL `cms -verify` over the `/ByteRange` span | `CMS Verification successful` | one byte of the content changed: `content verify error`; a certificate that did not sign: `signer certificate not found` |
 
 The chain is trusted against the embedded Trusted List (sequence 36). The
@@ -37270,7 +37270,7 @@ unchanged.
 **The stamp**: a widget at `[393 782 583 830]` — top right, 190 × 48 pt —
 with the logo and three lines drawn in an embedded font subset. The second
 line's glyph pattern (eleven glyphs, a space, the same glyph second and
-fifth) is consistent with "SAVKA ODŽIĆ"; I read the pattern, not the name,
+fifth) is consistent with "[name removed]"; I read the pattern, not the name,
 and the owner can confirm it by opening the file.
 
 ### What the owner watched
@@ -37441,7 +37441,7 @@ app-grid entry with the icon, and the `MimeType=application/pdf` association.
   a signature, and the Windows version installed today may report what it
   did not establish.
 - **The stamp (C14) is closed** by the owner's reading of the signed PDF:
-  "SAVKA ODŽIĆ", Ž and Ć rendered, top right, every line legible.
+  "[name removed]", Ž and Ć rendered, top right, every line legible.
 - **Sentence (7)** of D-362 reads "`ldd %s` pokazuje koja nedostaje", the
   owner's correction.
 
@@ -40351,14 +40351,14 @@ after it had been dropped at a reboot; the owner's Pošta card, SafeSign; the
 installed agent, pid 4923. Predictions were written before either demo.
 
 **Demo A** — windows, in the owner's order: pairing (six digits, typed at the
-demo's prompt), certificate chooser (Savka Odžić), approval with the PIN, the
+demo's prompt), certificate chooser ([name removed]), approval with the PIN, the
 final screen.
 
 | | predicted | measured |
 |---|---|---|
 | A2: certificates listed through the modules | 2 `pkcs11-worker` children, staying | 5796 OpenSC, 5815 SafeSign, by `/proc/PID/cmdline`, alive to the tray's end |
 | A5: a written PDF (**least certain**: never confirmed on either platform) | yes | **three**, `liro-demo/out/demo-a/Ugovor-00{1,2,3}-signed.pdf`, 104 688 bytes each, B-B |
-| both verifiers | valid | `scripts/verifypdf`: every check true, chain trusted, signer "Savka Odžić 200100123", issuer "Pošta Srbije CA 1", exit 0 on each; `pdfsig`: "Signature is Valid", "Total document signed" on each |
+| both verifiers | valid | `scripts/verifypdf`: every check true, chain trusted, signer "[name and number removed]", issuer "Pošta Srbije CA 1", exit 0 on each; `pdfsig`: "Signature is Valid", "Total document signed" on each |
 | the verifiers could fail | — | one byte flipped in a copy of 001: `verifypdf` `ByteRangeDigestOK false`, exit **1**; `pdfsig` "Digest Mismatch" |
 
 `pdfsig`'s "Certificate issuer is unknown" is its own trust store, not a
@@ -43465,9 +43465,9 @@ happened at 14:45:58.
 
 ### The card
 
-`liro-bridge certs` (14:48): one certificate offered — Savka Odžić,
+`liro-bridge certs` (14:48): one certificate offered — [name removed],
 Pošta Srbije CA 1, signing, qualified, on a QSCD, 2025-10-08..2030-10-08,
-thumbprint `…5BA2AA54`, through `/usr/lib64/libaetpkss.so` only — and one
+thumbprint `[thumbprint removed]`, through `/usr/lib64/libaetpkss.so` only — and one
 hidden, **Pošta Srbije CA Root** (`F2E88F59…`, `CERT_NOT_USABLE`), which
 the card itself carries. The prediction I was least sure of, pcscd's polkit
 check on a process outside a logind session scope, did not bite: this
@@ -43568,10 +43568,10 @@ at the file's end.
 
 | | the file | controls |
 |---|---|---|
-| `pdfsig` (poppler) | "Signature is Valid."; signer Savka Odžić 200100123; ranges [0–38667], [104205–104690], "Total document signed"; SHA-256, `ETSI.CAdES.detached`; signing time 15:45:32. Certificate: **"Certificate issuer is unknown"** — no Serbian root in NSS (the prediction said "isn't Trusted"; the wording differs) | byte 500, inside a stream, `i` → `I`: **Digest Mismatch**, exit 1. Byte 100 (`]`) also: Digest Mismatch, but it broke the syntax too, so 500 is the clean one |
+| `pdfsig` (poppler) | "Signature is Valid."; signer [name and number removed]; ranges [0–38667], [104205–104690], "Total document signed"; SHA-256, `ETSI.CAdES.detached`; signing time 15:45:32. Certificate: **"Certificate issuer is unknown"** — no Serbian root in NSS (the prediction said "isn't Trusted"; the wording differs) | byte 500, inside a stream, `i` → `I`: **Digest Mismatch**, exit 1. Byte 100 (`]`) also: Digest Mismatch, but it broke the syntax too, so 500 is the clean one |
 | OpenSSL `cms -verify -binary` over the span, `-noverify` | **CMS Verification successful** | one content byte changed: **content verify error**; an unrelated certificate as signer (`-nointern -certfile`): **signer certificate not found** |
 
-The signer is D-361's: SHA-1 `AF5063BB…5BA2AA54`, serial `54849CDCD4415E3BCA`.
+The signer is D-361's: SHA-1 `[thumbprint removed]`, serial `[serial removed]`.
 
 **Not checked** — recorded as not checked, not as checked another way:
 
@@ -44876,7 +44876,7 @@ rather finish the condition I set than tick a box I did not earn."
 | R1 | **Podešavanja**: painted | 21:21:04.863 "opening from the main window" door=settings; 21:21:05.133 "settings: window open" |
 | R2 | **Izvezi dnevnik revizije**: the portal's folder chooser, "Izaberite fasciklu…", Select; Documents. Settings: "Dnevnik revizije je izvezen u /home/velja/Documents", `liro-audit-20261005-212209.jsonl` — 9 zapisa, the report, "provera ispravnosti: u redu" | 21:22:09.868 "settings: audit log exported"; **both files 0600** (umask 0022 here, so `os.Create` would have given 0644 — could fail); the report `entryCount` 9, one chain, OK, `BrokenAt` −1 |
 | R3 | Settings closed with the **title bar's ×** | 21:23:23.558 "settings: the window was closed from outside the page, not by Zatvori" |
-| R4 | **Sertifikati**: painted — the Pošta signing certificate, CA 1, …5BA2AA54, "kvalifikovan"; closed with its Zatvori | 21:23:27.718 door=certificates; the certificates window logs no close |
+| R4 | **Sertifikati**: painted — the Pošta signing certificate, CA 1, [thumbprint removed], "kvalifikovan"; closed with its Zatvori | 21:23:27.718 door=certificates; the certificates window logs no close |
 | R5 | **Dnevnik revizije**: painted, nine entries matching the export | 21:25:37.785 door=auditLog |
 
 **The least certain prediction was R2's chooser** — the helper's folder

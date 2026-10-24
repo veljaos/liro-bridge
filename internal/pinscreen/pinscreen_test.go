@@ -19,13 +19,14 @@ import (
 var locales = []string{"sr-Latn", "sr-Cyrl", "en"}
 
 // posta is the request as this project's own card actually produces it: the
-// values D-273 measured off the Pošta token through SafeSign 3.9.32.1, with
-// the module path this machine loads it from.
+// shape D-273 measured off the Pošta token through SafeSign 3.9.32.1, with
+// the module path this machine loads it from. The label and serial are made
+// up (A36); the two labels being one string is the card's.
 func posta() pkcs11.PINRequest {
 	return pkcs11.PINRequest{
-		TokenLabel:       "Savka Odžić 200100123",
-		TokenSerial:      "2353120973204924",
-		CertificateLabel: "Savka Odžić 200100123",
+		TokenLabel:       "Petar Božić 000000000", // made up (A36), in the shape of the Pošta card's label
+		TokenSerial:      "1111222233334444",      // made up (A36)
+		CertificateLabel: "Petar Božić 000000000", // made up (A36), in the shape of the Pošta card's label
 		ModulePath:       `C:\Windows\System32\aetpkss1.dll`,
 		MinLength:        5,
 	}

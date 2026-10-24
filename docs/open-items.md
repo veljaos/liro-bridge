@@ -109,8 +109,42 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
     - **Public, established without credentials (D-487):** `GET https://api.github.com/repos/veljaos/liro-bridge` with no token returns 200, `private: false`. The control, a repository that does not exist, returns 404.
     - **How it was found:** a byte scan for her certificate's values while deleting row 1.4's files (D-487).
     - It contradicts the owner's rule that her data does not go into the repository (D-486). D-480's rule covers what the program writes, not what we write.
-    - **The decision about the history is the owner's and is not yet made. No history is rewritten and nothing is force-pushed until then.**
-    - *Close:* the owner decides (the tree only, or the history too, and what is said to the card's holder); then that, done and read back. *Needs:* owner's decision.
+    - **Decided by the owner (2026-10-24): the repository stays public, and the history stays untouched until the repository is deleted at v1.** Nothing is rewritten and nothing is force-pushed. The working tree is to be clean.
+    - **The working tree, cleaned (2026-10-24, on `769a236`).** "What is there" above is what the tree held until then.
+      - **The needles,** rebuilt from the lines above as D-488 did (D-487's file was deleted):
+        - each word of the name with and without diacritics, and in Cyrillic; the number in the CN;
+        - the thumbprint and the serial as text, any case, with or without separators or `0x`, and as raw bytes.
+      - **Added this time:**
+        - **the card's token serial,** the PKCS#11 `serial` beside the slot label, 16 digits. It identifies her card, so I took it as part of her card number. It was in `decisions.md` twice, `login_windows_test.go` and `pinscreen_test.go`.
+        - **the shortened forms the log uses,** first or last four beside an ellipsis, and the first or last eight. They found four lines the full values missed: a bare `…` and the thumbprint's last eight, three times in `decisions.md` and once in `ftest-report.md`.
+      - **Where:** everything under the working tree except `.git`, tracked or not, binaries included: 2240 files, none unreadable. UTF-8 and UTF-16LE, any case, and raw bytes.
+      - **Before:** the 16 files listed above, and no others. Nothing untracked, nothing in a binary.
+      - **Tests: made-up values, each line saying so** (`// made up (A36)`):
+        - the label `Petar Božić 000000000`, upper case in the worker's three, as there. It keeps the card's shape: two words of five letters, `ž` and `ć` in the second, nine digits;
+        - the token serial `1111222233334444`;
+        - the thumbprint `00112233445566778899AABBCCDDEEFF00112233`.
+      - **No test needed a real value.** Each takes the label, serial and thumbprint as given strings; `modulecollapse_test.go` says so in its own comment, and nothing hashes them against a stored value.
+      - **One choice was made so that no check got weaker:** `pindialog_windows_test.go` checks that the dialog shows "5" and "15". A made-up number containing a 5 would pass that on the label alone. The real number contains neither, and neither does `000000000`.
+      - **`posta()`'s comment** in `pinscreen_test.go` said its values were measured off the Pošta token. It now says the label and serial are made up.
+      - **Product comments write the format:** `"<given name> <surname> <nine digits>"` in `pinentry.go` and `pinscreen.go`; "the same forty hex digits" in `thumbprint.go`; "the certificate's thumbprint" in `cngprobe_windows.go`.
+      - **Documents, edited in place,** each value replaced by a marker naming what was there: `[name removed]`, `[name and number removed]`, `[number removed]`, `[token serial removed]`, `[thumbprint removed]`, `[serial removed]`.
+        - 41 in `decisions.md`, 2 in `ftest-report.md`, 1 in `f12-linux-session-7.md`, 1 in this file (C14).
+        - Some sentences now point at a value no longer shown. For example, D-307's "both thumbprints are ones this log already carries".
+      - **Run:** go1.26.5 with `GOTOOLCHAIN=local` and `-tags softtoken`. `LOCALAPPDATA` and `APPDATA` were redirected to the scratchpad and `LIRO_PKCS11_*` unset.
+        - `internal/audit`, `internal/cli`, `internal/keysource/pkcs11`, `…/worker` and `internal/pinscreen` pass. The tests that use the changed values ran, not skipped.
+        - **`cmd/liro-bridge` and `scripts/cngprobe` were vetted with CI's `-unsafeptr=false` and compiled, not run.** That package is D10's and D42's, and its PIN-dialog tests open windows on the owner's desktop (A37). **CI's `windows` job is the first run of its four changed lines.**
+      - **After: 0 hits in 2240 files.**
+        - **The controls:** one file per form of each needle, and a made-up negative. 16 of 17 hit, all but the negative.
+        - HEAD's copies of `pinentry.go`, `thumbprint.go` and `f12-linux-session-7.md` hit, all three.
+      - The needles, controls and logs were deleted from the scratchpad after.
+    - **Not done, or could not be done:**
+      - **The history** holds all of it, at every commit since `08042d7`, publicly. That is by the owner's decision.
+      - **Not searched for:**
+        - the email address and the raw certificate: as in D-488, nothing readable holds them;
+        - anything else derived from the certificate, such as its SHA-256, public key or key identifier. These cannot be checked without the certificate.
+      - **The other worktree, `C:\Users\Veljko\s32-rel093`** (`release/0.9.3` at `0df5719`, pushed): 5 files hold her data. They are `cmd/liro-bridge/pindialog_windows_test.go`, `internal/keysource/pkcs11/login_windows_test.go`, `internal/keysource/pkcs11/pinentry.go`, `docs/decisions.md` and `docs/ftest-report.md`. **Scanned, not changed:** it is a release branch, outside this instruction. The owner's call.
+      - **This session's transcript holds her thumbprint once, by my mistake:** a plain `grep` printed one test line unmasked. Every other read this session showed the values masked. It joins D-487's line about the transcript.
+    - *Close:* what is said to the card's holder, if anything; the release worktree, the owner's call; the history goes with the repository at v1. *Needs:* owner's decision.
 
 37. **There is no local check on Windows. On the owner's machine, CI is the only check on what is pushed.**
     - The owner ran `check.py` before pushing `f949eab..d1314f7`, eleven commits (D-489), and it refused twice:
@@ -187,7 +221,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
 11. **The ported sign flow has only `*_windows_test.go` tests.** — D-338. *Needs:* code.
 12. *Demo A to a written PDF, demo B to the end: both, on Linux, on a real Pošta card through the installed agent, verified by both tools; the README table updated (D-397). Windows not re-run. Numbering kept.*
 13. **`Sign.java` and `sign.php` never executed.** — sdk/examples README. *Needs:* a JDK and PHP. **Session 33 (D-459): `sign.php` and `Sign.java` executed** against the SDK's stand-in agent (`examples-run.test.mjs`); against the real agent still not, and `Sign.cs` still not compiled.
-14. *The stamp with the holder's name: read by the owner — "SAVKA ODŽIĆ", Ž and Ć rendered (D-363). Numbering kept.*
+14. *The stamp with the holder's name: read by the owner — "[name removed]", Ž and Ć rendered (D-363). Numbering kept.*
 15. **Halcom: no signature ever verified.** — README F11. *Needs:* hardware.
 16. *Package signing with the real key: checked by a person on both VMs, as the README says. CI's steps first (D-360), the real key's first run refused by `package-signing` (A16, D-440), re-run with that fixed: 37D3… signed the rc and it was published as a prerelease (D-441). Ubuntu (D-442): fetched, verified, checksummed, controls refused, upgraded over `0.9.9~dev.17`; the README's import line did not work as written, fixed. Fedora (D-444): gpg present on stock Fedora 44 (Fedora's own image build installed it); `gpg --show-keys` printed the forty digits and imported nothing; `rpm -K` NOKEY before the import, `digests signatures OK` after; two one-byte copies refused; `dnf install` upgraded `0.9.9~dev.17` to `0.9.9~rc1` — rpm sorts them as intended. **Found: on Fedora nothing at install time checks who signed a local package** — dnf skips it (`localpkg_gpgcheck` 0) with the same warning as for an unsigned one, and rpm checks digests only (`%_pkgverify_level` digest); the README says so now; what we promise is A35. Not measured anywhere: gpg's Serbian. Closed (D-444). Numbering kept.*
 17. *The notification at approval: watched by the owner with a real card (D-361). Numbering kept.*
