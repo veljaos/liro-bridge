@@ -49041,3 +49041,58 @@ Its predictions are in `docs/s35-predictions.md`, committed with this entry. **N
 - **Nothing is told on a timeout:** no box, no notice. The server is never contacted, so the page that sent the link hears nothing either.
 - **P9f held,** in the case that matters most: unseen.
 - **R1 is still to do.** R5 is counted as measured by this, unless the owner wants it repeated at 225 % text as written.
+
+## D-501 — P9's R2 held exactly: at 200 % scale the origin window is the 100 % page enlarged — six lines of name, both buttons on screen, no scroll bar, and slack to spare. The agent was re-read from the window, and `open-link` handed off instead of becoming the agent
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 35). **Predictions:** P9 (`60990f9`). **The owner's words** on dropping R1: "On this screen your own arithmetic says the buttons survive 150 % when they survive 200 %, so running the smaller scale after the larger one settles nothing. If R2 shows them crowded, I'll go back and do 150 %."
+
+**R1 was dropped, not failed.** R2's condition was already on the machine after the sign-out, and changing scale costs a sign-out, so the larger scale was run first. It is not crowded, so 150 % was never run.
+
+### What the machine was, read before anything opened
+
+- **Display scale 200 %, text size 100 %** — R2's row, already set.
+- `LogPixels` 192 with `Win8DpiScaling` 1 (custom scaling); physical panel 1920×1080 against the 960×540 a DPI-unaware process is shown, a ratio of exactly 2.0. `GetDpiForWindow` on the window itself later returned 192, agreeing.
+- **Text size 100 %:** `TextScaleFactor` is absent from `HKCU\Software\Microsoft\Accessibility`, which is the default.
+- The owner had guessed "possibly 175 %". It was 200 %.
+
+### A trap worth keeping: a DPI-unaware process is lied to, and `GetDpiForMonitor` lies with it
+
+Two separate readings said "96, so 100 %", and both were wrong. `GetDeviceCaps(LOGPIXELSX)` is virtualized, which was expected — but **`GetDpiForMonitor` with `MDT_EFFECTIVE_DPI` also returns 96 for every monitor when the caller is DPI-unaware**, and it had been treated as authoritative because it is documented as the true effective DPI. It is only true for a DPI-aware caller. The scale was nearly recorded as 100 % on its word.
+
+**What settled it** was not an API at all: the physical mode from WMI against the virtualized resolution the process was handed. **Any script in this project that measures DPI must call `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` before its first GDI or window call,** or every rect it reports is halved and every capture is taken in the wrong space.
+
+### What ran, from the log
+
+- **00:17:59.439:** `liro-bridge starting`, version `dev`, commit `67695f6` — this is `open-link`'s own process, pid 15424.
+- **00:17:59.445:** `open-link: an agent is running, so the link was left for it`. **It handed off and returned.** R1's failure, where `open-link` found no agent and became one, did not repeat.
+- **The window opened, owned by pid 11008** — the tray agent, `liro-bridge.exe tray`, up since 00:04:44, listening on 17580 and named in `bridge.json`.
+- **00:18:02 and 00:18:05:** photographed twice, to let WebView2 finish painting.
+- **00:18:05.547:** `cloud: the person did not allow this server`, carrying the full 255-character origin and job. That is `WM_CLOSE`, the X's message, sent by the script.
+
+### D-500's correction, applied
+
+The agent was **not** carried forward from the earlier reading. The window was found by its class, `LiroBridgeWindow`, of which **there were none before the link** — the tray registers its own class, so the new window was unambiguous — and its owner was resolved with `GetWindowThreadProcessId` at the moment it appeared, then checked against the listener on 17580. They matched: 11008. Had they not, the run would have said so instead of photographing the wrong window.
+
+### Row 2.1 at 200 %: the measurement
+
+| | |
+|---|---|
+| Client | **840×812** — P9a's predicted figure, to the pixel |
+| Window | 866×883 at (527, 98); `GetDpiForWindow` 192 |
+| Title | "Dozvoliti ovaj server?" |
+| Resizable | **no** — `WS_THICKFRAME` absent, confirming the window cannot be shortened |
+| Scroll bar | none, at the window and in the page |
+
+**What a person sees:** the whole origin, wrapped across **six lines** of name, and **both buttons on screen** — "Ne dozvoli" and "Dozvoli". About 110 physical pixels (~55 CSS px) of empty space sit between the last sentence and the button row, and about 45 more below it. **The layout is nowhere near its edge at 200 %.**
+
+### What held
+
+- **P9a held,** exactly: the same page as at 100 %, larger; the client size predicted; six lines; both buttons; no scroll bar. Scale enlarges the window and the page together, so the page's layout in CSS pixels does not change.
+- **P8c held at 200 %.** It was the least certain of P8, because WebKitGTK needed 372 points in Serbian Latin and nothing had measured Segoe UI. It fits, with room left.
+- **P9f held for the X:** a refusal, logged "did not allow", and **nothing told the person** — no box, no notice, and the server is never contacted.
+
+### What this settles, and what it does not
+
+- **Scale is not what threatens the buttons.** The owner's reasoning for dropping R1 is borne out by the slack measured here: 150 % cannot lose what 200 % keeps with room over.
+- **Nothing here touches text size.** P9b is still open — whether WebView2 applies Windows' text size to page content at all — and with it P9c, P9d and the dangerous case, a server name absent from a window that asks whether to allow that server. **R3, R4 and R5 are where the answer is.**
+- **R3 costs a sign-out.** Custom scaling is on, and Windows will not leave it from the dropdown; going to 100 % means signing out, which ends agent 11008. The agent must be read again from `bridge.json` and the listener before R3, never carried over.
