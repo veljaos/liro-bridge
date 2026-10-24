@@ -128,3 +128,28 @@ E2's refusal means "per process" only if the agent still held the PIN when E2 ra
 - **Unreadable:** P2e. In E4 the card came out *and* the process was new.
 - **Moot:** P2h.
 - **A clean E4,** one tray agent across the card change, is described in D-493.
+
+## P3 — the clean E4: does taking the card out clear the PIN in a living agent? (written 2026-10-24, for the next sitting; not run)
+
+**Why:** E4 changed the card and the process at once (D-493). This is the one answer a person could act on (E11).
+
+**The documents:** `Desktop\liro-s35\p3-1.pdf`, `p3-2.pdf`, `p3-3.pdf`, each a copy of `testdata/pdfs/blank.pdf` (`b9749fdb…`).
+
+**The steps (E11):**
+0. **Before:**
+   - one tray agent, started by signing in to Windows: the `Run` entry starts `tray`. Not from the Start menu, which starts `open` and ends with its window;
+   - I read its PID and start `flashwatch2.py`, which runs to the end;
+   - the machine kept awake, the level the default, the card in.
+1. **Sign `p3-1.pdf`** from that agent's window.
+2. **Sign `p3-2.pdf`,** with nothing changed.
+3. **The card out for five seconds, then back in;** wait until the reader settles. The agent is left alone.
+4. **Sign `p3-3.pdf`.**
+
+| | measured | predicted |
+|---|---|---|
+| P3a | Step 1 | **The PIN asked once:** one `Credential Dialog Xaml Host` window. As this is the agent's first preparation: three `pkcs11-probe` and three `pkcs11-worker` children, with **six Terminal windows** (D53 is not fixed). Audit `approved`, `B-T`. About a minute (D52 is not fixed) |
+| P3b | Step 2 | **No PIN,** no new children, no flash |
+| P3c | Step 3 | The agent's PID unchanged. Whether the workers notice the token going and are replaced is not predicted |
+| P3d | Step 4 | **The PIN asked again.** **Least certain of P3:** My basis is Microsoft's smart-card provider PIN cache, which I recall as tied to the card and cleared when the card is removed. It is recalled, not re-read tonight, and not measured here. **If no PIN is asked,** taking the card out does not protect a person who walks away with the agent running, and E11's close has to say so |
+
+If anything asks for the PIN twice, stop: the card has three attempts.

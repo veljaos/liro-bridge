@@ -180,6 +180,25 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
       8. **Controls as D-447's:** a red tree failing at CI's own step, and each refusal seen once.
     - *Close:* a check that runs CI's Windows jobs here, or a recorded decision that CI stays the only check on Windows. *Needs:* the owner's decision on its cost, then code; D42 and D10 first. **Block 2.**
 
+38. **D-025: what it decided, and what it rests on now.** **Not decided here: the owner's** (2026-10-24).
+    - **What D-025 decided (2026-09-01, F2):**
+      - `internal/keysource/windowscng` never sets `NCRYPT_PIN_PROPERTY` and never passes `NCRYPT_SILENT_FLAG`;
+      - no struct or function in `internal/keysource`, `softtoken` or `signing` carries a PIN, enforced by `pin_test.go`'s AST walks;
+      - Windows' own dialog asks, parented to our window.
+      - **Rejected:** collecting the PIN in our own UI.
+    - **Its reasons, as written:**
+      1. **SPEC §6.5:** "the card caches the PIN in its own state, independent of which process is talking to it — the PIN is therefore not an access-control boundary between applications, only the consent screen is". From that, F2 §2.3: "since the PIN buys the agent nothing as a security boundary, there is no reason for it to ever be inside this process". The rejection rests on the same sentence: "the card's own cached-PIN behaviour (SPEC §6.5) means our process being the one to collect it buys no additional security."
+      2. **F2 §2.3, on its own:** "A PIN that never enters our process cannot leak from our logs, our crash dumps or our memory."
+    - **What it rests on now:**
+      - **Reason 1's premise is refuted through CNG** (E2, D-493). While the agent held the PIN, a process that is not the agent could not sign without a prompt. So through CNG the PIN is a boundary between processes. "Buys no additional security" was argued from a sentence that is false for this route.
+      - **Reason 1's other half is untested:** whether the card keeps a verified state that a program talking to it directly could use. That is the PKCS#11 half, E10.
+      - **Reason 2 stands, untouched by any of it.**
+    - **What the decision has meant in practice, measured (D-491–D-493):**
+      - The PIN is held by Windows' smart-card provider in the agent's process, where this program cannot see it, and nothing this program does clears it.
+      - That is why F2 §4.1's "a new PIN" and the Guide's sentence are not kept (E11).
+    - **Also resting on reason 1:** SPEC §6.5.1's permission to hold a PIN for `C_Login` on PKCS#11 modules with no protected path ("permitted, narrowly, and only because of what §6.5 above already establishes").
+    - *Close:* the owner's decision, whether D-025 stands on reason 2 alone, changes, or waits for the PKCS#11 half. Then SPEC §6.5, §6.5.1, F2 §2.3 and D-025's text are brought into line with whatever is decided. *Needs:* the owner's decision. Nothing here is decided by me.
+
 ## B. Claims not measured
 
 1. *The shipped field sends IBus nothing: never connected to `ibus-daemon` in eight consecutive runs; the `im-module` half is moot — the field uses no input method. The rest of the input path is B23 (D-392, D-394). Numbering kept.*
@@ -348,6 +367,55 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
       - **Nothing changed in the code it names** (`module_unix.go`, `loaderror_darwin.go`).
     - *Close:* `dlopen` and `dlerror` read on one thread (one C helper, or the goroutine pinned around both); the race shown first; then the test repeated on CI. The four recalled phrases are measured against a real dyld on a Mac (5.4), or marked as recalled where they are used. *Needs:* code, CI, a Mac. **Not fixed, by the owner's word.**
 
+52. **Every document on a MUP card downloads a 29.9 MB CRL that can never be embedded, on the default level, and nothing remembers that it was too large** (D-493, D-494). This is the one a person feels.
+    - **What happens, per document:**
+      - The best available asks for B-LT on every signature.
+      - **OCSP:** MUP's `ocsp.mup.gov.rs` accepts no connection, so two attempts of 10 s are spent: 20 s. That is once per batch: a failure is remembered for the batch.
+      - **The CRL:** then `MUPGradjaniCA4.crl` is downloaded in full: 29,859,134 bytes, 13–16 s by curl at about 2 MB/s, against our 30 s limit.
+      - **Then the cap:** it is read, parsed and checked against its issuer, and only then compared with the 5 MB cap, and refused (`evidence.go:205`).
+    - **Nothing remembers the refusal.** It is not a failure, so `fetchCRL` returns `TooLarge` without `mem.remember`. The next document downloads it again.
+    - **What it costs:** ten documents are about 300 MB, and the B-LT attempt is about a minute each: 35–55 s measured per signature, more when the download times out at 30 s (E1b, E3).
+    - **Where:**
+      - `internal/pades/dss/evidence.go`, `fetchCRL`;
+      - `revocation.go`: `crlTimeout` 30 s, `maxCRLSize` 64 MB, `DefaultMaxArtefactSize` 5 MB, and `doAndRead`'s `io.ReadAll(io.LimitReader(resp.Body, maxResp))`;
+      - `memory.go`: one batch, failures only.
+    - **The server gives what a fix needs.** After the 302 to `crl.mup.gov.rs`, a HEAD and a GET both carry `Content-Length: 29859134`, with `Accept-Ranges: bytes`, `Last-Modified` and an `ETag` (read 2026-10-24).
+    - **What it would take (the owner):**
+      1. **Remember the refusal, for the batch at least.** "Too large" is remembered per URL in `EndpointMemory`, as a failure is.
+      2. **Stop fetching what the cap will reject.** Read `Content-Length` from the response before the body, and close it when the length is over the cap. Where no length is given, read at most cap + 1 bytes and stop there, instead of up to 64 MB.
+    - **What the second gives up:** D-076's order, "the size check happens after successful validation, not instead of it". A CRL refused by its header is never parsed or checked. It is not embedded either way, so nothing signed changes. But the note "revocation data too large" would then rest on the server's header, not on a CRL that was read.
+    - **Beyond the batch:** remembering "too large" for the agent's life, keyed by `ETag` or `Last-Modified`, would also spare every later batch. `memory.go` keeps memory to one batch on purpose ("a responder that was down five minutes ago may be up now"). Widening that is the owner's decision.
+    - **Not in this item:**
+      - OCSP's 20 s per batch (D-076: the responder is unreachable);
+      - whether the best available should try B-LT at all for an issuer whose evidence cannot be embedded. That is a decision, not a defect.
+    - *Close:*
+      - tests that fail on today's code: a stand-in server whose CRL is over the cap, with no body bytes read when it gives a length; and a ten-document batch that fetches that URL once;
+      - then a batch with the MUP card, the time and bytes per document read.
+    - *Needs:* code, then the card.
+
+53. **The flashes: a Windows Terminal window for every console the agent's children are given, six per card preparation, and one at the agent's start** (D-493, D-494).
+    - **What happens:**
+      - `liro-bridge.exe` is a console program (PE subsystem 3).
+      - On a card preparation the agent starts three `pkcs11-probe` children, one at a time, about 0.2 s each, then three `pkcs11-worker` children that stay.
+      - Each child's parent has no console, so Windows gives the child one and hands it to Windows Terminal, the default terminal here.
+      - **Terminal draws a visible window,** `CASCADIA_HOSTING_WINDOW_CLASS`, 1129×635, titled "Terminal" and then the binary's path. The child's `FreeConsole` (`detachAllocatedConsole`) takes it away 73–94 ms later.
+      - **The agent's own start, from the Start menu or the `Run` entry, does the same once.**
+    - **D-254 measured that this window is never drawn,** and this contradicts it:
+      - D-254: "freeing the console before that completes means it is never created — so this is not a flash made short, it is a window not drawn". 0 windows in 26,026 polls, and 0 in about 98,000 more.
+      - **Repeated in D-254's own situation on 2026-10-24** (the current binary, `--version`, from `Win32_Process.Create`): **5 windows in 5 runs**, against a control (`ping`) whose window lived 3.13 s.
+    - **It is not Windows Terminal as the console host.** D-254 ran under Terminal too: its window before the fix was the same `CASCADIA_HOSTING_WINDOW_CLASS` at 1129×635.
+    - **What changed since D-254 (2026-09-12), read on this machine:**
+      - Windows Terminal, `1.24.11911.0` → `1.24.12741.0`, on 2026-10-03;
+      - three Windows updates on 2026-10-15 (build 26200.9711 now).
+      - Which of them turned "never drawn" into "drawn every time" is not established. Neither is it known whether 11911 was the version D-254 ran under.
+    - **So D-254 reads as incomplete, not wrong.** It measured a race, and reported it as a mechanism. Its result held for the Terminal and Windows of that day, and it does not hold for today's.
+    - **What CI cannot see:** `TestAConsoleTheAgentIsAloneOnIsGivenBack` checks that the console is freed, not that no window was drawn. It passes today.
+    - **What a fix would look like (not decided):**
+      - **For the children:** start them with no console, either `CREATE_NO_WINDOW` or `DETACHED_PROCESS` in `SysProcAttr.CreationFlags` (`probe.go:178`, `worker/parent.go:445`). The worker talks over pipes, not a console.
+      - **For the agent's own start:** D-254's rejected alternatives return. Linking as a GUI program loses `--version`'s output and exit code to PowerShell. A separate GUI launcher is the other way.
+    - *Close:* the children started without a console, and the watcher shows no window in a card preparation. The agent's start is decided by the owner, then measured the same way.
+    - *Needs:* code, then this machine.
+
 ## E. Promises in documents that nothing does yet
 
 1. *Package signing: built in D-356; its first real run is C16. Numbering kept, because F1 cites E3 and E4.*
@@ -384,6 +452,19 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
       - Something cleared it between 16:52 and 19:21, across a 75-minute sleep. What, and when, is not known (E1).
       - **Whether taking the card out clears it in a living agent is not known.** E4 changed the card and the process at once. A clean E4 is in D-493: one tray agent, the same PID, sign, sign, card out and in, sign. It is the one answer a person could act on.
     - The SPEC sentence that says all this was already known is under E10.
+    - **The clean E4, ready to run** (P3 in `docs/s35-predictions.md`, written 2026-10-24 before it runs):
+      0. **Before, the setup:**
+         - one tray agent, started by signing in to Windows (the `Run` entry starts `tray`), not from the Start menu, which starts `open` and ends with its window;
+         - its PID read; the watcher (`flashwatch2.py`) running throughout;
+         - the machine kept awake; the level the default; the card in.
+      1. **Sign `Desktop\liro-s35\p3-1.pdf`** from that agent's window. The PIN is asked.
+      2. **Sign `p3-2.pdf`,** nothing changed. The control: no PIN.
+      3. **Card out for five seconds, then back in;** wait until the reader settles. The agent is left alone.
+      4. **Sign `p3-3.pdf`.**
+      - **After:**
+        - the PID unchanged, read from the watcher (no `liro-bridge.exe` started by explorer, and the agent never exits);
+        - credential windows counted, one per PIN prompt;
+        - audit entries read.
     - *Close:* where the PIN is held and what clears it, measured. Then either the program makes the promises true (for example, by ending the card's authenticated state when a session closes, if Windows offers a way), or F2 and the Guide say what actually happens, in words a person can act on. Which of the two is the owner's decision. *Needs:* P2 first, then the owner's decision, then code or text.
 
 ## F. F12's exit checklist, what is not done

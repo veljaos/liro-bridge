@@ -48744,3 +48744,51 @@ From the watcher, E3's preparation (E4's is the same, two minutes later):
 - **P2e: unreadable** (E4's two changes).
 - **P2h: moot.** E4's process was new, so its preparation was E3's.
 - **Not predicted:** the Start menu starts `open`, not `tray`. So E3's agent ended with its window, and nothing is running now.
+
+## D-494 — D-254's flash measured again in its own setup: drawn 5 times in 5 under the same Windows Terminal, so it is not the console host; the MUP CRL's size is in its headers; D52, D53 and A38 recorded, the clean E4 written as P3
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **The owner:** "Add both to section D as their own items"; establish whether the difference from D-254 is Windows Terminal as the console host, "so D-254 reads as incomplete rather than wrong"; write down the clean E4; set out D-025, "but decide nothing — that one is mine". The watcher was stopped at the owner's word (20:00), before this. **The owner was away from the machine for all of it.** Nothing here used the card.
+
+### D-254 in its own setup, again
+
+- **The setup:** D-254's own. `liro-bridge.exe --version` (the installed `67695f6` binary, which frees its console) started five times through `Win32_Process.Create`, from a parent with no console, three seconds apart.
+- **The control:** `PING.EXE -n 4 127.0.0.1`, started the same way. It keeps its console.
+- **The instrument:** `flashwatch2.py`, `flashwatch.py` with each window's title text and the moment it goes.
+- **2,468 polls in 40 s.**
+
+**The result:**
+- **Every `--version` run drew a visible window:** `CASCADIA_HOSTING_WINDOW_CLASS`, 1129×635, owned by `WindowsTerminal.exe`. It was created titled "Terminal" (once "Windows Terminal"), retitled to the binary's path, and **gone after 73, 90, 92, 94 and 78 ms**.
+- **The control's window** was the same class and size, and lived 3.13 s.
+
+**Not Windows Terminal as the host.** D-254 ran under Terminal as well: the window it photographed before its fix was `CASCADIA_HOSTING_WINDOW_CLASS`, 1129×635, "titled `C:\Users\Veljko\AppData\Local\Programs\Liro Bridge\liro-bridge.exe`". The host is the same. The outcome is not.
+
+**What has changed since 2026-09-12, read on this machine:**
+- **Windows Terminal updated on 2026-10-03 15:06,** from `1.24.11911.0` to `1.24.12741.0` (AppXDeploymentServer events 855, 400, 821).
+- **Three Windows updates on 2026-10-15:** KB5127690, KB5127648 and KB5127647. Windows is 25H2, build 26200.9711.
+- **Neither is established as the cause.** Nor is it known whether 11911 was the version D-254 ran under: the log goes back no further than the update.
+
+**So D-254 reads as incomplete, not wrong.** It measured a race between the terminal's handoff and our `FreeConsole`, and wrote the result as a mechanism: "this is not a flash made short, it is a window not drawn". It held for the Terminal and Windows of that day, and it fails on today's, for the agent's start and for every child.
+
+### The MUP CRL's headers
+
+Read with curl, without reading the body:
+- the CRL's URL answers `302` to `http://crl.mup.gov.rs/MUPGradjaniCA4.crl`;
+- that answers `200` with `Content-Length: 29859134`, `Accept-Ranges: bytes`, `Last-Modified: Sat, 24 Oct 2026 04:37:09 GMT` and an `ETag`;
+- a ranged GET's `Content-Range` gives the same total.
+
+**So the size is known before a byte of the CRL is read.** This is the basis for D52's second fix.
+
+### Recorded
+
+- **D52, the CRL:** what happens per document, where in the code, what it would take, and what that gives up (D-076's validate-then-measure order).
+- **D53, the flashes:** this entry's measurement; D-254 incomplete; what a fix would look like, not decided.
+- **A38, D-025:** what it decided, its two reasons as written, and what each rests on now.
+  - Reason 1 rests on SPEC §6.5's second-process sentence, refuted through CNG by E2.
+  - Reason 2, the PIN kept out of our logs, dumps and memory, stands.
+  - **Not decided.**
+- **E11:** the clean E4, as four steps after a setup step.
+- **P3:** that run's predictions, written before it.
+
+### A correction
+
+**D-491 and D-493 say "Microsoft documents a per-process PIN cache".** That is my recollection of Microsoft's smart-card documentation. I did not re-read it this session, and nothing here measured it. It should be read as "recalled". P3d says so.
