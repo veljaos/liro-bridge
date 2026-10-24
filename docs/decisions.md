@@ -49140,3 +49140,43 @@ The agent was **not** carried forward from the earlier reading. The window was f
 ### Not measured
 
 **Whether the name can be reached at all.** The region's scroll bar is drawn, so it has overflow and the wheel should move it — but that is inference, and whether a person finds a scroll bar they have no reason to expect is the question the row is really asking. P9 gives the wheel to R4, at 225 %. **It is now worth doing at 150 % as well.**
+
+## D-503 — P9's R3b, the owner's hands on the wheel: the hidden name **is** reachable. The wheel over the region scrolls it, one line at a time, and nothing on the window says there is anything to scroll. The X ended it; **Esc was not pressed, so P9e is still unmeasured**
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 35). **Predictions:** P9 (`60990f9`). Run at the owner's instruction after D-502, because 150 % text is the ordinary setting and the answer mattered more than 225 %.
+
+**The owner's words:** "The window came up, said Server with the scroll arrows and nothing else. I put the wheel over the empty area and scrolled, and the aaaa name appeared. I closed it with the X — I did not press Esc." And on how to record it: **"not unreachable, hidden with no sign that anything is there."**
+
+### What ran
+
+- **00:42:20.831** the same 255-character link through `open-link`; `open-link: an agent is running, so the link was left for it`.
+- **00:42:21.574** the window, owner resolved at that moment: **11844**, the tray; title "Dozvoliti ovaj server?".
+- The camera took the window every 0.9 s and **kept only the frames where the pixels changed** — 19 of them — so whatever scrolling did was caught without knowing when it would happen. **I never touched the window this time.**
+- **Gone after 24 s. 00:42:44.847:** `cloud: the person did not allow this server`. `cloud-origins.json` still absent.
+
+### What the frames show
+
+| frame | t | what is in the name's region |
+|---|---|---|
+| 00 | +2.5 s | **"Server", the scroll arrows, white space.** D-502 repeated exactly. **Not the foreground window** |
+| 01 | +5.4 s | the window takes the foreground — the owner's pointer and wheel arrive |
+| 02–08 | +6.3 to +11.9 s | **one line of the name at a time:** `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` |
+| 09 | +12.8 s | **the first line: `https://aaaaaaaaaaaaaaaaaaaaaa`.** The scheme is on a line of its own, visible only to someone who scrolls back to the top |
+| 10–17 | +13.8 to +20.3 s | further single lines |
+| 18 | +23 s | back at "Server", the X lit red under the pointer |
+
+**The region's viewport is one line tall.** A 255-character origin is about eight lines, so it is read **one line at a time, in eight separate views**, with no two parts of it on screen together.
+
+### What this settles
+
+- **The name is reachable.** The wheel over that region scrolls it — the owner did it with the pointer over what looks like empty space. **D-502's "no server name at all" is about what is shown, not about what exists.**
+- **Nothing says it is there.** No ellipsis, no cut-off glyph, no "…", no count of lines: a label, a pair of small arrows, and white space that reads as an empty field. **A person who does not already know to put the wheel there sees a question about a server with no server in it,** and both buttons are fully on screen, inviting an answer.
+- **The window did not take the foreground when it opened** (frame 00), exactly as in R3. It took it only when the owner used it. That is P9e's precondition, and it is the reason Esc is worth measuring rather than assuming.
+
+### Not measured
+
+- **P9e, Esc.** The owner closed with the X instead, and said to write it down rather than repeat the run tonight. **Next sitting:** the same link at 150 %, Esc pressed without clicking the window first (the foreground question), then Esc again after a click on the **title bar**.
+- **R4 (225 %) and R5 (the timeout at 225 %).**
+- **An ordinary origin,** not the 255-character worst case, at 150 % text: how many lines it loses is unknown, and it is what a person actually meets.
+
+**Opened as its own open item, at the owner's instruction: D54.** Not a line under row 2.1: "the only screen standing between them and whoever sends them documents to sign."
