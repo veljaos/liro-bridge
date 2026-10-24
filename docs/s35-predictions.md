@@ -266,3 +266,21 @@ If anything asks for the PIN twice, stop: the card has three attempts.
 - **A run of about 10 s that logs "did not answer in time" for a NetSeT module:** D45 is a probe timeout. The row holds, and the inference becomes a measurement.
 - **A run of about 10 s with no such failure:** the row is false. Something else takes the time, and the watcher shows which child.
 - **No slow run in five:** the row is not read. D45 did not recur, and it stays inferred, as the owner ruled (D-467). Five runs is the row's own number. I do not add more without the owner.
+
+## P7 — row 5.1: does the window CI photographed show the page? (written 2026-10-24, before the artifact is opened)
+
+**The row:** look at the `liro-macos` artifact. **False** if the picture is blank or wrong.
+
+**Read before it (not predictions):**
+- **What takes the photograph:** `TestAMacWindowLoadsAPageAndCarriesMessagesBothWays` (`internal/ui/window_darwin_test.go`), with `LIRO_SCREENSHOT_DIR` set by the `macos` job.
+  - It opens a WKWebView window titled "Liro Bridge (CI)", 420×406, on `/pages/origin.html`.
+  - It posts English strings and the origin `https://erp.example.com`, checks through `Eval` that the origin landed in the page, waits 500 ms, and runs `screencapture -x -o -l<window>` to `origin-window.png`.
+- **The artifact:** the newest, from run 40121684835's sibling at `6bb89b9` (artifact 12571531628, 2026-10-24 18:40 UTC). Downloaded into a new, empty folder in my scratchpad. It also holds the bundle's zip, which I do not open or run.
+
+| | measured | predicted |
+|---|---|---|
+| P7a | The file | `origin-window.png`, about 840×812 pixels (the runner's display at 2×), with no window shadow (`-o`) |
+| P7b | What it shows | **The origin page, whole:** the title "Liro Bridge (CI)", the label "Server", `https://erp.example.com`, "A page on this server asked to send you documents to sign.", "Every request still opens the signing screen.", and two buttons, "Allow" and "Do not allow". **Least certain of P7.** On a runner the window can photograph as blank, or as the desktop behind it, if the page has not painted or if `screencapture` lacks screen-recording permission. The test's `Eval` proves the page holds the text, not that it was drawn |
+| P7c | Fit | Nothing cut off at 406 points, and no scroll bar |
+
+**What it settles:** P7b holding reads the row: WKWebView draws our page on macOS 15. It says nothing of 5.2–5.4: no bundle opened by a person, no card, no Gatekeeper.
