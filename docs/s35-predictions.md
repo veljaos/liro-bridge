@@ -244,3 +244,25 @@ If anything asks for the PIN twice, stop: the card has three attempts.
 - **Either way,** a single run on one card and one reader.
 
 **Stop** if anything asks for the PIN twice.
+
+## P6 — row 1.7: is D45 a probe timeout? (written 2026-10-24 23:41, before it runs)
+
+**The row:** on the NetSeT machine, `TestSourcesAreOnePerUsableModule` five times, with the log. **False** if a run takes about 10 s with no probe timing out.
+
+**Read before it (not predictions):**
+- **This is the machine D45 was seen on** (TrustEdgeID's and MUP's NetSeT `netsetpkcs11_x64.dll`).
+- **Since D-458 the test asks one discovery** (`Modules`, then `sourcesFor`). So "the two disagree" can no longer happen. What is left to see is a slow run, and why.
+- **A probe that runs out `ProbeTimeout` (10 s)** comes back as the failure "the probe process did not answer in time" (`errWorkerSilent`), which the test logs as `not a module: <path>: …`.
+- **The card is in the reader.** 14140 is running, with its three workers holding the three modules loaded.
+- **How:** `go test ./internal/keysource/pkcs11 -run '^TestSourcesAreOnePerUsableModule$' -count=1 -v`, five times, one after another, under the watcher (each probe child's start and end).
+
+| | measured | predicted |
+|---|---|---|
+| P6a | Each run's time | **2.5–5 s,** with **no probe timing out,** in all five. **Least certain of P6.** D45 came once in five, so a repeat in five runs is about as likely as not |
+| P6b | Usable modules | The three the agent's workers hold: `aetpkss1.dll`, TrustEdgeID's and MUP's `netsetpkcs11_x64.dll`. Anything else is listed as `not a module` with its reason, the same in every run |
+| P6c | The probe children (the watcher) | One per candidate, one at a time, each well under a second |
+
+**What each answer settles:**
+- **A run of about 10 s that logs "did not answer in time" for a NetSeT module:** D45 is a probe timeout. The row holds, and the inference becomes a measurement.
+- **A run of about 10 s with no such failure:** the row is false. Something else takes the time, and the watcher shows which child.
+- **No slow run in five:** the row is not read. D45 did not recur, and it stays inferred, as the owner ruled (D-467). Five runs is the row's own number. I do not add more without the owner.
