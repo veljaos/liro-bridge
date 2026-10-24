@@ -48478,3 +48478,108 @@ A second scan of the session's folder after the deletion found nothing.
   - "Library not loaded", "Symbol not found", "incompatible architecture" and "not a mach-o file" are recalled. None has been seen from a real dyld.
 
 **Not done tonight:** the fix, and showing the race. The fix is one C helper that calls both, or the goroutine pinned around both. Showing the race comes first, and then CI repeated.
+
+## D-491 — row 1.2 done with the MUP card; and the PIN was asked once in three signatures, which F2 §4.1 and the Guide promise it will not do, and which SPEC §6.5 claims to have measured and never did
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P1, committed in `90946df` before the owner's first step. **The owner** ran steps 1–4 and read the screens. The first step 4 was botched: the level had not been changed, so it was step 2 again, on `row-1.2-blt.pdf`. The owner deleted its output, `row-1.2-blt-signed.pdf`, at 16:50:43, then repeated step 4 with B-LT chosen, saved, and checked by reopening Settings.
+
+### Row 1.2: done
+
+**The default stops at B-T with no warning; a chosen B-LT is refused and nothing is saved.** Neither of the row's falsifiers happened.
+- **Step 2 (best available), the owner's screen:** "Završeno · 1 potpisano · Sačuvano u C:\Users\Veljko\Desktop\liro-s35 · Nivo potpisa B-T", B-T in green, no warning.
+- **Step 4 (B-LT chosen):** "Završeno · 0 potpisano · 1 neuspešno · Šta nije uspelo: row-1.2-blt.pdf — Traženi nivo potpisa nije mogao biti dostignut, pa ništa nije sačuvano. · Sačuvano u fascikla svakog dokumenta · Nivo potpisa —".
+- **The audit chain** gained three entries, and all 323 verify (`scripts/auditverify` on a copy):
+  - 320, step 2: `approved`, `B-T`, `windows-cng`;
+  - 321, the botched run: `approved`, `B-T`. A real signature; its file was since deleted by the owner;
+  - 322, step 4: `failed`, `LEVEL_NOT_REACHED`, no `achievedLevel`.
+- **The folder** holds `row-1.2-best-signed.pdf` (16:47:48, `74f18227…`) and the two inputs, both still `b9749fdb…`.
+- **`verifypdf` on step 2's output** (built from HEAD; its source is unchanged since `67695f6`): every check true. `SignerChainTrusted` is true, chaining to `MUP Gradjani CA 4`. The timestamp is valid; its chain is not trusted (`TEST 2018 CA 1 - Novo`, as in D-484).
+- **The partial `/DSS`,** read from the file: 5 certificates; one CRL, Pošta's **test root** (`TEST 2018 CA Root - Novo`, lastUpdate 2026-09-11); one OCSP response, "good", for the **timestamp unit** (serial `29B7B1CEB10D18F299`). **Nothing for the signer's certificate.**
+- **The log: 145 new lines, none holding the subject's name or number** (checked by script). Each run gave:
+  - `pades/cms: AIA caIssuers did not return a parseable certificate`, `http://ca.mup.gov.rs/MUPRootCA4.crt`;
+  - then `role=signer`, "larger than the cap", `bytes=29859134`, `cap=5242880`.
+- **The first two runs' notes:** "1 revocation response(s) are no newer than the timestamp even after asking again; embedded as given; revocation data too large to embed (29859134 bytes); saved at B-T".
+- **Step 4 left no line about its refusal.** The reason reached the screen and the audit entry's code, and nothing else.
+- **Timing:** the B-LT attempt took 34–38 s in each run, from the AIA line to the `/DSS` warning. The owner read card preparation at about 40 s each time, and the PIN to the report at about a minute.
+
+**P1, against the result:**
+- **Held:** P1d–P1k, P1m and P1o. P1o's entry is 322, not 321, because of the botched run.
+- **P1g, the least certain, held on its first branch:** the whole 29.9 MB CRL arrived within the 30 s timeout. No `role=timestamp` lines came.
+- **P1a:** read from step 2's behaviour; the file has been saved again since.
+- **P1b:** not read.
+- **P1c failed.** I predicted our PIN dialog naming the card, with MUP's 4 to 8. The card went through CNG, and Windows' own dialog asked. P1c described the PKCS#11 path, which this card did not take.
+- **P1l half failed.** The refusal and its words held. "The PIN is asked" did not: no PIN was asked. **The card still signed before the refusal**, as the order in `sign.go` makes it.
+- **P1n failed:** no refusal line in the log.
+- **Not predicted:**
+  - the MUP root's AIA certificate failing to parse, every run;
+  - the stale-CRL note: it is the Pošta test root's CRL, older than the timestamp;
+  - `config.json` rewritten at 16:51:26, as step 4 began, with the level unchanged. Not read further.
+
+### The PIN: asked once, for three signatures
+
+**What happened.** The owner entered the PIN once, for step 2. The botched run and step 4 signed without a prompt.
+- **The log agrees.**
+  - The agent's front-window lines show `Credential Dialog Xaml Host` (PID 8280) in front at 16:47:10, and gone by 16:47:13. That is Windows' credential window.
+  - Nothing like it appears in the second or third run.
+- **Step 4's card signed with no PIN,** and then the signature was discarded.
+- **A clock I cannot reconcile:** the timestamp's genTime reads 16:47:02, eight seconds before the prompt's line. Either the test server's clock is behind (below the 5-minute drift warning), or the front-window line lags. Not resolved.
+
+**Where the PIN is held: not in this program.**
+- `internal/keysource/windowscng` never sets `NCRYPT_PIN_PROPERTY` and never sees a PIN (D-025). It opens the key per batch, with `CryptAcquireCertificatePrivateKey`, and frees it when the batch ends (`session_core.go`, `Close`).
+- **The running agent, PID 14168, since 14:07:48,** has Microsoft's smart-card key storage provider loaded: `scksp.dll`, with `ncrypt.dll`, `winscard.dll`, `credui.dll` and `wincredui.dll`.
+- **The card's minidriver is not loaded now.** The registry names NetSeT's `nstcm.dll` for the MUP card types.
+- **So the PIN is held below the program:** either the key storage provider's cache in the agent's process, or the card's own verified state. **Tonight cannot tell which. Its form is not measured.**
+- **Microsoft documents a per-process PIN cache,** governed by the minidriver's cache policy. That is documentation, not a measurement here.
+
+**What does not clear it, measured tonight:**
+- **The program's session ending.** Each run was its own batch, with its own session closed after it.
+- **The window closing.** It was closed and reopened before each later run: new top-level windows at 16:48:34 and 16:50:55, in the same agent process.
+- **F2's 90-second idle timeout.** The later signatures came about 1 min 50 s and about 4 min 20 s after the first, by the AIA lines that come just before each signature.
+- **Any timer shorter than about four and a half minutes.**
+
+**Not measured:** the agent quitting, the card removed, a longer wait, and a process that is not the agent. Those are P2's E1–E4.
+
+**Can a signature be made while the holder is away?**
+- **Through Liro Bridge, only if something presses Approve.** The installed build has no path without the window: its `--help` lists no `sign-no-consent`, which exists only under the `softtoken` tag.
+- **The PIN is no longer what stops it.** After the first signature, anything that gets Approve pressed, or runs code in the agent's process, signs with no PIN.
+- **Whether a process that is not the agent can sign with no prompt** is SPEC §6.5's claim. Not measured: P2's E2.
+
+### What the documents promise, in their words
+
+- **F2 §4.1 (`docs/phases/F2.md`):** "On idle timeout, close the session and free the key handle. The next operation requires a new approval and a new PIN." The idle timeout's reason, in the same table: "short enough that a walked-away-from machine does not hold an authenticated card open."
+  - **Tonight it was broken twice.** Both times the session closed and the handle was freed, and the next operation needed a new approval and no PIN.
+  - The program does what it controls. The promise is about something it does not control.
+- **The Guide (`docs/guide/Uputstvo.html:319`):** "Posle klika na *Potpiši* Windows će tražiti PIN vaše kartice." (`Guide.html:327`: "After you click *Potpiši*, Windows asks for your card's PIN.")
+  - **It asked once in three.** Nothing tells a person that the PIN stays usable after the first signature, or for how long.
+- **SPEC §6.5:** "Measurement on real hardware established: after the user enters the PIN once, **the card keeps the PIN cached in its own state**, independent of which process is talking to it. A second process on the same machine can therefore sign without being asked for a PIN, for as long as the session lives."
+  - **No such measurement is in the record.** The sentence arrived with the F0 skeleton (`98ec062`, 2026-08-31), before any entry existed. No entry measures a second process, or a later operation, signing without a prompt. D-402 says of the second-process claim: "That is reasoning, not a measurement."
+  - **What rests on it:**
+    - D-025: no PIN in the CNG backend, because "the card's own cached-PIN behaviour (SPEC §6.5) means our process being the one to collect it buys no additional security";
+    - SPEC §6.5.1, a PIN held for `C_Login` on modules with no protected path;
+    - F5 §5: "This is the security boundary of the entire product. SPEC §6.5: the PIN is cached by the card independently of our process, so the human pressing Approve is the only thing that reliably prevents an unauthorised signature." F7 says it again for HTTP;
+    - the security model as a whole.
+  - **Tonight agrees with it in one respect only:** the PIN outlives the program's session. It has not tested the part the model leans on hardest.
+
+Recorded as open-items E11 (the two promises) and under E10 (the SPEC sentence).
+
+### The console flashes
+
+The owner saw a console window open and shut several times, a fraction of a second each, between Dalje and the next screen.
+- **From the code, not yet measured:**
+  - `liro-bridge.exe` is a console-subsystem binary (PE subsystem 3).
+  - The agent frees its own console at start (`detachAllocatedConsole`, D-254).
+  - During card preparation it starts copies of itself: a probe for each of the three modules the log lists at 16:46:58 (`discover_windows.go:138` → `probe.go:178`), then a worker for each usable module (`worker.ListAll`, `parent.go:445`). That is up to six children per preparation.
+  - Nothing in the repository sets `HideWindow` or `CREATE_NO_WINDOW`. A console-subsystem child whose parent has no console is given a new console before `main` runs.
+- **What does not fit:** D-254 measured that a process freeing its console that early leaves the window undrawn: 0 windows in about 98,000 polls, against a positive control. But it measured the agent's own launch, not these children. Either the race goes the other way for them, or the flashes are something else.
+- **The instrument for P2:** a watcher, `flashwatch.py`, polling Toolhelp snapshots and visible top-level windows about 66 times a second. Its control, `start /min cmd /c exit`, was caught: one `ConsoleWindowClass` window owned by the new `cmd.exe`, alive for about 50 ms.
+
+### My slip, and the owner's ruling
+
+**`verifypdf` printed the owner's certificate subject** (the name and the CN's number) into this session's transcript. My mask looked for 13 digits after Latin letters. The subject is in Cyrillic, and the number has 9 digits.
+- **The owner:** it is the owner's own certificate, so it goes on A36's list of where the owner's data is, and changes nothing else.
+- **The mask is widened** (`mask.py`, the session's scratchpad):
+  - any `subject` value, whole, in any script;
+  - any `CN=` value;
+  - any run of nine or more digits;
+  - up to three words of any script before such a run.
+- **Tested on made-up Cyrillic and Latin lines.** It over-masks, which is the safe direction.

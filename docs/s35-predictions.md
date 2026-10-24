@@ -56,3 +56,53 @@ Then I read `config.json` after each Save, the log after line 2,352, audit entri
 - **Pošta's test server not answering.** Then there is no B-T at all: the timestamp question instead (row 1.5's ground).
 
 If either happens, I stop and say so before anything else is tried.
+
+## P1, read — in D-491
+
+Row 1.2 done: both halves held. **Held:** P1d–P1k, P1m and P1o (as entry 322). P1g held on its first branch. **P1c failed:** Windows asked, not our dialog. **P1l half failed:** the refusal held, but no PIN was asked. **P1n failed:** no refusal line in the log. **P1b** was not read. **Found:** the PIN was asked once for three signatures (open-items E11).
+
+## P2 — where the PIN is held, what clears it, and the console flashes (written before E1; the owner's go, 2026-10-24)
+
+**The owner's go:** "Run the watcher, and E1, E3 and E4." E2: "yes, with one condition. Sign a fixed byte string that is written down in the record beforehand and is plainly not a document … Never a digest of anything I have not seen."
+
+**Read before any step (17:18, not predictions):**
+- **The agent:** PID 14168, `tray`, since 14:07:48.
+- **Its three PKCS#11 workers, alive since the first preparation,** all children of 14168:
+  - 14752, `pkcs11-worker C:\WINDOWS\System32\aetpkss1.dll`, from 16:46:58;
+  - 18308, `… TrustEdgeID\netsetpkcs11_x64.dll`, from 16:46:59;
+  - 9076, `… MUP RS\Celik\netsetpkcs11_x64.dll`, from 16:47:00.
+- **"module available" was logged only for the first run** (16:46:58), not the two after it. So the later runs started no probes, and reused these workers.
+- **Baselines:** `bridge.log` 2,496 lines; the audit chain 323 entries; `config.json`'s level `b-lt`, chosen.
+- **The last signature with no PIN:** about 16:51:28 (D-491).
+- **The documents:** `Desktop\liro-s35\e1.pdf`, `e3.pdf`, `e4.pdf`, each a copy of `testdata/pdfs/blank.pdf` (`b9749fdb…`).
+- **The watcher:** `flashwatch.py`, started by me before step 0 and left running to the end. It logs every new process (PID, parent, image) and every new visible top-level window (class, owning PID, size). It sees image names, not command lines; probes and workers are told apart by whether they exit, and the workers' command lines are read with `Get-CimInstance` afterwards.
+- **E2's probe:** `e2probe.py`, its `find` mode run (the store only; the card untouched). It found the signing certificate, `EE8EC0F3…`, in `CurrentUser\My`.
+
+**What E2 signs, exactly, written here before it runs:**
+- **The message:** the 31 ASCII bytes `liro-bridge E2 probe 2026-10-24`. Hex `6c69726f2d6272696467652045322070726f626520323032362d31302d3234`.
+- **What the card is given:** SHA-256 of those bytes, `38424151195d458b3da03a64d62f4501dcd6ef9d16a5a9137c1b211f626a251c`, with PKCS#1 v1.5 padding. That is how an RSA key signs a message: the card signs the digest of exactly the bytes above, and nothing else.
+- **How:** `CryptAcquireCertificatePrivateKey` with `CRYPT_ACQUIRE_SILENT_FLAG`, then `NCryptSignHash` with `NCRYPT_SILENT_FLAG`. Silent means Windows may refuse, but may not show anything. The probe sends no PIN, so it cannot spend an attempt.
+- **Why:** to learn whether a process that is not the agent can sign with the PIN the agent's first signature unlocked (SPEC §6.5's claim, E10).
+- **What is kept:** if a signature comes back, the probe checks it with OpenSSL against the certificate's public key over those 31 bytes. Its SHA-256 goes into the decision entry.
+
+**The steps:**
+0. **The owner:** Settings, level "Najbolji dostupan", Save.
+1. **E1, the owner:** sign `e1.pdf` in the agent, with nothing else changed.
+2. **E2, me, straight after E1:** `python -I e2probe.py sign …`. The owner touches nothing.
+3. **E3, the owner:** quit the agent from the tray, start Liro Bridge from the Start menu, sign `e3.pdf`.
+4. **E4, the owner:** take the card out, wait five seconds, put it back, wait until the reader settles, then sign `e4.pdf` with E3's agent.
+
+| | measured | predicted |
+|---|---|---|
+| P2a | E1: a PIN prompt (the owner's eyes, and the watcher: a new `Credential Dialog Xaml Host` window) | **None.** E1 signs with no prompt, more than 25 minutes after the last signature. So no timer under about half an hour clears it. Audit entry 323: `approved`, `B-T`. Less certain than it looks: a timed cache policy longer than five minutes would also have expired by now, and then E1 asks |
+| P2b | E2's result | **Refused, with no window:** `NTE_SILENT_CONTEXT` (`0x80090022`), at the key or at the signature. So the PIN is held per process, not on the card. **That is the opposite of SPEC §6.5,** which predicts a signature. **Least certain of P2:** if the minidriver or the card keeps a verified state that Windows reuses across processes, E2 signs, and OpenSSL verifies it over the 31 bytes. Either way: no audit entry (the agent is not involved), no new log line, no watcher window |
+| P2c | E3, the agent quit | The agent's three workers end with it. The new agent starts with no console window anyone sees (D-254) |
+| P2d | E3, signing in the new agent | **The PIN is asked, once:** one `Credential Dialog Xaml Host` window. Audit entry 324: `approved`, `B-T` |
+| P2e | E4, after the card is taken out and put back | **The PIN is asked again,** with the agent unchanged: one credential window. Audit entry 325: `approved`, `B-T` |
+| P2f | The flashes, during E1's preparation | **No new `liro-bridge.exe` child and no console window,** because E1 reuses the agent's discovery and workers. If the owner still sees a flash in E1, it is not our children, and the watcher names the window's class and owner |
+| P2g | The flashes, during E3's first preparation | **Three probe children, one at a time** (`pkcs11-probe <module>`, each exiting), **then three `pkcs11-worker` children that stay,** all with the new agent as parent. **For each child: one visible console window,** class `ConsoleWindowClass` or `CASCADIA_HOSTING_WINDOW_CLASS`, alive for well under a second. That is the flash, and it contradicts D-254 for children. Less certain: D-254 measured no window for a process that frees its console this early. If no window is recorded beside the children, the flashes are something else, and the watcher names it |
+| P2h | E4's preparation | The same as E1's (P2f) if the agent keeps its workers across a card change. Not predicted firmly: a worker whose token went away may be replaced |
+
+**What would stop the run:**
+- **E2 showing any window, or the card's light or Windows asking for anything.** I stop and say so.
+- **Any step asking for the PIN twice.** That would be a wrong-PIN path, and attempts matter on this card.
