@@ -48921,3 +48921,36 @@ In D-495 I told the owner the watcher's hour "runs on a clock that may stop whil
 ### P5, written down so it can be run without rethinking
 
 Its predictions are in `docs/s35-predictions.md`, committed with this entry. **Not run, by the owner's word.**
+
+## D-497 — row 1.7 run five times on the NetSeT machine: no slow run and no probe timing out, so the row is not read and D45 stays inferred. My P6a took its 2.5–5 s from the wrong number
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P6 (`d374686`), committed before the runs. Done alone, by the owner's word. Nothing here used the card's PIN.
+
+### The runs
+
+- **How:** `go test -c` of `./internal/keysource/pkcs11` at `d374686` (`eeada5a7…`), then `-test.run '^TestSourcesAreOnePerUsableModule$' -test.count=1 -test.v`, five times in a row, 23:41:05–23:41:07. The watcher (`flashwatch2.py`) ran over all five.
+- **The card was in the reader,** and 14140 was running with its three workers holding the same three modules.
+- **All five passed, in 0.18, 0.19, 0.19, 0.21 and 0.21 s.**
+- **The same three usable modules every time,** and no `not a module` line:
+  - `A.E.T. Europe (SafeSign)`, `aetpkss1.dll`;
+  - `NetSeT (TrustEdgeID)`, `TrustEdgeID\netsetpkcs11_x64.dll`;
+  - `NetSeT (MUP RS)`, `MUP RS\Celik\netsetpkcs11_x64.dll`.
+- **The watcher:** three probe children per run, one at a time, each living 32–97 ms. No Terminal window: the children share the test's console.
+
+### Against P6
+
+- **P6a failed as written,** and the failure is mine. The runs took 0.2 s, not 2.5–5 s.
+  - D-455's "2.5–5 s" was the **package's** time inside a full `go test ./...`, not this test's.
+  - **D-455's conditions differ** in three ways:
+    1. the card was **out** of the reader;
+    2. the whole suite ran;
+    3. the code was `release/0.9.3`, two discoveries per test, with two usable modules ("got 3 sources for 2 usable modules"), not three.
+  - **Its other half held:** no probe timed out.
+- **P6b held:** the three modules, the same in every run.
+- **P6c held:** one child per candidate, one at a time, each well under a second.
+
+### What it settles
+
+- **The row is not read.** No run was slow, so D45 did not recur. **It stays inferred** (D-467).
+- **One thing it shows:** with the card in, this machine's three modules answer a probe in under 0.1 s each. So a 10 s probe is not this test's ordinary state.
+- **A repeat in D-455's own conditions** (the card out, the whole package) needs the card out, so the owner's hands. **Not done.**
