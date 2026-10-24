@@ -284,3 +284,37 @@ If anything asks for the PIN twice, stop: the card has three attempts.
 | P7c | Fit | Nothing cut off at 406 points, and no scroll bar |
 
 **What it settles:** P7b holding reads the row: WKWebView draws our page on macOS 15. It says nothing of 5.2–5.4: no bundle opened by a person, no card, no Gatekeeper.
+
+## P8 — rows 2.1 (the origin window), 2.2 and 2.3 on the owner's screen (written 2026-10-24, before any window is opened)
+
+**The owner:** "yes, open windows on my screen. For 2.2, write down the allowed-servers list before you touch it and again after you put it back … Ask me for the clicks when you reach them."
+
+**Read before it (not predictions):**
+- **The build:** the installed `67695f6`. `cloudlink.go`, `settingswindow.go`, `internal/cloud`, `internal/ui` and `internal/i18n` are unchanged from it to HEAD. The locale is `sr-Latn`.
+- **The screen:** one display, 1920×1080, 96 DPI (100 %), so a point is a pixel.
+- **The order in the channel** (`channel.go:88`): **the origin is asked before anything is fetched.** So the origin window can be raised by a link whose server does not exist. Closing the window is a refusal, and a refusal is told nothing (no key in `cloudOutcomeKeys`). **The list is written only on Allow.**
+- **The list of allowed servers** is `%LOCALAPPDATA%\Liro\cloud-origins.json`. **It does not exist** (read 23:5x): the list is empty.
+- **The instrument:** a screenshot of each window's rectangle (`CopyFromScreen`, DPI-aware), read by me, and the watcher.
+
+**The steps:**
+1. **2.3, a link that cannot be used (alone).** `liro-bridge.exe open-link "liro-bridge://sign?job=http://example.invalid/j"`: http, not https. I take a screenshot, then close the box myself.
+2. **2.1, the origin window (alone).** A link whose origin is the Linux test's longest, `https://` + 244 × `a` + `.rs` (255 characters), handed to 14140 through `open-link`. I take a screenshot, then close the window myself: a refusal, and the list untouched.
+3. **2.2 and 2.3's second half (the owner's clicks):**
+   - **Before:** the list's file read and shown (expected: absent).
+   - **I write three entries** in the program's own format (sorted, indented, 0600): `https://erp.example.com`, `https://unreachable.invalid` and the 255-character origin. **Written directly, not through Allow.**
+   - **2.3, second half (alone):** a link to `https://unreachable.invalid/j`. It is now allowed, so the agent fetches it, fails, and says so in a box. I take a screenshot and close it.
+   - **Click 1:** the owner opens Settings from the tray. I take a screenshot.
+   - **Click 2:** the owner presses Remove on `https://erp.example.com`. I read the file.
+   - **Put back:** Settings closed (by the owner or by me), and the file deleted, since it did not exist before. **After:** the file read and shown (expected: absent).
+4. **The consent step with a 255-character origin is not in P8.** Through the cloud it needs a TLS server at that name, which means the hosts file and a trusted root on this machine. Through the loopback protocol it needs a pairing, which writes `pairings.json`. Either way it is the owner's decision first.
+
+| | measured | predicted |
+|---|---|---|
+| P8a | Step 1 | A native box (`#32770`) owned by the `open-link` process, titled "Liro Bridge", saying "Ovaj link nije mogao da se upotrebi. Zatražite novi od stranice koja ga je prikazala." `open-link` exits 2 once the box is closed. 14140 is untouched |
+| P8b | Step 2, the window | One `LiroBridgeWindow` owned by 14140, titled "Dozvoliti ovaj server?", always on top, 576 wide (the pairing window's width) and 406 tall in client area |
+| P8c | Step 2, the fit | **The whole origin visible,** wrapped across lines; both buttons on screen; no scroll bar. **Least certain of P8.** WebKitGTK needed 372 points in Serbian Latin with its own fonts. Windows' Segoe UI is different, and nothing has measured it. If the origin or a button is cut, or a scroll bar shows, row 2.1's first half is false |
+| P8d | Step 2, after | `cloud-origins.json` still absent; the log says the person did not allow the server; no box |
+| P8e | Step 3, the agent's box | A box owned by 14140, "Liro Bridge", saying "Server https://unreachable.invalid nije dostupan, pa njegov zahtev nije prikazan. Pokušajte ponovo sa njegove stranice." |
+| P8f | Step 3, Settings | The three entries listed, the 255-character one whole or wrapped, each with Remove, within 880 points and without the page cut. Less certain: whether the page scrolls by design once the list is long. I read the page as drawn |
+| P8g | Step 3, Remove | The file then holds two entries, `https://erp.example.com` gone. The page drops the row |
+| P8h | Step 3, after | The file absent, as before |
