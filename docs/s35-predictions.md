@@ -293,7 +293,7 @@ If anything asks for the PIN twice, stop: the card has three attempts.
 - **The build:** the installed `67695f6`. `cloudlink.go`, `settingswindow.go`, `internal/cloud`, `internal/ui` and `internal/i18n` are unchanged from it to HEAD. The locale is `sr-Latn`.
 - **The screen:** one display, 1920×1080, 96 DPI (100 %), so a point is a pixel.
 - **The order in the channel** (`channel.go:88`): **the origin is asked before anything is fetched.** So the origin window can be raised by a link whose server does not exist. Closing the window is a refusal, and a refusal is told nothing (no key in `cloudOutcomeKeys`). **The list is written only on Allow.**
-- **The list of allowed servers** is `%LOCALAPPDATA%\Liro\cloud-origins.json`. **It does not exist** (read 23:5x): the list is empty.
+- **The list of allowed servers** is `%LOCALAPPDATA%\Liro\cloud-origins.json`. **It does not exist** (read 23:45, again before step 3): the list is empty.
 - **The instrument:** a screenshot of each window's rectangle (`CopyFromScreen`, DPI-aware), read by me, and the watcher.
 
 **The steps:**
