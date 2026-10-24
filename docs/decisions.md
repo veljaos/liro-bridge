@@ -22147,7 +22147,7 @@ demand, the control becomes cheap and worth taking then.
 Nothing was found that moves the rate. Checked and rejected: something the
 module writes on first contact with an unknown card — the only thing the
 machine wrote in the window was
-`AppData\Roaming\Microsoft\SystemCertificates\My\Certificates\AF5063BB…AA54`,
+`AppData\Roaming\Microsoft\SystemCertificates\My\Certificates\[thumbprint removed]`,
 the Pošta signing certificate, **created 2026-09-05** and merely re-touched
 today by Windows' own `CertPropSvc`, which is that service doing its job with a
 card in the reader and not this session's doing; the preceding module; a second
@@ -22295,8 +22295,8 @@ attempt spent, and none could have been ([[D-268]]'s guard is a property of the
 probe rather than of anybody's discipline).
 
 ```
-slot 52481  label   "Savka Odžić 200100123"
-            serial  "2353120973204924"
+slot 52481  label   "[name and number removed]"
+            serial  "[token serial removed]"
             model   "19C11A06010D0000"
             flags   0x40D   RNG | LOGIN_REQUIRED | USER_PIN_INITIALIZED | TOKEN_INITIALIZED
             PROTECTED_AUTHENTICATION_PATH: false
@@ -22437,11 +22437,11 @@ Measured through SafeSign 3.9.32.1, read-only, and independently re-taken here:
 ```
 slot 52481: 2 certificates on the token, 1 of them CAs
 
-object 10  label    "Savka Odžić 200100123"
-           subject  "Savka Odžić 200100123"
+object 10  label    "[name and number removed]"
+           subject  "[name and number removed]"
            issuer   "Pošta Srbije CA 1"
-           serial   54849CDCD4415E3BCA
-           sha1     AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+           serial   [serial removed]
+           sha1     [thumbprint removed]
            keyUsage 3
 
 object 14  label    "Root CA Certificate"
@@ -22482,7 +22482,7 @@ A chain-completion routine that matched by name, by prefix, by "the token's own
 CA", or by anything short of the exact issuer bytes would build
 
 ```
-Savka Odžić 200100123  ->  Pošta Srbije CA Root
+[name and number removed]  ->  Pošta Srbije CA Root
 ```
 
 which is **a chain that is wrong rather than short**. Nothing signed the first
@@ -23267,7 +23267,7 @@ signature 0: ByteRangeDigestOK=true SignatureOK=true
 
 **That is a real card, a real module, and a card this project had never signed
 with** — F11 §6's condition in its own words. The card is a Pošta e-ID
-("Savka Odžić 200100123", serial 2353120973204924), the module is
+("[name and number removed]", serial [token serial removed]), the module is
 `C:\Windows\System32\aetpkss1.dll`, SafeSign 3.9.32.1, and the path taken is
 PKCS#11 rather than CNG from `C_Initialize` to `C_Sign`.
 

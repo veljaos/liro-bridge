@@ -162,7 +162,11 @@ func editControl(t *testing.T, dlg uintptr) uintptr {
 func TestThePINDialogSaysWhoIsAskingInEveryLocale(t *testing.T) {
 	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
 		t.Run(locale, func(t *testing.T) {
-			prompt := pinPromptFor(locale, "Savka Odžić 200100123", 5, 15)
+			// The label's number has no 5 in it on purpose. The label is one of
+			// the controls joined below, so a 5 in it would satisfy half of the
+			// limits check and a 15 all of it, with no limits on the dialog at
+			// all. Keep any replacement free of the digit 5.
+			prompt := pinPromptFor(locale, "Petar Božić 000000000", 5, 15) // made up (A36), in the shape of the Pošta card's label
 			dst := make([]byte, 15)
 
 			var wg sync.WaitGroup
@@ -187,10 +191,12 @@ func TestThePINDialogSaysWhoIsAskingInEveryLocale(t *testing.T) {
 					"(SPEC §6.5.1 clause 6). Controls: %q", joined)
 			}
 			// The card, so somebody with two of them knows which is being asked about.
-			if !strings.Contains(joined, "Savka Odžić 200100123") {
+			if !strings.Contains(joined, "Petar Božić 000000000") { // made up (A36), in the shape of the Pošta card's label
 				t.Errorf("the dialog does not name the card. Controls: %q", joined)
 			}
-			// The token's own limits, never this program's numbers.
+			// The token's own limits, never this program's numbers. This only
+			// means something while the label holds neither "5" nor "15"; see
+			// the label above.
 			if !strings.Contains(joined, "5") || !strings.Contains(joined, "15") {
 				t.Errorf("the dialog does not state the token's own 5..15 limits. Controls: %q", joined)
 			}
@@ -213,7 +219,7 @@ func TestThePINDialogHandsBackWhatWasTypedAndKeepsNothing(t *testing.T) {
 	// to the caller's UTF-8 is a place a multi-byte character would be lost,
 	// and a Serbian card's PIN is not guaranteed to be numeric.
 	const typed = "123čž"
-	prompt := pinPromptFor("sr-Latn", "Savka Odžić 200100123", 5, 15)
+	prompt := pinPromptFor("sr-Latn", "Petar Božić 000000000", 5, 15) // made up (A36), in the shape of the Pošta card's label
 	dst := make([]byte, 15)
 
 	type result struct {
@@ -267,7 +273,7 @@ func TestThePINDialogCancelsWithoutWritingAnything(t *testing.T) {
 		}},
 	} {
 		t.Run(how.name, func(t *testing.T) {
-			prompt := pinPromptFor("en", "Savka Odžić 200100123", 5, 15)
+			prompt := pinPromptFor("en", "Petar Božić 000000000", 5, 15) // made up (A36), in the shape of the Pošta card's label
 			dst := make([]byte, 15)
 			for i := range dst {
 				dst[i] = 0xEE // so "wrote nothing" is distinguishable from "was already zero"

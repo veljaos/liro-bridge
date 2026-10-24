@@ -53,7 +53,8 @@ func (e *PINLengthError) Error() string {
 // It carries no PIN and never will; it is the question, not the answer.
 type PINRequest struct {
 	// TokenLabel and TokenSerial are the card's own, as CK_TOKEN_INFO reports
-	// them — "Savka Odžić 200100123" on the Pošta card this was measured on.
+	// them. On the Pošta card this was measured on, the label is
+	// "<given name> <surname> <nine digits>".
 	TokenLabel  string
 	TokenSerial string
 
