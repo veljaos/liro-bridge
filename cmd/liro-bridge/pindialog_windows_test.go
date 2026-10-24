@@ -162,6 +162,10 @@ func editControl(t *testing.T, dlg uintptr) uintptr {
 func TestThePINDialogSaysWhoIsAskingInEveryLocale(t *testing.T) {
 	for _, locale := range []string{"sr-Latn", "sr-Cyrl", "en"} {
 		t.Run(locale, func(t *testing.T) {
+			// The label's number has no 5 in it on purpose. The label is one of
+			// the controls joined below, so a 5 in it would satisfy half of the
+			// limits check and a 15 all of it, with no limits on the dialog at
+			// all. Keep any replacement free of the digit 5.
 			prompt := pinPromptFor(locale, "Petar Božić 000000000", 5, 15) // made up (A36), in the shape of the Pošta card's label
 			dst := make([]byte, 15)
 
@@ -190,7 +194,9 @@ func TestThePINDialogSaysWhoIsAskingInEveryLocale(t *testing.T) {
 			if !strings.Contains(joined, "Petar Božić 000000000") { // made up (A36), in the shape of the Pošta card's label
 				t.Errorf("the dialog does not name the card. Controls: %q", joined)
 			}
-			// The token's own limits, never this program's numbers.
+			// The token's own limits, never this program's numbers. This only
+			// means something while the label holds neither "5" nor "15"; see
+			// the label above.
 			if !strings.Contains(joined, "5") || !strings.Contains(joined, "15") {
 				t.Errorf("the dialog does not state the token's own 5..15 limits. Controls: %q", joined)
 			}

@@ -124,7 +124,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
         - the token serial `1111222233334444`;
         - the thumbprint `00112233445566778899AABBCCDDEEFF00112233`.
       - **No test needed a real value.** Each takes the label, serial and thumbprint as given strings; `modulecollapse_test.go` says so in its own comment, and nothing hashes them against a stored value.
-      - **One choice was made so that no check got weaker:** `pindialog_windows_test.go` checks that the dialog shows "5" and "15". A made-up number containing a 5 would pass that on the label alone. The real number contains neither, and neither does `000000000`.
+      - **One choice was made so that no check got weaker:** `pindialog_windows_test.go` checks that the dialog shows "5" and "15". A made-up number containing a 5 would pass that on the label alone. The real number contains neither, and neither does `000000000`. **The test now says so** (after `44035f1`, at the owner's word: "as it stands the check passes by luck of the value chosen"), beside the label and beside the check, on both branches.
       - **`posta()`'s comment** in `pinscreen_test.go` said its values were measured off the Pošta token. It now says the label and serial are made up.
       - **Product comments write the format:** `"<given name> <surname> <nine digits>"` in `pinentry.go` and `pinscreen.go`; "the same forty hex digits" in `thumbprint.go`; "the certificate's thumbprint" in `cngprobe_windows.go`.
       - **Documents, edited in place,** each value replaced by a marker naming what was there: `[name removed]`, `[name and number removed]`, `[number removed]`, `[token serial removed]`, `[thumbprint removed]`, `[serial removed]`.
@@ -142,9 +142,18 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
       - **Not searched for:**
         - the email address and the raw certificate: as in D-488, nothing readable holds them;
         - anything else derived from the certificate, such as its SHA-256, public key or key identifier. These cannot be checked without the certificate.
-      - **The other worktree, `C:\Users\Veljko\s32-rel093`** (`release/0.9.3` at `0df5719`, pushed): 5 files hold her data. They are `cmd/liro-bridge/pindialog_windows_test.go`, `internal/keysource/pkcs11/login_windows_test.go`, `internal/keysource/pkcs11/pinentry.go`, `docs/decisions.md` and `docs/ftest-report.md`. **Scanned, not changed:** it is a release branch, outside this instruction. The owner's call.
-      - **This session's transcript holds her thumbprint once, by my mistake:** a plain `grep` printed one test line unmasked. Every other read this session showed the values masked. It joins D-487's line about the transcript.
-    - *Close:* what is said to the card's holder, if anything; the release worktree, the owner's call; the history goes with the repository at v1. *Needs:* owner's decision.
+      - **The other worktree, `C:\Users\Veljko\s32-rel093`** (`release/0.9.3` at `0df5719`, pushed): 5 files held her data. They are `cmd/liro-bridge/pindialog_windows_test.go`, `internal/keysource/pkcs11/login_windows_test.go`, `internal/keysource/pkcs11/pinentry.go`, `docs/decisions.md` and `docs/ftest-report.md`. Scanned, not changed at first: it is a release branch. **Cleaned the same day at the owner's word, below.**
+    - **`release/0.9.3`, cleaned (2026-10-24): `05b91e8`, directly on `0df5719`.** The owner: "Only the removal, as its own commit on release/0.9.3." Nothing merged from the main line, nothing rebased.
+      - **The same needles,** rebuilt from `769a236`, the last commit before `44035f1`. **The same made-up values and `// made up (A36)` markers**, the same `pinentry.go` comment, the same document markers: 10 in `decisions.md`, 2 in `ftest-report.md`. Also the same "why the number has no 5" comment in `pindialog_windows_test.go`.
+      - **Run:** `internal/keysource/pkcs11` passes, under the same conditions as above. `cmd/liro-bridge` was vetted and compiled, not run.
+      - **After: 0 hits in 700 files.** Controls 16 of 17, all but the negative. The release HEAD's copies of `pinentry.go` and `ftest-report.md` both hit.
+      - **Pushed by the owner,** not by me.
+    - **Where her data is still held, outside the trees:**
+      - **The repository's history,** every commit since `08042d7` on both branches, public on GitHub. Kept by the owner's decision, until the repository is deleted at v1.
+      - **This session's transcript** (`~/.claude/projects/C--Users-Veljko-Desktop-liro-bridge/c3a51b78-97ea-4b7e-a226-94c50ed1c08e.jsonl`) **holds her thumbprint once, by my mistake.** A plain `grep` printed one test line unmasked. Every other read this session showed the values masked. The same text went through the API as part of the conversation.
+      - **Session 34's transcript** holds her name, number, serial and thumbprint (D-487).
+      - **The agent's audit chain and `bridge.log`** hold her thumbprint, by design (D-480, D-487).
+    - *Close:* what is said to the card's holder, if anything; the history goes with the repository at v1. *Needs:* owner's decision.
 
 37. **There is no local check on Windows. On the owner's machine, CI is the only check on what is pushed.**
     - The owner ran `check.py` before pushing `f949eab..d1314f7`, eleven commits (D-489), and it refused twice:
