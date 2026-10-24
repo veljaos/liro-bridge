@@ -161,3 +161,37 @@ If anything asks for the PIN twice, stop: the card has three attempts.
 - **P3d's basis** is still recalled, not read. The result agrees with it and does not confirm it.
 - **Not predicted:** Windows' smart-card audit log shows every PIN-less signature as a fresh verification from the agent's process.
 - **Not done from the setup:** the machine was not kept awake. The run took four minutes of activity, under the 15-minute sleep.
+
+## P4 — one signature in 14140 after its sleep: did the sleep, or something in 51+ minutes, clear the PIN? (written 2026-10-24 23:2x, before it runs)
+
+**Why:** E1 was asked for the PIN after a 75-minute sleep and two and a half hours (D-492), and D-495 guessed that a reader powered down in sleep looks like a removed card. 14140 has now slept too.
+
+**Not a clean measurement (the owner).** The sleep lasted 51 minutes. The longest gap measured with no prompt is 11 min 13 s (E1b). So a prompt cannot separate the sleep from any timer longer than 11 minutes. E1 had the same confound.
+
+**Read before it (not predictions):**
+- **The agent:** 14140, `tray`, since 21:00:01. Its three workers (10328, 9348, 14424, since 22:04:45–47) are still running.
+- **The PIN:** entered at 22:05:01.9 (CHV, `CredentialUIBroker.exe`). 14140's last verification was at 22:07:28.2. **No verification event since,** and no `SmartCard-DeviceEnum` event.
+- **The sleep:** S3, the only standby this machine offers, 22:24:48 to 23:16:17 (Kernel-Power 42 "Application API", Power-Troubleshooter 1). The card was left in, by the owner's word.
+- **The document:** `Desktop\liro-s35\p4.pdf`, a copy of `testdata/pdfs/blank.pdf` (`b9749fdb…`).
+
+**The step:** I start `flashwatch2.py`. The owner signs `p4.pdf` once from 14140's window (the tray icon), with the card left alone. Then I read the watcher, the verification events, the audit log and the PID.
+
+| | measured | predicted |
+|---|---|---|
+| P4a | The PIN | **Asked:** one `Credential Dialog Xaml Host` window, then the pair of events, `CredentialUIBroker.exe` and then 14140. **Least certain of P4.** My basis is E1, plus a guess I have not measured: that S3 takes the reader's power, and the provider sees that as the card going, as in P3. **If not asked:** one event from 14140 alone, as in p3-2 |
+| P4b | Children and windows | **No new child and no Terminal window.** The workers survived the card change in P3, and the sleep should not change that. If they are replaced, the watcher shows a new preparation: six windows |
+| P4c | The process and the audit | PID 14140. Audit entry 330, `approved`, `B-T`. About a minute (D52) |
+
+**What each answer can settle:**
+- **Asked:** the PIN was cleared at some point between 22:07:28 and the signature. That interval holds both the sleep and more than 11 minutes, so this **cannot** say which did it, or how (reader power, the provider, or time). It is E1 again, with a watcher and the verification log this time. It adds the bounds, nothing more.
+- **Not asked: this settles more.**
+  - This sleep did not clear the PIN.
+  - No timer shorter than the interval since 22:07:28 (and since the PIN at 22:05:02) cleared it. That is over 70 minutes if the signature comes after 23:18.
+  - E1's prompt then needs another cause. It had 75 minutes of sleep, and about 2.5 hours in all.
+  - **For E11, worse:** a PIN left for over an hour, across a sleep, still signs.
+- **Neither answer separates sleep from a timer.** That would take one of:
+  - a short sleep straight after a PIN: sign, sleep two minutes, sign;
+  - a wait longer than this one, awake, without the card touched.
+  - The first is cheap. It is not part of P4.
+
+**Stop** if anything asks for the PIN twice.
