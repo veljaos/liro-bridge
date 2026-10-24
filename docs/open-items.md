@@ -132,7 +132,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
         - Some sentences now point at a value no longer shown. For example, D-307's "both thumbprints are ones this log already carries".
       - **Run:** go1.26.5 with `GOTOOLCHAIN=local` and `-tags softtoken`. `LOCALAPPDATA` and `APPDATA` were redirected to the scratchpad and `LIRO_PKCS11_*` unset.
         - `internal/audit`, `internal/cli`, `internal/keysource/pkcs11`, `…/worker` and `internal/pinscreen` pass. The tests that use the changed values ran, not skipped.
-        - **`cmd/liro-bridge` and `scripts/cngprobe` were vetted with CI's `-unsafeptr=false` and compiled, not run.** That package is D10's and D42's, and its PIN-dialog tests open windows on the owner's desktop (A37). **CI's `windows` job is the first run of its four changed lines.**
+        - **`cmd/liro-bridge` and `scripts/cngprobe` were vetted with CI's `-unsafeptr=false` and compiled, not run.** That package is D10's and D42's, and its PIN-dialog tests open windows on the owner's desktop (A37). **CI's `windows` job is the first run of its four changed lines.** It ran them and passed, on `44035f1`'s push (40097032192) and PR (40097035135) runs, and on `05b91e8` (40097561909), as the owner read.
       - **After: 0 hits in 2240 files.**
         - **The controls:** one file per form of each needle, and a made-up negative. 16 of 17 hit, all but the negative.
         - HEAD's copies of `pinentry.go`, `thumbprint.go` and `f12-linux-session-7.md` hit, all three.
@@ -342,6 +342,9 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
     - **The test asserts on another system's wording, in code written blind (F13, D-463).** In all macOS code, only `loaderror_darwin.go` and its test do that. The classifier is product code: it decides the kind a person is shown. Of its five dyld phrases:
       - **measured:** `(no such file)`, which the passing run printed;
       - **recalled, never seen from a real dyld:** "Library not loaded", "Symbol not found", "incompatible architecture", "not a mach-o file".
+    - **2026-10-24: passed four times, which closes nothing.** The macOS job ran `TestDyldsWordsAreReadIntoTheKinds`, and it passed, read in each job's log. Runs: `44035f1` push 40097032192 and PR 40097035135; `fb9c39e` push 40097570551 and PR 40097574115. `release/0.9.3` has no macOS job.
+      - **The owner: "One green run does not close D51."** The race is intermittent by its own explanation. Whether `dlerror` is read on `dlopen`'s thread depends on where the scheduler puts the goroutine between two cgo calls. So passes are what the explanation predicts most of the time, and they cannot tell it from a fixed cause.
+      - **Nothing changed in the code it names** (`module_unix.go`, `loaderror_darwin.go`).
     - *Close:* `dlopen` and `dlerror` read on one thread (one C helper, or the goroutine pinned around both); the race shown first; then the test repeated on CI. The four recalled phrases are measured against a real dyld on a Mac (5.4), or marked as recalled where they are used. *Needs:* code, CI, a Mac. **Not fixed, by the owner's word.**
 
 ## E. Promises in documents that nothing does yet
