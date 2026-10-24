@@ -48583,3 +48583,54 @@ The owner saw a console window open and shut several times, a fraction of a seco
   - any run of nine or more digits;
   - up to three words of any script before such a run.
 - **Tested on made-up Cyrillic and Latin lines.** It over-masks, which is the safe direction.
+
+## D-492 — P2 so far: the PIN was cleared within two and a half hours, by something E1 cannot name, across a 75-minute sleep; a process that is not the agent could not sign silently two minutes after the agent's PIN (E2), so through CNG the PIN is not shared between processes
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P2, committed in `5f69750` before any step. **The owner** ran step 0 and E1. I ran E2 at the owner's word, on the condition written in P2: the 31 bytes recorded there, and nothing else.
+
+### E1 was looser than P2 wrote it
+
+- **P2 assumed E1 would come within minutes, under the watcher.** It came at 19:22, after the watcher's 45 minutes (17:19:28–18:04:28) had ended. Nothing was watching it.
+- **The watcher's window was empty because nothing happened in it,** not because it missed anything:
+  - no `liro-bridge.exe` started in it (170,092 polls), so the agent did not restart;
+  - the agent is still PID 14168, `tray`, since 14:07:48, with the same three workers (14752, 18308, 9076, since 16:46:58–17:00).
+- **The machine slept from 18:05:38 to 19:20:54.** Kernel-Power 42 logged "entering sleep". The clock was then set from 18:05:40 to 19:20:54 on waking (Kernel-General 1), and Power-Troubleshooter 1 said "returned from a low power state" at 19:20:56.
+- **E1:**
+  - step 0's Save at 19:21:19, the level the default (`''`);
+  - `e1.pdf` added at 19:21:28;
+  - **Windows' credential window in front at 19:21:40;**
+  - audit entry 323 at 19:22:23: `approved`, `B-T`, `windows-cng`; `e1-signed.pdf` written.
+- **The owner:** the PIN was asked; no console flash.
+
+**What E1 can say:** the PIN the agent held was **cleared at some point between 16:52:06** (step 4's signature, the last that used it) **and 19:21:40** (E1's prompt), with the same agent process throughout.
+
+**What E1 cannot say:** by what, or when. That interval held:
+- about two and a half hours of time;
+- a 75-minute sleep, which may power down the reader and reset the card;
+- and possibly other events nothing recorded.
+
+**P2a ("None") failed as written,** and the failure cannot be read as evidence of a timer.
+
+### E2: refused
+
+- **Run at 19:24:01,** 2 min 21 s after E1's prompt, from a process that is not the agent: `python -I e2probe.py sign`, running as the same user in the same session.
+- **What it did, in order:**
+  - found `EE8EC0F3…` in `CurrentUser\My`;
+  - opened its key with `CRYPT_ACQUIRE_SILENT_FLAG`: **opened**, `callerFree` true;
+  - asked `NCryptSignHash` for PKCS#1 v1.5 over SHA-256 of the 31 bytes `liro-bridge E2 probe 2026-10-24` (`38424151…626a251c`), with `NCRYPT_SILENT_FLAG`.
+- **The answer:** `0x80090022`, `NTE_SILENT_CONTEXT`, at the signature. That is Windows saying the operation needs a prompt, and silent mode forbids one.
+- **No signature was made.** So there is nothing for OpenSSL to check, and nothing of the owner's key exists over those bytes.
+- **No trace in the agent,** as predicted: `bridge.log` still 2,536 lines, the audit chain still 324 entries.
+- **No PIN was sent,** so no attempt was spent. Whether a window flickered is not known: the watcher was not running, and the owner has not said.
+
+**P2b held.**
+
+**What E2 shows:** two minutes after the agent's PIN, a second process going through Windows' CNG could not sign without being asked. **Through this route the PIN is not shared between processes.** SPEC §6.5's "a second process on the same machine can therefore sign without being asked for a PIN" is **false for the route measured.**
+
+**What E2 does not show, and must not be stretched to:**
+- **Whether the agent still held the PIN at 19:24:01.** If something cleared it in those two minutes, E2's refusal says nothing about processes. E1b, below, is the control.
+- **Whether the card itself stays verified for a program that talks to it directly,** with raw commands over PC/SC or through a PKCS#11 module such as the MUP `netsetpkcs11_x64.dll` our workers hold loaded. A fresh CNG provider asks for the PIN without asking the card whether it is already verified. So "the card keeps the PIN in its own state" is untested, not refuted.
+
+### Added to P2 before it runs: E1b
+
+**E1b, the owner:** sign one more document in the same agent now, with nothing else changed. It is the control for E2: no prompt means the agent still held the PIN when E2 was refused.

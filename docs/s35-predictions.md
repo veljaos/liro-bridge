@@ -106,3 +106,17 @@ Row 1.2 done: both halves held. **Held:** P1d–P1k, P1m and P1o (as entry 322).
 **What would stop the run:**
 - **E2 showing any window, or the card's light or Windows asking for anything.** I stop and say so.
 - **Any step asking for the PIN twice.** That would be a wrong-PIN path, and attempts matter on this card.
+
+## P2, partly read — in D-492
+
+- **E1:** came at 19:22, after the watcher had stopped and after a 75-minute sleep (18:05:38–19:20:54). **P2a failed as written:** the PIN was asked. The PIN was cleared between 16:52:06 and 19:21:40 by something E1 cannot name.
+- **E2:** refused, `NTE_SILENT_CONTEXT`, at 19:24:01. **P2b held.** No signature was made.
+- **P2f held:** no flash in E1 (the owner), and no new discovery in the log.
+
+## P2, added before it runs: E1b, the control for E2 (written 19:2x, after E2)
+
+E2's refusal means "per process" only if the agent still held the PIN when E2 ran. **E1b:** sign `Desktop\liro-s35\e1b.pdf` (`b9749fdb…`) in the same agent, PID 14168, with nothing else changed.
+
+| | measured | predicted |
+|---|---|---|
+| P2i | E1b, a PIN prompt (the owner's eyes; a `Credential Dialog Xaml Host` line in the log) | **None.** Audit entry 324: `approved`, `B-T`. If the PIN **is** asked, E2 is unreadable: the agent may have lost the PIN before E2 ran, and E2 must be repeated straight after a signature that is seen to need none |
