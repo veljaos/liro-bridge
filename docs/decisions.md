@@ -48977,3 +48977,46 @@ Its predictions are in `docs/s35-predictions.md`, committed with this entry. **N
 **Row 5.1 is read: WKWebView draws our origin page on macOS 15.**
 - It says nothing of 5.2–5.4: no bundle opened by a person, no Gatekeeper, no card.
 - **The focus ring on "Do not allow"** matches the origin page putting the first focus on refusal. That was not checked against the page's code here.
+
+## D-499 — the first F14 screens on a real machine were seen by the owner without warning: both were mine, P8's steps 1 and 2, which I started without saying so. The origin window with a 255-character origin: the server's name takes six lines and pushes the buttons to the bottom of a window nobody can resize
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P8 (`8e10776`, its time in `b067e1e`), committed before either window. **The owner** had said "yes, open windows on my screen … Ask me for the clicks when you reach them". **I did not say when I was starting,** or which windows would come, and the owner saw them as windows that came "by itself". That is my failure, not the program's.
+
+### What appeared, and what sent it
+
+1. **23:46:10, the box "Ovaj link nije mogao da se upotrebi. Zatražite novi od stranice koja ga je prikazala."** (row 2.3, P8's step 1). **Mine.**
+   - **The sender:** `liro-bridge.exe open-link "liro-bridge://sign?job=http://example.invalid/j"`, PID 12088, started by my PowerShell (2648, child of `cmd.exe` 688; the watcher). http, not https, chosen to be unusable.
+   - **The log:** a start line at 23:46:10.257 (`67695f6`), then "open-link: the link could not be used" ("only https is used"), then "no desktop notification was posted … so it is shown in a box".
+   - **I closed it at about 23:46:27** with `WM_CLOSE` (the process ended at 23:46:27.7). Its exit code was not read.
+   - **Nothing else sent one.** This is the only "could not be used" line in the whole of `bridge.log`. `open-link` has run twice in it, both times by me tonight. No `liro-bridge.exe` started in the watchers over 1.7 and 5.1 except the agent's own children and my two `open-link`s. **1.7 and 5.1 reached nothing of the cloud channel:** 1.7 ran the PKCS#11 test binary, and 5.1 only downloaded a file.
+2. **23:46:47, the window "Dozvoliti ovaj server?"** (row 2.1, P8's step 2). **Mine.**
+   - **The sender:** `open-link` (PID 11084, from my PowerShell 7476) with a link whose origin is `https://` + 244 × `a` + `.rs`, 255 characters. It left the link for 14140 and exited 0. 14140 opened the window.
+   - **How it ended:** the owner clicked "Ne dozvoli", and I posted `WM_CLOSE` at 23:47:09.672. The log says "the person did not allow this server" at 23:47:09.683. **Which of the two ended it cannot be told** from what was recorded. Either one is a refusal.
+   - **The list is untouched:** `cloud-origins.json` was still absent at 23:47:11.
+
+**Recorded either way, as the owner asked: this is the first time any F14 screen was seen on a real machine.** It was seen by accident, because I did not announce it.
+
+### What the origin window showed (my screenshot, 23:46:52)
+
+- **The window:** 420×406 client area at 100 % (P8b predicted 576 wide; `pairingWindowWidth` is 420), frame 422×438, always on top.
+- **The server's name takes six lines** in bold, the last "aaaaaaaaaaaaaaaaaaaaaa.rs".
+- **Then the two sentences:** "Stranica na ovom serveru zatražila je da vam pošalje dokumente na potpis. Ako ga dozvolite, njegove stranice moći će ponovo da traže bez ovog pitanja." and "Svaki zahtev i dalje otvara ekran za potpisivanje programa Liro Bridge i ništa se ne potpisuje dok ga tamo ne odobrite."
+- **The buttons:** "Ne dozvoli" and "Dozvoli", at the very bottom. No scroll bar.
+- **The picture is overlaid:** a dashed selection rectangle over the upper left, and the rest dimmed. That was the owner taking a screenshot at the same moment, not the program. The text and buttons can still be read through it.
+- **At 100 % on this screen, nothing is cut.**
+
+**The owner's reading:** the name pushes the buttons down, and on a shorter window they would be off the bottom. **This is the screen where a person decides who may send them documents to sign.**
+- **The window cannot be made shorter by a person.** Its style is `WS_POPUP | WS_CAPTION | WS_SYSMENU`, with no resizing frame (`window_windows.go:523`). Its height is fixed at 406 points, scaled by the window's DPI (`scaleForDPI`).
+- So the heights that matter are not a person's resizing. They are:
+  - the scale (150 %, 200 %), against the screen's work area;
+  - Windows' separate text-size setting, which enlarges text and not the window. **Not measured; a guess at the likeliest way to lose the buttons.**
+  - At 200 % on this 1080-pixel screen, 406 points is 812 pixels, within the 1032-pixel work area. **On a 768-pixel laptop at 150 %, 406 points needs 609 pixels plus the title bar, against about 720.** Arithmetic only.
+- **Not measured yet:** 150 %, 200 %, the text-size setting, and what the page does when its content is taller than the window (scrolls, or cuts). It waits on the owner: changing the scale changes the owner's display.
+
+### Against P8 so far
+
+- **P8a held,** except the exit code, which was not read.
+- **P8b failed on the width:** 420, not 576. The title, always-on-top and 406 held.
+- **P8c held at 100 %:** the whole origin visible, both buttons on screen, no scroll bar. **But only with nothing to spare,** and the owner's question is not P8c's: the smaller room that a scale or a text size gives.
+- **P8d held:** the list absent; the refusal logged; no box.
+- **Step 3 (2.2 and the agent's box) has not started.**
