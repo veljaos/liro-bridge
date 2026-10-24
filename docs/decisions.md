@@ -49096,3 +49096,47 @@ The agent was **not** carried forward from the earlier reading. The window was f
 - **Scale is not what threatens the buttons.** The owner's reasoning for dropping R1 is borne out by the slack measured here: 150 % cannot lose what 200 % keeps with room over.
 - **Nothing here touches text size.** P9b is still open — whether WebView2 applies Windows' text size to page content at all — and with it P9c, P9d and the dangerous case, a server name absent from a window that asks whether to allow that server. **R3, R4 and R5 are where the answer is.**
 - **R3 costs a sign-out.** Custom scaling is on, and Windows will not leave it from the dropdown; going to 100 % means signing out, which ends agent 11008. The agent must be read again from `bridge.json` and the listener before R3, never carried over.
+
+## D-502 — P9's R3: Windows' text size reaches the page, and it reaches it as a zoom of the whole layout. At 150 % text and 100 % scale the origin window shows **no server name at all** — the label "Server", a scroll bar, and nothing else — while both buttons stay on screen. P9c is false, and P9d's harm arrives at 150 %, not 225 %
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 35). **Predictions:** P9 (`60990f9`).
+
+### What the machine was, read before anything opened
+
+- **Display scale 100 %,** read the way D-501 says it must be: DPI-aware before any GDI call, then `GetDpiForMonitor` (MDT_EFFECTIVE_DPI) 96, `GetDpiForSystem` 96, aware screen metrics 1920×1080 against WMI's physical 1920×1080 — **a ratio of 1.0, which is what makes the 96 trustworthy.** At 200 % the same reading was 2.0 and the same API lied.
+  - **A second trap, for the next reader:** `HKCU\Control Panel\Desktop\LogPixels` still reads **192**, left from the 200 % run, with `Win8DpiScaling` 0 and `PerMonitorSettings\…\DpiValue` 0. **`LogPixels` alone would have recorded this run as 200 %.**
+- **Text size 150 %:** `TextScaleFactor = 150` under `HKCU\Software\Microsoft\Accessibility` (absent, i.e. 100, in D-501). Written 00:26:03 — before this logon session (explorer 00:26:42) and before the agent (00:26:47), so the agent and its WebView2 came up with it already in place.
+- **The agent: the tray.** PID **11844**, command line `"…\Liro Bridge\liro-bridge.exe" tray`, parent `explorer.exe`, started 00:26:47; it owns the listener on 127.0.0.1:17580, `bridge.json` names 17580 and was written by it at 00:26:48, and `/v2/health` answers 200. The owner asked whether it was the Start menu's `open` instead. **It matters:** on Windows `runOpen` → `openWithoutAgent` → `runMainWindow` and nothing else — it never calls `startProtocol`, so there is no port, no `bridge.json` and no cloud channel. An `open` process is a window with no agent behind it, `liveAgent()` is false, and `open-link` would have become the agent, which is exactly D-500's failure.
+- `cloud-origins.json` **absent**; **no `LiroBridgeWindow` on screen** before the link, so the new window was unambiguous by class, as in D-501.
+
+### What ran, from the log and the script
+
+- **00:34:07.820** the 255-character link sent through `open-link` (pid 6924). **00:34:08.034:** `open-link: an agent is running, so the link was left for it`; it exited 0.
+- **00:34:08.625** the window appeared. Its owner was resolved **at that moment** with `GetWindowThreadProcessId` and checked against the listener: **11844**, the tray. Title "Dozvoliti ovaj server?".
+- **00:34:11.226 and 00:34:14.258:** photographed twice, to let WebView2 finish painting. The two frames are identical.
+- **00:34:14.278** `WM_CLOSE` posted (the X's message). **00:34:14.297:** `cloud: the person did not allow this server`, carrying the full origin and job. The window was gone.
+
+### Row 2.1 at 100 % scale, 150 % text: the measurement
+
+| | |
+|---|---|
+| Client | **426×423** — not the designed 420×406 (see below) |
+| Window | 442×462 at (739, 309); `GetDpiForWindow` 96 |
+| Resizable | **no** — `WS_THICKFRAME` absent |
+| Scroll bars | **none on the window** (`WS_VSCROLL`, `WS_HSCROLL` absent) and **none on the page**; exactly one, in the server-name region |
+| Primary button | **140×64 px**, against the ~93×44 its CSS gives at 100 % |
+| Below the button | 49 px to the window's bottom edge |
+
+**What a person sees:** the quiet grey label **"Server"**, a pair of scroll arrows at the right of that line, and **white space where the name should be.** Then both sentences, then "Ne dozvoli" and "Dozvoli", both fully on screen. **Not one character of the 255-character origin is visible.**
+
+### What this settles
+
+- **P9b is answered: text size reaches the page** — and not as bigger glyphs in the same layout. The primary button is 140×64 against a designed 93×44, and the sentences wrap into more lines than at 100 %: **WebView2 applies `TextScaleFactor` as a zoom of the whole layout.** The page's CSS viewport is therefore about **284×282 CSS px** instead of 420×406 — it lost a third of its height and a third of its width while the window grew by 4 %.
+- **P9c is false.** It predicted part of the name with a scroll bar in that region. **None of the name shows.** `.identity` is `flex: 0 1 auto` with `min-height: 0`, and the page's design makes it the only thing allowed to give; asked for 124 CSS px it does not have, **it gives everything,** down to the label line. The buttons survive for the same reason.
+- **P9d's harm arrives at R3, not R4.** A window titled "Dozvoliti ovaj server?" asks a person to allow a server **it does not show them.** 150 % text is not an exotic setting; 225 % is still to run, and can only be worse.
+- **P9f held again for the X:** a refusal, logged "did not allow", **nothing told to the person,** the server never contacted. **P9g held:** the list is still absent.
+- **A smaller thing worth keeping:** the client came out **426×423, 6×17 larger than asked for.** `createNativeWindow` sizes the window by `AdjustWindowRectEx` from the client size it wants, and under text scaling that call's estimate of the frame does not match the frame Windows then draws, so the client is not the size the code asked for. Harmless here — it gave the page 17 points it would not otherwise have had — but `resizeToClientPoints` makes the same assumption.
+
+### Not measured
+
+**Whether the name can be reached at all.** The region's scroll bar is drawn, so it has overflow and the wheel should move it — but that is inference, and whether a person finds a scroll bar they have no reason to expect is the question the row is really asking. P9 gives the wheel to R4, at 225 %. **It is now worth doing at 150 % as well.**
