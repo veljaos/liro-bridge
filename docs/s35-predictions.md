@@ -153,3 +153,11 @@ E2's refusal means "per process" only if the agent still held the PIN when E2 ra
 | P3d | Step 4 | **The PIN asked again.** **Least certain of P3:** My basis is Microsoft's smart-card provider PIN cache, which I recall as tied to the card and cleared when the card is removed. It is recalled, not re-read tonight, and not measured here. **If no PIN is asked,** taking the card out does not protect a person who walks away with the agent running, and E11's close has to say so |
 
 If anything asks for the PIN twice, stop: the card has three attempts.
+
+## P3, read — in D-495
+
+- **Held:** P3a, P3b, P3c and P3d. PID 14140 throughout; the PIN asked for p3-1 and p3-3, not for p3-2.
+- **P3c, the part not predicted:** the workers did not notice the card going. None exited and none was started.
+- **P3d's basis** is still recalled, not read. The result agrees with it and does not confirm it.
+- **Not predicted:** Windows' smart-card audit log shows every PIN-less signature as a fresh verification from the agent's process.
+- **Not done from the setup:** the machine was not kept awake. The run took four minutes of activity, under the 15-minute sleep.

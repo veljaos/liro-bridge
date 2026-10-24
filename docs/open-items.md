@@ -192,11 +192,12 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
     - **What it rests on now:**
       - **Reason 1's premise is refuted through CNG** (E2, D-493). While the agent held the PIN, a process that is not the agent could not sign without a prompt. So through CNG the PIN is a boundary between processes. "Buys no additional security" was argued from a sentence that is false for this route.
       - **Reason 1's other half is untested:** whether the card keeps a verified state that a program talking to it directly could use. That is the PKCS#11 half, E10.
-      - **Reason 2 stands, untouched by any of it.**
+      - **Reason 2: half of it is now in question** (D-495). Our code never holds the PIN, so "cannot leak from our logs" stands. But Windows' audit log shows every PIN-less signature as a verification sent to the card from `liro-bridge.exe`'s own process. So what verifies the card, the PIN or its equivalent, is held in our process, and "our crash dumps or our memory" is not what happens. Its form there, and whether a dump would hold it, are not measured.
     - **What the decision has meant in practice, measured (D-491–D-493):**
       - The PIN is held by Windows' smart-card provider in the agent's process, where this program cannot see it, and nothing this program does clears it.
       - That is why F2 §4.1's "a new PIN" and the Guide's sentence are not kept (E11).
     - **Also resting on reason 1:** SPEC §6.5.1's permission to hold a PIN for `C_Login` on PKCS#11 modules with no protected path ("permitted, narrowly, and only because of what §6.5 above already establishes").
+    - **One option that bears on both reasons (D-495, E11):** CNG signing in a child process ended with each session. The provider's material would then leave with the child instead of living in the agent. Not decided.
     - *Close:* the owner's decision, whether D-025 stands on reason 2 alone, changes, or waits for the PKCS#11 half. Then SPEC §6.5, §6.5.1, F2 §2.3 and D-025's text are brought into line with whatever is decided. *Needs:* the owner's decision. Nothing here is decided by me.
 
 ## B. Claims not measured
@@ -440,6 +441,7 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
       - The PIN outlived the program's session (D-491).
       - **"A second process on the same machine can therefore sign without being asked for a PIN" is false through CNG** (E2, D-493). A process that is not the agent was refused silently while the agent held the PIN, and E1b is the control for that.
       - **"The card keeps the PIN cached in its own state" is untested.** A CNG provider cannot see the card's state. A program talking to the card directly, over PC/SC or a PKCS#11 module, could. **The PKCS#11 half is untested.**
+      - **But the silent signatures did not rely on it** (D-495). Windows' audit log shows each of them as a fresh verification sent to the card from the agent's process. The card was verified again each time.
     - **This is the case the rule above exists for, at its worst.** "Treat every SPEC sentence that nobody has measured as unverified" cannot catch a sentence that says it was measured. Its claim to have been verified is itself the thing to check.
 9. **SPEC §6.5.2 on X11: decided, not built.** Measured on an "Ubuntu on Xorg" session (D-402): the agent's Settings window is an X11 client, `_NET_WM_PID` the tray's, `WM_CLASS` empty, and nothing refused it or logged the backend. The owner decided and SPEC §6.5.2 now says: on Wayland the agent never chooses X11 (`GDK_BACKEND=wayland` before GTK starts when `XDG_SESSION_TYPE` is `wayland`, in `PrepareWebKitEnvironment()`); in an Xorg session it does **not** refuse, but the consent window says in its own text that other programs can press its buttons, the agent logs the display server, and every audit entry on Linux records it (§6.7); and the consent screen stops a caller within the protocol, not code running as the same user. **None of it is built**, and the amendment says so. The warning and the audit field are one piece of work; **the field records the backend actually in use — the display GTK opened — not what was configured or requested.** The fallback (a Wayland session whose socket cannot be reached, with `DISPLAY` set) stays reasoned, not measured. That the consent window behaves as Settings did is inferred, not measured. The Xorg half is read on the Ubuntu VM, kept for it: **Fedora 44 ships no GNOME on Xorg** — no `gnome-session-xsession` installed or in `fedora`/`updates`, though GDM still carries `gdm-x-session` and Xorg and Xfce are installable — so **that VM is the only place GNOME on Xorg can be read**; Xfce is not installed, by the owner's ruling (D-405). — D-396, D-400, D-401, D-402, D-404, D-405. *Close:* build the three, then read the audit entry of a real signature on each display server. *Needs:* code, then measurement with a card.
 
@@ -450,22 +452,16 @@ answers it for Linux only). **B8 closed by D-434**, by the owner's choice.
     - **Measured since (D-492, D-493):**
       - The PIN is held per process. Inside the agent it outlives everything the program does: E1b signed with no PIN 11 minutes after the last PIN. A process that is not the agent could not use it through CNG (E2). A new process is asked (E3).
       - Something cleared it between 16:52 and 19:21, across a 75-minute sleep. What, and when, is not known (E1).
-      - **Whether taking the card out clears it in a living agent is not known.** E4 changed the card and the process at once. A clean E4 is in D-493: one tray agent, the same PID, sign, sign, card out and in, sign. It is the one answer a person could act on.
+    - **Measured since (D-495, P3, the clean E4):**
+      - **Taking the card out clears it in a living agent.** One tray agent, PID 14140 throughout: sign (PIN asked), sign (none, the control), card out for five seconds and back, sign (PIN asked). Once, with the MUP card through CNG. The card going out rests on the owner's word: nothing logged it.
+      - **A signature with no prompt is a fresh verification, sent to the card from the agent's process.** Windows' `SmartCard-Audit/Authentication` log shows one for every PIN-less signature (D-491's two, E1b and p3-2) and none for E2. So what verifies the card is held inside the agent's process. Its form there is not measured.
+    - **What a person can be told today, each measured:** closing the window does not end it (D-491); taking the card out does (P3); quitting Liro Bridge from the tray does (E3). Until one of those, anyone who can press Approve signs without the PIN, for at least 11 minutes (E1b).
+    - **The one route the program has, resting on a measurement:** sign through CNG in a child process that lives for one session and is ended with it. A new process is asked (E3), so "the next operation requires a new PIN" would hold. Costs a PIN per batch. Unknown until tried: the PIN dialog parented across processes, and the child's console (D53). Other routes (asking the provider to drop its cache, resetting the card) are not known to exist or work. **Not decided: the owner's.**
+    - **Still untrue after P3:**
+      - **F2 §4.1:** "The next operation requires a new approval and a new PIN" (the idle timeout clears nothing); "a walked-away-from machine does not hold an authenticated card open"; and "a batch of 1000 documents at 0.41 s each is under 7 minutes, so this never truncates legitimate work". At about 40 s per MUP document (D52), `MaxLifetime` falls at about the 45th document of one batch (`mainwindow.go:1277`, `session.go:76`). Read from the code, not run.
+      - **The Guide:** "Windows asks for your card's PIN" (only the first time in an agent's life, or after the card is taken out or the agent quit); "Liro Bridge never sees or stores your PIN" (Windows keeps what verifies the card inside our process and uses it from there); nothing says how to end it. In the same step, "about five seconds … every one after it is much faster" is untrue for the MUP card (D52).
     - The SPEC sentence that says all this was already known is under E10.
-    - **The clean E4, ready to run** (P3 in `docs/s35-predictions.md`, written 2026-10-24 before it runs):
-      0. **Before, the setup:**
-         - one tray agent, started by signing in to Windows (the `Run` entry starts `tray`), not from the Start menu, which starts `open` and ends with its window;
-         - its PID read; the watcher (`flashwatch2.py`) running throughout;
-         - the machine kept awake; the level the default; the card in.
-      1. **Sign `Desktop\liro-s35\p3-1.pdf`** from that agent's window. The PIN is asked.
-      2. **Sign `p3-2.pdf`,** nothing changed. The control: no PIN.
-      3. **Card out for five seconds, then back in;** wait until the reader settles. The agent is left alone.
-      4. **Sign `p3-3.pdf`.**
-      - **After:**
-        - the PID unchanged, read from the watcher (no `liro-bridge.exe` started by explorer, and the agent never exits);
-        - credential windows counted, one per PIN prompt;
-        - audit entries read.
-    - *Close:* where the PIN is held and what clears it, measured. Then either the program makes the promises true (for example, by ending the card's authenticated state when a session closes, if Windows offers a way), or F2 and the Guide say what actually happens, in words a person can act on. Which of the two is the owner's decision. *Needs:* P2 first, then the owner's decision, then code or text.
+    - *Close:* the owner decides between the child-process route (then code, then P3 repeated with two batches and no card change, the second asked) and the texts alone. Either way, F2 §4.1 and the Guide in both languages say what happens, in words a person can act on: the card out, or quit from the tray. *Needs:* the owner's decision, then code or text.
 
 ## F. F12's exit checklist, what is not done
 

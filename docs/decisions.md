@@ -48792,3 +48792,98 @@ Read with curl, without reading the body:
 ### A correction
 
 **D-491 and D-493 say "Microsoft documents a per-process PIN cache".** That is my recollection of Microsoft's smart-card documentation. I did not re-read it this session, and nothing here measured it. It should be read as "recalled". P3d says so.
+
+## D-495 — P3, the clean E4: taking the card out cleared the PIN in a living agent, with p3-2 as the control. Windows' own audit log shows every PIN-less signature as a verification sent to the card from the agent's process, so what verifies the card is held in that process. What E11 can now tell a person, the one route the program has to keeping F2 §4.1, and what stays untrue
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P3 (`0b7c67d`), committed before the run. **The owner** ran the four steps and read the screens: "p3-1: flash, PIN asked. About a minute. p3-2: no flash, no PIN. About a minute. p3-3: no flash, PIN asked. Slightly under a minute." The card going out and back in rests on the owner's word: nothing on this machine recorded it.
+
+### Before P3
+
+- **The repository-root build was run once, by mistake, at 20:41:42** (the owner's word). It is D-451's binary: `liro-bridge.exe` at the root, git-ignored, written 2026-09-19 17:37:15, SHA-256 `3b35ebb5…48fa0f`.
+  - **It wrote one line** to `bridge.log`: `20:41:42.19 "liro-bridge starting"`, version `dev`, commit `none`. That is D-451's signature. No `webview2` or `protocol: listening` line follows, so it did not become an agent.
+  - **The Run entry was not taken.** `HKCU\…\Run\LiroBridge` names the installed binary, and the 21:00 sign-in started the installed binary from it. Had the root build rewritten the entry at 20:41 (D-451's mechanism), the sign-in would have started the root build. No start of the installed binary is logged in between.
+  - **The Explorer verb and the `liro-bridge:` handler** name the installed binary too. That says nothing about 20:41: the 21:00 agent rewrites both at its start.
+- **The machine was restarted, not only signed out:** `LastBootUpTime` 20:59:23, `explorer.exe` 20:59:47.
+- **The agent:** PID 14140, `"…\Programs\Liro Bridge\liro-bridge.exe" tray`, created 21:00:01, parent `explorer.exe` (8076). The installed binary (`ab3e628c…3b3a`), its start line `commit 67695f6` at 21:00:02. No other `liro-bridge.exe` was running, and it had no workers.
+- **The watcher:** `flashwatch2.py`, the same bytes as D-494's (`4bcda164…f460`), from 21:54:00 for an hour.
+- **Not done:** the machine was not kept awake. It sleeps after 15 minutes idle on AC, and P3 ran within four minutes of activity.
+
+### The run
+
+| | when | PIN | credential window | children, Terminal windows | verification events (CHV 101) | audit |
+|---|---|---|---|---|---|---|
+| p3-1 | added 22:04:29.8, done 22:05:39.7 | **asked** | one, 22:04:58.5–22:05:01.1 | three probes, three workers; **six** | `CredentialUIBroker.exe` 22:05:01.867, then **`liro-bridge.exe` 14140** 22:05:02.019 | 327, `approved`, `B-T` |
+| p3-2 | added 22:05:52.7, done 22:06:48.0 | **none** | none | none; none | **`liro-bridge.exe` 14140 only,** 22:06:09.939 | 328, `approved`, `B-T` |
+| card | out five seconds, back in (the owner), between 22:06:48 and 22:07:07 by the order of the steps | | | none: no process under 14140 started or ended | none | |
+| p3-3 | added 22:07:12.0, done 22:08:04.2 | **asked** | one, 22:07:23.6–22:07:27.2 | none; none | `CredentialUIBroker.exe` 22:07:28.055, then **`liro-bridge.exe` 14140** 22:07:28.206 | 329, `approved`, `B-T` |
+
+- **The PID was 14140 throughout.** At 22:08:34 it was still running, with the same three workers (10328, 9348, 14424) it started at 22:04:45–47. The window closed at 22:08:06 and the agent stayed, as `tray` does.
+- **All 330 audit entries verify** (`scripts/auditverify`, on a copy).
+- **The outputs:** `p3-1-signed.pdf` (`52e62723…`), `p3-2-signed.pdf` (`83d1885b…`), `p3-3-signed.pdf` (`718fc271…`). The inputs are still `b9749fdb…`.
+- **The minute,** from the log: the B-LT attempt (the AIA line to the notes) took 40, 38 and 40 s. From adding the document to the report took 70, 55 and 52 s. Each fetched the 29,859,134-byte CRL and left it out (D52).
+
+### Taking the card out cleared the PIN in the same process
+
+**p3-3 was asked, and the only thing that differed from p3-2 was the card going out.**
+- **The same process:** PID 14140 throughout, and every verification event in it is attributed to 14140.
+- **The control:** p3-2 signed with no prompt 68 s after the PIN. Between p3-1 and p3-2 the program closed its session and freed the key, as it does after every batch (D-491). It did the same between p3-2 and p3-3. So that is not what made the difference.
+- **Not a timer:** p3-3 was asked 2 min 22 s after the PIN, and 1 min 14 s after p3-2's silent verification. E1b signed with no prompt 11 min 13 s after its PIN (CHV 19:21:42, then 19:32:55), and D-491's third signature came 4 min 15 s after its PIN.
+- **Nothing else happened in the agent:** the watcher shows no process under 14140 starting or ending between p3-2 and p3-3.
+
+**What this does not establish:**
+- **The card went out on the owner's word only.** No log recorded it. `SmartCard-DeviceEnum`'s service had stopped at 21:00:46, and Kernel-PnP has nothing in 22:04–22:09.
+- **One card (MUP), one reader, one Windows build, once,** through CNG. The Pošta card and the PKCS#11 route were not tried.
+- **Which layer cleared it,** the provider or the card. P3d's basis is still recalled, not read: the result agrees with it and does not confirm it.
+- **What cleared E1** (D-492). A reader powered down in a 75-minute sleep would look like a removed card. That is a guess, and it fits.
+
+### The verification events: what "no PIN" was
+
+Windows' `Microsoft-Windows-SmartCard-Audit/Authentication` log records every successful card-holder verification (event 101), with the process that sent it. It goes back to February 2025 and needs nothing from us.
+
+- **Every prompted signature** shows two events about 0.15 s apart: `CredentialUIBroker.exe` (the dialog) first, then the signing process.
+- **Every signature that asked for no PIN shows a verification from the agent's own process, with no dialog:**
+  - D-491: 16:48:59 and 16:51:28 (14168);
+  - E1b: 19:32:55 (14168);
+  - p3-2: 22:06:09.939 (14140).
+- **E2 shows none.** `e2probe.py` was refused before anything reached the card.
+- **The same pattern runs through the whole log:** from the first card signatures on 2026-09-05 (one prompt, then two more verifications from PID 7408 at 14:49 and 14:50), and in two other programs before this project. **So it is Windows' smart-card provider's behaviour, not ours,** and it was in Windows' own log from the start.
+
+**What it shows:**
+- **A signature with no prompt is a fresh PIN verification, sent from the agent's process.** The card did not stay verified between batches; it was verified again each time. So whatever performs that verification, the PIN or something equivalent, is available inside `liro-bridge.exe`'s process. **Its form there is not measured.**
+- **The card half of SPEC §6.5** ("the card keeps the PIN cached in its own state") **is still untested,** but the silent signatures did not rely on it. They verified again.
+- **D-025's reason 2** (F2 §2.3: "A PIN that never enters our process cannot leak from our logs, our crash dumps or our memory"): our code never holds the PIN, so the logs half stands. **The process does hold what verifies the card,** so the dumps-and-memory half is in question. Whether a dump of the agent would contain the PIN is not measured. Set out in A38; **not decided.**
+
+### What it means for E11
+
+**What a person can be told today, each measured:**
+- **Closing the window does not end it** (D-491: two closed windows, two closed sessions, no PIN asked).
+- **Taking the card out does** (P3, once).
+- **Quitting Liro Bridge from the tray does:** a new process is asked (E3, E4).
+- **Until one of those, anyone who can press Approve at the computer signs with the card without the PIN.** E1b shows at least 11 minutes. The longest is not measured.
+
+**Can the program make F2 §4.1 and the Guide true?**
+- **One route rests on a measurement.** The cache belongs to the process, and a new process is asked. So signing through CNG in a child process that lives for one session, and is ended when the session ends (the batch, or the 90 s idle timeout), would make "the next operation requires a new PIN" true by the same mechanism E3 measured. The PKCS#11 workers already show the pattern.
+  - **Its cost:** a PIN for every batch. That is what F2 §4.1 promised, and what the Guide's sentence describes.
+  - **Unknown until tried:** the PIN dialog parented to a window in another process (`NCRYPT_WINDOW_HANDLE_PROPERTY`); and the child's console (D53), unless it is started without one.
+  - **What it leaves alone:** D-025. No PIN enters our code. The material leaves with the child instead of staying in the agent, which would be D-025's reason 2 regained for the agent.
+- **Other routes, none measured:** asking Windows' provider to drop its cache, or resetting the card from the agent to imitate removal. Whether either exists or works is not known here. A reset would also reach any other program using the card.
+- **Which, if any, is the owner's decision.** The Guide is wrong for every person running the installed build today, so its text needs changing whatever is decided about code.
+
+**What stays untrue after P3, in F2 §4.1:**
+- **"On idle timeout, close the session and free the key handle. The next operation requires a new approval and a new PIN."** The idle timeout still clears nothing. Taking the card out does, and that is a person's act, not the program's.
+- **"short enough that a walked-away-from machine does not hold an authenticated card open."** The agent's process keeps what verifies the card, for at least 11 minutes, whatever the timeout does.
+- **"A batch of 1000 documents at 0.41 s each is under 7 minutes, so this never truncates legitimate work."** With the MUP card each document takes about 40 s (D52), so 30 minutes is about 45 documents. `runBatch` wraps one session for the whole batch (`mainwindow.go:1277`), and `checkLive` refuses a signature after `MaxLifetime` (`session.go:76`). **Read from the code, not run.** What a person sees at document 46 is not known.
+
+**What stays untrue after P3, in the Guide (both languages):**
+- **"After you click *Potpiši*, Windows asks for your card's PIN."** Only for the first signature in an agent's life, or after the card is taken out, or after the agent is quit.
+- **"Liro Bridge never sees or stores your PIN."** Our code never sees it. But Windows keeps what verifies the card inside Liro Bridge's process, and verifies the card from there with no prompt: four times today, logged against `liro-bridge.exe`. A person reading "never stores" would believe the opposite.
+- **Nothing says** that the PIN stays usable, that closing the window does not end it, or that taking the card out or quitting does.
+- **Not E11's subject, in the same step:** "The first signature takes about five seconds … Every one after it is much faster." With the MUP card every document takes about 40 s, and none is faster (D52).
+
+### P3 against the result
+
+- **P3a held:** one credential window; three probes, then three workers; six `CASCADIA_HOSTING_WINDOW_CLASS` windows (22:04:44.3–22:04:46.5, each gone within 65–85 ms); audit `approved`, `B-T`; about a minute.
+- **P3b held:** no PIN, no new child, no window.
+- **P3c held:** PID unchanged. **The part not predicted:** the workers did not notice. None exited and none was started; the same three were running at 22:08:34.
+- **P3d held: the PIN was asked again.** Its basis is still recalled, not read.
+- **Not predicted:** the verification events. Every silent signature is a verification from the agent's process.
