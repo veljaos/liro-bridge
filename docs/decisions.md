@@ -48954,3 +48954,26 @@ Its predictions are in `docs/s35-predictions.md`, committed with this entry. **N
 - **The row is not read.** No run was slow, so D45 did not recur. **It stays inferred** (D-467).
 - **One thing it shows:** with the card in, this machine's three modules answer a probe in under 0.1 s each. So a 10 s probe is not this test's ordinary state.
 - **A repeat in D-455's own conditions** (the card out, the whole package) needs the card out, so the owner's hands. **Not done.**
+
+## D-498 — row 5.1 read: the window CI photographed on macOS 15 shows the origin page, whole
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P7 (`5c7d7d1`), committed before the artifact was opened. Done alone, by the owner's word.
+
+- **The artifact:** `liro-macos` 12571531628, from run **40121684835** (`6bb89b9`, the pull request's run, 2026-10-24 18:40 UTC). P7 called it "40121684835's sibling"; it is that run's own artifact.
+  - Downloaded with `gh api` into a new, empty folder in my scratchpad.
+  - **Only `origin-window.png` was extracted** (27,360 bytes, `0a47a8af…`). The bundle's zip stayed unopened inside the download.
+- **What it shows:**
+  - a macOS window titled "Liro Bridge (CI)", with its three title-bar buttons;
+  - "Server", then **`https://erp.example.com`** in bold;
+  - "A page on this server asked to send you documents to sign." and "Every request still opens the signing screen.";
+  - two buttons at the bottom right, **"Do not allow"** (with the keyboard focus ring) and **"Allow"** (blue).
+  - **Nothing is cut off, and there is no scroll bar.**
+
+**Against P7:**
+- **P7a failed as written:** the picture is 420×434 pixels, the runner's display at 1×, not 2×. The 28 extra rows are the title bar, which `-l` includes.
+- **P7b held,** the least certain. The page was drawn, not only loaded.
+- **P7c held.**
+
+**Row 5.1 is read: WKWebView draws our origin page on macOS 15.**
+- It says nothing of 5.2–5.4: no bundle opened by a person, no Gatekeeper, no card.
+- **The focus ring on "Do not allow"** matches the origin page putting the first focus on refusal. That was not checked against the page's code here.

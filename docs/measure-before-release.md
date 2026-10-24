@@ -60,7 +60,7 @@ Each test was seen red on the code before its fix, then green after it. For the 
 
 | # | claimed | what would show it false |
 |---|---|---|
-| 5.1 | The window the CI photographed shows the page | Look at the `liro-macos` artifact. False if blank or wrong. |
+| 5.1 | **Read (D-498, 2026-10-24):** the origin page, whole, in a 420×406 WKWebView window on macOS 15 (artifact of run 40121684835). The window the CI photographed shows the page | Look at the `liro-macos` artifact. False if blank or wrong. |
 | 5.2 | The unsigned bundle opens (via *Open*), runs as a menu-bar agent, and a link opens it | False at Gatekeeper, at no menu-bar item, or a link doing nothing. |
 | 5.3 | The PIN dialog, a drop, the open panel, alerts and notifications work | Each compiled, never run. |
 | 5.4 | SafeSign on macOS loads from the recalled path, and a Pošta card signs | False if discovery finds nothing, or the signature does not verify. |
