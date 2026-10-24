@@ -48887,3 +48887,37 @@ Windows' `Microsoft-Windows-SmartCard-Audit/Authentication` log records every su
 - **P3c held:** PID unchanged. **The part not predicted:** the workers did not notice. None exited and none was started; the same three were running at 22:08:34.
 - **P3d held: the PIN was asked again.** Its basis is still recalled, not read.
 - **Not predicted:** the verification events. Every silent signature is a verification from the agent's process.
+
+## D-496 — P4: 14140 asked for the PIN after its sleep. That fits the guess that sleep clears it, and cannot separate sleep from a timer longer than 11 minutes, so it does not settle E1. P5, the run that would separate them, written down and not run
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P4 (`2e1c90a`, its time in `db620fc`), committed before the run. **The owner** signed once and read the screen: "PIN asked, no flash, about a minute. Signed." The owner's ruling: "Record it that way and do not treat it as settling E1."
+
+### The run
+
+- **The agent:** 14140 throughout, the same process as P3, still holding its three workers from 22:04:45–47.
+- **The window:** opened at 23:36:20.4; the document added at 23:36:24.3.
+- **The PIN, asked once:** one `Credential Dialog Xaml Host` (`CredentialUIBroker.exe`, PID 1196), 23:36:35.9–23:36:38.6. Then the pair of verification events: `CredentialUIBroker.exe` at 23:36:38.816, 14140 at 23:36:38.964.
+- **No new child, and no Terminal window** (the watcher, from 23:19:52).
+- **The audit:** entry 330, `approved`, `B-T`, `windows-cng`. All 331 entries verify (`scripts/auditverify`, on a copy).
+- **The B-LT attempt:** 38 s, from the AIA line to the notes; the CRL left out again (D52).
+- **The output:** `p4-signed.pdf` (`21bada6c…`). `p4.pdf` is still `b9749fdb…`.
+
+**P4a, P4b and P4c held.**
+
+### What it settles, and what it does not
+
+- **The interval:**
+  - from 14140's last verification at 22:07:28.2 to the prompt: **1 h 29 min**;
+  - from the PIN at 22:05:01.9: 1 h 31 min;
+  - inside it, an S3 sleep of 51 minutes (22:24:48–23:16:17), with the card left in.
+- **The PIN was cleared at some point in that interval.** The interval holds the sleep and more than 11 min 13 s (E1b's longest silent signature). **So it cannot say which cleared it, or how.**
+- **It is E1 again,** with a watcher, the verification log and tighter bounds. **E1 is not settled.**
+- **One thing it does exclude:** the workers being replaced, or a new preparation, as the cause. Nothing started.
+
+### A correction about the watcher's clock
+
+In D-495 I told the owner the watcher's hour "runs on a clock that may stop while the machine sleeps". **It did not stop.** Started at 21:54:00 with 3,600 s, it would have run to 23:45 had the sleep paused its clock. It ended at 23:16:16, on waking. So the clock counted the sleep, and the watcher could only stop once the machine was awake. For P5 that means the watcher's duration must cover the sleep as well.
+
+### P5, written down so it can be run without rethinking
+
+Its predictions are in `docs/s35-predictions.md`, committed with this entry. **Not run, by the owner's word.**

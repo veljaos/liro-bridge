@@ -195,3 +195,52 @@ If anything asks for the PIN twice, stop: the card has three attempts.
   - The first is cheap. It is not part of P4.
 
 **Stop** if anything asks for the PIN twice.
+
+## P4, read — in D-496
+
+- **Held:** P4a (the PIN asked), P4b (no child, no window), P4c (14140, entry 330, `B-T`).
+- **It settles nothing about E1** (the owner). The interval, 1 h 29 min from the last verification, holds a 51-minute sleep and more than 11 minutes, so the sleep and a timer cannot be told apart.
+
+## P5 — sign, sleep two minutes, sign: does a sleep alone clear the PIN? (written 2026-10-24 after P4; not run)
+
+**Why:** E1 and P4 were both asked after a sleep **and** after more than 11 minutes. P5 keeps the whole run well under 11 min 13 s, the longest gap E1b showed with no prompt. A timer of that length then cannot be the cause. Only the sleep changes.
+
+**The documents:** `Desktop\liro-s35\p5-1.pdf` and `p5-2.pdf`, copies of `testdata/pdfs/blank.pdf` (`b9749fdb…`), made when it runs.
+
+**The steps:**
+0. **Before (mine):**
+   - One tray agent, alive since a sign-in, its PID read. Any living agent will do; it need not be fresh.
+   - The card in.
+   - The watcher started with **1,800 s**. Its clock counts the sleep (D-496), so this covers the run, the sleep and the reading.
+   - The verification events and `Kernel-Power` read as a baseline.
+1. **Sign `p5-1.pdf`** from that agent's window (the owner). A prompt or none: either way the agent holds the PIN after it. Its verification event's time is **T1**.
+2. **At once: Start → Power → Sleep** (the owner). Not `rundll32 powrprof.dll,SetSuspendState`, which hibernates on a machine with hibernation on, and this one has it.
+   - **Two minutes asleep, by a clock off the machine.** The card stays in.
+   - Wake it with the keyboard or the power button.
+3. **Within one minute of waking, sign `p5-2.pdf`** (the owner) in the same agent.
+   - **The limit:** from T1 to this signature's verification event (**T2**) must be **under 8 minutes.** That leaves a margin below 11 min 13 s. If it runs over, the run is void, not read.
+4. **After (mine):**
+   - the PID unchanged;
+   - Kernel-Power 42 and 107, and Power-Troubleshooter 1: the sleep's start, end and kind (S3, not hibernation);
+   - credential windows counted; the verification events;
+   - T2 − T1;
+   - audit entries.
+
+| | measured | predicted |
+|---|---|---|
+| P5a | Step 1 | Whatever the agent's state: a prompt with the pair of events, or one event from the agent alone. Audit `approved`, `B-T` |
+| P5b | The sleep | One Kernel-Power 42 and one 107, about two minutes apart; Power-Troubleshooter 1 naming S3 |
+| P5c | Step 3, the PIN | **Asked:** one credential window, then the pair of events. **Least certain of P5.** My basis is E1 and P4, plus an unmeasured guess: that S3 takes the reader's power and the provider sees the card go, as in P3 |
+| P5d | Children and windows | None new: the workers survived P3's card change and P4's sleep |
+
+**What each answer settles:**
+- **Asked:** a two-minute S3 sleep clears the PIN, and a timer cannot be the cause (T2 − T1 is under 8 minutes, and E1b went 11 min 13 s with no prompt).
+  - **Not settled:** how. The reader losing power, or the provider reacting to the resume. Telling those apart needs the reader's power state, which nothing here reads.
+  - **For E11:** "put the computer to sleep" joins "take the card out" and "quit from the tray", on one run.
+- **Not asked:** a short sleep does not clear it. E1's and P4's prompts then come from something longer:
+  - a timer between 11 min 13 s and 1 h 29 min;
+  - or something a longer sleep does and a short one does not.
+  - **The next run:** a wait awake of about 1 h 30 min, the card untouched, then a signature.
+- **Either way,** a single run on one card and one reader.
+
+**Stop** if anything asks for the PIN twice.
