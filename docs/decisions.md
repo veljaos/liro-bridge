@@ -48634,3 +48634,113 @@ The owner saw a console window open and shut several times, a fraction of a seco
 ### Added to P2 before it runs: E1b
 
 **E1b, the owner:** sign one more document in the same agent now, with nothing else changed. It is the control for E2: no prompt means the agent still held the PIN when E2 was refused.
+
+## D-493 — P2 read whole: the PIN is held per process. A process that is not the agent could not sign while the agent held it, so SPEC §6.5's second-process sentence is false through CNG; its card half is untested. The flashes are Windows Terminal windows, one per child the agent starts. The minute is MUP's dead OCSP and its 30 MB CRL, fetched again for every document
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P2 (`5f69750`) and E1b (`d4f4c23`), each committed before its run. E1 and E2 are in D-492. **The owner** ran E1b, E3 and E4 and read the screens. The watcher ran from 19:25:29 for an hour, covering E1b, E3 and E4.
+
+### The runs
+
+| | process | what happened before it | PIN asked | audit | watcher |
+|---|---|---|---|---|---|
+| E1 | the tray agent 14168, since 14:07:48 | its last signature at 16:52:06; a sleep from 18:05:38 to 19:20:54 | **yes**, 19:21:40 | 323, 19:22:23 | not running |
+| E2 | `e2probe.py`, not the agent | E1's PIN 2 min 21 s earlier | — refused, `NTE_SILENT_CONTEXT`, no signature | none | not running |
+| E1b | 14168 | E1's PIN at 19:21:40, E2 at 19:24:01, nothing else | **no** | 324, 19:33:53 | no credential window, no new process |
+| E3 | 17364, `open`, from the Start menu at 19:34:25 | 14168 quit from the tray, its three workers with it (19:34:17) | **yes**, 19:35:01 | 325, 19:36:02 | one credential window (`CredentialUIBroker.exe`) |
+| E4 | 14560, `open`, from the Start menu at 19:36:19 | 17364 ended at 19:36:03; then **the card out for five seconds, the program started, the card put back** (the owner) | **yes**, 19:36:49 | 326, 19:37:27 | one credential window |
+
+All four signatures came back B-T in green (the owner). All four audit entries are `approved`, `B-T`, `windows-cng`.
+
+### Where the PIN is held: what is established
+
+**Established — the agent's process holds it, and it is good only inside that process:**
+1. **Inside one process, it outlives everything this program does.** In D-491 it outlived two closed sessions, two closed windows, and four and a half minutes. E1b signed with no PIN 11 minutes after E1's, in the same process.
+2. **A process that is not the agent cannot use it through CNG** (E2).
+   - **E1b makes that reading sound.** The agent held a PIN at 19:21:40 (E1) and still held it at 19:32 (E1b). No PIN was entered in between, and a cleared PIN cannot come back without one. So the agent held it at 19:24:01, when E2 was refused.
+3. **A new process is asked (E3).** The agent quit, and the next process was asked once.
+
+**Consistent with all of it, and not measured:** Microsoft's documented per-process PIN cache in the smart-card key storage provider (`scksp.dll`, loaded in the agent; D-491).
+
+**Not established:**
+- **What cleared it in E1.** 16:52–19:21, across a 75-minute sleep (D-492).
+- **Whether taking the card out clears it in a living process.** E4 did two things at once, and cannot separate them: the card came out and the process was new. Either one already asks for a PIN on its own. **P2e is unreadable.**
+- **Whether a timer clears it.** Nothing measured rules out a timer longer than 11 minutes.
+- **Its form in memory.**
+
+**A clean E4, and whether it is worth it.** One tray agent, the same PID before and after, read from the watcher:
+1. sign (the PIN asked);
+2. sign (none: the control);
+3. card out for five seconds, back in, the agent left running;
+4. sign.
+
+The Start menu's shortcut starts `open`, which ends with its window, so the agent must be `tray` (the `Run` entry starts it at sign-in). **Worth repeating.** It answers the one question a person can act on: whether taking the card out is enough. E11 cannot be closed without it. It costs one PIN entry more than it saves.
+
+### SPEC §6.5, and which half E2 refuted
+
+SPEC §6.5: "Measurement on real hardware established: after the user enters the PIN once, **the card keeps the PIN cached in its own state**, independent of which process is talking to it. A second process on the same machine can therefore sign without being asked for a PIN, for as long as the session lives."
+
+- **"A second process on the same machine can therefore sign without being asked for a PIN": refuted, for the route measured.**
+  - A second process going through Windows' CNG, as any Windows program would, was refused at 19:24:01. It could only have signed by asking. The agent held the PIN at that moment (E1b).
+  - So through CNG the PIN *is* a boundary between processes. §6.5 says it is not, and gives that as the reason the consent screen is the only gate.
+- **"The card keeps the PIN cached in its own state, independent of which process is talking to it": untested.**
+  - A fresh CNG provider asks for the PIN without asking the card whether it is already verified. So E2 could not see the card's state.
+  - A program talking to the card directly could: raw commands over PC/SC, or a PKCS#11 module. The MUP card has one, `netsetpkcs11_x64.dll`, and the agent's workers hold it loaded. **The PKCS#11 half is untested.**
+- **"The PIN outlives the session": held** (D-491), but in the process, not shown to be on the card.
+- **What this does not change:** Approve is still the only gate *inside the agent* after the first signature. That is what E11 records against F2 §4.1 and the Guide.
+- **What it does change:** D-025's reason. "The card's own cached-PIN behaviour (SPEC §6.5) means our process being the one to collect it buys no additional security." Through CNG there is no such cross-process behaviour. Whether D-025's decision still stands on other grounds is the owner's.
+
+### The flashes: Windows Terminal, once for every child
+
+From the watcher, E3's preparation (E4's is the same, two minutes later):
+- **19:34:45.302–19:34:45.958: three probe children,** one at a time: 18408, 17928, 12252. Each lives 0.19–0.24 s.
+- **19:34:45.958–19:34:47.368: then three workers that stay:** 19420, 18860, 16608, until the process ends.
+- **For every child:**
+  - a `conhost.exe` child of it, which lives 0.15–0.18 s;
+  - **a new visible top-level window of class `CASCADIA_HOSTING_WINDOW_CLASS`,** 1129×635, owned by `WindowsTerminal.exe` (PID 9576);
+  - and a 0×0 `PseudoConsoleWindow`.
+- **Six windows per preparation.** That is the flash.
+- **The agent's own start did the same,** once: 17364 at 19:34:25.403, and 14560 at 19:36:19.972.
+- **E1 and E1b started no children,** because the tray agent kept its workers from the first preparation. Neither had a flash (the owner), as P2f predicted.
+
+**Why the window is drawn:**
+- `liro-bridge.exe` is a console program. A child whose parent has no console is given one before `main` runs.
+- **On this machine, Windows hands every new console to Windows Terminal,** the default terminal: `HKCU\Console\%%Startup` sets neither `DelegationConsole` nor `DelegationTerminal`, so Windows chooses, and Terminal was already running.
+- **Terminal draws its window before the child's `FreeConsole` lands,** about 0.15 s later. Then the window goes again.
+- **D-254 measured the opposite,** no window ever drawn. That was the agent's own launch, under conditions it did not record. Here it fails for the agent's launch too.
+- **Not measured:** whether it differs with Terminal not running, or with conhost as the default.
+
+### The minute
+
+**E1b, with no PIN and no new children,** in the log:
+- `documents added` 19:32:29.9;
+- the last line before signing (the MUP root's AIA warning) 19:32:55.5;
+- the `/DSS` warning 19:33:49.0;
+- the audit entry 19:33:53.4.
+
+**53.5 s of it is B-LT's evidence for the signer's certificate,** which can never be embedded:
+- **MUP's OCSP:** `ocsp.mup.gov.rs:80` accepts no connection. curl, now: 10.0 s to time out, twice. Our code makes two attempts of 10 s: **20 s.**
+- **MUP's CRL:** 29,859,134 bytes, followed through a 302 to `crl.mup.gov.rs`. curl, now: 13.1 s and 16.0 s, about 2 MB/s.
+  - **Our limit is 30 s** (`crlTimeout`), and some downloads miss it. E1b and E3 logged "no OCSP response or CRL could be had" (the download timed out). D-491's runs and E4 logged "larger than the cap" (it arrived).
+  - **Either way, 13–30 s.**
+- **Then 4 s more,** after the `/DSS` warning, before the audit entry.
+
+**Fetched afresh every time:**
+- **OCSP: once per batch.** `EndpointMemory` remembers failures for one batch only (`memory.go`, "never to the process").
+- **The CRL: once per document.** A CRL that arrives and is too large is not a failure, so nothing remembers it (`fetchCRL` returns `TooLarge` without `mem.remember`). A batch of ten MUP documents downloads 300 MB, to embed none of it.
+- **This happens on the default too.** The best available tries B-LT for every MUP signature and keeps B-T after paying for the attempt.
+
+**The owner's guess was half right:** the CRL every time, and also OCSP's 20 s, every batch.
+
+### P2, against the result
+
+- **Held:**
+  - P2b (E2 refused);
+  - P2d (E3 asked once);
+  - P2f (no children and no flash in E1);
+  - P2g: three probes one at a time, then three workers that stay, one console window each. The class is `CASCADIA_HOSTING_WINDOW_CLASS`, owned by Windows Terminal;
+  - P2i (E1b, no PIN).
+- **P2a failed as written,** and is unreadable: the sleep (D-492).
+- **P2c half failed.** The workers ended with the agent, which held. "No console window anyone sees" at start failed: Terminal drew one.
+- **P2e: unreadable** (E4's two changes).
+- **P2h: moot.** E4's process was new, so its preparation was E3's.
+- **Not predicted:** the Start menu starts `open`, not `tray`. So E3's agent ended with its window, and nothing is running now.

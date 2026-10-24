@@ -113,10 +113,18 @@ Row 1.2 done: both halves held. **Held:** P1d–P1k, P1m and P1o (as entry 322).
 - **E2:** refused, `NTE_SILENT_CONTEXT`, at 19:24:01. **P2b held.** No signature was made.
 - **P2f held:** no flash in E1 (the owner), and no new discovery in the log.
 
-## P2, added before it runs: E1b, the control for E2 (written 19:2x, after E2)
+## P2, added before it runs: E1b, the control for E2 (written 19:25, after E2)
 
 E2's refusal means "per process" only if the agent still held the PIN when E2 ran. **E1b:** sign `Desktop\liro-s35\e1b.pdf` (`b9749fdb…`) in the same agent, PID 14168, with nothing else changed.
 
 | | measured | predicted |
 |---|---|---|
 | P2i | E1b, a PIN prompt (the owner's eyes; a `Credential Dialog Xaml Host` line in the log) | **None.** Audit entry 324: `approved`, `B-T`. If the PIN **is** asked, E2 is unreadable: the agent may have lost the PIN before E2 ran, and E2 must be repeated straight after a signature that is seen to need none |
+
+## P2, read whole — in D-493
+
+- **Held:** P2b, P2d, P2f, P2g and P2i.
+- **Failed:** P2a as written, unreadable because of the sleep. P2c half: Windows Terminal drew a window at the agent's start.
+- **Unreadable:** P2e. In E4 the card came out *and* the process was new.
+- **Moot:** P2h.
+- **A clean E4,** one tray agent across the card change, is described in D-493.
