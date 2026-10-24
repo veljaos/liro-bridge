@@ -48805,7 +48805,7 @@ Read with curl, without reading the body:
   - **The Explorer verb and the `liro-bridge:` handler** name the installed binary too. That says nothing about 20:41: the 21:00 agent rewrites both at its start.
 - **The machine was restarted, not only signed out:** `LastBootUpTime` 20:59:23, `explorer.exe` 20:59:47.
 - **The agent:** PID 14140, `"…\Programs\Liro Bridge\liro-bridge.exe" tray`, created 21:00:01, parent `explorer.exe` (8076). The installed binary (`ab3e628c…3b3a`), its start line `commit 67695f6` at 21:00:02. No other `liro-bridge.exe` was running, and it had no workers.
-- **The watcher:** `flashwatch2.py`, the same bytes as D-494's (`4bcda164…f460`), from 21:54:00 for an hour.
+- **The watcher:** `flashwatch2.py`, the same bytes as D-494's (`4bcda164…f460`), started at 21:54:00 for an hour. It watched until 22:24:48, when the machine went to sleep (Kernel-Power 42, "Application API"), and ended on waking at 23:16:16 (122,150 polls). P3 (22:04–22:08) is inside the watched part. The agent was still 14140 after the wake.
 - **Not done:** the machine was not kept awake. It sleeps after 15 minutes idle on AC, and P3 ran within four minutes of activity.
 
 ### The run
