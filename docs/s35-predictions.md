@@ -162,7 +162,7 @@ If anything asks for the PIN twice, stop: the card has three attempts.
 - **Not predicted:** Windows' smart-card audit log shows every PIN-less signature as a fresh verification from the agent's process.
 - **Not done from the setup:** the machine was not kept awake. The run took four minutes of activity, under the 15-minute sleep.
 
-## P4 — one signature in 14140 after its sleep: did the sleep, or something in 51+ minutes, clear the PIN? (written 2026-10-24 23:2x, before it runs)
+## P4 — one signature in 14140 after its sleep: did the sleep, or something in 51+ minutes, clear the PIN? (written 2026-10-24 23:19, before it runs)
 
 **Why:** E1 was asked for the PIN after a 75-minute sleep and two and a half hours (D-492), and D-495 guessed that a reader powered down in sleep looks like a removed card. 14140 has now slept too.
 
