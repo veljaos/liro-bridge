@@ -49020,3 +49020,24 @@ Its predictions are in `docs/s35-predictions.md`, committed with this entry. **N
 - **P8c held at 100 %:** the whole origin visible, both buttons on screen, no scroll bar. **But only with nothing to spare,** and the owner's question is not P8c's: the smaller room that a scale or a text size gives.
 - **P8d held:** the list absent; the refusal logged; no box.
 - **Step 3 (2.2 and the agent's box) has not started.**
+
+## D-500 — P9's R1 measured nothing: the owner quit 14140 by mistake before it, my link then made `open-link` the agent, and my script, looking for 14140, neither photographed nor closed the window. It timed out unseen: R5 by accident, a person who misses the window is refused silently
+
+**Date:** 2026-10-24/25. **Phase:** F12, the worklist (session 35). **Predictions:** P9 (`60990f9`). **The owner's words** on the clicks: "Those clicks were mine. I went looking for the display settings, opened Liro Bridge's Settings by mistake, closed them with the X and then clicked Izađi."
+
+### What happened, from the log
+
+- **23:54:08:** 14140's main window opened. At 23:54:09.7 its own Settings opened from it ("door": "settings").
+- **23:55:08:** Settings closed "from outside the page, not by Zatvori", which is the X.
+- **23:55:12:** "Izađi in the agent's own window sent quit, so the agent stops" (`trigger: pointer`). **14140 ended,** and with it its workers and the PIN it held.
+- **23:56:08, R1 (the owner had set scale 150 %, text 100 %):** my `open-link` (PID 828, from my PowerShell 6368) found no agent: "no agent is running, so this launch becomes it and takes the link". **828 became the agent** and opened the origin window. My command, waiting on `open-link` to return, never returned.
+- **My script looked for 14140's window, found nothing, and did neither of its jobs.** No photograph, no close. **I had checked the agent once, earlier, and assumed its PID.** The owner's correction: check which process owns the window **every time**, because the agent can go between runs, as it just did.
+- **23:58:09:** "cloud: nobody answered whether a server may send requests", then "the person did not allow this server". The list was still absent (23:59).
+
+### What R5 measured by accident
+
+**The owner did not see the window at all.** "It came up, sat there two minutes and timed out while I was in Windows settings. … nothing told me anything, because I never saw it."
+- **A person can miss the origin window entirely, and the refusal happens silently.** That is with the window always on top, at 150 %.
+- **Nothing is told on a timeout:** no box, no notice. The server is never contacted, so the page that sent the link hears nothing either.
+- **P9f held,** in the case that matters most: unseen.
+- **R1 is still to do.** R5 is counted as measured by this, unless the owner wants it repeated at 225 % text as written.
