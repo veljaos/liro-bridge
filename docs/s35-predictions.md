@@ -318,3 +318,44 @@ If anything asks for the PIN twice, stop: the card has three attempts.
 | P8f | Step 3, Settings | The three entries listed, the 255-character one whole or wrapped, each with Remove, within 880 points and without the page cut. Less certain: whether the page scrolls by design once the list is long. I read the page as drawn |
 | P8g | Step 3, Remove | The file then holds two entries, `https://erp.example.com` gone. The page drops the row |
 | P8h | Step 3, after | The file absent, as before |
+
+## P9 — row 2.1 under scale and text size: what a person sees when the origin window has less room (written 2026-10-24, before any of it runs)
+
+**The owner:** measure the buttons "at the smallest window height the program allows, and at 150% and 200% scaling", with Windows' text size too, "the likelier way to lose the buttons, since it grows the text and not the window". **The finding the owner wants:** what a person sees if the buttons go off the bottom; whether the window can be scrolled; whether Esc or the X count as a refusal; whether anything tells them what happened. **Not the pixel count.**
+
+**Read before it, from the code (not predictions):**
+- **The smallest height the program allows is the only one: 406 points.** The window is `WS_POPUP | WS_CAPTION | WS_SYSMENU`, with no resizing frame, and its client area is 406 points scaled by the window's DPI (`scaleForDPI`). A person cannot shorten it.
+- **The page's own design** (`intents.css`, "Task 5"):
+  - the page is fixed at the window's height (`.liro-page { height: 100vh }`, `box-sizing: border-box` everywhere);
+  - **exactly one region may scroll: the server's name** (`.identity`, a `.liro-scroll-region`, `min-height: 0; overflow-y: auto`);
+  - the two sentences and the buttons may not shrink below their content;
+  - the buttons are pushed to the bottom (`margin-top: auto`).
+  - **So when room runs short, the name is meant to shrink and scroll first.** The page as a whole scrolls only once the sentences plus the buttons no longer fit. The page sets no `overflow` on `html` or `body`.
+- **Refusals** (`askOrigin`, `origin.js`):
+  - the X: `OnClosed` → refusal;
+  - Esc: the page sends `cancel` → refusal. It needs the page to have keyboard focus. The first focus is put on "Ne dozvoli" (F5 §5.6), so Enter also refuses;
+  - no answer in 120 s → refusal, logged as "nobody answered".
+  - **Nothing is said to the person for any refusal.** `OutcomeOriginRefused` has no sentence in `cloudOutcomeKeys`. The server is never contacted, so the page that sent the link hears nothing either.
+- **Font sizes:** body 13 px, the name 16 px semibold, Segoe UI; padding 16 px; gaps 24 px.
+
+**The runs.** The owner changes each setting and tells me. **I say before every link.** Then I send the 255-character link (`https://` + 244 × `a` + `.rs`) through `open-link`, photograph the window, and close it unless the run says otherwise. The settings go back to 100 % / 100 % at the end, by the owner.
+
+| run | display scale | text size | what else |
+|---|---|---|---|
+| R1 | 150 % | 100 % | I close it (`WM_CLOSE`, the X's message) |
+| R2 | 200 % | 100 % | I close it |
+| R3 | 100 % | 150 % | I close it |
+| R4 | 100 % | 225 % (the largest) | **the owner** tries to scroll the window with the wheel, then presses Esc |
+| R5 | as R4 | as R4 | nobody touches it for 120 s: the timeout |
+
+| | measured | predicted |
+|---|---|---|
+| P9a | R1, R2 | **The same page as at 100 %,** larger. Client 630×609 and 840×812 pixels. Six lines of name, both buttons on screen, no scroll bar. Scale enlarges the window and the page together, so the page's layout in CSS pixels does not change |
+| P9b | R3, R4: does text size reach the page at all? | **Least certain of P9.** I do not know whether WebView2 applies Windows' text size to page content. **If it does not,** R3 and R4 look like 100 %, only the title bar's text grows, and text size cannot lose the buttons. **If it does,** P9c and P9d |
+| P9c | R3 (if text size reaches the page) | **The name's region shrinks and scrolls:** part of the name shows, with a scroll bar in that region. The sentences and both buttons stay on screen. A person sees a server name cut off mid-word, and has to scroll to read all of it before deciding |
+| P9d | R4 (if text size reaches the page) | **At 225 % the two sentences alone outgrow the window.** By my arithmetic: about 11 lines at about 41 px, some 450 px, against 406. Then: **the name's region shrinks to nothing, so no server name is visible at all; the buttons go off the bottom; and the page as a whole gets a scroll bar.** The wheel scrolls the page, and the buttons can be reached by scrolling. **This is the dangerous case:** a person asked "allow this server?" without the server's name on screen |
+| P9e | Esc in R4 | A refusal: the window closes; the log says "did not allow". **Only if the window has keyboard focus.** An always-on-top window that was not activated may not have it. Then Esc does nothing, and the owner says so |
+| P9f | The X (R1–R3), the timeout (R5) | Each a refusal, logged ("did not allow", "nobody answered"). **Nothing tells the person:** no box, no notice. In R5 the window simply disappears after 120 s |
+| P9g | Every run | `cloud-origins.json` still absent |
+
+**Stop** if anything asks to sign, or if Allow is pressed by anyone: that would write the list.
