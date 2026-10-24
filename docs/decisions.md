@@ -48747,7 +48747,7 @@ From the watcher, E3's preparation (E4's is the same, two minutes later):
 
 ## D-494 — D-254's flash measured again in its own setup: drawn 5 times in 5 under the same Windows Terminal, so it is not the console host; the MUP CRL's size is in its headers; D52, D53 and A38 recorded, the clean E4 written as P3
 
-**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **The owner:** "Add both to section D as their own items"; establish whether the difference from D-254 is Windows Terminal as the console host, "so D-254 reads as incomplete rather than wrong"; write down the clean E4; set out D-025, "but decide nothing — that one is mine". The watcher was stopped at the owner's word (20:00), before this. **The owner was away from the machine for all of it.** Nothing here used the card.
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **The owner:** "Add both to section D as their own items"; establish whether the difference from D-254 is Windows Terminal as the console host, "so D-254 reads as incomplete rather than wrong"; write down the clean E4; set out D-025, "but decide nothing — that one is mine". The hour-long watcher was stopped at the owner's word, before 19:56:48, when the 40 s run below began. **The owner was away from the machine for all of it.** Nothing here used the card.
 
 ### D-254 in its own setup, again
 
