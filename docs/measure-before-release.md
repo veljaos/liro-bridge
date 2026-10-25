@@ -4,7 +4,7 @@ The owner's worklist, from `docs/s33-what-ran.md` (D-472). Work it **top to bott
 
 Group 0 is mine and needs no hardware; it comes first because the rest are read through tests, and a test that cannot fail measures nothing. Everything not on this page can wait behind it.
 
-## 0. CI — mine, before yours — **0.1–0.6 done (D-473); 0.7 built (D-478), its wiring read, not run**
+## 0. CI — mine, before yours — **0.1–0.6 done (D-473); 0.7 done: built (D-478), and both halves of its rule measured with a card (D-491, D-505)**
 
 Each test was seen red on the code before its fix, then green after it. For the Windows rows that was on CI's runner (P9: run 38242378820 on the measurement commit `b5b3151`, run 38243584334 on the fix `584e019`); for the rest, in the container.
 
@@ -16,7 +16,7 @@ Each test was seen red on the code before its fix, then green after it. For the 
 | 0.4 | The origin question, the one-window slot, a good `open-link`, the tray picking up a link (F14) | Tests with a fake window, the real inbox and the real queue; the question's four answers; the slot `Sign` holds | Container, all three CI jobs that test `cmd`. **Still not a real window or a real desktop** (2.x, 3.1) |
 | 0.5 | The scheme key is written at start and removed by `uninstall-notice`, and the MSI removes it | The real `HKCU` key on CI's runner; the per-user MSI installed and removed with `/qn` | Red on the old code (key left); green after (run 38243584334). The MSI removes the key **on its own**, even with `uninstall-notice` not unregistering. Never a person's install, with dialogs |
 | 0.6 | A link dropped because eight are waiting is said to the person | The outcome reaches the notifier once per burst | Red on the old `offer` (only logged); green after, in the container and on CI |
-| 0.7 | **The default is "the best available" and a chosen level is a request (D-476)** | Default: B-T on a MUP card with **no** warning. A B-LT chosen in Settings: refused with `LEVEL_NOT_REACHED`. A configuration from before: read as the best available. | **Built (D-478).** Red on the old behaviour, then green, in the container: the configuration's default and its reading of an old file; the rule `levelIsARequest`; the Settings page in WebKitGTK. **Not run:** the line that carries the rule into a batch (`mainwindow.go`). Rows 1.2 and 1.3 measure that with a card. |
+| 0.7 | **The default is "the best available" and a chosen level is a request (D-476)** | Default: B-T on a MUP card with **no** warning. A B-LT chosen in Settings: refused with `LEVEL_NOT_REACHED`. A configuration from before: read as the best available. | **Built (D-478).** Red on the old behaviour, then green, in the container: the configuration's default and its reading of an old file; the rule `levelIsARequest`; the Settings page in WebKitGTK. ~~**Not run:** the line that carries the rule into a batch (`mainwindow.go`).~~ **Run, on both sides, with the card (2026-10-25): row 1.2 (D-491) for a level chosen in Settings, row 1.3 (D-505) for a level named by a caller — each refused `LEVEL_NOT_REACHED` with nothing saved, and the default stopped at B-T with no warning. 0.7 is measured end to end.** |
 
 **Not a row, asked for alongside group 0:** a stand-in Liro Business, run end to end (P8, D-473). It shows the path runs: link → inbox → queue → channel → signer → result. **It does not show** real HTTPS, a browser, any window, a card or the real server, so **no row below moves.**
 
