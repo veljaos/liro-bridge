@@ -108,7 +108,7 @@ func TestOpenPassesThePINEntryThroughAndTheWholeExchangeRuns(t *testing.T) {
 	asked := 0
 	entry := func(dst []byte, req pkcs11.PINRequest) (int, error) {
 		asked++
-		if req.TokenLabel != "SAVKA ODŽIĆ 200100123" {
+		if req.TokenLabel != "PETAR BOŽIĆ 000000000" { // made up (A36), in the shape of the Pošta card's label
 			t.Errorf("the entry was asked about token %q, want the canned card's label", req.TokenLabel)
 		}
 		if req.ModulePath == "" {

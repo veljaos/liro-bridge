@@ -22,7 +22,24 @@
 declare(strict_types=1);
 
 // --- README ---
-$discovery = getenv('LOCALAPPDATA') . DIRECTORY_SEPARATOR . 'Liro' . DIRECTORY_SEPARATOR . 'bridge.json';
+// Where the agent writes its port, per SPEC §14 — one path per platform.
+// This example knew only the Windows one (D6, [[D-459]]).
+function liro_discovery_file(): string {
+    $sep = DIRECTORY_SEPARATOR;
+    if (PHP_OS_FAMILY === 'Windows') {
+        return getenv('LOCALAPPDATA') . "{$sep}Liro{$sep}bridge.json";
+    }
+    $home = getenv('HOME') ?: '';
+    if (PHP_OS_FAMILY === 'Darwin') {
+        return "$home/Library/Application Support/Liro/bridge.json";
+    }
+    $runtime = getenv('XDG_RUNTIME_DIR');
+    if ($runtime !== false && $runtime !== '') {
+        return "$runtime/liro/bridge.json";
+    }
+    return "$home/.local/state/liro/bridge.json";
+}
+$discovery = liro_discovery_file();
 if (!is_file($discovery)) {
     fwrite(STDERR, "Liro Bridge is not running: no $discovery\n");   // never scan ports
     exit(1);

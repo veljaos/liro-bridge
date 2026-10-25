@@ -81,10 +81,10 @@ These are permanently out of scope. Do not build them, do not leave hooks for th
 
 | Not this | Why |
 |---|---|
-| Cloud / remote signing | This product is for physical hardware only. |
+| Signing in the cloud: a key held anywhere but the person's own card or token, or a signature made with nobody present | This product is for physical hardware only. The cloud channel (`docs/phases/F14.md`, D-461) is not this and never becomes it: it is a way for a server's request to *reach the person*, who approves it in the consent window and signs with their own card — the key never leaves the card, and nothing is signed without them. A server that wants to sign by itself is out of scope permanently. |
 | Document archiving or storage | The agent writes signed files where the user says and forgets them. |
 | Multi-step signing workflows | No routing, no "waiting for second signer", no state machine. |
-| Document sharing or transfer | Nothing leaves the machine. |
+| Document sharing or transfer | Nothing leaves the machine but a request's own answer, to whoever sent the request: the program on this machine that asked over loopback, or the server a cloud request was fetched from (F14 §3.2) — never anywhere else. |
 | Verification-as-a-service | The agent verifies its own output as a self-check. It is not a validation service for third parties. |
 | Unattended / server-side signing | A human approves every batch. There is no daemon mode, no service account, no API key that bypasses consent. |
 | Certificate-based authentication (portal login) | Different call surface, different risk. Out of scope. |
@@ -160,15 +160,15 @@ These are checked in CI. A violation fails the build.
    Trust evaluation (TSL, OCSP, chain building) is pure and independently testable. `internal/errs` is a dependency-free leaf carrying only the error-code vocabulary; importing it does not compromise that property. No other `internal/` package may be imported.
 
 4. **`internal/api`, `internal/ui`, `internal/cli` MUST NOT import each other.**
-   Three independent front doors onto the same core.
+   Three independent front doors onto the same core. `internal/cloud`, the cloud channel (F14), is the API door's other half — it reads its jobs by `internal/api`'s own rules — so it may import `internal/api` and is held to the same rule about `internal/ui` and `internal/cli`.
 
 5. **Nothing in `internal/` may import `cmd/`.**
 
 Implement rule enforcement in CI as a small Go program or a `go list`-based script in `scripts/check-deps.go`. Do not use a third-party linter for this; the rule set is tiny and must not silently stop working when a dependency updates.
 
-### 4.3 The four entry points
+### 4.3 The five entry points
 
-All four go through the **same** consent screen, the same session, the same audit log. They differ only in what they carry.
+All five go through the **same** consent screen, the same session, the same audit log. They differ only in what they carry.
 
 | Entry point | Caller | Sees documents | Notes |
 |---|---|---|---|
@@ -176,6 +176,7 @@ All four go through the **same** consent screen, the same session, the same audi
 | `POST /v2/sign/pdf` | Third-party ERPs | Yes | Optional module. Can be disabled at install time. |
 | Agent window / OS integration | The user directly | Yes | Drag and drop, right-click menu. `liro-bridge open` is the same window, with nothing in it. |
 | CLI | The user, from a shell | Yes | `liro-bridge sign --in x.pdf` — the same window, entered at the certificate step. There is no unattended mode. |
+| Cloud channel (`liro-bridge://` link) | A server the person allowed | As the job says — hashes, or documents where the whole-document path is on | `docs/phases/F14.md`. The agent fetches the job over HTTPS and returns the answer to the same origin; the request is the loopback protocol's own (`POST /v2/sign` or `/v2/sign/pdf`), read by the same rules. The consent window names the origin the agent connected to, never a name the server chose. |
 
 The hash-only path exists because it is the most secure arrangement available: the agent never possesses the document. It is preserved even though the agent is now capable of handling documents, because a compromised web application must not be able to extract documents through the agent.
 
@@ -807,7 +808,7 @@ For MUP the chain must be built by the agent, from AIA `caIssuers` or from a bun
 
 ### 11.9 Revocation endpoints
 
-All three support OCSP, so B-LT is achievable for all of them.
+All three publish an OCSP address. **That does not make B-LT achievable for all of them**, which this sentence claimed from F0 (2026-08-31) until D-476: MUP's OCSP responder refuses a TCP connection, measured two days after it was written and again seventeen days later (D-076), and its CRL is 30 MB, against a 5 MB cap. Pošta's is reachable over HTTP. Halcom's has never been measured.
 
 | Issuer | OCSP | CRL |
 |---|---|---|
@@ -914,14 +915,24 @@ Output that we generate is DER.
 
 ### 12.6 Signature levels
 
-| Level | Contents | Our position |
-|---|---|---|
-| B-B | Signature only | Fallback only, on explicit user choice |
-| B-T | + signature timestamp | **Minimum** |
-| B-LT | + `/DSS` with certificates, OCSP responses, CRLs | **Default** |
-| B-LTA | + archive timestamp | Optional |
+**Corrected in session 33 to describe what the program does (D-433's instruction, [[D-462]]); a draft for the owner, who has not yet read it.** The table it replaces called B-T the minimum and B-LT the default, which described a goal rather than the program.
 
-The state's own signing tool stops at B-T with a document timestamp and **no `/DSS`**. Producing B-LT puts our output ahead of it.
+| Level | Contents | What the program does |
+|---|---|---|
+| B-B | Signature only | Produced when the person chooses B-B in Settings, when the request asks for it, on the hash-only path (the caller timestamps its own CMS), and when no timestamp could be had and the person agreed to sign without one — the signing window asks every time. |
+| B-T | + signature timestamp | Produced when the timestamp authority the person entered in Settings answered. **No authority is built in** (D-433, D-434): the field is empty out of the box. |
+| B-LT | + `/DSS` with certificates, OCSP responses, CRLs | **Reached only when every certificate that needs validation data got it** — see below. A level a calling program names, or a person **chooses** in Settings, is reached or refused with `LEVEL_NOT_REACHED`, and nothing weaker is saved (C26, D-469; D-476). |
+| B-LTA | + archive timestamp | Not produced. |
+
+**The default is "the best available", not a level (the owner, D-476).** Out of the box `signatureLevel` is empty, which means the most the evidence allows: B-LT where the issuer's revocation evidence can be had, B-T where it cannot, with no warning, because nobody asked for more. The report states the level reached. A level the person picks in Settings (B-B, B-T or B-LT) is a request and is held to the rule above. A configuration written before this rule, which cannot say whether its `b-lt` was chosen or was the old default, is read as the best available; a person who wants B-LT held as a request picks it again. **Built in D-478** (`docs/measure-before-release.md` 0.7). Until then the program did what D-469 built: the Settings level was kept at B-T with a warning when B-LT fell short. Since D-478, a level chosen in Settings is also a request at the timestamp question: with no authority configured, signing without a timestamp is offered only at the best available.
+
+**What this replaces, and for how long.** From F0 (2026-08-31) until session 33 (2026-10-11), this table called B-T the "minimum" and B-LT the "default". The program could keep neither for anyone: no timestamp authority is built in, so a default install reaches neither B-T nor B-LT until the person configures one, and the citizens' ID card (MUP) cannot reach B-LT at all (D-076, D-466). The session 33 draft kept "requested by default" until D-476.
+
+**What B-LT collects**, after reading how DSS 6.5 reaches BASELINE-LT (nothing of DSS is used; it is Java and LGPL): the signer's certificate and each issuer up to a trust anchor; the signature timestamp's authority and its issuers; and each delegated OCSP responder, unless its certificate carries ocsp-nocheck. An issuer is found among the certificates at hand, then in the Trusted List's CA certificates, then at the certificate's AIA address over HTTP, and is used only if it signed the certificate. A self-signed certificate, or one listed in the Trusted List, is an anchor and needs no evidence. For each of the rest: OCSP first, then the CRL; an answer is used only if its signature verifies under the issuer (or a responder the issuer certified) and it says good or revoked — *unknown* proves nothing. Evidence no newer than the timestamp is asked for once more and, if still no newer, embedded and reported. A `/DSS` already in the document is kept and added to. Only `http` and `https` are dialled: `ldap://` addresses are skipped, and **LDAP is not to be built** (the owner, D-470): the one Serbian certificate published only over LDAP, Pošta's intermediate, is in the Trusted List.
+
+**A revoked certificate.** If the evidence says the signer's certificate or one of its issuers is revoked, **nothing is saved** and the document fails with `CERT_REVOKED`. If it says the timestamp authority or a responder is revoked, the document is kept at B-T and B-LT is not claimed.
+
+**Whether a Serbian signature reaches B-LT is not answered.** MUP's OCSP responder has refused every request measured and its CRL is over the 5 MB cap (D-076); Pošta's issuer is in the Trusted List, so its chain completes, but no Pošta B-LT signature has been made since that was read (D-281, session 33). The state's own signing tool stops at B-T with a document timestamp and no `/DSS`.
 
 ### 12.7 Timestamp authorities
 

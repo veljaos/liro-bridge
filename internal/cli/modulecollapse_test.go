@@ -21,7 +21,7 @@ import (
 // *given* value rather than one computed here: Gather takes the enumerating
 // backend's word for it, exactly as it does in the product, so a test that
 // recomputed it would be checking something Gather never does.
-const collapseThumb = "AF5063BB74378BD503AB46DD08AEAD205BA2AA54"
+const collapseThumb = "00112233445566778899AABBCCDDEEFF00112233" // made up (A36)
 
 func collapseCertificate(t *testing.T) ([]byte, string) {
 	t.Helper()

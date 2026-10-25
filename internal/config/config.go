@@ -61,8 +61,11 @@ type Config struct {
 	// as a setting per F5 §7. "document.pdf" -> "document-signed.pdf".
 	OutputSuffix string `json:"outputSuffix"`
 
-	// SignatureLevel is "b-b", "b-t" or "b-lt" (SPEC §12.6); B-LT is the
-	// project's default.
+	// SignatureLevel is "", "b-b", "b-t" or "b-lt" (SPEC §12.6). Empty,
+	// the default, is "the best available": B-LT where the issuer's
+	// evidence can be had, B-T where it cannot, with no warning. A level
+	// set here was chosen, and is a request: reached, or refused with
+	// LEVEL_NOT_REACHED (D-476).
 	//
 	// "b-b" is a deliberate decision, not a fallback: a user who has
 	// settled that they do not want a timestamp has said so once, here,
@@ -70,6 +73,13 @@ type Config struct {
 	// §12.6 calls B-B "fallback only, on explicit user choice" — this
 	// field is where that explicit choice lives.
 	SignatureLevel string `json:"signatureLevel"`
+
+	// SignatureLevelChosen says that SignatureLevel was chosen, as it is
+	// after D-476 whenever it is not empty. It exists for one value: a
+	// "b-lt" written before D-476 may be the old default or a choice,
+	// and cannot say which, so without this mark it is read as the best
+	// available (Load). Settings writes it with every level it saves.
+	SignatureLevelChosen bool `json:"signatureLevelChosen,omitempty"`
 
 	// VisibleStamp requests the visual signature stamp (SPEC §13) for
 	// signatures started from the consent window. On by default: a
@@ -269,7 +279,7 @@ const (
 
 	defaultStartWithWindows   = true
 	defaultOutputSuffix       = "-signed"
-	defaultSignatureLevel     = "b-lt"
+	defaultSignatureLevel     = "" // the best available (D-476)
 	defaultUpdateCheckEnabled = true
 	defaultVisibleStamp       = true
 	defaultStampPosition      = "bottom-right"
@@ -303,6 +313,7 @@ const (
 // (SPEC §12.6). B-B is included because a user may decide against a
 // timestamp deliberately; it is never selected for them.
 var validSignatureLevels = map[string]bool{
+	"":     true, // the best available, the default (D-476)
 	"b-b":  true,
 	"b-t":  true,
 	"b-lt": true,
@@ -421,7 +432,23 @@ func Load(path string) (Config, error) {
 	}
 
 	validate(&cfg)
+	readLevelFromBeforeTheBestAvailable(&cfg)
 	return cfg, nil
+}
+
+// readLevelFromBeforeTheBestAvailable is D-476's rule for a
+// configuration written before it. Until then the default was "b-lt"
+// and Settings wrote whichever radio was selected, so a "b-lt" with no
+// mark may be a choice or may be the default, and is read as the best
+// available: reading it as a request would refuse every MUP holder who
+// ever pressed Save. A "b-t" or "b-b" was never a default, so it was a
+// choice. After this, a level that is set is a chosen one.
+func readLevelFromBeforeTheBestAvailable(cfg *Config) {
+	if cfg.SignatureLevel == "b-lt" && !cfg.SignatureLevelChosen {
+		slog.Info("config: a b-lt from before the best available cannot say whether it was chosen; read as the best available (D-476)")
+		cfg.SignatureLevel = ""
+	}
+	cfg.SignatureLevelChosen = cfg.SignatureLevel != ""
 }
 
 // validate replaces any invalid field with its default, logging a warning

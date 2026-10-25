@@ -48,6 +48,8 @@ func (unsupportedConn) signHash(ncryptKeyHandle, []byte) ([]byte, error) {
 
 func (unsupportedConn) freeKey(ncryptKeyHandle) error { return nil }
 
+func (unsupportedConn) releaseRetained(ncryptKeyHandle) {}
+
 func (unsupportedConn) probePresence(string) (bool, error) {
 	return false, fmt.Errorf("windowscng: not supported on this platform")
 }

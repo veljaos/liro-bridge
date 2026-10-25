@@ -4,6 +4,7 @@ package ui
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"strings"
 	"testing"
@@ -95,6 +96,13 @@ func openRealPage(t *testing.T, page string, width, height int) Window {
 		Height:      height,
 	})
 	if err != nil {
+		// A machine whose bubblewrap can make a sandbox and that has no
+		// display — a container run as anyone, CI's runners aside — is
+		// loadedWebView's case too, and is a skip there; it was a failure
+		// here ([[D-460]], found running check.sh in one).
+		if errors.Is(err, ErrNoDisplay) {
+			t.Skip("no windowing system on this machine: ", err)
+		}
 		t.Fatalf("NewWindow(%s): %v", page, err)
 	}
 	t.Cleanup(func() { _ = w.Close() })

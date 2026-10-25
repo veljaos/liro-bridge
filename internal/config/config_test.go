@@ -95,15 +95,16 @@ func TestLoadOutOfRangePortIsReplaced(t *testing.T) {
 func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	want := Config{
-		Locale:             "sr-Cyrl",
-		LogLevel:           "debug",
-		PortRangeStart:     18000,
-		PortRangeEnd:       18010,
-		StartWithWindows:   false,
-		TSAURL:             "https://tsa.example.rs",
-		OutputSuffix:       "-signed",
-		SignatureLevel:     "b-t",
-		UpdateCheckEnabled: false,
+		Locale:               "sr-Cyrl",
+		LogLevel:             "debug",
+		PortRangeStart:       18000,
+		PortRangeEnd:         18010,
+		StartWithWindows:     false,
+		TSAURL:               "https://tsa.example.rs",
+		OutputSuffix:         "-signed",
+		SignatureLevel:       "b-t",
+		SignatureLevelChosen: true, // as Settings writes it (D-476)
+		UpdateCheckEnabled:   false,
 		// Task 1 (F5 fourth-real-run review): the stamp choice is
 		// persisted like any other setting, so the round trip has to
 		// carry it. Both values are deliberately not the defaults.
@@ -378,5 +379,59 @@ func TestLoadStillRejectsGenuineRubbish(t *testing.T) {
 				t.Errorf("Locale = %q, want the default %q", cfg.Locale, defaultLocale)
 			}
 		})
+	}
+}
+
+// The default is "the best available", not a level (D-476, worklist
+// 0.7): out of the box signatureLevel is empty, and it stays empty
+// through a save and a load, rather than being replaced by a level the
+// way an invalid value is.
+func TestTheDefaultLevelIsTheBestAvailable(t *testing.T) {
+	if got := Default().SignatureLevel; got != "" {
+		t.Fatalf("the default signatureLevel is %q; D-476 makes it empty, the best available", got)
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Save(path, Default()); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SignatureLevel != "" || cfg.SignatureLevelChosen {
+		t.Fatalf("after a save and a load the level is %q (chosen %v); want empty, not chosen", cfg.SignatureLevel, cfg.SignatureLevelChosen)
+	}
+}
+
+// A configuration written before D-476 cannot say whether its b-lt was
+// chosen or was the old default, so it is read as the best available.
+// A b-t or b-b was always a choice — the default was never either — so
+// it stays, as a request. And a b-lt chosen after D-476 says so, and
+// stays.
+func TestALevelFromBeforeTheBestAvailableIsReadByWhatItCouldHaveMeant(t *testing.T) {
+	for _, tc := range []struct {
+		file       string
+		level      string
+		chosen     bool
+		whyThisWay string
+	}{
+		{`{"signatureLevel":"b-lt"}`, "", false, "the old default, or a choice — it cannot say which"},
+		{`{"signatureLevel":"b-t"}`, "b-t", true, "never a default, so a choice"},
+		{`{"signatureLevel":"b-b"}`, "b-b", true, "never a default, so a choice"},
+		{`{"signatureLevel":"b-lt","signatureLevelChosen":true}`, "b-lt", true, "chosen after D-476, and says so"},
+		{`{"signatureLevel":""}`, "", false, "the best available"},
+		{`{}`, "", false, "nothing written: the default"},
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		if err := os.WriteFile(path, []byte(tc.file), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.SignatureLevel != tc.level || cfg.SignatureLevelChosen != tc.chosen {
+			t.Errorf("%s: level %q, chosen %v; want %q, %v (%s)", tc.file, cfg.SignatureLevel, cfg.SignatureLevelChosen, tc.level, tc.chosen, tc.whyThisWay)
+		}
 	}
 }

@@ -1,0 +1,62 @@
+/* The window that asks whether a server may send requests (F14 §2).
+   The pairing window's shape — a quiet label above its value, the one
+   caller-supplied value in the only region that scrolls, the buttons
+   where every window keeps them — with a sentence where the code was. */
+body {
+  padding: var(--liro-space-4);
+}
+
+main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-5);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-1);
+  min-width: 0;
+}
+
+.field-label {
+  margin: 0;
+  font-size: var(--liro-font-size-small);
+  font-weight: var(--liro-font-weight-regular);
+  color: var(--liro-color-text-secondary);
+}
+
+/* An origin is one unbroken token, up to api.MaxOriginLength; it breaks
+   inside the word rather than widening the window (D-096). */
+.field-value {
+  margin: 0;
+  font-size: var(--liro-font-size-heading);
+  font-weight: var(--liro-font-weight-semibold);
+  color: var(--liro-color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+}
+
+.explain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--liro-space-2);
+}
+
+.explain p {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--liro-space-2);
+  margin-top: auto;
+}

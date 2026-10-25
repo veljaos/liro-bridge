@@ -179,7 +179,7 @@ func TestPlacedPositionSurvivesSigning(t *testing.T) {
 	const wantX, wantY float64 = 210, 333
 
 	result, err := SignDocument(context.Background(), buildMinimalPDF(t), sess, Options{
-		OnTSAFailureAbort: false,
+		SaveWithoutTimestamp: true,
 		Stamp: &StampOptions{
 			Label: "Digitally signed",
 			UseXY: true, X: wantX, Y: wantY,

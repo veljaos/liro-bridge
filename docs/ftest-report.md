@@ -408,7 +408,7 @@ almost all of them read:
       Kvalifikovan    da — kvalifikovani sertifikat na QSCD uređaju
       Razlog       kartica nije prisutna
       Važi        2025-10-08 do 2030-10-08
-      Otisak   …5BA2AA54
+      Otisak   [thumbprint removed]
       Smeštaj      pametna kartica
 ```
 
@@ -690,7 +690,7 @@ soft token compiled in):
   Generic Smart Card Reader Interface 0 — kartica prisutna
 
 Sertifikati: 2
-  [1] Savka Odžić ✗ neupotrebljiv    Pošta Srbije CA 1   kartica nije prisutna
+  [1] [name removed] ✗ neupotrebljiv    Pošta Srbije CA 1   kartica nije prisutna
   [2] ВЕЉКО СТАНОЈЕВИЋ ✓ upotrebljiv  MUP Gradjani CA 4
 Lista poverenja: sekvenca 36, izdata 2026-05-20 (109 dana, upravo osvežena)
 ```

@@ -3,8 +3,12 @@
 package main
 
 import (
+	"log"
+	"os"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 var (
@@ -72,5 +76,86 @@ func detachAllocatedConsole() {
 	if n != 1 {
 		return
 	}
-	_, _, _ = procFreeConsole.Call()
+	// Which standard handles name the console, read before it goes. A
+	// caller that redirected one handed over a pipe or a file, which
+	// FreeConsole does not touch and nothing here may replace — that is
+	// how `--version` reaches a script.
+	onConsole := consoleStandardHandles()
+	if r, _, _ := procFreeConsole.Call(); r == 0 {
+		return
+	}
+	pointStandardHandlesAtNUL(onConsole)
+}
+
+// stdHandles are the three standard handles, in os.Stdin, os.Stdout,
+// os.Stderr order.
+var stdHandles = [3]uint32{windows.STD_INPUT_HANDLE, windows.STD_OUTPUT_HANDLE, windows.STD_ERROR_HANDLE}
+
+// consoleStandardHandles reports, for each standard handle, whether it
+// is a console handle — GetConsoleMode answers for a console's input or
+// screen buffer and refuses a file, a pipe and NUL alike.
+func consoleStandardHandles() [3]bool {
+	var out [3]bool
+	for i, std := range stdHandles {
+		h, err := windows.GetStdHandle(std)
+		if err != nil || h == 0 || h == windows.InvalidHandle {
+			continue
+		}
+		var mode uint32
+		out[i] = windows.GetConsoleMode(h, &mode) == nil
+	}
+	return out
+}
+
+// retiredStdFiles keeps the *os.File values the os package made at
+// start, for the standard handles replaced below, alive for the life of the process. Each closes its handle when
+// it is collected, and after FreeConsole the number each holds may be
+// another file's — bridge.log's, crash.log's, the audit chain's — so a
+// collected one would close that file under whoever has it.
+var retiredStdFiles []*os.File
+
+// pointStandardHandlesAtNUL gives the three standard handles somewhere
+// harmless to point once the console they named is gone.
+//
+// FreeConsole closes the console the loader made, and the standard
+// handles keep its numbers. A number that has been closed is given to
+// the next handle opened, so the first file this process opened after
+// detaching — bridge.log, in D-454's watch — became "standard error"
+// as far as anything asking GetStdHandle was concerned: the runtime's
+// fatal errors (runtime.write1 asks on every write), os.Stderr, a DLL's
+// C runtime. D-454 watched the crash text land in bridge.log that way,
+// which was luck: the next file might have been the audit chain or a
+// document being signed (C21 row 11, D44, [[D-457]]).
+//
+// So: each standard handle that named the console — only those; a
+// redirected one is the caller's — is replaced by a handle to NUL, and
+// the os package's file for it and the log package's writer re-pointed
+// at the new one. What was written to a console nobody could see now goes
+// nowhere, which is where it went before, without the chance of going
+// somewhere else. Nothing is said on failure, for detachAllocatedConsole's
+// reason: there is nowhere yet to say it.
+func pointStandardHandlesAtNUL(onConsole [3]bool) {
+	nul, err := windows.UTF16PtrFromString("NUL")
+	if err != nil {
+		return
+	}
+	files := [3]**os.File{&os.Stdin, &os.Stdout, &os.Stderr}
+	access := [3]uint32{windows.GENERIC_READ, windows.GENERIC_WRITE, windows.GENERIC_WRITE}
+	for i, std := range stdHandles {
+		if !onConsole[i] {
+			continue
+		}
+		h, err := windows.CreateFile(nul, access[i], windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
+			nil, windows.OPEN_EXISTING, 0, 0)
+		if err != nil {
+			continue
+		}
+		if err := windows.SetStdHandle(std, h); err != nil {
+			_ = windows.CloseHandle(h)
+			continue
+		}
+		retiredStdFiles = append(retiredStdFiles, *files[i])
+		*files[i] = os.NewFile(uintptr(h), "NUL")
+	}
+	log.SetOutput(os.Stderr)
 }

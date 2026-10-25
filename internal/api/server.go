@@ -25,9 +25,11 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -255,6 +257,19 @@ func withProtocolRules(next http.Handler) http.Handler {
 				errs.New(errs.CodeRequestInvalid, errors.New("preflight is not answered")))
 			return
 		}
+		// A client that names a version this agent does not speak is told
+		// so, with the versions it does, before any handler reads a byte
+		// of a request it would misread (F14 §8, [[D-461]]). No header is
+		// version 2.
+		if h := r.Header.Get(ProtocolHeader); h != "" {
+			v, err := strconv.Atoi(strings.TrimSpace(h))
+			if err != nil || !speaks(v) {
+				fail(w, errs.WithDetails(errs.CodeProtocolUnsupported,
+					fmt.Errorf("the client asked for protocol %q", h),
+					map[string]any{"protocolVersions": ProtocolVersions}))
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -324,7 +339,7 @@ func statusFor(code errs.Code) int {
 		return http.StatusConflict
 	case errs.CodeRateLimited:
 		return http.StatusTooManyRequests
-	case errs.CodeVersionTooOld:
+	case errs.CodeVersionTooOld, errs.CodeProtocolUnsupported:
 		return http.StatusUpgradeRequired
 	case errs.CodeInternal:
 		return http.StatusInternalServerError

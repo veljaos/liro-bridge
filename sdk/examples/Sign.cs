@@ -45,11 +45,37 @@ internal static class Liro
     /// path — under folder redirection, or in a process that inherited a
     /// different environment, they disagree and this looks in the wrong
     /// place. Measured: it did.
+    ///
+    /// On macOS and Linux the file is where SPEC §14 puts it there; this
+    /// example knew only the Windows one (D6, [[D-459]]).
+    private static string DiscoveryFile()
+    {
+        var home = Environment.GetEnvironmentVariable("HOME") ?? "";
+        // Environment.OSVersion and a directory every Mac has, rather than
+        // OperatingSystem.IsWindows/IsMacOS: those are .NET 5 and later, and
+        // this file is also compiled with the csc.exe inside Windows' own
+        // .NET Framework 4, which has neither.
+        if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+        {
+            var local = Environment.GetEnvironmentVariable("LOCALAPPDATA")
+                        ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            return Path.Combine(local, "Liro", "bridge.json");
+        }
+        if (Directory.Exists("/System/Library/CoreServices"))
+        {
+            return Path.Combine(home, "Library", "Application Support", "Liro", "bridge.json");
+        }
+        var runtime = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
+        if (!string.IsNullOrEmpty(runtime))
+        {
+            return Path.Combine(runtime, "liro", "bridge.json");
+        }
+        return Path.Combine(home, ".local", "state", "liro", "bridge.json");
+    }
+
     private static void Discover()
     {
-        var local = Environment.GetEnvironmentVariable("LOCALAPPDATA")
-                    ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var path = Path.Combine(local, "Liro", "bridge.json");
+        var path = DiscoveryFile();
         if (!File.Exists(path))
         {
             throw new FileNotFoundException("Liro Bridge is not running: no " + path, path);

@@ -92,13 +92,17 @@ func fakeConcat(parts ...[]byte) []byte {
 	return out
 }
 
-// buildFakeTSTResponse builds a well-formed (definite-length DER),
+// buildFakeTSTResponseWithCerts builds a well-formed (definite-length DER),
 // PKIStatus-granted TimeStampResp over digest/nonce with the given
 // genTime — enough for internal/pades/tsa.Client's own validation
 // (nonce echo, message imprint, ±10 minute skew) to accept, without a
 // real TSA's signature (unsignerInfos is empty; nothing here verifies
 // the token's own CMS signature).
-func buildFakeTSTResponse(t *testing.T, digest []byte, nonce *big.Int, genTime time.Time) []byte {
+//
+// certs, when there are any, go in the SignedData's certificates field,
+// as a TSA that honours certReq puts them — what B-LT needs to give the
+// timestamp's own chain validation data ([[D-462]]).
+func buildFakeTSTResponseWithCerts(t *testing.T, digest []byte, nonce *big.Int, genTime time.Time, certs [][]byte) []byte {
 	t.Helper()
 	messageImprintDER := fakeDERSeq(fakeDERSeq(fakeMarshal(t, oidSHA256Test), []byte{0x05, 0x00}), fakeDEROctet(digest))
 	tstInfo := fakeDERSeq(fakeConcat(
@@ -115,11 +119,21 @@ func buildFakeTSTResponse(t *testing.T, digest []byte, nonce *big.Int, genTime t
 		fakeMarshal(t, big.NewInt(1)),
 		fakeDERSet(fakeDERSeq(fakeMarshal(t, oidSHA256Test), []byte{0x05, 0x00})),
 		encapContentInfo,
+		fakeCertificates(certs),
 		fakeDERSet(), // no signerInfos needed for this test
 	))
 	contentInfo := fakeDERSeq(fakeConcat(fakeMarshal(t, asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}), fakeDERExplicit(0, signedData)))
 	status := fakeDERSeq(fakeMarshal(t, big.NewInt(0))) // PKIStatusInfo{status: granted}
 	return fakeDERSeq(fakeConcat(status, contentInfo))
+}
+
+// fakeCertificates is SignedData's certificates [0] IMPLICIT SET, or
+// nothing when there are none (the field is optional).
+func fakeCertificates(certs [][]byte) []byte {
+	if len(certs) == 0 {
+		return nil
+	}
+	return append([]byte{0xA0}, fakeAppendLength(fakeConcat(certs...))...)
 }
 
 // fakeTSAServer starts an httptest server implementing enough of RFC
@@ -130,6 +144,12 @@ func buildFakeTSTResponse(t *testing.T, digest []byte, nonce *big.Int, genTime t
 // fixed-value closure, but the shape costs nothing extra).
 func fakeTSAServer(t *testing.T, genTimeFor func(digest []byte) time.Time) *httptest.Server {
 	t.Helper()
+	return fakeTSAServerWithCerts(t, genTimeFor, nil)
+}
+
+// fakeTSAServerWithCerts is fakeTSAServer whose tokens carry certs.
+func fakeTSAServerWithCerts(t *testing.T, genTimeFor func(digest []byte) time.Time, certs [][]byte) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -139,7 +159,7 @@ func fakeTSAServer(t *testing.T, genTimeFor func(digest []byte) time.Time) *http
 		if _, err := asn1.Unmarshal(body, &req); err != nil {
 			t.Fatalf("fakeTSAServer: parsing TimeStampReq: %v", err)
 		}
-		resp := buildFakeTSTResponse(t, req.MessageImprint.HashedMessage, req.Nonce, genTimeFor(req.MessageImprint.HashedMessage))
+		resp := buildFakeTSTResponseWithCerts(t, req.MessageImprint.HashedMessage, req.Nonce, genTimeFor(req.MessageImprint.HashedMessage), certs)
 		w.Header().Set("Content-Type", "application/timestamp-reply")
 		_, _ = w.Write(resp)
 	}))

@@ -39,9 +39,29 @@ public final class Sign {
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static String base;
 
+    /**
+     * Where the agent writes its port, per SPEC §14 — one path per platform.
+     * This example knew only the Windows one (D6, [[D-459]]).
+     */
+    static Path discoveryFile() {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        String home = System.getProperty("user.home");
+        if (os.startsWith("windows")) {
+            return Paths.get(System.getenv("LOCALAPPDATA"), "Liro", "bridge.json");
+        }
+        if (os.startsWith("mac")) {
+            return Paths.get(home, "Library", "Application Support", "Liro", "bridge.json");
+        }
+        String runtime = System.getenv("XDG_RUNTIME_DIR");
+        if (runtime != null && !runtime.isEmpty()) {
+            return Paths.get(runtime, "liro", "bridge.json");
+        }
+        return Paths.get(home, ".local", "state", "liro", "bridge.json");
+    }
+
     /** Reads the per-user discovery file. Never scan ports. */
     static void discover() throws IOException {
-        Path file = Paths.get(System.getenv("LOCALAPPDATA"), "Liro", "bridge.json");
+        Path file = discoveryFile();
         Matcher m = Pattern.compile("\"port\"\\s*:\\s*(\\d+)").matcher(Files.readString(file));
         if (!m.find()) throw new IOException("no port in " + file);
         base = "http://127.0.0.1:" + m.group(1);

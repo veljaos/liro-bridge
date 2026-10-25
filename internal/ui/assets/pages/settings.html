@@ -51,27 +51,16 @@
 
     <fieldset>
       <legend data-i18n="settings.tsa_label"></legend>
-      <!-- Task 1c: two named presets, neither preselected. Choosing one
-           fills the URL below; the URL is what is actually saved, so a
-           preset is a shortcut and never a second source of truth. -->
-      <label class="tsa-preset">
-        <input type="radio" name="tsa-preset" value="freetsa" id="tsa-preset-freetsa" />
-        <span>
-          <span class="tsa-preset-name" data-i18n="settings.tsa_preset_freetsa"></span>
-          <span class="liro-badge liro-badge-warning" data-i18n="settings.tsa_preset_freetsa_warning"></span>
-        </span>
-      </label>
-      <label class="tsa-preset">
-        <input type="radio" name="tsa-preset" value="rsgov" id="tsa-preset-rsgov" />
-        <span>
-          <span class="tsa-preset-name" data-i18n="settings.tsa_preset_rsgov"></span>
-          <span class="tsa-preset-note liro-text-small" data-i18n="settings.tsa_preset_rsgov_note"></span>
-        </span>
-      </label>
+      <!-- No service is built in (D-433, D-434): the two presets that
+           were here were a hard-coded service with a friendly name. The
+           person enters the address their provider gave them; with
+           none, the signing window asks each time whether to sign
+           without a timestamp. -->
       <label class="liro-field">
         <span class="liro-field-label" data-i18n="settings.tsa_url_label"></span>
         <input type="text" id="tsa-url" data-i18n-placeholder="settings.tsa_custom_url_placeholder" />
       </label>
+      <p class="liro-text-small liro-text-secondary" data-i18n="settings.tsa_url_hint"></p>
     </fieldset>
 
     <label class="liro-field">
@@ -149,7 +138,9 @@
          who has decided against a timestamp has something to choose
          and is never asked again mid-signature. Each level says what
          it contains, in words, because "B-T" alone tells a
-         non-specialist nothing. -->
+         non-specialist nothing. The best available, the default, is
+         last: it is what is left when nobody picks a level, and B-B
+         stays first (D-476). -->
     <fieldset>
       <legend data-i18n="settings.signature_level_label"></legend>
       <label class="liro-check">
@@ -163,6 +154,10 @@
       <label class="liro-check">
         <input type="radio" name="level" value="b-lt" id="level-blt" />
         <span data-i18n="settings.level_blt"></span>
+      </label>
+      <label class="liro-check">
+        <input type="radio" name="level" value="" id="level-best" />
+        <span data-i18n="settings.level_best"></span>
       </label>
     </fieldset>
 
@@ -184,6 +179,16 @@
            keyring somebody believes is in use while it is not is the
            precise thing the warning exists to prevent. -->
       <p id="secret-store" class="liro-text-small liro-text-secondary"></p>
+    </section>
+
+    <!-- The servers whose links may put a request in front of this
+         person (F14 §2): the origin each was allowed as, verbatim, and
+         the one action that matters. Removing one means its next link
+         asks again; it never touches a request already on screen. -->
+    <section class="pairings-section">
+      <span class="liro-field-label" data-i18n="settings.cloud_origins_title"></span>
+      <p id="cloud-origins-empty" class="liro-text-small liro-text-secondary" data-i18n="settings.cloud_origins_empty" hidden></p>
+      <div id="cloud-origins"></div>
     </section>
 
     <div class="actions-row">

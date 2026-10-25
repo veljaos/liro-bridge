@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || (darwin && cgo)
 
 package pkcs11
 
@@ -15,7 +15,8 @@ import (
 	"github.com/veljaos/liro-bridge/internal/keysource"
 )
 
-// The Linux PKCS#11 layer against a real module.
+// The unix PKCS#11 layer — Linux's, and macOS's since F13 — against a
+// real module.
 //
 // **SoftHSM, not a fake**: a real PKCS#11 implementation with a real
 // PIN, real C_Login attempt counting and real CK_ULONG widths, and no
@@ -32,7 +33,12 @@ func softhsmModule(t *testing.T) (path, pin string) {
 	if pin == "" {
 		t.Skip("LIRO_SOFTHSM_PIN is not set, so there is no token to talk to and this layer is untested here")
 	}
+	if p := os.Getenv("LIRO_SOFTHSM_MODULE"); p != "" {
+		return p, pin
+	}
 	for _, p := range []string{
+		"/opt/homebrew/lib/softhsm/libsofthsm2.so", // macOS, Homebrew on Apple silicon (F13)
+		"/usr/local/lib/softhsm/libsofthsm2.so",    // macOS, Homebrew on Intel
 		"/usr/lib/softhsm/libsofthsm2.so",
 		"/usr/lib64/softhsm/libsofthsm2.so",
 		"/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so",

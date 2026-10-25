@@ -123,6 +123,12 @@ type dropTarget struct {
 	comBase
 	hwnd    uintptr
 	onFiles func([]string)
+	// thread is the OS thread RegisterDragDrop ran on. OLE binds the
+	// target to that thread's apartment, so it is what decides where a
+	// drop is delivered, and the one thing a test can read to tell a
+	// registration on the window's own thread from one made elsewhere
+	// (C21 row "Navigate"; worklist 0.1, D-473).
+	thread uintptr
 	// accept records what DragEnter decided, so DragOver answers the
 	// same thing without re-inspecting the data object on every mouse
 	// move.
@@ -284,7 +290,7 @@ var dropTargetVtblSingleton = &dropTargetVtbl{
 // It must be called on the window's own thread: RegisterDragDrop binds
 // the target to the calling thread's apartment.
 func registerDropTarget(hwnd uintptr, onFiles func([]string)) (*dropTarget, error) {
-	t := &dropTarget{hwnd: hwnd, onFiles: onFiles}
+	t := &dropTarget{hwnd: hwnd, onFiles: onFiles, thread: currentThreadID()}
 	t.vtbl = uintptr(unsafe.Pointer(dropTargetVtblSingleton))
 	t.refs = 1
 	this := pinHandler(t)
@@ -303,11 +309,19 @@ func registerDropTarget(hwnd uintptr, onFiles func([]string)) (*dropTarget, erro
 // revokeDropTarget undoes registerDropTarget and drops this package's
 // own reference to the target. OLE releases its reference inside
 // RevokeDragDrop, so the object is unpinned once both are gone.
+//
+// A refused revoke is said, because it is the one sign that OLE kept its
+// reference: the target stays pinned for the life of the process, and
+// nothing else would ever show it ([[D-457]]).
 func revokeDropTarget(hwnd uintptr, t *dropTarget) {
 	if t == nil {
 		return
 	}
-	_, _, _ = procRevokeDragDrop.Call(hwnd)
+	if r, _, _ := procRevokeDragDrop.Call(hwnd); int32(r) < 0 {
+		slog.Warn("ui: a drop target could not be given back; it stays registered",
+			"hwnd", fmt.Sprintf("%#x", hwnd), "class", windowClass(hwnd),
+			"hresult", fmt.Sprintf("0x%08X", uint32(r)))
+	}
 	t.release()
 }
 

@@ -157,7 +157,8 @@ func runAgent(cfg config.Config, version string, withWindow bool) (code int, sta
 	// agent — the process that is running when nobody is looking at a
 	// window — and because one machine's user session must have exactly
 	// one of it (SPEC §14.1).
-	protocol, protocolErr := startProtocol(cfg, version, pairings)
+	signer, registry := newProtocolSigner(cfg), newJobRegistry()
+	protocol, protocolErr := startProtocol(cfg, version, pairings, signer, registry)
 	if protocolErr != nil {
 		// Not fatal. An agent that cannot serve the protocol can still
 		// sign for the person sitting at it, and saying so in the log is
@@ -206,7 +207,14 @@ func runAgent(cfg config.Config, version string, withWindow bool) (code int, sta
 	// its request over, and for documents the Explorer verb or a second
 	// launch left in the inbox. Without this the handover would be a
 	// message nobody reads.
-	go watchForHandovers(cfg, windows, quit, &openedAWindow, quitOnce, doors, unreachable)
+	//
+	// And for links (F14 §1): a liro-bridge:// link's open-link launch
+	// leaves its link in the same place, and the channel takes them one
+	// at a time. The channel does not need the loopback listener — it
+	// connects out — so it runs whether or not the protocol started.
+	links := newCloudLinks(cfg, version, signer, registry)
+	go links.run(quit)
+	go watchForHandovers(cfg, windows, quit, &openedAWindow, quitOnce, doors, unreachable, links.offer)
 
 	if withWindow {
 		openedAWindow = true
@@ -250,7 +258,11 @@ func openAgentWindow(cfg config.Config, paths []string, quitAgent func(), doors 
 // own (runShellVerb), and the window this opens takes the documents from the
 // inbox while it is up, so they reach the window already on screen rather
 // than a second one.
-func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct{}, opened *bool, quitAgent func(), doors windowDoors, unreachable bool) {
+//
+// Links are the other thing a launch leaves (F14 §1, [[D-461]]): each is
+// handed to offerLink, and never opens the main window — a link has its
+// own windows, and only if what it fetched is worth showing.
+func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct{}, opened *bool, quitAgent func(), doors windowDoors, unreachable bool, offerLink func(string)) {
 	box := jobs.NewInbox(shellInboxDir())
 	ticker := time.NewTicker(inboxPollInterval)
 	defer ticker.Stop()
@@ -260,6 +272,7 @@ func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct
 		case <-quit:
 			return
 		case <-ticker.C:
+			offerInboxLinks(box, offerLink)
 			asked, err := agentWindowWanted(box)
 			if err != nil {
 				slog.Warn("tray: reading the handover request failed", "error", err)
@@ -272,6 +285,19 @@ func watchForHandovers(cfg config.Config, windows *oneWindow, quit <-chan struct
 				slog.Debug("tray: a launch handed over while the window was already up")
 			}
 		}
+	}
+}
+
+// offerInboxLinks hands the running agent every link a launch left in the
+// inbox (open-link, F14 §1). One tick of watchForHandovers' loop, on its
+// own so a test can run it without a tray (worklist 0.4, D-473).
+func offerInboxLinks(box *jobs.Inbox, offerLink func(string)) {
+	links, err := box.TakeLinks()
+	if err != nil {
+		slog.Warn("tray: reading the links left for the agent failed", "error", err)
+	}
+	for _, link := range links {
+		offerLink(link)
 	}
 }
 

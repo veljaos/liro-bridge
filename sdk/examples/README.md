@@ -62,8 +62,8 @@ cost. So this says exactly what was executed and what was not.
 | `sign.py` | **Yes**, 104 888 bytes. |
 | `sign.go` | **Yes**, 104 888 bytes. |
 | `Sign.cs` | **Yes**, 104 888 bytes, compiled with the C# compiler that ships inside Windows (`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`). |
-| `Sign.java` | **No.** Written against `docs/PROTOCOL.md`; **never executed**, because the machine these were prepared on has no JDK. |
-| `sign.php` | **No.** Written against `docs/PROTOCOL.md`; **never executed**, because that machine has no PHP. |
+| `Sign.java` | **No.** Never run against the real agent. **Run against the SDK's stand-in agent** (`sdk/typescript/test/examples-run.test.mjs`, on every CI run that has a JDK): compiles, finds the agent through Linux's discovery file, pairs, submits a PDF, polls and writes the result — the protocol, not a signature ([[D-459]]). |
+| `sign.php` | **No.** Never run against the real agent. **Run against the stand-in agent** the same way as `Sign.java` ([[D-459]]). |
 
 The five that ran did so against a real agent built with the soft token, over a
 real loopback socket, with a real pairing window on screen and a person pressing
@@ -76,7 +76,8 @@ you](#two-things-a-windows-console-will-do-to-you) and the `LOCALAPPDATA`
 paragraph below it, and all three are fixed.
 
 **`Sign.java` and `sign.php` carry those same fixes by transcription, not by
-having been proven.** They are the same program as the five that ran, in two more
+having been proven against the real agent** — the stand-in agent shows they
+speak the protocol, not that a real signature comes back. They are the same program as the five that ran, in two more
 languages, and they are here because a Java or PHP integration is a real audience
 — but if one of them does not compile or run first time, that is why. Please
 [open an issue](https://github.com/veljaos/liro-bridge/issues).

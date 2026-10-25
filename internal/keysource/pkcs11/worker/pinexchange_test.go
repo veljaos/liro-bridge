@@ -46,7 +46,7 @@ func conversation(t *testing.T, parts ...any) *bytes.Buffer {
 var askingToken = LoginNeeds{
 	MinPINLength:     4,
 	MaxPINLength:     8,
-	TokenLabel:       "SAVKA ODŽIĆ 200100123",
+	TokenLabel:       "PETAR BOŽIĆ 000000000", // made up (A36), in the shape of the Pošta card's label
 	TokenSerial:      "0123456789",
 	CertificateLabel: "Sertifikat za potpis",
 }

@@ -264,6 +264,9 @@
     window.liroRenderStep(null);
     if (ask.state === "tsaChoice") {
       window.liroSetText(document.getElementById("tsa-reason"), ask.tsaReasonText || "");
+      // Offered only when nobody asked for a level and no authority has
+      // failed (C26, D-469); absent means not offered.
+      document.getElementById("tsa-without-btn").hidden = ask.offerWithoutTimestamp !== true;
       show("state-tsachoice");
       // Nothing that proceeds is focused first: Cancel gets it, the
       // same rule F5 §5.6 applies to Approve on the certificate step.

@@ -43,6 +43,7 @@ const KNOWN_CODES = new Set([
     'PDF_ENCRYPTED',
     'TSA_UNAVAILABLE',
     'TSA_REJECTED',
+    'LEVEL_NOT_REACHED',
     'TSA_CLIENT_CERT_UNREADABLE',
     'TSA_CLIENT_CERT_INVALID',
     'STAMP_GLYPH_MISSING',
@@ -52,6 +53,7 @@ const KNOWN_CODES = new Set([
     'OUTPUT_WRITE_FAILED',
     'OUTPUT_IN_USE',
     'VERSION_TOO_OLD',
+    'PROTOCOL_UNSUPPORTED',
     'INTERNAL',
 ]);
 /** Reports whether `code` is one this SDK's `LiroErrorCode` union names. */
@@ -121,6 +123,7 @@ const MESSAGES = {
     PDF_ENCRYPTED: 'A document is password-protected. Decrypt it first; the agent never will.',
     TSA_UNAVAILABLE: 'The timestamp authority did not answer after three attempts. Retry later, or ask for level "b-b".',
     TSA_REJECTED: 'The timestamp authority refused the request. Check the agent’s timestamp settings.',
+    LEVEL_NOT_REACHED: 'The level you named could not be reached, so nothing was saved. Ask for the level below knowingly, or leave level out.',
     TSA_CLIENT_CERT_UNREADABLE: 'The TSA client certificate configured on this machine could not be read. That is the person’s Settings, not your request.',
     TSA_CLIENT_CERT_INVALID: 'The TSA client certificate would not open — almost always a wrong password. That is the person’s Settings, not your request.',
     STAMP_GLYPH_MISSING: 'The visible stamp needs a character the embedded font does not have. `details.character` and `details.codePoint` name it.',
@@ -130,6 +133,8 @@ const MESSAGES = {
     OUTPUT_WRITE_FAILED: 'About writing a file. This happens to batches the person started locally; a request over the protocol writes nothing.',
     OUTPUT_IN_USE: 'About writing a file. This happens to batches the person started locally; a request over the protocol writes nothing.',
     VERSION_TOO_OLD: 'This client is older than the agent’s minimumClientVersion. Update the SDK.',
+    PROTOCOL_UNSUPPORTED: 'This SDK and the agent speak no version of the protocol in common. `details.protocolVersions` lists the agent’s; ' +
+        'update whichever side is older.',
     INTERNAL: 'The agent hit something it could not classify. It has logged the details locally. Please report it.',
     // ---- raised by this SDK ----
     AGENT_NOT_RUNNING: 'Liro Bridge is not running, or its discovery file could not be read. Start the agent and try again; never scan ports for it.',

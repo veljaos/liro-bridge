@@ -54,9 +54,11 @@ func runUninstallNotice(_ []string, out io.Writer, _ config.Config) int {
 //     Linux the desktop's own "switch this off at login" lives in the
 //     same file, and an agent that rewrote the file at every start
 //     would switch itself back on behind the person's back. Settings
-//     is where an explicit yes overrides that. On macOS the call
-//     refuses, and that is logged at debug for the reason it always
-//     was: a warning at every start about a platform nobody has built.
+//     is where an explicit yes overrides that. On macOS it is a
+//     LaunchAgent (F13 §5), and a failure there is as real as on
+//     Linux. Anywhere else the call refuses, and that is logged at
+//     debug: a warning at every start about a platform nobody has
+//     built.
 //
 // And the sweep, because that half is not a registration and is as
 // true here as anywhere: pictures of somebody's
@@ -64,7 +66,7 @@ func runUninstallNotice(_ []string, out io.Writer, _ config.Config) int {
 // platform that has just learned to draw them.
 func applyStartupRegistrations(cfg config.Config) {
 	if err := platform.EnsureAutostart(cfg.StartWithWindows, exePath()); err != nil {
-		if runtime.GOOS == "linux" {
+		if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 			slog.Warn("startup: could not apply the autostart setting", "error", err)
 		} else {
 			slog.Debug("startup: this platform has no autostart entry yet", "error", err)

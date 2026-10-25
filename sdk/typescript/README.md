@@ -463,7 +463,9 @@ Never retried, and each for its own reason:
 ## Finding the agent
 
 The agent binds loopback only, on the first free port in 17580–17590, and writes
-what it chose to a per-user file — `%LOCALAPPDATA%\Liro\bridge.json` on Windows.
+what it chose to a per-user file — `%LOCALAPPDATA%\Liro\bridge.json` on Windows,
+`$XDG_RUNTIME_DIR/liro/bridge.json` on Linux (`~/.local/state/liro/bridge.json`
+when that is unset), `~/Library/Application Support/Liro/bridge.json` on macOS.
 This SDK reads it. **It never scans ports, and there is no option that would turn
 some on**: several people can be signed in to one machine at once, an accounting
 firm over RDP being the ordinary case rather than an edge one, and scanning finds
@@ -529,11 +531,37 @@ private static string _base;
 /// path — under folder redirection, or in a process that inherited a
 /// different environment, they disagree and this looks in the wrong
 /// place. Measured: it did.
+///
+/// On macOS and Linux the file is where SPEC §14 puts it there; this
+/// example knew only the Windows one (D6, [[D-459]]).
+private static string DiscoveryFile()
+{
+    var home = Environment.GetEnvironmentVariable("HOME") ?? "";
+    // Environment.OSVersion and a directory every Mac has, rather than
+    // OperatingSystem.IsWindows/IsMacOS: those are .NET 5 and later, and
+    // this file is also compiled with the csc.exe inside Windows' own
+    // .NET Framework 4, which has neither.
+    if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+    {
+        var local = Environment.GetEnvironmentVariable("LOCALAPPDATA")
+                    ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return Path.Combine(local, "Liro", "bridge.json");
+    }
+    if (Directory.Exists("/System/Library/CoreServices"))
+    {
+        return Path.Combine(home, "Library", "Application Support", "Liro", "bridge.json");
+    }
+    var runtime = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
+    if (!string.IsNullOrEmpty(runtime))
+    {
+        return Path.Combine(runtime, "liro", "bridge.json");
+    }
+    return Path.Combine(home, ".local", "state", "liro", "bridge.json");
+}
+
 private static void Discover()
 {
-    var local = Environment.GetEnvironmentVariable("LOCALAPPDATA")
-                ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-    var path = Path.Combine(local, "Liro", "bridge.json");
+    var path = DiscoveryFile();
     if (!File.Exists(path))
     {
         throw new FileNotFoundException("Liro Bridge is not running: no " + path, path);
@@ -575,7 +603,6 @@ private static async Task<Tuple<int, string>> Call(
 }
 
 private static string Hex(byte[] b) { return BitConverter.ToString(b).Replace("-", "").ToLowerInvariant(); }
-
 ```
 
 ### Python
@@ -634,9 +661,29 @@ no build file needed: `java Sign.java ugovor.pdf`.
 private static final HttpClient HTTP = HttpClient.newHttpClient();
 private static String base;
 
+/**
+ * Where the agent writes its port, per SPEC §14 — one path per platform.
+ * This example knew only the Windows one (D6, [[D-459]]).
+ */
+static Path discoveryFile() {
+    String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+    String home = System.getProperty("user.home");
+    if (os.startsWith("windows")) {
+        return Paths.get(System.getenv("LOCALAPPDATA"), "Liro", "bridge.json");
+    }
+    if (os.startsWith("mac")) {
+        return Paths.get(home, "Library", "Application Support", "Liro", "bridge.json");
+    }
+    String runtime = System.getenv("XDG_RUNTIME_DIR");
+    if (runtime != null && !runtime.isEmpty()) {
+        return Paths.get(runtime, "liro", "bridge.json");
+    }
+    return Paths.get(home, ".local", "state", "liro", "bridge.json");
+}
+
 /** Reads the per-user discovery file. Never scan ports. */
 static void discover() throws IOException {
-    Path file = Paths.get(System.getenv("LOCALAPPDATA"), "Liro", "bridge.json");
+    Path file = discoveryFile();
     Matcher m = Pattern.compile("\"port\"\\s*:\\s*(\\d+)").matcher(Files.readString(file));
     if (!m.find()) throw new IOException("no port in " + file);
     base = "http://127.0.0.1:" + m.group(1);
@@ -678,7 +725,24 @@ Full version: [`sdk/examples/sign.php`](../examples/sign.php). No extensions
 beyond the standard build.
 
 ```php
-$discovery = getenv('LOCALAPPDATA') . DIRECTORY_SEPARATOR . 'Liro' . DIRECTORY_SEPARATOR . 'bridge.json';
+// Where the agent writes its port, per SPEC §14 — one path per platform.
+// This example knew only the Windows one (D6, [[D-459]]).
+function liro_discovery_file(): string {
+    $sep = DIRECTORY_SEPARATOR;
+    if (PHP_OS_FAMILY === 'Windows') {
+        return getenv('LOCALAPPDATA') . "{$sep}Liro{$sep}bridge.json";
+    }
+    $home = getenv('HOME') ?: '';
+    if (PHP_OS_FAMILY === 'Darwin') {
+        return "$home/Library/Application Support/Liro/bridge.json";
+    }
+    $runtime = getenv('XDG_RUNTIME_DIR');
+    if ($runtime !== false && $runtime !== '') {
+        return "$runtime/liro/bridge.json";
+    }
+    return "$home/.local/state/liro/bridge.json";
+}
+$discovery = liro_discovery_file();
 if (!is_file($discovery)) {
     fwrite(STDERR, "Liro Bridge is not running: no $discovery\n");   // never scan ports
     exit(1);

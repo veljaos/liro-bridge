@@ -6,6 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -33,33 +36,81 @@ import (
 // Run against the code as it stood, it fails twice over: no window
 // appears at all, and `sign` reports a missing --thumbprint instead.
 
-var procFindWindowExT = user32Test.NewProc("FindWindowExW")
+var (
+	procFindWindowExT    = user32Test.NewProc("FindWindowExW")
+	procEnumWindowsT     = user32Test.NewProc("EnumWindows")
+	procGetWindowTextWT  = user32Test.NewProc("InternalGetWindowText")
+	procGetWindowPIDT    = user32Test.NewProc("GetWindowThreadProcessId")
+	enumTopLevelCallback = syscall.NewCallback(enumTopLevel)
+	enumTopLevelMu       sync.Mutex
+	enumTopLevelOut      []uintptr
+)
+
+// enumTopLevel collects every top-level window EnumWindows lists. One
+// callback, made once: syscall.NewCallback's slots are never given back
+// ([[D-453]]).
+func enumTopLevel(hwnd, _ uintptr) uintptr {
+	enumTopLevelOut = append(enumTopLevelOut, hwnd)
+	return 1
+}
+
+// topLevelWindows is EnumWindows' list: every top-level window on the
+// desktop at one moment, taken by Windows before the first callback.
+func topLevelWindows() []uintptr {
+	enumTopLevelMu.Lock()
+	defer enumTopLevelMu.Unlock()
+	enumTopLevelOut = nil
+	_, _, _ = procEnumWindowsT.Call(enumTopLevelCallback, 0)
+	out := enumTopLevelOut
+	enumTopLevelOut = nil
+	return out
+}
+
+// windowTextT reads a class name or a title. The title through
+// InternalGetWindowText, which reads it where Windows keeps it rather
+// than sending WM_GETTEXT to the UI thread — a busy UI thread must not
+// stall a test that is only looking.
+func windowTextT(hwnd uintptr, proc *windows.LazyProc) string {
+	buf := make([]uint16, 256)
+	n, _, _ := proc.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return windows.UTF16ToString(buf[:n])
+}
 
 // liroWindowsTitled is every top-level window of this process's own
 // window class carrying title. There may already be some: the suite
 // shares long-lived windows between tests (sharedwindow_windows_test.go)
 // and one of them is titled main.title too, so "a window appeared" has
 // to mean a window that was not there before.
+//
+// **A snapshot, not a walk** ([[D-458]], D39). This used to call
+// FindWindowExW with the last window found as the cursor, and
+// FindWindowExW given a cursor that has since been destroyed finds
+// nothing — so a walk that met a window being torn down (the previous
+// test's, closed a moment earlier) stopped there, the shared main window
+// below it was left out of "before", and a test then took the shared
+// window for the new one and closed it: run 37833946737, where the sign
+// window was never closed and every later test that borrowed the shared
+// window found it closed. EnumWindows lists the windows as they are at
+// one moment and has no cursor to lose.
 func liroWindowsTitled(t *testing.T, title string) map[uintptr]bool {
 	t.Helper()
-	class, err := windows.UTF16PtrFromString("LiroBridgeWindow")
-	if err != nil {
-		t.Fatal(err)
-	}
-	name, err := windows.UTF16PtrFromString(title)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pid := uint32(os.Getpid())
 	found := map[uintptr]bool{}
-	var after uintptr
-	for {
-		h, _, _ := procFindWindowExT.Call(0, after, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(name)))
-		if h == 0 {
-			return found
+	for _, h := range topLevelWindows() {
+		var owner uint32
+		_, _, _ = procGetWindowPIDT.Call(h, uintptr(unsafe.Pointer(&owner)))
+		if owner != pid {
+			continue
+		}
+		if windowTextT(h, procGetClassNameWT) != "LiroBridgeWindow" {
+			continue
+		}
+		if windowTextT(h, procGetWindowTextWT) != title {
+			continue
 		}
 		found[h] = true
-		after = h
 	}
+	return found
 }
 
 // waitForNewWindowTitled waits for a window of this process's own class
@@ -180,5 +231,53 @@ func TestTheSignCommandOpensAWindowAndSignsNothingUntilItIsAnswered(t *testing.T
 func TestSignRejectsInteractiveRatherThanIgnoringIt(t *testing.T) {
 	if _, _, err := parseSignArgs([]string{"--interactive", "--in", "x.pdf"}); err == nil {
 		t.Fatal("sign still accepts --interactive, which advertises a distinction that no longer exists")
+	}
+}
+
+// TestAFindWindowWalkLosesItsPlaceWhenItsCursorIsDestroyed is the
+// mechanism D39's reading rests on, measured where it happened — a
+// Windows runner — rather than taken from memory ([[D-458]]).
+//
+// Two top-level windows of one class and title; the walk's cursor, the
+// first, destroyed; FindWindowExW asked for the next one after it. If it
+// finds the second, the reading is wrong and D39 is still open.
+func TestAFindWindowWalkLosesItsPlaceWhenItsCursorIsDestroyed(t *testing.T) {
+	class, _ := windows.UTF16PtrFromString("STATIC")
+	title, _ := windows.UTF16PtrFromString("liro-bridge D39 walk " + time.Now().Format("150405.000000"))
+	const wsPopup = 0x80000000
+
+	type result struct {
+		first, second, nextAfterDead, fromStart uintptr
+		lastErr                                 error
+	}
+	got := make(chan result, 1)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		create := windows.NewLazySystemDLL("user32.dll").NewProc("CreateWindowExW")
+		destroy := windows.NewLazySystemDLL("user32.dll").NewProc("DestroyWindow")
+		var r result
+		r.first, _, _ = create.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), wsPopup, 0, 0, 10, 10, 0, 0, 0, 0)
+		r.second, _, _ = create.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), wsPopup, 0, 0, 10, 10, 0, 0, 0, 0)
+		if r.first != 0 {
+			_, _, _ = destroy.Call(r.first)
+		}
+		r.nextAfterDead, _, r.lastErr = procFindWindowExT.Call(0, r.first, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)))
+		r.fromStart, _, _ = procFindWindowExT.Call(0, 0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)))
+		if r.second != 0 {
+			_, _, _ = destroy.Call(r.second)
+		}
+		got <- r
+	}()
+	r := <-got
+	if r.first == 0 || r.second == 0 {
+		t.Fatalf("the two windows could not be made (%#x, %#x)", r.first, r.second)
+	}
+	t.Logf("second %#x; from the start %#x; after the destroyed cursor %#x (%v)", r.second, r.fromStart, r.nextAfterDead, r.lastErr)
+	if r.fromStart != r.second {
+		t.Fatalf("a walk from the start did not find the window that exists (%#x, want %#x); this measures nothing", r.fromStart, r.second)
+	}
+	if r.nextAfterDead != 0 {
+		t.Fatalf("FindWindowExW continued past a destroyed cursor and found %#x; D-458's reading of D39 is wrong", r.nextAfterDead)
 	}
 }

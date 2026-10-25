@@ -33,7 +33,7 @@ export type { KnownLiroErrorCode, ClientLiroErrorCode, LiroErrorCode, LiroErrorO
 export { FileSecretStore, StoredPairing, REDACTED_SECRET } from './secrets.js';
 export type { SecretStore, SerialisedPairing } from './secrets.js';
 
-export { defaultBridgeFilePath, readBridgeFile, PROTOCOL_VERSION } from './discovery.js';
+export { defaultBridgeFilePath, negotiateProtocol, readBridgeFile, PROTOCOL_VERSION, PROTOCOL_VERSIONS } from './discovery.js';
 export type { BridgeInfo } from './discovery.js';
 
 export {

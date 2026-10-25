@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 
 func TestBridgeFileRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "bridge.json")
-	want := BridgeInfo{Port: 17583, AgentVersion: "1.2.3", ProtocolVersion: ProtocolVersion}
+	want := BridgeInfo{Port: 17583, AgentVersion: "1.2.3", ProtocolVersion: ProtocolVersion, ProtocolVersions: ProtocolVersions}
 	if err := WriteBridgeFile(path, want); err != nil {
 		t.Fatalf("WriteBridgeFile: %v", err)
 	}
@@ -20,7 +21,7 @@ func TestBridgeFileRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadBridgeFile: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("read %+v, wrote %+v", got, want)
 	}
 }
@@ -30,7 +31,7 @@ func TestBridgeFileRoundTrips(t *testing.T) {
 // disappearing is a change to the protocol, not to this package.
 func TestBridgeFileCarriesExactlyWhatF7Asks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bridge.json")
-	if err := WriteBridgeFile(path, BridgeInfo{Port: 17580, AgentVersion: "9.9.9", ProtocolVersion: 2}); err != nil {
+	if err := WriteBridgeFile(path, BridgeInfo{Port: 17580, AgentVersion: "9.9.9", ProtocolVersion: 2, ProtocolVersions: []int{2}}); err != nil {
 		t.Fatalf("WriteBridgeFile: %v", err)
 	}
 	raw, err := os.ReadFile(path)
@@ -41,7 +42,7 @@ func TestBridgeFileCarriesExactlyWhatF7Asks(t *testing.T) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatalf("the discovery file is not JSON: %v\n%s", err, raw)
 	}
-	want := map[string]bool{"port": true, "agentVersion": true, "protocolVersion": true}
+	want := map[string]bool{"port": true, "agentVersion": true, "protocolVersion": true, "protocolVersions": true}
 	for k := range fields {
 		if !want[k] {
 			t.Errorf("the discovery file carries an unexpected field %q", k)

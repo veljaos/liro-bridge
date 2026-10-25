@@ -29,7 +29,7 @@ func (h *harness) get(path string, headers map[string]string) (int, map[string]a
 	return statusAndBody(h, resp)
 }
 
-func TestHealthNeedsNoAuthenticationAndSaysThreeThings(t *testing.T) {
+func TestHealthNeedsNoAuthenticationAndSaysFourThings(t *testing.T) {
 	h := newHarness(t)
 	status, body, raw := h.get("/v2/health", nil)
 	if status != http.StatusOK {
@@ -44,8 +44,13 @@ func TestHealthNeedsNoAuthenticationAndSaysThreeThings(t *testing.T) {
 	if body["minimumClientVersion"] != MinimumClientVersion {
 		t.Errorf("minimumClientVersion is %v, want %q", body["minimumClientVersion"], MinimumClientVersion)
 	}
-	if len(body) != 3 {
-		t.Fatalf("/v2/health returned %d fields, want exactly 3: %v", len(body), body)
+	// The fourth, since F14 §8: every version this agent speaks, so a
+	// client can choose rather than be refused ([[D-461]]).
+	if list, ok := body["protocolVersions"].([]any); !ok || len(list) == 0 {
+		t.Errorf("protocolVersions is %v, want a non-empty list", body["protocolVersions"])
+	}
+	if len(body) != 4 {
+		t.Fatalf("/v2/health returned %d fields, want exactly 4: %v", len(body), body)
 	}
 }
 

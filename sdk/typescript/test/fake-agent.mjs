@@ -44,6 +44,8 @@ export async function startFakeAgent(options = {}) {
     /** What the agent's version reports. */
     agentVersion: options.agentVersion ?? '1.4.0-fake',
     protocolVersion: options.protocolVersion ?? 2,
+    /** Undefined: say nothing, as an agent older than the list does. */
+    protocolVersions: options.protocolVersions,
     minimumClientVersion: options.minimumClientVersion ?? '0.0.0',
     certificates: options.certificates ?? [],
     /** The 32 bytes the next pairing issues. */
@@ -90,6 +92,7 @@ async function handle(req, res, state) {
       nonce: req.headers['x-liro-nonce'] ?? null,
       signature: req.headers['x-liro-signature'] ?? null,
       contentType: req.headers['content-type'] ?? null,
+      protocol: req.headers['x-liro-protocol'] ?? null,
     },
   };
   state.requests.push(record);
@@ -121,6 +124,7 @@ async function handle(req, res, state) {
       return json(res, 200, {
         agentVersion: state.agentVersion,
         protocolVersion: state.protocolVersion,
+        ...(state.protocolVersions === undefined ? {} : { protocolVersions: state.protocolVersions }),
         minimumClientVersion: state.minimumClientVersion,
       });
     case 'POST /v2/pair/request':

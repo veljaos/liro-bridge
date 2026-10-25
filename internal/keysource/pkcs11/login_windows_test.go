@@ -19,8 +19,8 @@ import "testing"
 // a login required, no protected authentication path, 5 to 15 characters.
 func fakeToken() tokenInfo {
 	return tokenInfo{
-		Label:        "Savka Odžić 200100123",
-		SerialNumber: "2353120973204924",
+		Label:        "Petar Božić 000000000", // made up (A36), in the shape of the Pošta card's label
+		SerialNumber: "1111222233334444",      // made up (A36)
 		Flags:        ckfLoginRequired | ckfUserPINInitialized | ckfTokenInitialized,
 		MinPINLen:    5,
 		MaxPINLen:    15,
@@ -169,8 +169,8 @@ func TestLoginTellsTheScreenWhatItNeedsToSayWhoIsAsking(t *testing.T) {
 	}
 	s := &session{}
 	_ = s.login(fakeToken(), entry, PINRequest{
-		TokenLabel:       "Savka Odžić 200100123",
-		CertificateLabel: "Savka Odžić 200100123",
+		TokenLabel:       "Petar Božić 000000000", // made up (A36), in the shape of the Pošta card's label
+		CertificateLabel: "Petar Božić 000000000", // made up (A36), in the shape of the Pošta card's label
 		ModulePath:       `C:\Windows\System32\aetpkss1.dll`,
 	})
 	if got.TokenLabel == "" || got.CertificateLabel == "" || got.ModulePath == "" {

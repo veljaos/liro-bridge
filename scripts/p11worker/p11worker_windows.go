@@ -77,6 +77,11 @@ import (
 	"github.com/veljaos/liro-bridge/internal/pinscreen"
 )
 
+// subjectWithheld stands where a certificate subject would be. It says
+// what is missing and why, because a blank reads as an empty field
+// (D59, D-508). The wording matches scripts/verifypdf.
+const subjectWithheld = "(withheld: on an identity card this carries the holder's name and their JMBG)"
+
 func main() {
 	// The worker's own child mode, before any flag is parsed and before
 	// anything else happens at all.
@@ -176,7 +181,12 @@ func main() {
 				chosen, mark = i, "*"
 			}
 			say("  [%d]%s%5d bytes  %s", i, mark, len(c.DER), tp)
-			say("        subject   %s", parsed.Subject.CommonName)
+			// **Never the subject** (D59, D-508). On an identity card
+			// the common name is the holder's name and their JMBG, and
+			// this probe is run with a real card in the reader. The
+			// thumbprint on the line above identifies the certificate,
+			// and is the value the audit chain uses.
+			say("        subject   %s", subjectWithheld)
 			say("        issuer    %s", parsed.Issuer.CommonName)
 			say("        keyUsage  %d%s", parsed.KeyUsage,
 				map[bool]string{true: "  (contentCommitment: for signing)", false: "  (not for signing)"}[signing])

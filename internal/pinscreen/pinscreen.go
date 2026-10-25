@@ -148,8 +148,9 @@ type Prompt struct {
 //
 // Not the certificate label either, and that one is a decision rather than an
 // omission. On the Pošta card this project signs with, the token label and the
-// certificate label are the same string — "Savka Odžić 200100123" — so showing
-// both would show a person their own name twice, which is exactly the defect
+// certificate label are the same string, "<given name> <surname> <nine
+// digits>", so showing both would show a person their own name twice, which
+// is exactly the defect
 // D-149 removed from the certificate list. It is used only when the token has
 // no label of its own to show.
 func Text(cat *i18n.Catalogue, req pkcs11.PINRequest, maxLen int) Prompt {

@@ -150,14 +150,21 @@ func TestTheResultAnswers202WhileTheJobIsStillRunning(t *testing.T) {
 	c := h.client("My ERP", "https://erp.example.com")
 
 	release := make(chan struct{})
+	published := make(chan struct{})
 	h.signer.answer(func(req SignRequest, job *jobs.Job) (SignResult, error) {
 		job.Publish(jobs.Update{State: jobs.JobAwaitingConsent, RemainingConsent: 120 * time.Second})
+		close(published)
 		<-release
 		return signEverything(req, job)
 	})
 
 	_, submit := c.submitDigests(1)
 	jobID := submit["jobId"].(string)
+	// 202 means accepted, not started: the batch runs on its own
+	// goroutine, and a read before it publishes finds the job queued
+	// (c10ead5's shape, at a site its sweep missed; 7 of 1200 at
+	// GOMAXPROCS=4 before this, session 33). Observed, not timed.
+	<-published
 
 	status, body := c.do(http.MethodGet, jobResultPath(jobID), nil)
 	if status != http.StatusAccepted {

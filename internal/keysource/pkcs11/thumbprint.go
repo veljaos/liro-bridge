@@ -35,7 +35,7 @@ func thumbprint(der []byte) string {
 //
 // D-310 measured that the two agree on a real card: a Pošta certificate read
 // through aetpkss1.dll and the same certificate read out of the Windows store
-// both give AF5063BB74378BD503AB46DD08AEAD205BA2AA54. That is a measurement of
+// both give the same forty hex digits. That is a measurement of
 // two implementations, and the way to keep it true is to stop adding them.
 func Thumbprint(der []byte) keysource.Thumbprint {
 	return keysource.Thumbprint(thumbprint(der))

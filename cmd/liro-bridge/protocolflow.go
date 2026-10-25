@@ -23,6 +23,7 @@ import (
 
 	"github.com/veljaos/liro-bridge/internal/api"
 	"github.com/veljaos/liro-bridge/internal/audit"
+	"github.com/veljaos/liro-bridge/internal/config"
 	"github.com/veljaos/liro-bridge/internal/errs"
 	"github.com/veljaos/liro-bridge/internal/jobs"
 	"github.com/veljaos/liro-bridge/internal/keysource"
@@ -188,6 +189,21 @@ func (m *mainWindow) consentExpired() {
 	// countdown with no number in it.
 }
 
+// levelIsARequest is C26's rule (D-469) with D-476's default: a level
+// that is set — named by a calling program, which protocolserver.go
+// puts into the batch's configuration, or chosen in Settings — is a
+// request, reached or refused with LEVEL_NOT_REACHED, with nothing
+// weaker saved or handed back. Only the best available, the empty
+// default, keeps B-T where B-LT's evidence is missing, and only it may
+// be offered signing without a timestamp.
+//
+// Decided once, at the start of a batch: configuring a timestamp
+// authority mid-batch reloads the configuration from disk, which would
+// lose a caller's named level.
+func levelIsARequest(cfg config.Config) bool {
+	return cfg.SignatureLevel != ""
+}
+
 // signRemoteOne signs one document of a protocol batch.
 //
 // Two shapes, one rule. On the hash path the card signs the digest the
@@ -208,17 +224,19 @@ func (m *mainWindow) signRemoteOne(ctx context.Context, index int, session keyso
 	}
 
 	result, err := pades.SignDocument(ctx, req.Documents[index].Content, session, pades.Options{
-		RequestedLevel:    opts.level,
-		OnTSAFailureAbort: !opts.allowBB,
-		TSA:               opts.tsaClient,
-		TrustStore:        opts.trustStore,
-		Now:               time.Now(),
-		Stamp:             opts.stamp,
-		RevocationMemory:  opts.revocationMemory,
+		RequestedLevel:       opts.level,
+		SaveWithoutTimestamp: opts.allowBB,
+		SaveAtBTIfBLTFails:   opts.keepBTIfBLTFails,
+		TSA:                  opts.tsaClient,
+		TrustStore:           opts.trustStore,
+		Now:                  time.Now(),
+		Stamp:                opts.stamp,
+		RevocationMemory:     opts.revocationMemory,
 	})
 	if err != nil {
 		return jobs.Outcome{}, err
 	}
+	logSignNotes("protocol", opts.level, result)
 	m.remote.outcomes[index] = api.SignOutcome{
 		Document:      result.Bytes,
 		AchievedLevel: string(result.AchievedLevel),

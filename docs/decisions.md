@@ -22147,7 +22147,7 @@ demand, the control becomes cheap and worth taking then.
 Nothing was found that moves the rate. Checked and rejected: something the
 module writes on first contact with an unknown card — the only thing the
 machine wrote in the window was
-`AppData\Roaming\Microsoft\SystemCertificates\My\Certificates\AF5063BB…AA54`,
+`AppData\Roaming\Microsoft\SystemCertificates\My\Certificates\[thumbprint removed]`,
 the Pošta signing certificate, **created 2026-09-05** and merely re-touched
 today by Windows' own `CertPropSvc`, which is that service doing its job with a
 card in the reader and not this session's doing; the preceding module; a second
@@ -22295,8 +22295,8 @@ attempt spent, and none could have been ([[D-268]]'s guard is a property of the
 probe rather than of anybody's discipline).
 
 ```
-slot 52481  label   "Savka Odžić 200100123"
-            serial  "2353120973204924"
+slot 52481  label   "[name and number removed]"
+            serial  "[token serial removed]"
             model   "19C11A06010D0000"
             flags   0x40D   RNG | LOGIN_REQUIRED | USER_PIN_INITIALIZED | TOKEN_INITIALIZED
             PROTECTED_AUTHENTICATION_PATH: false
@@ -22437,11 +22437,11 @@ Measured through SafeSign 3.9.32.1, read-only, and independently re-taken here:
 ```
 slot 52481: 2 certificates on the token, 1 of them CAs
 
-object 10  label    "Savka Odžić 200100123"
-           subject  "Savka Odžić 200100123"
+object 10  label    "[name and number removed]"
+           subject  "[name and number removed]"
            issuer   "Pošta Srbije CA 1"
-           serial   54849CDCD4415E3BCA
-           sha1     AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+           serial   [serial removed]
+           sha1     [thumbprint removed]
            keyUsage 3
 
 object 14  label    "Root CA Certificate"
@@ -22482,7 +22482,7 @@ A chain-completion routine that matched by name, by prefix, by "the token's own
 CA", or by anything short of the exact issuer bytes would build
 
 ```
-Savka Odžić 200100123  ->  Pošta Srbije CA Root
+[name and number removed]  ->  Pošta Srbije CA Root
 ```
 
 which is **a chain that is wrong rather than short**. Nothing signed the first
@@ -23267,7 +23267,7 @@ signature 0: ByteRangeDigestOK=true SignatureOK=true
 
 **That is a real card, a real module, and a card this project had never signed
 with** — F11 §6's condition in its own words. The card is a Pošta e-ID
-("Savka Odžić 200100123", serial 2353120973204924), the module is
+("[name and number removed]", serial [token serial removed]), the module is
 `C:\Windows\System32\aetpkss1.dll`, SafeSign 3.9.32.1, and the path taken is
 PKCS#11 rather than CNG from `C_Initialize` to `C_Sign`.
 
@@ -28286,15 +28286,15 @@ over**, which is the whole reason it was built with one:
 ```
 PIN COUNTER BEFORE  flags=0x40D   COUNT_LOW false  FINAL_TRY false  LOCKED false
 ENUMERATE   2 certificate(s) in 919.0447ms
-  [0]* 2219 bytes  AF5063BB74378BD503AB46DD08AEAD205BA2AA54
-        subject Savka Odžić 200100123   issuer Pošta Srbije CA 1   keyUsage 3
+  [0]* 2219 bytes  [thumbprint removed]
+        subject [name and number removed]   issuer Pošta Srbije CA 1   keyUsage 3
   [1]  1520 bytes  F2E88F597862C490F36C38474C51CC338DCDFB0D
         subject Pošta Srbije CA Root     issuer Pošta Srbije CA Root  keyUsage 96
 ```
 
 Two things fall out of it that are worth more than "it ran".
 
-**Both thumbprints are ones this log already carries.** `AF5063BB…AA54` and
+**Both thumbprints are ones this log already carries.** `[thumbprint removed]` and
 `F2E88F59…FB0D` are exactly what D-274 measured off this card through this
 module, which means the thumbprint this tool computes agrees with the backend
 and with a measurement taken independently four days earlier.
@@ -28568,9 +28568,9 @@ the card, and that the answer would have been measured either way.
 
 ```
 opening a session and logging in, once, at 13:25:01.217
-  THE CARD IS ASKING.  card Savka Odžić 200100123  accepts 5 to 15 characters
+  THE CARD IS ASKING.  card [name and number removed]  accepts 5 to 15 characters
  IT WORKED. The card accepted the PIN and the session is open.
-   certificate  AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+   certificate  [thumbprint removed]
    chain        0 certificate(s) the token supplied
 VERDICT: the token's flags are IDENTICAL before and after (0x40D).
 ```
@@ -29030,9 +29030,9 @@ session, no PIN — was written to answer a planning question, and answered a
 larger one. Five certificates; the two that matter:
 
 ```
-[1] AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+[1] [thumbprint removed]
      provider "Microsoft Smart Card Key Storage Provider"  onHardware true
-     subject  CN=Savka Odžić 200100123      issuer Pošta Srbije CA 1
+     subject  CN=[name and number removed]      issuer Pošta Srbije CA 1
      keyUsage 3     valid 2025-10-08 .. 2030-10-08
 
 [2] 7758D4D4B8973EA619B3225185EDE740B3D1ECCE
@@ -29041,9 +29041,9 @@ larger one. Five certificates; the two that matter:
      serial   20F048A768F56F099E    keyUsage 3     valid 2021-09-23 .. 2026-09-24
 ```
 
-`AF5063BB74378BD503AB46DD08AEAD205BA2AA54` is **byte-for-byte the thumbprint
+`[thumbprint removed]` is **byte-for-byte the thumbprint
 `aetpkss1.dll` reported through the worker 32 minutes earlier** ([[D-309]],
-`[0]* 2219 bytes AF5063BB...`). Two processes, two APIs, two vendors, no shared
+`[0]* 2219 bytes [thumbprint removed]`). Two processes, two APIs, two vendors, no shared
 code path, one number.
 
 `dedupe` in `certificate.go` carries a comment asserting this identity, and
@@ -29646,7 +29646,7 @@ was already in the reader, so it was measured rather than scheduled.
 nothing touched the owner's own configuration:
 
 ```
-AF5063BB74378BD503AB46DD08AEAD205BA2AA54   Savka Odžić / Pošta Srbije CA 1
+[thumbprint removed]   [name removed] / Pošta Srbije CA 1
     backends  ["windows-cng", "pkcs11"]
     modules   ["C:\\WINDOWS\\System32\\aetpkss1.dll"]
     usable    true
@@ -29979,14 +29979,14 @@ would have gone red.
 
 Run by the owner, at the machine, with the Pošta card in the reader.
 
-What he saw, in order: the certificate chooser with `Savka Odžić` selected, the
+What he saw, in order: the certificate chooser with `[name removed]` selected, the
 consent screen, the method screen, an output-file-exists screen, then
 **"Priprema kartice..."** with the document listed as *čeka* — **and the PIN
 dialog immediately, in front, inside the agent's window. He did not have to hunt
 for it.**
 
 The dialog was this program's: title *Unesite PIN*, heading *Liro Bridge traži
-PIN vaše kartice*, *Kartica: Savka Odžić 200100123*, the hint naming 5 to 15
+PIN vaše kartice*, *Kartica: [name and number removed]*, the hint naming 5 to 15
 characters, `Otkaži` / `Potvrdi`.
 
 **He pressed `Otkaži`. Nothing else appeared — no Windows credential dialog, no
@@ -30110,7 +30110,7 @@ the next thing.
 
 The owner opened the certificate chooser with the Pošta card in the reader:
 
-- **`Savka Odžić` appears once. One row.** F11 §4 step 3, on a screen, by a
+- **`[name removed]` appears once. One row.** F11 §4 step 3, on a screen, by a
   person looking at it.
 - The MUP certificate is listed and marked *"Ubacite karticu u čitač"* — that
   card is not in the reader, and the screen says so rather than hiding it.
@@ -30313,7 +30313,7 @@ timestamp     2026-09-19T16:53:07Z
 outcome       approved
 documentCount 1
 achievedLevel B-B
-thumbprint    AF5063BB74378BD503AB46DD08AEAD205BA2AA54
+thumbprint    [thumbprint removed]
 application   local
 backend       pkcs11
 module        C:\WINDOWS\System32\aetpkss1.dll
@@ -30347,9 +30347,9 @@ ByteRangeDigestOK      true   (SHA-256 recomputed over the signed span)
 SignatureOK            true   (RSA over the signed attributes re-tagged as SET OF)
 SigningCertificateOK   true   (signingCertificateV2 certHash against the signer used)
 SignerChainTrusted     true
-signer subject        Savka Odžić 200100123
+signer subject        [name and number removed]
 signer issuer         Pošta Srbije CA 1
-signer serial         54849CDCD4415E3BCA
+signer serial         [serial removed]
 ```
 
 That is the whole claim, end to end: **a private key operation performed on a
@@ -30371,7 +30371,7 @@ kartice..."** with the document listed as *čeka*, then the PIN dialog **within
 about a second, in front, inside the agent's window.**
 
 The dialog was this program's — *Unesite PIN*, *Liro Bridge traži PIN vaše
-kartice*, *Kartica: Savka Odžić 200100123*, the hint naming 5 to 15 characters.
+kartice*, *Kartica: [name and number removed]*, the hint naming 5 to 15 characters.
 SPEC §6.5.1 clause 6 satisfied on hardware, in front of the person it is for.
 
 **No Windows credential dialog appeared at any point**, in either run. That was
@@ -37245,7 +37245,7 @@ The four commits before this entry were pushed from this machine at about
   once ([[D-360]]'s fix, measured before the card went in).
 - **`certs`**, 6.2 s: one certificate offered — signing, qualified on QSCD,
   Pošta Srbije CA 1, 2025-10-08 to 2030-10-08, usable, thumbprint
-  `…5BA2AA54` — and a second, hidden (the card's other certificate). Both
+  `[thumbprint removed]` — and a second, hidden (the card's other certificate). Both
   only through SafeSign; OpenSC sees neither.
 - **Request:** `sdk/examples/sign.py ugovor.pdf` (a copy of
   `testdata/pdfs/blank.pdf`). The first pairing expired: `PairingCodeTTL` is
@@ -37259,7 +37259,7 @@ The four commits before this entry were pushed from this machine at about
 
 | | the signed file | control |
 |---|---|---|
-| `scripts/verifypdf` (SPEC §16.4) | `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`, **`SignerChainTrusted`** all true — signer Savka Odžić, Pošta Srbije CA 1, serial `54849CDCD4415E3BCA` | one byte flipped at offset 100: `ByteRangeDigestOK false`, exit 1 |
+| `scripts/verifypdf` (SPEC §16.4) | `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`, **`SignerChainTrusted`** all true — signer [name removed], Pošta Srbije CA 1, serial `[serial removed]` | one byte flipped at offset 100: `ByteRangeDigestOK false`, exit 1 |
 | OpenSSL `cms -verify` over the `/ByteRange` span | `CMS Verification successful` | one byte of the content changed: `content verify error`; a certificate that did not sign: `signer certificate not found` |
 
 The chain is trusted against the embedded Trusted List (sequence 36). The
@@ -37270,7 +37270,7 @@ unchanged.
 **The stamp**: a widget at `[393 782 583 830]` — top right, 190 × 48 pt —
 with the logo and three lines drawn in an embedded font subset. The second
 line's glyph pattern (eleven glyphs, a space, the same glyph second and
-fifth) is consistent with "SAVKA ODŽIĆ"; I read the pattern, not the name,
+fifth) is consistent with "[name removed]"; I read the pattern, not the name,
 and the owner can confirm it by opening the file.
 
 ### What the owner watched
@@ -37441,7 +37441,7 @@ app-grid entry with the icon, and the `MimeType=application/pdf` association.
   a signature, and the Windows version installed today may report what it
   did not establish.
 - **The stamp (C14) is closed** by the owner's reading of the signed PDF:
-  "SAVKA ODŽIĆ", Ž and Ć rendered, top right, every line legible.
+  "[name removed]", Ž and Ć rendered, top right, every line legible.
 - **Sentence (7)** of D-362 reads "`ldd %s` pokazuje koja nedostaje", the
   owner's correction.
 
@@ -40351,14 +40351,14 @@ after it had been dropped at a reboot; the owner's Pošta card, SafeSign; the
 installed agent, pid 4923. Predictions were written before either demo.
 
 **Demo A** — windows, in the owner's order: pairing (six digits, typed at the
-demo's prompt), certificate chooser (Savka Odžić), approval with the PIN, the
+demo's prompt), certificate chooser ([name removed]), approval with the PIN, the
 final screen.
 
 | | predicted | measured |
 |---|---|---|
 | A2: certificates listed through the modules | 2 `pkcs11-worker` children, staying | 5796 OpenSC, 5815 SafeSign, by `/proc/PID/cmdline`, alive to the tray's end |
 | A5: a written PDF (**least certain**: never confirmed on either platform) | yes | **three**, `liro-demo/out/demo-a/Ugovor-00{1,2,3}-signed.pdf`, 104 688 bytes each, B-B |
-| both verifiers | valid | `scripts/verifypdf`: every check true, chain trusted, signer "Savka Odžić 200100123", issuer "Pošta Srbije CA 1", exit 0 on each; `pdfsig`: "Signature is Valid", "Total document signed" on each |
+| both verifiers | valid | `scripts/verifypdf`: every check true, chain trusted, signer "[name and number removed]", issuer "Pošta Srbije CA 1", exit 0 on each; `pdfsig`: "Signature is Valid", "Total document signed" on each |
 | the verifiers could fail | — | one byte flipped in a copy of 001: `verifypdf` `ByteRangeDigestOK false`, exit **1**; `pdfsig` "Digest Mismatch" |
 
 `pdfsig`'s "Certificate issuer is unknown" is its own trust store, not a
@@ -43465,9 +43465,9 @@ happened at 14:45:58.
 
 ### The card
 
-`liro-bridge certs` (14:48): one certificate offered — Savka Odžić,
+`liro-bridge certs` (14:48): one certificate offered — [name removed],
 Pošta Srbije CA 1, signing, qualified, on a QSCD, 2025-10-08..2030-10-08,
-thumbprint `…5BA2AA54`, through `/usr/lib64/libaetpkss.so` only — and one
+thumbprint `[thumbprint removed]`, through `/usr/lib64/libaetpkss.so` only — and one
 hidden, **Pošta Srbije CA Root** (`F2E88F59…`, `CERT_NOT_USABLE`), which
 the card itself carries. The prediction I was least sure of, pcscd's polkit
 check on a process outside a logind session scope, did not bite: this
@@ -43568,10 +43568,10 @@ at the file's end.
 
 | | the file | controls |
 |---|---|---|
-| `pdfsig` (poppler) | "Signature is Valid."; signer Savka Odžić 200100123; ranges [0–38667], [104205–104690], "Total document signed"; SHA-256, `ETSI.CAdES.detached`; signing time 15:45:32. Certificate: **"Certificate issuer is unknown"** — no Serbian root in NSS (the prediction said "isn't Trusted"; the wording differs) | byte 500, inside a stream, `i` → `I`: **Digest Mismatch**, exit 1. Byte 100 (`]`) also: Digest Mismatch, but it broke the syntax too, so 500 is the clean one |
+| `pdfsig` (poppler) | "Signature is Valid."; signer [name and number removed]; ranges [0–38667], [104205–104690], "Total document signed"; SHA-256, `ETSI.CAdES.detached`; signing time 15:45:32. Certificate: **"Certificate issuer is unknown"** — no Serbian root in NSS (the prediction said "isn't Trusted"; the wording differs) | byte 500, inside a stream, `i` → `I`: **Digest Mismatch**, exit 1. Byte 100 (`]`) also: Digest Mismatch, but it broke the syntax too, so 500 is the clean one |
 | OpenSSL `cms -verify -binary` over the span, `-noverify` | **CMS Verification successful** | one content byte changed: **content verify error**; an unrelated certificate as signer (`-nointern -certfile`): **signer certificate not found** |
 
-The signer is D-361's: SHA-1 `AF5063BB…5BA2AA54`, serial `54849CDCD4415E3BCA`.
+The signer is D-361's: SHA-1 `[thumbprint removed]`, serial `[serial removed]`.
 
 **Not checked** — recorded as not checked, not as checked another way:
 
@@ -44876,7 +44876,7 @@ rather finish the condition I set than tick a box I did not earn."
 | R1 | **Podešavanja**: painted | 21:21:04.863 "opening from the main window" door=settings; 21:21:05.133 "settings: window open" |
 | R2 | **Izvezi dnevnik revizije**: the portal's folder chooser, "Izaberite fasciklu…", Select; Documents. Settings: "Dnevnik revizije je izvezen u /home/velja/Documents", `liro-audit-20261005-212209.jsonl` — 9 zapisa, the report, "provera ispravnosti: u redu" | 21:22:09.868 "settings: audit log exported"; **both files 0600** (umask 0022 here, so `os.Create` would have given 0644 — could fail); the report `entryCount` 9, one chain, OK, `BrokenAt` −1 |
 | R3 | Settings closed with the **title bar's ×** | 21:23:23.558 "settings: the window was closed from outside the page, not by Zatvori" |
-| R4 | **Sertifikati**: painted — the Pošta signing certificate, CA 1, …5BA2AA54, "kvalifikovan"; closed with its Zatvori | 21:23:27.718 door=certificates; the certificates window logs no close |
+| R4 | **Sertifikati**: painted — the Pošta signing certificate, CA 1, [thumbprint removed], "kvalifikovan"; closed with its Zatvori | 21:23:27.718 door=certificates; the certificates window logs no close |
 | R5 | **Dnevnik revizije**: painted, nine entries matching the export | 21:25:37.785 door=auditLog |
 
 **The least certain prediction was R2's chooser** — the helper's folder
@@ -47656,3 +47656,1987 @@ The branch is the owner's to push; its CI run is read to its end before the
 tag, as D-455 set out.
 
 ---
+
+## D-457 — C21, the memory-ownership audit, finished: every function the Windows binary imports read against its ownership rule; six rows made into tests that can fail and measured on CI's Windows runner **before** any fix — five red as predicted, one (Navigate off the UI thread) found no defect, one half-measured — and the fixes pushed under them; two defects of my own in the harness, said
+
+**Date:** 2026-10-12
+**Phase:** session 33 (cloud, Linux; no Windows machine, no card). Method D-412's: every function the binary imports × its ownership rule, reading what the binding does with each pointer. Rows 1–2 were D-453/D-454's.
+
+**The reading, rows 3 onward, clean** (each read in the code, not inferred): WebView2's environment, controller and `ICoreWebView2`/`_2`/`_3`/`Controller4` references released on every path; every `LPWSTR` the runtime returns freed with `CoTaskMemFree`; `ExecuteScript`'s result an `[in]` string, not ours; `HDROP` released by `ReleaseStgMedium` and the `STGMEDIUM` with it; the file and folder dialogs' `OleInitialize`/`OleUninitialize` paired and their PIDLs freed; the smart-card context released; certificate stores closed with `CERT_CLOSE_STORE_FORCE_FLAG`; DPAPI's output `LocalFree`d; registry keys closed; `OpenProcess` handles closed; the PKCS#11 structures at one-byte packing measured by size (`CK_ATTRIBUTE` 16, `CK_INFO` 72, `CK_TOKEN_INFO` 160, the function list's offset +2, the init arguments 44); `openFolder`'s process handle released by its cleanup; WebView2's event tokens never removed, which is safe because the controller that holds them is closed.
+
+**The six that were not, made into tests (commit 48e53ce), predicted in `docs/s33-predictions.md` before CI ran them (P1), with no fix beside them:**
+
+| row | test | P1 predicted | CI run 38183853425 | CI run 38185042718 (harness fixed) |
+|---|---|---|---|---|
+| the audit lock's mutex, one handle per lock | `TestLockingTheSameDirectoryManyTimesKeepsAtMostOneHandle` | FAIL | **FAIL**: 133 → 333 handles in 200 locks | FAIL, the same |
+| drop targets revoked after `Controller::Close` | `TestAClosedWindowGivesBackEveryDropTargetItRegistered` | FAIL, 4 of 5 (least certain) | **FAIL: 4 of 5 pinned** | FAIL, the same |
+| Navigate's re-registration off the UI thread | `TestNavigatingRegistersTheNewTreesDropTargetsOnTheWindowsOwnThread` | FAIL | **hung ten minutes — my harness** (below) | **PASS — no defect found** (P3c predicted it from the hang's stack) |
+| a window that fails to open, its icons | `TestAWindowThatFailsToOpenGivesBackItsIcons` | FAIL, ~30 GDI | never ran (package timed out) | **FAIL: 15 → 45, 6.0 each** |
+| a PIN dialog whose owner is destroyed | `TestAPINDialogWhoseOwnerIsDestroyedReturns` | FAIL | never ran | **FAIL: not returned in 15 s** |
+| standard error after `FreeConsole` | `TestNothingWrittenToStderrAfterTheConsoleIsGivenBackLandsInAFile` | FAIL | **PASS — the prediction failed** | passed; its diagnosis, read with `-v` for one run: `stderrBefore=0x74 stderrAfter=0x74`, the marker in no file, `file=0xffffffffffffffff` |
+
+**Two defects of mine, in the harness, not in the product.** (1) `recordWarnings` forwarded to `slog`'s own default handler, which writes through `log.Default()` — and `SetDefault` points `log.Default()` back at the new handler, so a record went round into `log.Logger`'s mutex twice and the test hung until the package's ten-minute alarm, taking the icon and PIN rows with it. Fixed in a commit that changed nothing else (7cd0a8b), and the rows re-measured. (2) The stderr helper read `f.Fd()` **after** `f.Close()`, so the file's handle printed as -1 and that half of the reading measured nothing; fixed (182eb48), not yet re-read.
+
+**What the readings say.** The stderr row found no defect on Server 2025: `FreeConsole` left `STD_ERROR_HANDLE`'s value as it was and no later file received the marker. D-454's reasoning — the number reused by the next file opened — is **not shown** by this; it may need a heavier process (many files opened) or a different Windows. The Navigate row found no defect either: off the UI thread `RegisterDragDrop` succeeded. **Both fixes are kept** (the stderr handles pointed at NUL after `FreeConsole`; the re-registration on the window's own thread), because each is what the code's own comments state as the rule, and P1's own text said so before the run: "if P1b or P1c pass on the unfixed code, the fix still goes in, and the entry says the measurement found no defect for that row."
+
+**The fixes** (fcd1dd5): one mutex handle per directory per process, kept for the process's life on purpose (it is what lets a later lock hear of an abandoned writer); drop targets revoked before `Controller::Close`, and a refused revoke logged; Navigate's re-registration inside the UI-thread closure, guarded against a window being torn down; a failed window's icons destroyed; a failed `add_*` releases its handler (three sites); the PIN dialog's fonts deleted on every path, the dialog ending as a cancel when its owner is destroyed or a `WM_QUIT` reaches its loop; the tray's own icon destroyed; after `FreeConsole` the standard handles that named the console are pointed at NUL and the old `os.File`s kept alive so their collection cannot close another file's reused number; **a CNG key whose certificate context owns it (`fCallerFree` FALSE) keeps that context until the session closes — never run: it needs a provider that answers FALSE, which neither the runner nor the soft token is.** Two test comments that said the Windows suite runs under `-race` corrected (it runs `CGO_ENABLED=0`).
+
+**P4 and P5, read.** Run 38186918219 on `55a582e` (the fixes, the cloud channel, B-LT): eight jobs green — `ci`, `linux-gui` with its race probe, `packaging` (the MSI's added RemoveRegistryKey, P4h), `linux-packages`, the three `linux-install` (the new desktop entry found and removed, P4g), `sdk-typescript` — and `windows` red on two rows. **I first reported it red on one**, the PIN dialog: I had read the log's last 130 lines, which began at `internal/pades`, and the other failure was above them — **`internal/cloud`'s own test, cutting a path at the last `/`, panicked on Windows.** Found reading the next run's log in full; fixed (`5e187d9`). The PIN row: P1e's mechanism was wrong — a window destroyed on one thread does not destroy the windows it owns on another — so the `WM_DESTROY` branch never ran there and the dialog outlived its owner by the test's whole 15 s. **Fixed by watching the owner** (a 250 ms timer, `IsWindow`), and run 38187564063 on `e131e3f` measured it: **`internal/ui` green on Windows, the PIN row included (P5a)**. That run's other failures were the same cloud test and the LaunchAgent's tests, whose absolute-path rule used `filepath.IsAbs` on a macOS path (fixed in `5e187d9`).
+
+---
+
+## D-458 — D39 read to its cause; D45's cause inferred, not measured; both tests corrected, neither re-run away
+
+**Date:** 2026-10-12
+**Phase:** session 33.
+
+**D39 — the sign window that hung 60 s, twenty failures.** Read from CI run 37833946737, job 113506104715, not re-run. All twenty used `sharedMainWindow` ("Liro Bridge"). The navguard test's last window A had slot `0x02c2`; the next window B was `0x4e02c2` — the same slot, reused. `liroWindowsTitled` walked `FindWindowExW` with the last window found as its cursor; **a cursor destroyed mid-walk ends the walk**, so when A was being destroyed "before" missed the shared main window M, the test took M for the new sign window, closed it, and never touched B — whose sign then waited its 60 s. A test-harness defect. **Fixed** (b68f056): an `EnumWindows` snapshot, filtered by PID; and **`TestAFindWindowWalkLosesItsPlaceWhenItsCursorIsDestroyed`** puts the mechanism itself on the runner, so the explanation is a measurement rather than a reading.
+
+**D45 — `TestSourcesAreOnePerUsableModule`, 10.4 s and two discoveries that disagreed.** **Inferred, not measured.** 10.4 s fits `ProbeTimeout`'s 10 s plus a normal probe. If that is what happened, the second discovery's probe of one real module timed out where the first's did not, and the test indexed past the shorter list. Nothing here observed a timeout: the run was on the owner's machine, and the arithmetic is the only evidence. It is not a cause until that machine shows one (the owner, D-467). The test now asks `Sources`' own rule of one source per usable module (`sourcesFor`) on one discovery, stops rather than indexing past unequal lengths, and logs every failure with its reason. **Left open, for the owner:** whether 10 s is right for NetSeT, whose probe was the slow one (D-305).
+
+---
+
+## D-459 — D6: the four examples that knew only Windows' discovery path read SPEC §14's on all three platforms; `sign.php` and `Sign.java` executed for the first time (C13, in part)
+
+**Date:** 2026-10-12
+**Phase:** session 33.
+
+`sign.php`, `Sign.java`, `Sign.cs` and `liro-test-client.ps1` now read the discovery file where `platform.DiscoveryPath` puts it on Linux and macOS as well as Windows; PROTOCOL.md §9 and the SDK README no longer teach Windows' path alone. **A guard** reads every example for all four pieces (red on the old files, green on these). **`examples-run.test.mjs`** runs `sign.php`, `Sign.java` and `sign.py` against the SDK's stand-in agent through Linux's discovery file — the first time the PHP and Java examples ran at all: red on the old two ("no /Liro/bridge.json"), green on these. **Against the stand-in, not the real agent**, and the examples README says so. **`Sign.cs` was not compiled** — no C# compiler here; its platform test uses only what .NET Framework 4's `csc.exe` has (`Environment.OSVersion.Platform`, a directory check for macOS), because the README says it is compiled with the compiler inside Windows.
+
+---
+
+## D-460 — D23 read to its cause in WebKit's source and fixed: the `bwrap → bwrap → xdg-dbus-proxy` chain each window left is ended when the window's web process has gone; and a second finding, larger than D23 — **this binding never finalizes any wrapped object**
+
+**Date:** 2026-10-12
+**Phase:** session 33. Measured under Xvfb on WebKitGTK 2.52.6 in this container.
+
+**Reproduced first:** under Xvfb every window left its chain — the owner's count on Fedora (D-420, D-423), not D-397's "one in two".
+
+**The cause, read in WebKit 2.52.6's source:** `XDGDBusProxy` holds the proxy's sync pipe (`m_syncFD`) in the web process's `ProcessLauncher` (`m_dbusProxy`), released only in `~AuxiliaryProcessProxy`; the proxy exits when that pipe closes. The launcher lives as long as the `WebKitWebView`. **And the `WebKitWebView` is never finalized**: measured with a bare view and with a hundred labels, **gotk4 v0.3.1 finalizes no box at all on this build** — its toggle references never drop. So every window's proxy outlives the window.
+
+**The fix** (db1e3a0, `dbusproxy_linux.go`): after a window closes, the agent finds orphaned proxies — each live web process paired with the proxy started just before it, by start time — and on the UI thread replaces **its own** end of an orphan's sync pipe with `/dev/null` (`Dup3`); the proxy sees the pipe close and exits as it does at the agent's exit. `TestClosingAWindowLeavesNoDBusProxyBehind`: **red** with the release removed ("1 D-Bus proxies still running" 10 s after the first close), **green** with it, three windows in a row. **CI cannot run it** (no display, no user namespace) and it skips there, saying so. **Not counted on the owner's Fedora or Ubuntu VM**, which D23's own close condition asks for — the owner's hands.
+
+**The larger finding, a new open item:** if gotk4 finalizes nothing, every GObject this program wraps — windows, views, labels — is kept for the process's life. D23 was the visible case because it held processes; the rest is memory. Not measured beyond the two probes above.
+
+**Also found running check.sh in a container, each said rather than smoothed:** the two layout tests failed on a machine whose bubblewrap could make a sandbox but had no display, where every other window test skips — they skip on `ErrNoDisplay` now (a83b135); `TestOnlyTheChooserHelperKeepsItsDumpableFlag` fails as root (root reads a non-dumpable process's `/proc`) and passes as an ordinary user — environmental; `TestSignDocumentBTWithRealTSA` fails where DNS to `test-tsa.ca.posta.rs` is blocked — environmental, CI reaches it; `check.sh --only ci:N` needs `ci:2` selected too, because later steps read its package list — a limitation of check.py, a new open item.
+
+---
+
+## D-461 — The cloud channel (A32) built to F14, with protocol version negotiation; SPEC §2 now says cloud signing is out of scope permanently and the channel is not it
+
+**Date:** 2026-10-12
+**Phase:** session 33. F14 written first (`docs/phases/F14.md`), then built.
+
+**Negotiation** (be06005): `GET /v2/health` and `bridge.json` list every version the agent speaks (`protocolVersions`); a request may name one in `X-Liro-Protocol`, and one the agent does not speak is refused **426 `PROTOCOL_UNSUPPORTED`** with the list. The TypeScript SDK picks the highest shared version and sends it; it used to refuse any agent whose newest version was not exactly its own — **red on the old SDK** (an agent speaking 2 and 3 refused `VERSION_TOO_OLD`), green now.
+
+**The channel** (0c4bee8 and after): a `liro-bridge://sign?job=https://…` link runs `liro-bridge open-link`, which reads the link strictly and leaves it for the running agent, or becomes the agent. The agent takes links **one at a time** (a queue of eight; past it a link is dropped and logged), asks the person **once per server** in a window that names only the origin it will connect to, fetches the job over HTTPS (system roots, no redirects, no cookies, 30 s, size-limited), reads it **by the loopback protocol's own rules** (`api.ParseCloudJob`: the same fields, limits and refusals), puts it through **the same signer, consent window, job registry and audit log** as a loopback request, and posts the answer **only to the same origin**. Settings lists the allowed servers with Remove. The scheme is registered per user on Windows at every start (removed by `uninstall-notice` and by the MSI) and by the package's `liro-bridge-open-link.desktop` on Linux.
+
+**Decided while building it, each for the reason given:**
+- **No device secret for a server** (F14 §2): the signature, made by the person's own certificate, is the proof the server needs.
+- **No new audit field**: the request's application is the origin, which is what the consent window showed and what the audit record carries; the job URL goes to the log without its query or fragment (`cloud.Redacted`), never to the audit chain. F14 §4 corrected to say so.
+- **The origin question waits for the one-window slot** (`protocolSigner.holdSlot`), so it never opens over a batch somebody is reading.
+- **A link that comes to nothing is said**: a desktop notification where the platform posts one, and the native box where it does not — Windows posts none (SPEC §6.5.2), so without the box a failed link there was silence (7345c33).
+- **The origin window is 406 points high**, measured under Xvfb in all three locales with the whole origin visible: a 255-character origin needs 354/372/390 (en/sr-Latn/sr-Cyrl), plus D-202's slack; at 300 it was cut to 62 of 152 points. My first measurement said "fits from 160" in every case — the resize had not reached the page when it was read, and then the region had shrunk and hidden the origin; both found by the test, both fixed in it. **Not measured in WebView2.**
+- **`internal/cloud` is held to the API door's rule** (SPEC §4.2 rule 4): it may import `internal/api`, not `internal/ui` or `internal/cli` — checkdeps red without the rule.
+
+**SPEC amended:** §2's first row is now *signing in the cloud — a key anywhere but the person's own card, or a signature with nobody present* — out of scope permanently, with the sentence that the channel is a way for a server's request to reach the person; the "nothing leaves the machine" row says a request's answer goes back to whoever sent it, nowhere else; §4.3 has five entry points.
+
+**Never run against a real server, nor with a card, nor by a person clicking a link in a browser.** Measured: the link parser, the client, the channel end to end against `httptest` TLS servers, the origin list, the queue (one at a time — red with the queue handled concurrently), the scheme's registry round trip (Windows, P4d), the desktop entry installed and removed (Linux packaging jobs, P4g). **The consent window naming an origin of 255 characters has not been measured** (open item).
+
+---
+
+## D-462 — A2/E2: B-LT written after reading how DSS 6.5 reaches BASELINE-LT; a revoked signer saves nothing (`CERT_REVOKED`'s first producer); the two timestamp presets removed; SPEC §12.6 rewritten as a draft for the owner
+
+**Date:** 2026-10-12
+**Phase:** session 33, block 5's code. DSS 6.5 read (its `PAdESLevelBaselineLT` and the revocation sources under it); Java and LGPL, so nothing used.
+
+**What B-LT now collects** (`internal/pades/dss`, `gather.go`, `evidence.go`):
+- evidence for the signer's certificate and each issuer up to an **anchor** — self-signed, or listed in the Trusted List — and none for an anchor (DSS's rule);
+- **for the timestamp authority's chain too**: B-LT is the validation data for the signature and its timestamp, and a timestamp whose authority cannot be checked proves no time. A token that carries no authority certificate leaves the document at B-T;
+- for a **delegated OCSP responder**, unless it carries ocsp-nocheck;
+- each issuer found among the certificates at hand, then in the trust store, then at AIA over HTTP, and **used only if it signed the certificate** (it used to be matched by name);
+- OCSP first, then the CRL; an OCSP answer used only if it verifies and says **good or revoked** (Unknown proves nothing); a CRL only if the issuer signed it, its issuer is the certificate's, and the issuer may sign CRLs; indirect CRLs refused, as DSS refuses them;
+- evidence no newer than the timestamp's genTime asked for **once more**, then embedded and reported (DSS's behaviour);
+- duplicates written once; **a `/DSS` already in the document kept and added to** — it was replaced, so a second B-LT signature took the first one's validation data away (red with the merge removed);
+- **only `http` and `https` dialled.** `ldap://` is skipped and not remembered as silent. **Not built: an LDAP reader** — D-281's option (b) adds an outbound protocol SPEC §6.8 enumerates, which is the owner's decision. Option (a), the Trusted List's CAs as issuers, was already in place; read for this entry: **"Pošta Srbije CA 1" is in the seed Trusted List**, with HTTP addresses for its own CRL and issuer beside the LDAP ones.
+
+**A revoked certificate.** If the evidence says the signer's certificate or an issuer of it is revoked, **nothing is saved** and the document fails `CERT_REVOKED` — saving it would hand the person a document carrying the proof it is invalid (D4 closes: the code has its producer). A revoked timestamp authority or responder keeps the document at B-T, B-LT not claimed, and the note says why.
+
+**Each rule has a test against local OCSP, CRL and AIA servers, and each test was seen red with its rule removed** (the CRL signature check, the responder followed, the merge, the revoked-signer refusal). `TestSignDocumentBLTAchievedWithOCSPEvidence` was rewritten: its stand-in TSA now carries the authority's certificate, and the responder answers for both. **Never run against a real Serbian responder, nor with a card.** Whether a Serbian signature reaches B-LT is still not answered: MUP's OCSP refused and its CRL over the cap (D-076); Pošta's chain completes from the Trusted List, and no Pošta B-LT signature has been made since that was read.
+
+**The presets** (D-434): `freetsa.org` and `tsa.gov.rs` removed from Settings — no radios, an empty field, and a sentence: no service is built in; enter your provider's address; with none the signing window asks each time whether to sign without a timestamp (it does: `resolveTSAChoice`). **The Settings window's 880 points were not re-measured** after this and D-461's list were added.
+
+**SPEC §12.6** rewritten to describe what the program does — B-LT requested by default and reached only when every certificate that needs validation data got it; B-LTA not produced; the revoked rule; the unanswered Serbian question — **marked as a draft for the owner**, whom A2 asked to see it first; I could not show it, so it is in the tree and marked.
+
+---
+
+## D-463 — F13, macOS, written without a Mac, with a CI job that is its first compiler
+
+**Date:** 2026-10-12
+**Phase:** session 33. `docs/phases/F13.md` is the full account; this entry is the decisions and what was measured.
+
+**Built** (61b78ca): the window host in AppKit and WKWebView, the Linux host's shape so no page changes (`liro://` assets through the shared `resolveAsset`, messages through `webkit.messageHandlers.liro`); `ui.RunMain` keeps the main thread AppKit's on macOS and is `f()` elsewhere; dialogs, PIN, open panel and the status-bar tray; the Keychain secret store through `SecItem`; the PKCS#11 layer is Linux's, renamed `_unix` and built for darwin with cgo; a LaunchAgent; notifications through `osascript`; a link as an Apple Event goes where `open-link`'s argument goes, and a bundle launched bare is the agent; `build/macos/build.sh` builds a universal, **unsigned** `.app`; a `macos` CI job.
+
+**Decided, each because nothing better exists without a signature or a Mac:** notifications through `osascript` (attributed to Script Editor, cannot be withdrawn) until a signed bundle can use `UNUserNotificationCenter`; the login keychain, not the data-protection keychain (which needs an entitlement); **unsigned** — signing needs the owner's Apple Developer ID; no PDF filter in the open panel; the LaunchAgent written, not loaded; module paths for SafeSign and OpenSC **recalled from documentation, not read**.
+
+**Measured:** only on CI's `macos` job — read in the addendum below. **Never:** a person, a card, Gatekeeper, a link clicked, the window sizes in macOS's fonts.
+
+### D-463, addendum — what CI's macOS runner measured, run by run
+
+- **38187564063** (`e131e3f`, P5c predicted red at the first compile): `go vet` failed in `internal/keysource/pkcs11` only — `classifyLoadFailure` and the crash test's helper had no darwin form. **`internal/ui` reported nothing**: the Objective-C and both cgo halves compiled on their first meeting with a compiler, which P5c had not predicted. Fixed: dyld's reading of a load failure (`loaderror_darwin.go`, its wordings recalled; the missing-file case measured), `crash_unix_test.go`.
+- **38187726349** (`3f8b65d`): vet green with cgo; **`internal/ui` green — the window opened, loaded the origin page from the embedded assets through the `liro://` handler, took a payload, carried `liroSend` back to Go, refused a navigation off the assets, resized and navigated — and `internal/platform` green: the Keychain round trip and the LaunchAgent linted by `plutil`.** The PKCS#11 packages failed to link — the package's own test binary and the three that import it (`cmd/liro-bridge`, `pkcs11/worker`, `pinscreen`'s test), each missing the same `liro_*` symbols (read from the log afterwards; I first wrote this as PKCS#11 alone): their C helpers were `pkcs11_linux.c`, a name that keeps a file off every other system — and the link line carried `-lp11-kit` from Homebrew, which would have shipped a bundle needing Homebrew on every Mac. Fixed (`ac20812`): `pkcs11_unix.c`; on macOS the header only; the job refuses a bundle that loads anything from `/opt/homebrew` or `/usr/local`. The photograph is in that run's `liro-macos` artifact — **I could not open it** (this container's proxy refuses the artifact host); the owner can.
+- **38187982282** (`ac20812`): **the whole suite green on macOS**, SoftHSM configured; the bundle **built and checked**: `Info.plist` lint OK, the `liro-bridge` scheme and `LSUIElement` in it, the binary universal (`x86_64 arm64`), `--version` answering `liro-bridge 0.0.0-ci (commit ac20812, … darwin/arm64)`, and `otool -L` naming only system frameworks (Cocoa, WebKit, Security, CoreFoundation, AppKit, Foundation) and `/usr/lib` (libSystem, libresolv, libobjc) — nothing from Homebrew. Uploaded as `liro-macos` (two files, 8.9 MB: the zipped bundle and the window's photograph). Whether the real-module PKCS#11 tests ran or skipped is not in that log (no `-v`); the next run's verbose step says (`38bbcfa`).
+- **38188278943** (`38bbcfa`), the step that says rather than infers (`-v`): every named test **ran — none skipped**. `TestAMacWindowLoadsAPageAndCarriesMessagesBothWays` PASS (2.68 s; the refused navigation logged). `TestTheKeychainStoreRoundTrips` and both LaunchAgent tests PASS. PKCS#11 against Homebrew's SoftHSM: `module: "SoftHSM" "Implementation of PKCS11" cryptoki 3.2 library 2.7`; `token: label="liro-ci" … minPIN=4 maxPIN=255 protectedPath=false loginRequired=true`; `certificate: CN=Liro F13 Test Signer`; `a 256-byte signature verified against the certificate's public key`; `one wrong PIN, one attempt, C_Login: CKR_PIN_INCORRECT (0xA0)`; the layout and slot-survey tests PASS; dyld's words read into the kinds. The bundle checked as in the run before (`--version` names `38bbcfa`, `otool -L` system-only). So F13 §3's "measured on CI" is now a reading, not a supposition from `ok`. The run's other nine jobs ended green as well, `linux-install` on three distributions included. I read each to its conclusion afterwards; the earlier runs' slow Linux jobs too, all green, none of them altering what this entry records.
+- **A closing note, not F13's: `TestSignDocumentBTWithRealTSA` cannot skip** (C25). Its skip waits for an error, and `SignDocument` returns none when the stamp fails: it saves at B-B. So the test fails here (no DNS) where it was written to skip. On CI the same fact makes a green `ci`, `windows` or `macos` mean Pošta's test TSA was reached and a B-T signature verified there. That is inferred from the code and the result, since none of those logs is `-v`. Not changed: which way it should go is the owner's call.
+
+## D-464 — a 202 read before the job had started, at the site D-252's sweep missed
+
+**What happened.** CI run 38189507427 on `a5a8e45` changed only docs, yet its `ci` job went red on one test: `TestTheResultAnswers202WhileTheJobIsStillRunning` (`jobs_test.go:167: state is queued, want "awaiting_consent"`). The code was `38bbcfa`'s, which was green in run 38188278943, so the cause had to be timing. The test was read before anything was called a flake.
+
+**Cause, read.** This is c10ead5's (D-252's) shape. `submitDigests` is answered 202 as soon as the job is accepted, and the batch runs on its own goroutine. The test GET the result on the next line, and when it got there before the fake signer had `Publish`ed `awaiting_consent`, it found the job `queued`. D-252 swept the package and found "exactly one site". This is a second one: that sweep looked for reads of the signer (`lastRequest`), and this test reads the job's *state*.
+
+**Reproduced before the fix, on the unchanged code:** four batches of 300 at `GOMAXPROCS=4`, run side by side under `-race`, gave 3, 1, 2 and 1 failures, 7 of 1,200, with CI's message. **After:** 0 of 1,200 in the same conditions. Then the whole package passed once under `-race`.
+
+**Fix (test only).** The fake signer closes a `published` channel after `Publish`, and the test waits on it before the GET. It waits on an observation, not a duration, per D-201. `awaitCalls` would not do, because it fires when the signer is entered, before the publish.
+
+**Swept again, this time for any read after a submission:** four other sites GET a job's endpoint right after submitting (`TestAnotherApplicationsJobIsNotFound`, `TestJobEndpointsRequireAuthentication`, `TestTheJobEndpointsWorkWithNoContentTypeAtAll`, `TestAPageStillCannotReachTheJobEndpoints`). Each asserts something that does not depend on the job's state: 404 to another application, 401 unauthenticated, no 400 for a missing Content-Type, no CORS header. None has the defect.
+
+Not this session's code, and not in what the session was asked for. Fixed because it turned the branch red and the cause was in hand.
+
+## D-465 — C25: the real-TSA test skips only when this machine cannot reach the server, and fails otherwise; and "a failed timestamp is saved as B-B" was my error, read now in every caller, with the downgrade that does happen given its own item (C26)
+
+**The owner's ruling** (2026-10-12): make the test skip when the network is unreachable and fail when the server answers wrongly — "a test that cannot skip is a test that teaches people to ignore it". And open the B-B finding as its own item, with options, "I would rather it refuse than quietly downgrade".
+
+**The test.** `TestSignDocumentBTWithRealTSA` now:
+- dials the server's host and port first, directly, as `tsa.Client` does (it has no proxy);
+- skips, with the dial's error, when that fails;
+- otherwise signs with `OnTSAFailureAbort: true`, so a failed stamp is an error and the test fails on it.
+
+Both paths were measured in this container:
+- **skip:** no DNS here, so `lookup test-tsa.ca.posta.rs … no such host`;
+- **fail:** a local server that accepts the connection and answers garbage, pointed at by a temporary edit (reverted), gives `FAIL … TSA_UNAVAILABLE: tsa: parsing TimeStampResp`.
+
+**What it costs.** On CI, a green job used to prove Pošta's test server was reached (D-463's note). If a runner ever loses that network, the test now skips and the job stays green. A CI-only switch could make it fail instead; I have not added one, because the owner asked for a skip.
+
+**The finding, corrected.** I told the owner a failed timestamp is saved as B-B rather than reported. I took that from this test, which left `OnTSAFailureAbort` at its zero value. Every caller in a release build sets it:
+- the window aborts and asks the person (SPEC §12.8's three-way choice);
+- the protocol fails the document to the caller with `TSA_UNAVAILABLE` or `TSA_REJECTED`, unless the person chose B-B;
+- the CLI's `sign` is not in a release build.
+
+B-B is reached only by asking for it, or by answering the question; and it is shown in the warning colour with "Level B-B — no timestamp".
+
+What remains is in `docs/decision-timestamp-failure.md` and open item C26:
+1. The library's safe behaviour is not its zero value.
+2. Whether "sign without a timestamp" should be offered after a failure at all.
+3. **The downgrade people actually meet: B-LT is the default, B-T is what a Serbian card gets, and the report shows B-T in the positive colour without saying it fell short.**
+
+The paper recommends options; nothing is built.
+
+## D-466 — D-462, said plainly: B-LT has reached no Serbian card; LDAP stands in front of one certificate, which the bundled Trusted List already carries; the owner's LDAP decision, with the route that avoids it measured against stand-ins
+
+**The owner** (2026-10-12): LDAP is "the half that matters here … So B-LT now works for cases we do not have. Say that plainly in the entry rather than letting D-462 read as closed", and bring the LDAP decision properly: what it costs, what it opens, and whether a route avoids it, bundling the chain for instance.
+
+**Plainly, as an addendum to D-462:** D-462 built B-LT and measured it only against stand-in servers on loopback. **No Serbian card has reached B-LT**, before or since.
+- **MUP** cannot reach it with this code, and LDAP has nothing to do with that. Its OCSP refuses TCP (D-076, re-run), and its CRL is 30,017,248 bytes against the 5 MB cap.
+- **Pošta** can, by reading and now on a stand-in of its shape (below). Never with the card.
+- **Halcom, PKS and E-Smart Systems** are unmeasured.
+
+**What the record says about LDAP is narrower than the premise.** Only Pošta's intermediate, *Pošta Srbije CA 1*, is published over LDAP alone (D-281); Pošta's revocation is HTTP (SPEC §11.9). MUP's chain is HTTP.
+
+I read the bundled Trusted List (`internal/trust/tsl/seed/TSL-RS.xml`, 2026-05-20). It carries the intermediates of all five issuers: Pošta CA 1 and CA 2, MUP Gradjani CA 4, Halcom's e-signature CAs, PKS CA Class1, and ESS IQCA1/2 V3. Production passes the list's CA certificates as the trust store (`interactive.go:495`), and D-462's walk treats them as anchors (`dss/gather.go:180–195`). **So the bundled chain the owner proposed already exists, and the code uses it.**
+
+**Measured against stand-ins, in this container** (`internal/pades/trustlist_blt_test.go`). Pošta's shape: root → intermediate → signer; the token carries the signer and the root; the AIA is `ldap://`; revocation is HTTP.
+- With the intermediate in the trust store: **B-LT**, nothing asked of AIA, no revocation asked for the anchor, two OCSP responses in `/DSS`.
+- The control, without it: **B-T**.
+- Under `-race`, with all of `internal/pades`, green.
+
+**The decision is the owner's.** `docs/decision-ldap.md` gives:
+- what LDAP costs: a SPEC §6.8 amendment; a dependency or a parser of our own fed by the network; port 389, which does not pass a proxy;
+- what it would buy: under SPEC §11.1, nothing the Trusted List does not already give for a qualified signature;
+- the options.
+
+**Recommended: no LDAP; the Trusted List route; one signing at B-LT with the Pošta card to settle it.** MUP's ceiling (B-T) is recorded as a separate question.
+
+## D-467 — the owner's rulings of 2026-10-12, recorded
+
+- **macOS signing waits.** "I am not buying an Apple Developer ID before a Mac has opened the program once." F13 §6 and §8 and open item C24 say so. Until then the bundle is unsigned and only CI has run it.
+- **D45 stays inferred, and marked as such.** "Do not let 10.4 s reasoning read as a cause."
+  - D-458's heading and its D45 paragraph now say "inferred, not measured", and lead with that rather than ending with it.
+  - The handover's title had "D39/D45/D23 read to their causes"; it is now "D39 and D23 read to their causes, D45 inferred only".
+  - Open item D45 states the ruling.
+- **The owner's own work is left as it is:** the macOS photograph, the Windows windows with a screen, the VM counts for D23, and the card work. Nothing here was changed to anticipate them.
+
+## D-468 — what has actually run against each change: the table the owner asked for before anything merges, and four things its inventories found
+
+**The owner:** "How would I tell, reading this, which parts are measured and which are only compiled? Give me that as a table."
+
+**`docs/s33-what-ran.md`** has one row per change, with four columns: the test, where it runs, whether it was seen failing without the change, and what no test has executed.
+
+How it was built:
+- four read-only inventories (C21/D39/D45/D23/D6/negotiation; the cloud channel; B-LT; macOS), from the test files, `ci.yml` and the CI logs;
+- then checked by me where a row rests on a claim: every cited test name exists; `ci.yml` has no display for Linux; `holdSlot` has no test; the good-link test does not call `runOpenLink`; the committed consent-layout test has no 200-point control; the dyld test asserted nothing about the kind.
+
+**What it says that my records did not say plainly:**
+- **Every Linux window test skips on CI.** The Linux window measurements (D23's proxy, the origin and consent layouts) were made in this container only.
+- Two C21 tests pass with or without their fix: Navigate, and `FreeConsole`.
+- In the cloud channel:
+  - the origin question, the one-window slot, the tray's link pickup and the good-link `open-link` path have **never executed**;
+  - the Windows scheme was tested under a scratch registry key, never the real one;
+  - the MSI has never been installed.
+- On macOS:
+  - the PIN dialog, the alerts, the open panel, the status item, notifications and Apple Event links have never executed;
+  - the window's photograph is taken only in the suite step, and the test passes without one.
+
+**Found and fixed in this commit:**
+1. `cloud-origins.json`, the servers a person allowed, was in neither of the uninstall's lists, so the notice did not name a file it leaves behind. It is now in `keptState`, beside `pairings.json`.
+2. `TestDyldsWordsAreReadIntoTheKinds` logged the real `dlopen` failure and asserted only that one came back, while its comment and D-463 called the case measured. It now asserts `LoadNoFile`. CI's earlier log showed that kind's own sentence, so it is predicted to pass (P6).
+3. `startup_other.go` still said macOS's autostart call refuses, and logged a darwin failure at Debug. F13 writes a LaunchAgent, so a failure there is now a warning, as on Linux.
+4. F13 §1's "not measured" list named four things; it now names all that the inventory found.
+
+**Not fixed, recorded:** the tests that pass without their fix, and every "never run" row. They are what the table is for.
+
+## D-469 — C26 built: a level that was asked for is reached or refused, the library refuses by default, and a level below the one set is no longer shown as positive
+
+**The owner** (2026-10-12): "refuse wherever someone asked for a specific level. Yes to that, and to changing the library default to refusing. A caller who forgets an option should get an error, not a quietly weaker signature. 'B-LT asked, B-T saved, shown in the positive colour' is the one that would have burned somebody — fix that first."
+
+**Fixed first: the report.** `achievedLevelIntent` and `achievedLevelNote` now take the level the batch was set to reach (`mainWindow.requestedLevel`). B-T where B-LT was set is in the **warning** colour, with a sentence in three locales (`consent.level_blt_short`): "B-LT is set and was not reached: the revocation evidence it needs was not available for every certificate. These signatures are B-T."
+
+**The library refuses by default.** In `pades.Options`:
+- `OnTSAFailureAbort` is gone. Its comment called aborting the default while its zero value saved B-B, which is what misled me in D-465.
+- `SaveWithoutTimestamp`: the zero value refuses with `TSA_UNAVAILABLE` / `TSA_REJECTED`.
+- `SaveAtBTIfBLTFails` (new): the zero value refuses a B-LT that falls short with the new code **`LEVEL_NOT_REACHED`**, and nothing is saved.
+- `TestSignDocumentAbortsOnTSAFailureByDefault` had been passing the abort flag explicitly, so it never tested the default. Now it does.
+- The six tests that check the B-T fallback opt in, as a caller must.
+- A new test refuses a short B-LT under the zero value, with an unrevoked control reaching B-LT under the same options.
+
+**Who counts as having asked, and on what basis:**
+- **A protocol or cloud caller that names `level`** asked. Below it, the document fails (`keepsBTWhenBLTFallsShort`).
+- **The CLI's `--level`, when given**, asked. Its default did not.
+- **The window's level, from Settings,** is the agent's standing configuration. It is kept at B-T and said, not refused.
+
+  I decided this because `config` fills in B-LT on load (`config.go:344`) and cannot tell a level a person chose from the default. Treating it as asked would refuse **every MUP signature on a default install**, since MUP cannot reach B-LT at all (D-466). **If the owner wants Settings treated as asked, the default level must change first** (SPEC §12.6). That is the owner's call, not made here.
+
+**No "sign without a timestamp" after a failure, nor when a caller named the level** (`offersWithoutTimestamp`). The page hides the button, and Go refuses that answer if it arrives anyway (`acceptedTSAChoice`). Only before a batch, with no authority configured and no level named, is it still offered.
+
+**What was measured, in this container:**
+- the controls: the old rules fail the new cross-platform tests (`levelshortfall_test.go`), on both the colour and the offer;
+- `internal/pades` and the whole Go suite green, except `TestOnlyTheChooserHelperKeepsItsDumpableFlag` as root, the known environmental failure (D-460);
+- the SDK: `LEVEL_NOT_REACHED` added, `dist/` rebuilt and matching `src/`, 113 passed, 0 failed, 0 skipped.
+
+**Corrected along the way:** PROTOCOL.md said a TSA that does not answer produces B-B for a protocol caller. That was untrue before today, since the protocol path failed the document. It now states the rule.
+
+**Not measured:** any of it with a card or a screen (worklist 1.2, 1.3, 1.5). The Windows test of the hidden button runs on CI only.
+
+## D-470 — the owner's rulings: no LDAP; macOS signing still waits
+
+- **LDAP is not built** (the owner, on D-466): "Pošta needs one certificate we already carry, and the test in its shape reaches B-LT fetching nothing. One signature with my card settles it, and that is mine to do." `docs/decision-ldap.md` is now a record, not a question. SPEC §6.8 stays as it is.
+- **macOS signing still waits** (D-467 stands).
+
+## D-471 — why three of C21's fixes have no test
+
+The owner: "if they cannot be tested, that is a fact about them worth knowing, and if they simply were not, that is worth knowing too." Read again at each site for this entry:
+
+- **A failed `add_*` releases its handler** (`navguard_windows.go`, three sites). **Testable; simply not tested.** A fake `ICoreWebView2`, whose vtable slots 7, 17 and 44 return a failing HRESULT, would make `comCall` fail. The handler's own reference count would then show the release. Windows tests here already build callbacks with `NewCallback` (`dropwatch_windows_test.go`, `navguard_windows_test.go`). I measured the six rows the inventory had flagged, and treated these as error paths to fix by reading. That was a choice, not a limit.
+- **A failed PIN dialog deletes its fonts** (`pindialog_windows.go`, `build`'s error path). **Not testable as written.** `build` fails only when `CreateWindowExW` refuses a control, and nothing lets a test make it refuse, short of exhausting the session's USER/GDI handles, which no CI runner should be asked to do. Testing it needs a seam: a function variable for control creation. Not added.
+- **`WM_QUIT` reaching the PIN loop ends the dialog as a cancel** (`runPINDialog`). **Testable; simply not tested.** Post `WM_QUIT` to the dialog's thread with `PostThreadMessageW`, then assert that `CollectPIN` returns a cancel and the field is cleared. **Found reading it for this entry:** the fix ends the dialog but **swallows** the `WM_QUIT`. The usual rule for a nested loop is to post it again for whatever loop is outside. By reading, the login's thread has no outer loop, so nothing is lost today. A test would have to decide which behaviour it asserts. Recorded, not changed.
+
+The two tests that pass with or without their fix (Navigate, `FreeConsole`) are worklist items 0.1 and 0.2. These three are 0.3, except the fonts, which wait on the seam.
+
+## D-472 — the worklist: what must be measured before any of this reaches a person
+
+The owner asked for "one short document — not an entry, a page a person can act on". It is **`docs/measure-before-release.md`**:
+- grouped by what each row needs: CI, which is mine and comes first; a card; a screen; a server; a VM; a Mac;
+- ordered within each group by what a person meets first;
+- each row stating the claim and what would show it false.
+
+**Found while writing it:** a cloud link dropped because eight are already waiting is only logged (`cloudlink.go` `offer`), against D-461's rule that a link which comes to nothing is said. It is worklist item 0.6, not fixed here.
+
+## D-473 — group 0 of the worklist: the tests that could not fail made to, the rows that were "nothing" given tests, a dropped cloud link said, and a stand-in Liro Business
+
+**The owner** (2026-10-12): "Take it now, starting with the two tests that cannot fail. Everything else in the worklist is read through them, so they go first. Row 0.6 as well." And, mid-way: "stand up a stand-in server in the container that behaves like Liro Business, and run the whole cloud path against it end to end … Say what it would and would not show before you build it, and leave the worklist rows where they are."
+
+**0.1, Navigate.** Its test passed with or without the fix, because a registration off the window's thread succeeded on the runner. What the fix changes is the thread each drop target is bound to, which decides where OLE delivers its drops. Each `dropTarget` now records the thread `RegisterDragDrop` ran on, and the test asserts that it is the window's own.
+
+**0.2, `FreeConsole`.** Its test passed with or without the fix, because no file happened to be given the console's old number. The child now reads standard error right after the console is given back, before anything is opened. It must be NUL (a character device that is not a console), and `os.Stderr` must follow it. On the old code the handle is the console's closed number, which `GetFileType` refuses.
+
+**0.3.**
+- **A failed `add_*`:** a stand-in `ICoreWebView2`, whose 64 methods all return `E_FAIL`, makes all three subscriptions fail. The handler-pin bookkeeping must hold none of them afterwards.
+- **`WM_QUIT`:** the test types four characters, posts `WM_QUIT` to the dialog's thread, and asserts a cancel, then that the window is gone. The old code left it up on a thread that no longer reads its messages, with the characters still in the field. The decision D-471 left open is taken: the `WM_QUIT` is **not** posted on again. The login's thread has no outer loop, and a `WM_QUIT` left in its queue would end the next PIN dialog on that thread the moment it opened.
+- **The fonts:** no seam was needed, contrary to D-471. A heading with a NUL in it fails `build` after both fonts exist, the same path as a refused `CreateWindowExW`, and the process's GDI count over ten failed dialogs shows whether they were given back.
+
+**These five are measured on CI's Windows runner against the old behaviour first (P9).** The commit pushed with them switches each fix off behind `p9Unfixed`; the next removes that switch.
+
+**0.4, the cloud wiring.** These run on every job that tests `cmd`, Linux included; each test names what it does not show.
+- **Seams that change no behaviour:** `open-link`'s two ways on (`agentIsRunning`, `becomeAgent`); the origin window (`newOriginWindow`); `newCloudLinks` split so its parts can be stood in (`cloudParts`, `wireCloudLinks`); the watcher's tick (`offerInboxLinks`); and `cloud.Client.TrustingRoots`, which replaces the system's roots and still verifies.
+- **The tests:**
+  - open-link's good path, both with an agent running and without one;
+  - the origin question answered by allow, deny, a closed window, and nobody;
+  - the question waiting for, and holding, the one-window slot that `Sign` holds.
+
+**0.5, the scheme on Windows.**
+- `TestTheLinkSchemeIsWrittenAtStartAndRemovedByTheUninstallNotice` runs the real start-up registrations and the real `uninstall-notice --quiet` against the **real** `HKCU\Software\Classes\liro-bridge`. It runs only where `LIRO_TOUCH_REAL_HKCU=1`, which CI's windows job sets and a person's machine does not.
+- The packaging job now installs and uninstalls the per-user MSI with `/qn`, writing the key in the agent's shape in between and checking that it is gone afterwards.
+
+**0.6, a dropped link.** It was only logged, under a comment saying it was said. It is now said, as `cloud.OutcomeDropped` with its own sentence in three locales, once per burst (on Windows each saying is a box that waits), and off the inbox watcher's goroutine. The control, the old `offer`, fails the new test.
+
+**The stand-in Liro Business (P8, written and committed before it was built):** `TestTheWholeCloudPathAgainstAStandInLiroBusiness`, run in this container under `-race`, three times.
+- What it runs: open-link → the inbox → the watcher's tick → the queue → the real channel, client, store of allowed servers and job registry → a stand-in signer (an RSA key; no window, no card) → the result posted to a TLS server in the test.
+- What it checks: two jobs end with signatures that verify against the stand-in certificate; the server is asked about once; the signer is asked once per job.
+- Its control, as P8 named: before the watcher's tick, nothing reaches the server.
+- `TestARefusedServerIsNeverFetchedFrom`: a refusal means nothing is fetched and nothing posted.
+- **What it does not show, as P8 said:** real HTTPS (the server is trusted by name), a browser, any window, a card, a PAdES signature, or the real Liro Business. **No worklist row moves.**
+
+**The default level** is its own decision, as the owner asked: `docs/decision-default-level.md`, D-474.
+
+## D-474 — the default signature level: B-LT, which the citizens' ID card cannot reach; the owner's decision
+
+The owner: "SPEC §12.6 makes B-LT the default, and one of the two issuers we have measured cannot reach it … Bring me that as its own decision, with what each option costs … Do not fold it into C26."
+
+`docs/decision-default-level.md` sets out the options and what each costs:
+- A: a B-T default;
+- B: keep B-LT with the warning, which is what is built;
+- C: "best available" as the default, with a chosen level held to C26 as a request;
+- D: a default per issuer.
+
+Found writing it: **a default install reaches neither B-T nor B-LT on its own**, because no timestamp authority is built in. **Recommended: C; A if C costs too much now.** SPEC §12.6's draft is brought up to C26 and to the LDAP ruling, and points at this decision.
+
+## D-475 — a race in one of group 0's own tests: the PR run on `b550e53` found the PIN dialog before its edit control
+
+**What happened.** Run 38246385773, the PR run on `b550e53` (a docs-only commit whose code had passed three times), went red on `windows` in `TestAQuitReachingThePINLoopIsACancel`: `the PIN dialog has no edit control to type into`. The push run on the same commit was green. The owner saw it before I had read it.
+
+**Cause, read in the code.** `runPINDialog` creates the dialog's window, then builds its controls, then shows it. The test found the window by its class as soon as it existed, and looked once for the edit control. When the test ran between creation and the build, the control was not there yet. This is a defect in the test, of the "read before it is there" kind this session has recorded before (D-464, F §2 rule 2): the product code is not involved.
+
+**Fix.** The test waits until the dialog is **shown** (`IsWindowVisible`), which happens only after `build` has made every control, and until its edit control is found, with a 30-second bound. What the test measures is unchanged: a `WM_QUIT` ends the dialog as a cancel and takes the window down.
+
+**Not reproduced here.** It is a Windows test, and this container has no Windows. The fix rests on reading `runPINDialog`'s order. The next runs will show whether that reading was right.
+
+## D-476 — the default signature level is "the best available", and a chosen level is a request; what SPEC §12.6 said until now; the SPEC read against the program, as an item before v1; and a slip, kept in the record
+
+**The owner** (2026-10-12), on D-474: "C … the only option that stops lying in both directions — it reaches what the issuer allows without a warning nobody can act on, and it refuses when a person actually chose a level. That it also lets the config tell a chosen level from a default is the part that makes the rest honest. Amend SPEC §12.6 with it, and say in the entry what §12.6 has said until now and for how long."
+
+**Decided:**
+- **The default is "the best available".** `signatureLevel` is empty out of the box, meaning B-LT where the issuer's evidence can be had and B-T where it cannot, with no warning.
+- **A level picked in Settings is a request**, held to C26 like a calling program's: reached, or refused with `LEVEL_NOT_REACHED`.
+- **Basis for the migration rule**, which I added: a configuration written before this cannot say whether its `b-lt` was chosen (`config` has no schema version, and Settings writes whatever radio is selected). Reading it as a request would start refusing every MUP holder whose Settings was ever saved. So it is read as the best available, and a person who wants B-LT held as a request picks it again.
+
+**SPEC §12.6 amended**, and marked as not built: until it is, the program does what D-469 built. Building it is worklist 0.7, ahead of rows 1.2 and 1.3, whose claims it changes.
+
+**What §12.6 said, and for how long:**
+- **From F0, 2026-08-31 (`98ec062`), to session 33, 2026-10-11 (`4b7c60c`)**, six weeks: "B-T **Minimum**; B-LT **Default**".
+- `config.go` has defaulted to `b-lt` since 2026-09-03 (`f78d468`).
+- D-462's rewrite kept "Requested by default", marked as a draft, until today.
+- In all that time the program could keep neither for anyone: no timestamp authority is built in (D-433, D-434), so a default install reached neither B-T nor B-LT until the person configured one. And MUP's card cannot reach B-LT at all (D-076, D-466).
+
+**A third sentence of the same kind, found reading for this entry:** §11.9's "All three support OCSP, so B-LT is achievable for all of them", written in F0 on 2026-08-31. D-076 measured MUP's OCSP refusing connections on 2026-09-02, two days later, and the sentence stood for six weeks after that. It is corrected now.
+
+**The item the owner asked for:** "the SPEC has never been read against the program as a whole. Not now — after the worklist — but it belongs on the list before v1." It is E10, and number 12 in the order before v1. It lists the three sentences found so far by measuring: §12.6, §11.9, and the Fedora package check (D-444).
+
+**The slip, in the record as the owner asked.** On 2026-10-12 I pushed `b550e53` (docs only) **before** running check.sh, against the rule that each push is preceded by it and cites it. I ran it straight after: its lint, vet and build steps passed. That commit's PR run then went red. The cause was a race in one of my own tests, not the docs (D-475). Running check.sh first would not have caught it, because it is a Windows test, but the rule is about the order, and the order was broken.
+
+## D-477 — what card row 1.1 needs before it is run: the log names the certificate that got no evidence, the window and protocol paths log the signer's notes, and CI publishes the packages it built
+
+**Found preparing row 1.1** (a Pošta card reaching B-LT through the bundled Trusted List). The row says "the notes say which certificate lacked evidence". Reading for it showed that nothing would:
+- `dss` logged only two of its four ways of falling short: no issuer found, and a timestamp with no certificate. A certificate whose OCSP and CRL both failed, or whose evidence was over the cap, left nothing in the log.
+- The signer's own note was one sentence, "OCSP/CRL unavailable for at least one certificate", and **only the CLI printed it**. The window (`signInteractiveOne`) and the protocol path (`signRemoteOne`) dropped `Result.Notes`. A B-T where B-LT was set would have shown its warning and left no reason anywhere.
+- The `packaging` job built the MSIs and published none of them. The card run would have used a binary built on the owner's machine from a tree nobody recorded.
+
+**Changed:**
+- `dss.Gather` warns, for each certificate that got no evidence, with its **thumbprint**, its role (`signer`, `timestamp`, `responder`, via a new `Role.String`), and the OCSP and CRL addresses it was asked at. For evidence over the cap, it gives the size and the cap. The no-issuer warning now gives the role too.
+- `logSignNotes` writes the signer's notes, with the level asked for and the level reached, from both the window path and the protocol path.
+- `packaging` publishes the two MSIs and the exe as `liro-bridge-windows-<sha>`, kept 30 days.
+
+**A breach of SPEC §18.3, mine, found writing this.** My first draft logged each certificate's **subject**. So did the existing no-issuer warning, which I wrote in D-462 (`4b7c60c`, 2026-10-11). The rule is in `config/logging.go` and SPEC §18.3: personal names are never logged, and a certificate is named in the log by its SHA-1 thumbprint, never its subject. A signer's subject is a person's name, and on a MUP card it carries the JMBG. The no-issuer line was reachable from 2026-10-11 by any B-LT signature whose chain could not be completed. No tag contains `4b7c60c`, and no branch except this one does, so no release ever logged a subject. Whether anyone ran a build of this branch, this container cannot know. All three lines now give the thumbprint, and the test checks that the subject is **absent**.
+
+**A judgement, for the owner to overrule.** One signer note names a certificate by CommonName: a revoked certificate that vouches for the timestamp or a responder, and it now reaches the log through `logSignNotes`. That name is a timestamp authority's or a responder's, an organisation's, never the signer's. A revoked signer is the `CERT_REVOKED` error, not a note, and errors are not logged per document. I left the note as it is. If the rule is meant literally for every certificate, it is one `fmt` change.
+
+**Measured:**
+- `TestTheLogNamesTheCertificateThatGotNoEvidence` (`internal/pades/dss`): red against the `gather.go` before this entry, missing all nine phrases it looked for then. Red again against my subject-logging draft: thumbprints missing, and the subject present in both cases. Green after.
+- `TestTheWindowLogsTheSignersNotes` (`cmd`): uses a stand-in key, no timestamp authority and B-B accepted, so the signer leaves a note. Red with the window's `logSignNotes` call removed (all five phrases missing); green with it. Both runs were in the container.
+
+**Not measured:**
+- **The protocol path's call has no test.** `signRemoteOne` needs a whole `mainWindow` with a remote request, and the call is the same line as the window's. It is read, not run.
+- **A B-LT shortfall's notes have not been seen through the agent.** Seeing them is row 1.1 itself.
+- **The artifact step** has not run until this push's CI does.
+
+## D-478 — decision C built (worklist 0.7): the default is the best available, a level chosen in Settings is a request, and a `b-lt` from before is read as the best available
+
+**What changed:**
+- **`config`.** `signatureLevel` defaults to `""`, the best available, and `""` is valid. A new field, `signatureLevelChosen`, marks a level as chosen. `Load` reads a `b-lt` without that mark as the best available, because it may have been the old default. It treats `b-t` and `b-b` as chosen, because neither was ever a default. After loading, any level that is set counts as chosen.
+- **The agent.** `levelIsARequest(cfg)` is true for any level that is set: one a calling program named (`protocolserver.go` puts it into the batch's configuration) or one chosen in Settings. It is decided once, when a batch starts, because configuring a timestamp authority mid-batch reloads the configuration from disk, which would lose a caller's level. It decides three things:
+  - whether a B-LT that falls short is kept at B-T or refused, on the window path and the protocol path alike;
+  - whether the timestamp question offers signing without a timestamp;
+  - whether the report has a level to measure the result against. The best available has none, so a B-T is shown as what it is, with no warning.
+- **Settings** has a fourth choice, *Najbolji dostupan* / the best available, last, so that B-B stays first (Task 3). It is checked by default, and a save marks any other level as chosen.
+- **The SPEC (§12.6), `PROTOCOL.md` and the guide** say so.
+
+**One consequence, said rather than left to be found.** A person who chose B-T in Settings and has no timestamp authority configured is no longer offered "sign without a timestamp". They are offered *Configure* or *Cancel*. That is the owner's rule (refuse wherever someone asked for a specific level) applied to a level chosen in Settings, which D-476 made a request. The offer remains at the best available. (`consent.level_blt_short`, the warning for "B-LT set, B-T reached", can no longer be reached from the window: a chosen B-LT is refused, and the best available sets no level. Nothing in the agent reaches it now. I left it in place, and its removal belongs with the SPEC-against-the-program reading (E10), not with C.)
+
+**Measured, in the container,** each red on the old behaviour before it was green (P11):
+- **The configuration** (`internal/config`): the default, and six saved files read back. On the old behaviour, with only the new field declared: the default came back `b-lt`, and five of six files read wrong. The one green row is the `b-lt` that carries its mark, which was only being read back. All as P11a and P11b predicted.
+- **The rule** (`TestALevelSomebodyChoseIsARequest`): red on the three chosen levels with a stand-in that answers as the old window did. Green after.
+- **The Settings page in WebKitGTK under Xvfb** (`TestSettingsShowsAndCollectsTheBestAvailable`): the old page checked B-LT for an empty level and handed back `b-lt`. The new one checks *the best available* and hands back `""`, and the other three levels round-trip. **This test was written after P11, so its red was not predicted in writing first.**
+- `internal/ui`'s two Linux layout tests that touch Settings still pass with the fourth row. Neither checks that the whole page fits. That is the Windows layout test's job, and it runs on CI only (P11e's wording overstated what the Linux tests check).
+
+**Not run:**
+- **The line in `mainwindow.go` that carries the rule into a batch** (`keepBTIfBLTFails: !m.levelRequested`), and the two calls that pass it to the timestamp question. They are read, not run. A batch needs a card session. Rows 1.2 and 1.3 measure the result with a MUP card.
+- The Windows Settings test, updated to four choices, runs on CI.
+- No person has seen the fourth choice.
+
+## D-479 — D-478 shipped a label the page could not show: Settings' fourth choice read `settings.level_best`, in every language
+
+**Found by CI,** not by me: push run 38258566744 and PR run 38258572976 on `9ad71a8`. Both are red on windows only, in `TestSettingsWindowRendersLocalisedText`, for sr-Latn, sr-Cyrl and en: `label "settings.level_best" rendered "settings.level_best"`. Every other job, the three `linux-install` included, was green.
+
+**Cause.** The Settings page shows only the strings Go sends it in `buildSettingsInit`. I added the label to the page, the three catalogues and the Windows test's list of labels, and not to the strings Go sends. The test that saw it runs only in WebView2. My WebKitGTK test checked which radio was checked and what came back, not what the label said. So a person would have seen the key as the label of the default choice.
+
+**Fixed:** the string is sent. **And a check that runs everywhere:** `TestSettingsSendsEveryLabelItsPageNames` reads every `data-i18n` key in `settings.html` and requires `buildSettingsInit` to send it. It was red in the container with the line removed, naming `settings.level_best`, and green with it.
+
+**What P12 said, against what happened:** I expected any red on windows to be in `TestSettingsOffersFourLevelsWithBBFirst`, and that test passed. The red was in a test I had edited (to add the key to its list) without asking what it would then check.
+
+## D-480 — my code wrote a person's name, and on a MUP card their JMBG, into the agent's log; nothing in the project would have found it
+
+**What happened.** On 2026-10-11 (`4b7c60c`, D-462) I wrote a warning in `dss.Gather` that logged a certificate's **subject** whenever no issuer could be found for it. For the signer's certificate, the subject is a person's name, and on a MUP card it carries their JMBG. SPEC §18.3 forbids both in the log. The rule is also written at the top of `internal/config/logging.go`: a certificate is named in the log by its SHA-1 thumbprint, never its subject. My first draft of D-477, the next day, added two more lines that did the same.
+
+**How it was found.** Not by a test, not by a review, not by a rule. I found it on 2026-10-12, writing D-477 about something else: I opened `logging.go` to name the log file for the owner, and its comment states the rule. **Nothing in the project would have found it.**
+- No test reads `bridge.log` for personal data. The audit log has such a check (`internal/audit/store_test.go` fails on a run of 13 digits); the agent's log has none.
+- No lint rule or check script looks at what is passed to a log call.
+- No review step reads a diff for it.
+- My own tests of the new warnings used synthetic certificates and checked that the warnings appeared, not what they carried.
+
+The first person to see it would have been someone reading a log: most likely the owner, sending me `bridge.log` from card row 1.1 with their own name in it.
+
+**Who could have it.** No tag contains `4b7c60c`, and no branch except this one. **Whether anyone ran a build of this branch, I cannot know, and I leave that standing.** What I can say about builds:
+- Thirteen pushed heads carry the line unfixed: `55a582e` to `aaa1c01`, from 2026-10-12 00:09 to 12:24 UTC. Their CI runs built packages.
+- One run checked, 38248820871 on `aaa1c01`, published Linux packages (`.deb` and `.rpm`, kept until 2027-01-10) and the macOS bundle (until 2026-10-26). They can still be downloaded by anyone with access to the repository. I have not listed the other twelve runs' artifacts.
+- The line fires only on a B-LT signature where an issuer cannot be found, so it needs a card or token, a configured timestamp authority and a chain that does not complete.
+- **Whether to delete those artifacts is the owner's decision.** I have not touched them.
+
+**Fixed** (`2ec3055`): all three lines give the thumbprint, and `TestTheLogNamesTheCertificateThatGotNoEvidence` fails if the subject appears. It was red against the subject-logging code.
+
+**And the rule made simple (the owner, 2026-10-12):** "An organisation's name is not the risk, but 'we decided this one was safe to log' is exactly how the first one got in." D-477 had left a revoked timestamp authority's CommonName in a signer note, on the judgement that an organisation's name was safe. It is out. So is the same pattern two lines above it, which I had not been asked about: the `CERT_REVOKED` error named the **signer's** certificate by CommonName. I had judged that safe too, because errors are not logged per document. It went to the person's terminal and to the calling program. Both now give the thumbprint.
+
+**After this, no message in the product names a certificate by anything but its thumbprint.** The remaining uses of a subject are the certificate picker and the visible stamp, which show a person their own name on purpose, and the developer probes in `scripts/`, which print to the terminal of whoever runs them. Measured (P14): both revoked-path tests red on the old lines (the CommonName present, no thumbprint), green after.
+
+**What is still true:** nothing checks for the next one. A test that reads the log, or a rule over log calls, would. I have not built either, because it was not asked. It is in the reply.
+
+## D-481 — card row 1.1 with Pošta's test timestamp authority: what it can show, what it cannot, and the one reading that decides which
+
+**The owner** (2026-10-12): there is no contract for Pošta's production timestamp authority, only the test server at `test-tsa.ca.posta.rs`. "Tell me what row 1.1 gives with a test authority … If the answer is that the row cannot be read without a production authority, say so and I will decide about the contract. Do not work around it."
+
+**What B-LT needs from the timestamp authority, read from the code:**
+- The agent's anchors are the Trusted List's **CA** services (`tsl.List.CACertificates`).
+- A timestamp unit's own certificate is never an anchor. B-LT needs an OCSP response or CRL for it, and for every certificate above it until a listed CA is reached (`dss.Gather`, the timestamp role).
+
+**What the bundled Trusted List says, read from `TSL-RS.xml`:**
+- Pošta's **production** units ("Pošta Srbije TSA 1" and "TSA 2", one pair per year, the current ones granted) are listed as qualified timestamp services (QTST). Each is issued by "Pošta Srbije CA 1", a CA the list carries. So with the production authority, one certificate needs evidence, from the same CA that issues the card.
+- **No test unit is listed.**
+
+**What is not known:** the test unit's certificate has never been read. D-045 reached the server and recorded a 4,196-byte token, not its chain, and I cannot reach it from here (this environment's network policy denies `test-tsa.ca.posta.rs`). So there are two cases:
+- **(a) The test unit is issued by a CA the list carries** (CA 1, say). Then row 1.1 reads in full with the test server: the timestamp half is the same as production's.
+- **(b) It is issued by a test CA the list does not carry.** Then the timestamp's chain ends at a root nothing vouches for. **B-LT is unreachable whatever the card does**, and the row's claim, "a Pošta card reaches B-LT", cannot be shown true. The log would show `role=timestamp` lines.
+
+**What (b) still gives, and what it does not.** It is not row 1.1.
+- With B-LT chosen in Settings, the signature is refused and nothing is saved, so there is nothing to read.
+- At the default, the best available, the agent saves B-T **with the evidence it did gather embedded** (`applyDSS` writes the partial `/DSS`). The card's half can then be read **positively from the document**: whether the signer's certificate's OCSP response or CRL is in `/DSS`, which DSS's validator lists per certificate, and whether the log has any `role=signer` line.
+- That can show the card's half **false**. It cannot show the row true, because the row is about reaching B-LT, and in (b) nothing reaches it.
+
+**The reading that decides between (a) and (b) costs no contract.** One signature with the test server at B-T, which is row 1.4 anyway, carries the unit's certificate inside the PDF. Its issuer settles it: I can read it from the file, or Adobe shows it under the timestamp's certificate. That is a measurement of what is there, not a substitute for the production authority.
+
+**Answer to the owner:**
+- In (a), the row can be read without a production authority.
+- In (b), it cannot: only its card half can, and the row stays open until a timestamp authority whose chain the list anchors is available. The list also names qualified timestamp units of other providers; I do not know their terms.
+- **Which case it is, is one B-T signature away.**
+
+## D-482 — the owner's three answers: the old artifacts (not deleted: no tool here can), a check that reads the log for personal data, and the test authority's issuer read from a real signature
+
+**1. "Delete the artifacts. All thirteen heads' worth."** **Not done, because I cannot.** The GitHub tools in this session can list runs and artifacts, and delete a run's logs, but not delete an artifact, and the session has no `gh`. I did not look for another way round. The runs, all on this branch, whose builds carry D-480's line:
+- **push runs (13):** 38186918219 (`55a582e`), 38187564063 (`e131e3f`), 38187726349 (`3f8b65d`), 38187982282 (`ac20812`), 38188278943 (`38bbcfa`), 38189507427 (`a5a8e45`), 38190929428 (`edbbcb2`), 38225585797 (`feed7e8`), 38233120579 (`1abc206`), 38242378820 (`b5b3151`), 38243584334 (`584e019`), 38246379093 (`b550e53`), 38248820871 (`aaa1c01`);
+- **PR runs (7):** 38222413736 (`edbbcb2`), 38225591952 (`feed7e8`), 38233125458 (`1abc206`), 38242385215 (`b5b3151`), 38243591029 (`584e019`), 38246385773 (`b550e53`), 38248827713 (`aaa1c01`). The PR was opened after `a5a8e45`.
+
+Deleting them takes one command where `gh` is signed in, given in the handover.
+
+**2. "Build the check."** `internal/logcheck.Find` reads text for personal data in the audit log's shape, and two tests use it:
+- **What it finds:** a run of 13 or more digits that is not part of a hex token (a JMBG; a thumbprint is not flagged for the digits inside it), `SERIALNUMBER=` or `2.5.4.5=` (a written-out subject's serial-number attribute), and any known value the test passes.
+- **`TestTheLogCarriesNoPersonalData`** (`internal/pades`) runs every path in `SignDocument` that touches a certificate, with a signer whose subject is a person's (a made-up Cyrillic name and JMBG), through the agent's real logger into a real `bridge.log`. The paths: B-LT reached, signer revoked, authority revoked, no evidence, no issuer. It then reads the log, every note and every error, with every certificate's subject and name as known values. It fails if any path did not say what it should, so it cannot pass by reading nothing.
+- **`TestTheWindowLogsTheSignersNotes`** (`cmd`) now gives its signer a person's subject and scans what the window logs.
+- **Measured (P16):** with D-480's three lines put back, the pades test is red on exactly the three paths predicted: the name and JMBG in `bridge.log`, the signer's name in the error, the authority's name in the note. It is green with them out. The window scan has no red: the window never logged a subject, so it guards the future and measures nothing yet. `logcheck`'s own tests pass a thumbprint with 37 digits inside it and catch `PNORS-0101990710006`.
+
+**What it misses, as the owner asked:**
+- **Any path it does not drive.** It reads text, not code. The protocol path's and the window's own log lines beyond the notes, the cloud channel, PKCS#11 and the API are not driven.
+- **A name that is not one of the known values.** A person's name in some other certificate's place would pass.
+- **A JMBG glued to a letter a–f, or split** by spaces or dashes.
+- **Email addresses, file names and document contents**, which §18.3 also forbids.
+
+A static rule over every log call would cover the first miss for subjects written directly. It is not built.
+
+**3. The test authority.** As the owner chose: one B-T signature with the test server on the owner's machine, which is row 1.4, and the timestamp unit's certificate read out of that PDF. Its issuer decides whether row 1.1 needs the contract (D-481). The domain is not added to this environment.
+
+## D-483 — `67695f6`'s package is the product `446dcd2` was: the binaries are byte-identical once stamped alike, and CI's own `.exe` is reproduced here byte for byte; the handover's build no longer exists
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34, the owner's Windows machine). **Predictions:** `docs/s34-predictions.md` P1, committed in `f949eab` before anything was downloaded or built.
+
+**What is installed (read first):**
+- v0.9.9-rc1, the per-user MSI of 2026-10-11. Its binary is built from `4e6fd47`, the tag, with `vcs.modified=false` and go1.26.5, read with `go version -m` without running it.
+- Its tray is PID 13936, started 18:31:10 today. It holds Run and the Explorer verb from the installed path; there is no `liro-bridge://` key.
+- `config.json` dates from 2026-09-19: `signatureLevel` `b-b`, no TSA.
+- A discrepancy, explained: `Get-ChildItem` showed `bridge.log` last written 2026-10-19 under a tray started today. NTFS updates the directory entry lazily while a handle is open; the file itself was 819 bytes longer, exactly today's five lines.
+
+**The handover's build is gone.** Run 38291112853 (`446dcd2`) and its PR run 38291116544 have no artifacts. Neither was on D-482's list. Those twenty runs have none either, so the deletion D-482 asked for is done. Who deleted `446dcd2`'s is not recorded here. The only Windows package left in the repository is `67695f6`'s: run 38297486252, artifact 11770596983, expiring 2026-11-11.
+
+**What was measured, against P1:**
+- **P1a, as predicted:** the zip's SHA-256 equals the API's digest, `235aef55…`.
+- **P1b, as predicted:** go1.26.5, `vcs.revision=67695f68…`, `vcs.modified=false`, `-trimpath`. The stamps read out of the binary: `main.commit=67695f6`, `buildDate=2026-10-12T20:06:40Z`.
+- **P1c failed as written, the one named least certain. The cause was my instrument both times, and each cause was removed and the build measured again:**
+  - **First:** built in a `git worktree`, the binary had no VCS stamp at all, even with `-buildvcs=true`, which reported no error. 4,119,213 bytes differed, the shorter build info shifting everything after it. In a local clone the stamp is there. My reading is that Go's lookup wants `.git` to be a directory, and a worktree's is a file; that is not read in Go's source.
+  - **Second:** the clone carried the repository's tags, so Go named the module `v0.9.9-rc1.0.20261012191841-67695f68af01`. CI's shallow checkout has no tags and names it `v0.0.0-…`.
+  - **With the tags removed from the scratch clone:** byte-identical to the artifact `.exe`, `ab3e628c…`. CI's Windows binary is reproducible from its commit on this machine.
+- **P1d, as predicted:** `446dcd2` and `67695f6`, with the same stamps and `-buildvcs=false`, are byte-identical, `82279ac3…`.
+- **P1e, as predicted (control):** `67695f6` again with an empty `GOCACHE` gives `82279ac3…`. The cache filled with 1,969 files (159 MB), so the build ran rather than replayed.
+- **P1f, as predicted (control):** `2ec3055^` (`aaa1c01`) gives `a2280070…`, and `2ec3055` gives `bd89094a…`. A product change moves the hash.
+- **P1g, as predicted:** `internal/logcheck` is not among `./cmd/liro-bridge`'s dependencies on windows, linux or darwin.
+  - Control: it is among `internal/pades`'s test dependencies.
+  - My first linux and darwin listing used `CGO_ENABLED=0` and broke on GTK. Listed again with cgo on: no errors.
+- **P1h, as predicted:** both MSIs, extracted with `msiexec /a` into scratch, hold a `liro-bridge.exe` byte-identical to the artifact `.exe`. Their Guide files equal the tree's. Windows Installer still knows only the rc afterwards.
+- **P1i, read, not tried:** both MSIs are `ProductVersion` 0.0.0 under the rc's UpgradeCode. The installed rc is 0.9.9, per-user (AssignmentType 0). By `MajorUpgrade`'s `DowngradeErrorMessage`, the dev MSI will not install over it. Trying would have meant risking an install if the reading were wrong.
+
+**D-304's five questions:**
+1. **Could it fail?** It did, at P1c, and P1f differs.
+2. **Could the instrument see a difference?** Yes: P1f, and P1g's control.
+3. **Resolution:** byte comparison; not applicable.
+4. **Did it run?** P1e's cache, and distinct commits giving distinct hashes.
+5. **Discrepancies:** each explained above, or, for the deleted artifacts, recorded as unexplained.
+
+**So:** what is installed from `67695f6`'s package is the product `446dcd2` described, and it is the binary of `67695f6`'s source. Nothing D-480 removed is in it: it is after `2ec3055`, and no certificate name is in any message. The worklist's card rows are measured on it.
+
+**Left for the owner:** the rc has to be uninstalled before the dev MSI goes on (P1i).
+
+## D-484 — Pošta's test timestamp unit is issued by a test CA the Trusted List does not carry: D-481's case (b), so row 1.1 cannot be read with the test server
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34). **Predictions:** P2 in `docs/s34-predictions.md`, committed in `e0624fd` before the request was sent. Read with OpenSSL, not our code, from a reply to a plain RFC 3161 request with `certReq`. The PDF of row 1.4 carries the same unit's certificate and confirms it on a real signature.
+
+**All five of P2 held:**
+- **P2a:** `https://test-tsa.ca.posta.rs/timestamp1`, with D-045's Basic credentials, answered HTTP 200 `application/timestamp-reply`, status Granted, in 0.31 s, 4,223 bytes.
+  - Policy `1.3.6.1.4.1.99999.11.800.1.0`, an arc no one is assigned.
+  - The token carries one certificate, the unit's.
+- **P2c, the one that matters:** the unit is `CN=TEST Timestamp server 290000560, O=Pošta Srbije d.o.o.`, serial `29B7B1CEB10D18F299`, valid 2026-05-19 to 2032-05-19.
+  - It is issued by `CN=TEST 2018 CA 1 - Novo, O=TEST organizacija ŠĐČĆŽšđčćž, organizationIdentifier=VATRS-123456789`, key `D0:F1:CC:81…`.
+  - That CA is under `CN=TEST 2018 CA Root - Novo`, key `A0:DE:B3:A1…`, both fetched over HTTP from the AIA.
+- **P2e:** none of the three is in `TSL-RS.xml`, by subject or by key identifier. I read all 103 of its certificates; 102 carry a key identifier.
+  - Control: "Pošta Srbije CA 1" is found, a QC service.
+  - Pošta's production units are QTST services, as D-481 read.
+- **P2b:** `openssl ts -verify` against the request:
+  - fails with the token's chain alone ("unable to get local issuer certificate");
+  - is **OK** with the test root as anchor and the test CA as intermediate;
+  - fails against another query (imprint mismatch), the control;
+  - fails with CA 1 as anchor, the control.
+- **P2d:** `timeStamping`, critical. CRL by LDAP **and** `http://repository.ca.posta.rs/crl/TEST2018CA1-Novo.crl`; OCSP `http://ldap-ocsp.ca.posta.rs/ocsp-test-novo`.
+
+**So, by D-481:**
+- **Row 1.1 cannot be shown true with the test server.** The timestamp's chain ends at a root nothing in the list vouches for, so B-LT is unreachable whatever the card does.
+- **It needs a timestamp authority the list anchors: Pošta's production service, which is the contract, or another provider's listed unit.** That decision is the owner's.
+- What the test server still gives row 1.1 is its card half, read from a B-T document's partial `/DSS` (D-481). That can show the row false, never true.
+
+**For row 1.4:** the verifiers meet the same unknown root. D-280 read Adobe's amber "Signature validity unknown" on a Pošta signature as a verdict about the trust anchor, not the signature; red is a broken one. How row 1.4's "rejects the timestamp" is read against that is put to the owner before its predictions are written.
+
+## D-485 — the rc removed and `67695f6`'s per-user MSI installed, silently, on the owner's machine: every line of P3 held, B31's HKLM entry seen a third time
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34). **The owner:** "I do it, silently." **Predictions:** P3, committed in `5aa1d3a` before step 1.
+
+**Each step held as predicted:**
+- **Step 1, P3a:** the rc's tray, PID 13936 (started 18:31:10), was ended by its PID. `bridge.json` stayed; nothing else of ours was running.
+- **Step 2, P3b:** `msiexec /x {F18B05B5…} /qn` exited 0, with no reboot asked.
+  - The product is gone from Windows Installer and the Uninstall key, and the install folder is gone.
+  - `UninstallCleanupQuiet` ran; `UninstallCleanupNotice` was skipped, as UILevel 2 should.
+  - It removed Run, the verb and `HKCU\Software\Liro\Bridge`, and logged `removed 7, failed 0`.
+  - What it kept: `audit`, `build`, `logs`, `config.json`, `pairings.json`, `secrets.*`, `tsl-cache.xml`, `update-state.json`.
+  - **D38, again:** the custom action wrote `liro-bridge starting 0.9.9-rc1` at 20:47:45.80, a start line for an agent that never started.
+- **Step 3, P3c:** `msiexec /i liro-bridge-dev-x64.msi /qn` (`91dc6281…`) exited 0.
+  - Product `{54020A12…}`, 0.0.0, AssignmentType 0 (per-user). The installed `liro-bridge.exe` is `ab3e628c…`, the artifact's (D-483).
+  - `LaunchAgent` was skipped ("condition is false"), so no agent started. No Run, verb or scheme key.
+  - **The least certain line held: the Uninstall entry is under HKLM**, `HKLM\…\Uninstall\{54020A12…}`, for a per-user product. B31's third sighting, after the rc and 0.9.2. Still unexplained; B31 stays open.
+- **Step 4, P3d:** started with `tray`, PID 18848.
+  - The log: `liro-bridge starting dev 67695f6`, WebView2 155.0.4283.62, listening on 17580.
+  - Run (`… tray`), the verb (`--shell-verb "%1"`) and **`HKCU\Software\Classes\liro-bridge`** (`open-link "%1"`) were written from the installed path.
+  - `bridge.json` reads `agentVersion` `dev` with `protocolVersions [2]`.
+  - No D-476 line: the `b-b` is read as chosen.
+  - **P3's premise was wrong on one point:** the Start-menu shortcut runs `open`, not `tray`. `tray` is what `LaunchAgent` and the Run entry run, so that is what was used.
+- **The guard, P3e:** the audit directory is identical file by file. The chain, `2026-09-001.jsonl` (105,436 bytes, last written 2026-09-19), and the empty `.lock`.
+  - The control's first file happened to be the zero-byte `.lock`, whose hash looked at first like a broken read. It is what an empty file hashes to; a byte appended changed it.
+
+**Installed now:** `67695f6`'s per-user package, its agent running as PID 18848. The rc is gone; its MSI is on the release page.
+
+## D-486 — row 1.4 closed: B-T with a Pošta card against Pošta's test timestamp server, intact by four verifiers, the anchor unknown to the two the row names; the PDF confirms D-484, so row 1.1 needs the contract
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34). **Predictions:** P4, committed in `f918073` before the card was plugged in.
+
+**The owner's rulings for this row:**
+- "Rejects" is red only. An unknown root is a verdict about the anchor (D-280).
+- DSS runs locally.
+- **The signed PDF carries a third party's name, number, certificate and address.** D-361's Pošta card was used; it is issued to someone other than the owner. So:
+  - the PDF stays out of the repository and goes to no external service;
+  - it is deleted with `Desktop\liro-s34`, along with every scratch copy and extract;
+  - **no name, number, serial or thumbprint of hers is written here.**
+
+**The run.** The build is `67695f6`'s per-user MSI (D-485), its agent PID 18848.
+- **Settings, by the owner:**
+  - `https://test-tsa.ca.posta.rs/timestamp1` with D-045's test credentials;
+  - level B-T, so chosen and a request.
+- The document is a copy of `testdata/pdfs/blank.pdf`. The output, `row-1.4-signed.pdf`, is 104,690 bytes, written 20:58:56. The input is unchanged.
+- **The owner's MUP certificate was listed beside the card's, marked "Ovaj sertifikat je istekao", which is true.**
+- **My instruction was wrong:** I wrote "PID 18848, from the tray icon or the main window's footer". The footer never showed a PID; it holds only Podešavanja, Sertifikati, Dnevnik revizije and Izađi. The PID came from `Get-Process`.
+
+**Against P4:**
+- **P4a:** Settings saved at 20:57:14. That is read from the log, not from `config.json`: I did not re-read the file before the run.
+- **P4b held:**
+  - The report, read by the owner: "Sačuvano u C:\Users\Veljko\Desktop\liro-s34", "Nivo potpisa B-T", in green, with nothing in a warning colour.
+  - The audit entry: `achievedLevel` `B-T`, backend `windows-cng`, thumbprint only.
+  - The log: no `role=signer` or `role=timestamp` lines, and no `/DSS` in the PDF.
+  - **Corrections to my own reading:**
+    - The outcome is recorded as `approved`; P4b said `signed`.
+    - The entry went into a new monthly file, `2026-10-001.jsonl`. My baseline counted September's file, so my first scan of "entry 320" read nothing.
+    - The chain is continuous across the files: seq 319's `prevHash` is seq 318's `hash`, `55efe832…`.
+- **P4c held:** `verifypdf` at `67695f6`.
+  - `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK` and `SignerChainTrusted` are all true.
+  - `TimestampOK` is true and `TimestampChainTrusted` is **false**.
+  - The timestamp's genTime is 18:58:48Z, eight seconds before the file was written.
+- **P4d held:** OpenSSL, through a stdlib DER walker of mine that only extracts the bytes.
+  - `cms -verify` over the `/ByteRange` succeeds; one changed byte fails it.
+  - The token's imprint is SHA-256 of the signature value and verifies under `TEST 2018 CA Root - Novo`. Another digest fails; CA 1 as anchor fails.
+- **P4e held:** Adobe Acrobat DC, read by the owner. The banner was blue before Validate All, then amber.
+  - "Signature validity is unknown".
+  - "Document has not been modified since this signature was applied".
+  - "Signer's identity is unknown because it has not been included in your list of trusted certificates and none of its parent certificates are trusted certificates".
+  - "**The signature includes an embedded timestamp but it could not be verified.**"
+  - Not red.
+- **P4f failed as written.** DSS 6.5.1, local, bound to `127.0.0.1`, the EU's list of lists loaded (31 lists) at the second attempt.
+  - **As predicted:**
+    - The format is PAdES-BASELINE-T.
+    - The signature is INDETERMINATE / NO_CERTIFICATE_CHAIN_FOUND, and so is the timestamp ("TEST Timestamp server 290000560", 18:58:48Z).
+    - Every format and cryptographic check passed, for both: the imprint found and intact, the timestamp's signature intact, the signature intact, `/ByteRange` consistent, no undefined modifications.
+    - The only NOT OK, in both, is `BBB_XCV_CCCBB`, "Can the certificate chain be built till a trust anchor?"
+  - **What failed:** P4f said "No FAILED anywhere" and "any FAILED would make the row false". **DSS reports FAILED** in `ValidationSignatureQualification` and `ValidationTimestampQualification`, "Unable to build a certificate chain up to a trusted list!".
+  - That is DSS's EU qualification determination. It fails for any anchor outside the EU lists: a verdict about the anchor, which the owner's ruling exempts. My prediction's criterion was broader than the ruling, and it is what failed.
+
+**The timestamp unit's certificate in the PDF is byte-identical to the one D-484 read from the server's reply:** `CN=TEST Timestamp server 290000560`, serial `29B7B1CEB10D18F299`, SHA-256 `D8:04:54:F3…`, issued by `TEST 2018 CA 1 - Novo` (key `D0:F1:CC:81…`).
+
+**§18.3 against this run's real files (the owner asked; not the unit test):**
+- **The scan:** every log line written since the dev agent's start lines (133) and the audit entry.
+  - **Known values,** from the signing certificate in this PDF: every subject attribute but country and organisation, each word with and without diacritics, the number in the CN, the address from the certificate, its local part, and the certificate serial in hex and decimal.
+  - **Patterns:** 13+ digits, any email address, `SERIALNUMBER=`, `2.5.4.5=`.
+- **Result: nothing, in both.** The control, the certificate's own text dump, hit every kind of value.
+- **One false hit, found on the way:** my first digit pattern counted `0x101000000000000`, a Go stack address.
+- **Two instrument faults of mine, not of the product:**
+  - my first scan did not look for her address at all, which the owner caught;
+  - inline Python passed through the shell lost a backslash twice, failing loudly both times.
+
+**C26's warning colour, read in the code (the owner asked):** `achievedLevelIntent("B-T", "B-LT")` returns the warning (`ui_payloads.go:188`). The spellings match on the way there: `config.json`'s `b-lt` becomes `pades.LevelBLT` (`interactive.go:603`), and the result is `pades.Level` too. **No run through the window reaches it since D-476:**
+- With B-LT chosen, `SaveAtBTIfBLTFails` is false, so a B-LT that falls short returns `LEVEL_NOT_REACHED` and nothing is saved (`sign.go:344–363`). There is no B-T to colour.
+- With the best available, the report gets `requestedLevel = ""` (`mainwindow.go:1216–1221`), so its B-T is green, as decision C intends.
+- So the warning branch for B-T lives only in the function and its unit test (`levelshortfall_test.go`), like `consent.level_blt_short` (session 33's E10 note).
+- What a person can still see in amber is B-B, always, chosen or not.
+- Tonight's green shows only the B-T-requested path. **Row 1.2 measures the refusal that replaced the warning.**
+
+**Also seen:**
+- NetSeT's module under `TrustEdgeID` killed its probe child again: `Exception 0xe06d7363`, a C++ throw in `C_Initialize`, D-315's.
+  - The agent marked it unusable and went on.
+  - Not new: eight times on 2026-09-19 as well.
+  - The child's dying stack went to `bridge.log`, 58 lines; no personal data in them.
+- One WARN per Pošta signature: Pošta CA Root's only AIA is LDAP, which is not built (D-470). So the CMS carries the signer and CA 1.
+
+**Row 1.4: done.**
+- `achievedLevel` is B-T.
+- Neither verifier rejects the timestamp by the owner's ruling. Both find the document and timestamp intact and the anchor unknown.
+
+**What it decides about row 1.1:** the PDF confirms D-484, case (b) of D-481.
+- The test unit is issued by a test CA under a test root, and the Trusted List carries neither.
+- **So row 1.1 cannot be shown true with the test server.** B-LT needs the timestamp's chain to reach a listed CA, and this one never does, whatever the card does.
+- **It needs a timestamp authority the list anchors:** Pošta's production service, which is the contract, or another provider's listed unit. **That is the owner's decision.**
+- What the test server still gives row 1.1 is its card half (D-481): one signature at the best available, with the partial `/DSS` read for the signer's evidence. It can show the row false, never true.
+
+## D-487 — row 1.4's third-party data deleted from this machine where I could reach it; the scan that found it also found her data in the public repository since `08042d7`; the project's Bash guard never ran this session
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34).
+
+**The owner:** "Delete all four you can reach … and anything else under your scratchpad that holds her data. Then tell me what remains and where."
+
+**How it was found.** A byte scan for the values in the signing certificate of row 1.4's PDF:
+- **The values:** each word of the name with and without diacritics, the number in the CN, the email address and its local part, the serial and the thumbprint as text, and the serial, the thumbprint and the whole certificate as raw bytes.
+- **Encodings:** UTF-8 and UTF-16LE, any case.
+- **Where:** the session's folder (scratchpad, task outputs), its tool-results folder, `%LOCALAPPDATA%\Liro` and `Desktop\liro-s34`.
+
+**The first scan found 79 files.**
+- 78 are in five groups. The 79th was the needles file itself.
+- **Not read:** 43 files of the agent's WebView2 profile, locked by the running agent; and 2 skipped for size (DSS's `ROOT.war` and its downloaded bundle, both on disk before the signature existed).
+- **So the count is complete for what was read, and partial for the WebView2 profile.**
+
+**Deleted:**
+- **The files:** `Desktop\liro-s34` (the input and the signed PDF), and the scratchpad's `row14` (every extract, the certificate, the DSS request and report).
+- **DSS:** the scratchpad's `dss`, whose console log held the name. It was stopped with `catalina stop` first; port 8080 closed, its process gone.
+- **My four scratch clones of the repository,** which held what the repository holds. They were `--shared` clones, so the repository was untouched.
+- **The needles file, last.**
+
+A second scan of the session's folder after the deletion found nothing.
+
+**What remains, and where:**
+- **Acrobat's recent files:** the owner's to clear.
+- **`%APPDATA%\Microsoft\Windows\Recent\row-1.4-signed.lnk` and `row-1.4.lnk`:** shortcuts naming the deleted paths, not her data.
+- **The agent's audit chain** (`2026-09-001.jsonl`, `2026-10-001.jsonl`) and `bridge.log` hold her **thumbprint**. That is by design (D-480); the chain cannot be edited without breaking it.
+- **The agent's WebView2 profile:** unchecked, locked by agent 18848.
+- **This session's transcript under `~/.claude/projects/`** holds her name, number, serial and thumbprint, from tool output. The same text went through the API as part of the conversation.
+- **The repository:** open-items A36.
+
+**The repository is public, established twice:**
+- with the owner's token, `gh repo view --json visibility` gave `PUBLIC`;
+- then without credentials: `GET https://api.github.com/repos/veljaos/liro-bridge` returned 200, `private: false`, `visibility: public`. The control, a repository that does not exist, returned 404.
+
+**What the repository holds:** 16 tracked files carry her data, listed in A36. The thumbprint entered `internal/keysource/pkcs11/thumbprint.go` in `08042d7`, on 2026-09-19. **The decision about the history is the owner's, not yet made. Nothing is rewritten and nothing is force-pushed.**
+
+**The Bash guard (D-422) did not run once this session.**
+- `.claude/settings.json` calls it as `python3`. On this machine that is the Microsoft Store alias, which prints "Python was not found".
+- A failing PreToolUse hook does not block, so every Bash command ran unguarded. I do not see hook output; the owner saw five failures.
+- **The scans did not depend on it.** They ran under `python -I` (3.11), and each printed its closing count.
+- **What the guard exists to stop did happen:** at least three `go build` commands without `timeout` ran (the VCS probes, the `-buildvcs=true` probe, `verifypdf`'s build). All finished in the foreground.
+- Open-items D50.
+
+**C26's warning colour:** read in D-486, recorded as open-items D49 by the owner's word, "it reads as a safeguard and is not one".
+
+## D-488 — the agent's WebView2 profile holds none of row 1.4's third-party data; it holds no page text at all, only our pages' addresses
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34). **Predictions:** P5, committed in `d7b07e9` before the scan. **The owner** quit the agent and asked for the 43 files D-487 could not read.
+
+**The profile:** `%LOCALAPPDATA%\Liro\webview2-profile`.
+- PID 18848 is gone, and no process names the profile.
+- All 305 files (72.9 MB) open for reading; the 43 included.
+
+**The needles were narrower than D-487's,** because that needles file and the certificate were deleted.
+- **Rebuilt from the lines open-items A36 names:** the name's words with and without diacritics, the number in the CN, the certificate serial and the thumbprint, as text and as raw bytes.
+- **Missing:** the email address and the raw certificate, which nothing I can read holds.
+- **The rebuild's own check:** the first pattern for the serial matched two values, one of them the timestamp unit's serial in D-484, so it was narrowed to D-361's phrase.
+- **Controls:** the three repository files they came from, each hit as it should.
+
+**P5a held: no hits in the 305 files.**
+
+**Could the scan have seen page text here (D-304's second question)?** The positive controls, in UTF-8 and UTF-16LE, any case: our UI's words (`Podešavanja`, `Dnevnik revizije`, `Izaberi`), the window title `Liro Bridge`, and the virtual host `liro.invalid`.
+- **Only the virtual host is there.** It is in `History`, `DIPS`, `Network Action Predictor`, `Preferences`, `Web Data`, and five V8 code-cache entries (our scripts' bytecode, keyed by URL).
+- No UI word, and not the title, is anywhere.
+- So the profile keeps our pages' addresses and no page text. That fits the reading in P5: the certificate list reaches the page as a web message, and the pages use no browser storage.
+- **What the controls cannot exclude:** text held only in a compressed form, such as a compressed cache body or a Snappy-compressed leveldb block. Nothing read says any of ours is held that way.
+
+**P5b held:** Chromium's ordinary profile.
+- **Our pages:** History and the code cache, as above.
+- **Chromium's own:** GPU and shader caches (about 5.4 MB), Widevine and component downloads (about 45 MB), hyphenation data, SmartScreen and PKI metadata, leveldb stores, preferences and locks.
+- `Crashpad` has no reports.
+
+**So D-487's list of what remains loses one line:** the WebView2 profile is checked and holds none of her data. The rebuilt needles were deleted after the scan.
+
+## D-489 — session 34's ten commits pushed with no local check: `check.py` refused go1.27.1, then `dpkg-query`; CI is the only check on them
+
+**Date:** 2026-10-22. **Phase:** F12, the worklist (session 34).
+
+**The owner:** "Pushed f949eab..d1314f7. check.py refused to run here: it stands in for CI's Ubuntu host and wants dpkg-query, which Windows has no part of. So nothing was checked locally, and CI is the only check on these ten commits."
+
+**What happened, in the owner's words and read:**
+- **`check.py` refused first on Go.** `go` on PATH is go1.27.1 (`C:\Program Files\Go`, `GOTOOLCHAIN=auto`), and go.mod wants 1.26.5.
+- **The owner installed go1.26.5 alongside** through `golang.org/dl`: `~/go/bin/go1.26.5.exe`, SDK in `~/sdk/go1.26.5`. Read here; the default `go` is unchanged.
+- **Then it refused on `dpkg-query`.** Its apt steps stand in for CI's Ubuntu host. That is the refusal the file means to give, though for the wrong reason here: it reached the Ubuntu jobs at all.
+- **A7 is still undecided.** Installing 1.26.5 got past a refusal and settled nothing (open-items A7).
+
+**There were eleven commits, not ten.** `f949eab` to `d1314f7` is eleven (`git log 67695f6..d1314f7`). I told the owner "ten", I had miscounted, and the owner repeated my number.
+
+**What this means for these eleven commits:**
+- **CI's runs on the push are their only check.** I have not read them; no measuring tonight, by the owner's word.
+- **They touch only `docs/`,** read with `git diff --name-only 67695f6 d1314f7`. The product's code is unchanged since `67695f6`, whose package D-483 showed is `446dcd2`'s.
+
+**What a Windows check would take:** open-items A37, read, not built. The blocker is that CI's `go test ./...` runs on a profile thrown away, and here it would meet the owner's real audit chain (D42) and `HKCU` (D10).
+
+**My own session ran without a local check as well,** and without the Bash guard (D-487, open-items D50). Nothing I committed claimed one.
+
+## D-490 — CI on `d1314f7`: 19 green, macOS on the PR red. The same commit passed on the same image in the same minute; the likeliest cause is a `dlerror` read on another thread, which is our code
+
+**Date:** 2026-10-22. **Phase:** F12 (session 34). **The owner** read CI: "19 green, 1 red", the red being `macos (pull_request)`. **Not fixed tonight, by the owner's word.** Recorded as open-items D51.
+
+**The two runs:**
+- **Push run 39844417353,** `macos` job 120053791355: success, 19:56:07–19:58:46Z.
+- **PR run 39844425344,** `macos` job 120053819277: failure, 19:56:12–19:58:25Z.
+- **The failure:** `TestDyldsWordsAreReadIntoTheKinds` (`loaderror_darwin_test.go:30`, `:36`) got `pkcs11: /nonexistent/liro-test-module.dylib could not be loaded: ` with nothing after the colon. The passing run's line carried dyld's whole message: `… (no such file) …`.
+
+**The same runner image, established by reading each job's own log** (`gh run view --job <id> --log`, the "Set up job" step):
+- both: `Image: macos-15-arm64`, `Version: 20260907.0337.1`, Runner Image Provisioner `20260828.587`, runner `2.338.0`, Azure region `westus`;
+- both: macOS 15.7.9, build `24G830`, and `go version go1.26.5 darwin/arm64`.
+- **Different machines:** runner names `GitHub Actions 1000007835` and `…7836`, both labelled `macos-15`.
+
+**The same commit passing and failing tells that the result is not decided by the commit. It does not put the cause outside the code, and here the code is the likeliest cause (inferred, not measured):**
+- `openModuleWith` calls `C.dlopen`, then `C.dlerror`, as two separate cgo calls (`internal/keysource/pkcs11/module_unix.go:97–99`).
+- `dlerror()` keeps its message per thread, and Go may move a goroutine to another OS thread between two cgo calls. On that thread `dlerror()` returns NULL, and `C.GoString(NULL)` is `""`.
+- `classifyLoadFailure("")` reads no kind, so the error is "could not be loaded: " plus nothing. That is the failure exactly.
+- The test calls `openModule`, unpinned.
+- **The product's probe child does too** (`probechild_unix.go:21`), and the file builds for Linux as well. So a real load failure on Linux or macOS can, now and then, lose the loader's words and the kind they decide. That has not been seen outside this test.
+
+**The owner's third question: assertions on another system's wording, in code written blind.**
+- **In all macOS code, only `loaderror_darwin.go` and its test match on system text.** Read in every `_darwin` file and in all 27 files carrying a darwin build tag; the one other match, `module_other_test.go:22`, checks our own message.
+- **The classifier is product code: it decides the kind a person is shown.** Of its five dyld phrases:
+  - `(no such file)` is measured; tonight's passing run printed it;
+  - "Library not loaded", "Symbol not found", "incompatible architecture" and "not a mach-o file" are recalled. None has been seen from a real dyld.
+
+**Not done tonight:** the fix, and showing the race. The fix is one C helper that calls both, or the goroutine pinned around both. Showing the race comes first, and then CI repeated.
+
+## D-491 — row 1.2 done with the MUP card; and the PIN was asked once in three signatures, which F2 §4.1 and the Guide promise it will not do, and which SPEC §6.5 claims to have measured and never did
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P1, committed in `90946df` before the owner's first step. **The owner** ran steps 1–4 and read the screens. The first step 4 was botched: the level had not been changed, so it was step 2 again, on `row-1.2-blt.pdf`. The owner deleted its output, `row-1.2-blt-signed.pdf`, at 16:50:43, then repeated step 4 with B-LT chosen, saved, and checked by reopening Settings.
+
+### Row 1.2: done
+
+**The default stops at B-T with no warning; a chosen B-LT is refused and nothing is saved.** Neither of the row's falsifiers happened.
+- **Step 2 (best available), the owner's screen:** "Završeno · 1 potpisano · Sačuvano u C:\Users\Veljko\Desktop\liro-s35 · Nivo potpisa B-T", B-T in green, no warning.
+- **Step 4 (B-LT chosen):** "Završeno · 0 potpisano · 1 neuspešno · Šta nije uspelo: row-1.2-blt.pdf — Traženi nivo potpisa nije mogao biti dostignut, pa ništa nije sačuvano. · Sačuvano u fascikla svakog dokumenta · Nivo potpisa —".
+- **The audit chain** gained three entries, and all 323 verify (`scripts/auditverify` on a copy):
+  - 320, step 2: `approved`, `B-T`, `windows-cng`;
+  - 321, the botched run: `approved`, `B-T`. A real signature; its file was since deleted by the owner;
+  - 322, step 4: `failed`, `LEVEL_NOT_REACHED`, no `achievedLevel`.
+- **The folder** holds `row-1.2-best-signed.pdf` (16:47:48, `74f18227…`) and the two inputs, both still `b9749fdb…`.
+- **`verifypdf` on step 2's output** (built from HEAD; its source is unchanged since `67695f6`): every check true. `SignerChainTrusted` is true, chaining to `MUP Gradjani CA 4`. The timestamp is valid; its chain is not trusted (`TEST 2018 CA 1 - Novo`, as in D-484).
+- **The partial `/DSS`,** read from the file: 5 certificates; one CRL, Pošta's **test root** (`TEST 2018 CA Root - Novo`, lastUpdate 2026-09-11); one OCSP response, "good", for the **timestamp unit** (serial `29B7B1CEB10D18F299`). **Nothing for the signer's certificate.**
+- **The log: 145 new lines, none holding the subject's name or number** (checked by script). Each run gave:
+  - `pades/cms: AIA caIssuers did not return a parseable certificate`, `http://ca.mup.gov.rs/MUPRootCA4.crt`;
+  - then `role=signer`, "larger than the cap", `bytes=29859134`, `cap=5242880`.
+- **The first two runs' notes:** "1 revocation response(s) are no newer than the timestamp even after asking again; embedded as given; revocation data too large to embed (29859134 bytes); saved at B-T".
+- **Step 4 left no line about its refusal.** The reason reached the screen and the audit entry's code, and nothing else.
+- **Timing:** the B-LT attempt took 34–38 s in each run, from the AIA line to the `/DSS` warning. The owner read card preparation at about 40 s each time, and the PIN to the report at about a minute.
+
+**P1, against the result:**
+- **Held:** P1d–P1k, P1m and P1o. P1o's entry is 322, not 321, because of the botched run.
+- **P1g, the least certain, held on its first branch:** the whole 29.9 MB CRL arrived within the 30 s timeout. No `role=timestamp` lines came.
+- **P1a:** read from step 2's behaviour; the file has been saved again since.
+- **P1b:** not read.
+- **P1c failed.** I predicted our PIN dialog naming the card, with MUP's 4 to 8. The card went through CNG, and Windows' own dialog asked. P1c described the PKCS#11 path, which this card did not take.
+- **P1l half failed.** The refusal and its words held. "The PIN is asked" did not: no PIN was asked. **The card still signed before the refusal**, as the order in `sign.go` makes it.
+- **P1n failed:** no refusal line in the log.
+- **Not predicted:**
+  - the MUP root's AIA certificate failing to parse, every run;
+  - the stale-CRL note: it is the Pošta test root's CRL, older than the timestamp;
+  - `config.json` rewritten at 16:51:26, as step 4 began, with the level unchanged. Not read further.
+
+### The PIN: asked once, for three signatures
+
+**What happened.** The owner entered the PIN once, for step 2. The botched run and step 4 signed without a prompt.
+- **The log agrees.**
+  - The agent's front-window lines show `Credential Dialog Xaml Host` (PID 8280) in front at 16:47:10, and gone by 16:47:13. That is Windows' credential window.
+  - Nothing like it appears in the second or third run.
+- **Step 4's card signed with no PIN,** and then the signature was discarded.
+- **A clock I cannot reconcile:** the timestamp's genTime reads 16:47:02, eight seconds before the prompt's line. Either the test server's clock is behind (below the 5-minute drift warning), or the front-window line lags. Not resolved.
+
+**Where the PIN is held: not in this program.**
+- `internal/keysource/windowscng` never sets `NCRYPT_PIN_PROPERTY` and never sees a PIN (D-025). It opens the key per batch, with `CryptAcquireCertificatePrivateKey`, and frees it when the batch ends (`session_core.go`, `Close`).
+- **The running agent, PID 14168, since 14:07:48,** has Microsoft's smart-card key storage provider loaded: `scksp.dll`, with `ncrypt.dll`, `winscard.dll`, `credui.dll` and `wincredui.dll`.
+- **The card's minidriver is not loaded now.** The registry names NetSeT's `nstcm.dll` for the MUP card types.
+- **So the PIN is held below the program:** either the key storage provider's cache in the agent's process, or the card's own verified state. **Tonight cannot tell which. Its form is not measured.**
+- **Microsoft documents a per-process PIN cache,** governed by the minidriver's cache policy. That is documentation, not a measurement here.
+
+**What does not clear it, measured tonight:**
+- **The program's session ending.** Each run was its own batch, with its own session closed after it.
+- **The window closing.** It was closed and reopened before each later run: new top-level windows at 16:48:34 and 16:50:55, in the same agent process.
+- **F2's 90-second idle timeout.** The later signatures came about 1 min 50 s and about 4 min 20 s after the first, by the AIA lines that come just before each signature.
+- **Any timer shorter than about four and a half minutes.**
+
+**Not measured:** the agent quitting, the card removed, a longer wait, and a process that is not the agent. Those are P2's E1–E4.
+
+**Can a signature be made while the holder is away?**
+- **Through Liro Bridge, only if something presses Approve.** The installed build has no path without the window: its `--help` lists no `sign-no-consent`, which exists only under the `softtoken` tag.
+- **The PIN is no longer what stops it.** After the first signature, anything that gets Approve pressed, or runs code in the agent's process, signs with no PIN.
+- **Whether a process that is not the agent can sign with no prompt** is SPEC §6.5's claim. Not measured: P2's E2.
+
+### What the documents promise, in their words
+
+- **F2 §4.1 (`docs/phases/F2.md`):** "On idle timeout, close the session and free the key handle. The next operation requires a new approval and a new PIN." The idle timeout's reason, in the same table: "short enough that a walked-away-from machine does not hold an authenticated card open."
+  - **Tonight it was broken twice.** Both times the session closed and the handle was freed, and the next operation needed a new approval and no PIN.
+  - The program does what it controls. The promise is about something it does not control.
+- **The Guide (`docs/guide/Uputstvo.html:319`):** "Posle klika na *Potpiši* Windows će tražiti PIN vaše kartice." (`Guide.html:327`: "After you click *Potpiši*, Windows asks for your card's PIN.")
+  - **It asked once in three.** Nothing tells a person that the PIN stays usable after the first signature, or for how long.
+- **SPEC §6.5:** "Measurement on real hardware established: after the user enters the PIN once, **the card keeps the PIN cached in its own state**, independent of which process is talking to it. A second process on the same machine can therefore sign without being asked for a PIN, for as long as the session lives."
+  - **No such measurement is in the record.** The sentence arrived with the F0 skeleton (`98ec062`, 2026-08-31), before any entry existed. No entry measures a second process, or a later operation, signing without a prompt. D-402 says of the second-process claim: "That is reasoning, not a measurement."
+  - **What rests on it:**
+    - D-025: no PIN in the CNG backend, because "the card's own cached-PIN behaviour (SPEC §6.5) means our process being the one to collect it buys no additional security";
+    - SPEC §6.5.1, a PIN held for `C_Login` on modules with no protected path;
+    - F5 §5: "This is the security boundary of the entire product. SPEC §6.5: the PIN is cached by the card independently of our process, so the human pressing Approve is the only thing that reliably prevents an unauthorised signature." F7 says it again for HTTP;
+    - the security model as a whole.
+  - **Tonight agrees with it in one respect only:** the PIN outlives the program's session. It has not tested the part the model leans on hardest.
+
+Recorded as open-items E11 (the two promises) and under E10 (the SPEC sentence).
+
+### The console flashes
+
+The owner saw a console window open and shut several times, a fraction of a second each, between Dalje and the next screen.
+- **From the code, not yet measured:**
+  - `liro-bridge.exe` is a console-subsystem binary (PE subsystem 3).
+  - The agent frees its own console at start (`detachAllocatedConsole`, D-254).
+  - During card preparation it starts copies of itself: a probe for each of the three modules the log lists at 16:46:58 (`discover_windows.go:138` → `probe.go:178`), then a worker for each usable module (`worker.ListAll`, `parent.go:445`). That is up to six children per preparation.
+  - Nothing in the repository sets `HideWindow` or `CREATE_NO_WINDOW`. A console-subsystem child whose parent has no console is given a new console before `main` runs.
+- **What does not fit:** D-254 measured that a process freeing its console that early leaves the window undrawn: 0 windows in about 98,000 polls, against a positive control. But it measured the agent's own launch, not these children. Either the race goes the other way for them, or the flashes are something else.
+- **The instrument for P2:** a watcher, `flashwatch.py`, polling Toolhelp snapshots and visible top-level windows about 66 times a second. Its control, `start /min cmd /c exit`, was caught: one `ConsoleWindowClass` window owned by the new `cmd.exe`, alive for about 50 ms.
+
+### My slip, and the owner's ruling
+
+**`verifypdf` printed the owner's certificate subject** (the name and the CN's number) into this session's transcript. My mask looked for 13 digits after Latin letters. The subject is in Cyrillic, and the number has 9 digits.
+- **The owner:** it is the owner's own certificate, so it goes on A36's list of where the owner's data is, and changes nothing else.
+- **The mask is widened** (`mask.py`, the session's scratchpad):
+  - any `subject` value, whole, in any script;
+  - any `CN=` value;
+  - any run of nine or more digits;
+  - up to three words of any script before such a run.
+- **Tested on made-up Cyrillic and Latin lines.** It over-masks, which is the safe direction.
+
+## D-492 — P2 so far: the PIN was cleared within two and a half hours, by something E1 cannot name, across a 75-minute sleep; a process that is not the agent could not sign silently two minutes after the agent's PIN (E2), so through CNG the PIN is not shared between processes
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P2, committed in `5f69750` before any step. **The owner** ran step 0 and E1. I ran E2 at the owner's word, on the condition written in P2: the 31 bytes recorded there, and nothing else.
+
+### E1 was looser than P2 wrote it
+
+- **P2 assumed E1 would come within minutes, under the watcher.** It came at 19:22, after the watcher's 45 minutes (17:19:28–18:04:28) had ended. Nothing was watching it.
+- **The watcher's window was empty because nothing happened in it,** not because it missed anything:
+  - no `liro-bridge.exe` started in it (170,092 polls), so the agent did not restart;
+  - the agent is still PID 14168, `tray`, since 14:07:48, with the same three workers (14752, 18308, 9076, since 16:46:58–17:00).
+- **The machine slept from 18:05:38 to 19:20:54.** Kernel-Power 42 logged "entering sleep". The clock was then set from 18:05:40 to 19:20:54 on waking (Kernel-General 1), and Power-Troubleshooter 1 said "returned from a low power state" at 19:20:56.
+- **E1:**
+  - step 0's Save at 19:21:19, the level the default (`''`);
+  - `e1.pdf` added at 19:21:28;
+  - **Windows' credential window in front at 19:21:40;**
+  - audit entry 323 at 19:22:23: `approved`, `B-T`, `windows-cng`; `e1-signed.pdf` written.
+- **The owner:** the PIN was asked; no console flash.
+
+**What E1 can say:** the PIN the agent held was **cleared at some point between 16:52:06** (step 4's signature, the last that used it) **and 19:21:40** (E1's prompt), with the same agent process throughout.
+
+**What E1 cannot say:** by what, or when. That interval held:
+- about two and a half hours of time;
+- a 75-minute sleep, which may power down the reader and reset the card;
+- and possibly other events nothing recorded.
+
+**P2a ("None") failed as written,** and the failure cannot be read as evidence of a timer.
+
+### E2: refused
+
+- **Run at 19:24:01,** 2 min 21 s after E1's prompt, from a process that is not the agent: `python -I e2probe.py sign`, running as the same user in the same session.
+- **What it did, in order:**
+  - found `EE8EC0F3…` in `CurrentUser\My`;
+  - opened its key with `CRYPT_ACQUIRE_SILENT_FLAG`: **opened**, `callerFree` true;
+  - asked `NCryptSignHash` for PKCS#1 v1.5 over SHA-256 of the 31 bytes `liro-bridge E2 probe 2026-10-24` (`38424151…626a251c`), with `NCRYPT_SILENT_FLAG`.
+- **The answer:** `0x80090022`, `NTE_SILENT_CONTEXT`, at the signature. That is Windows saying the operation needs a prompt, and silent mode forbids one.
+- **No signature was made.** So there is nothing for OpenSSL to check, and nothing of the owner's key exists over those bytes.
+- **No trace in the agent,** as predicted: `bridge.log` still 2,536 lines, the audit chain still 324 entries.
+- **No PIN was sent,** so no attempt was spent. Whether a window flickered is not known: the watcher was not running, and the owner has not said.
+
+**P2b held.**
+
+**What E2 shows:** two minutes after the agent's PIN, a second process going through Windows' CNG could not sign without being asked. **Through this route the PIN is not shared between processes.** SPEC §6.5's "a second process on the same machine can therefore sign without being asked for a PIN" is **false for the route measured.**
+
+**What E2 does not show, and must not be stretched to:**
+- **Whether the agent still held the PIN at 19:24:01.** If something cleared it in those two minutes, E2's refusal says nothing about processes. E1b, below, is the control.
+- **Whether the card itself stays verified for a program that talks to it directly,** with raw commands over PC/SC or through a PKCS#11 module such as the MUP `netsetpkcs11_x64.dll` our workers hold loaded. A fresh CNG provider asks for the PIN without asking the card whether it is already verified. So "the card keeps the PIN in its own state" is untested, not refuted.
+
+### Added to P2 before it runs: E1b
+
+**E1b, the owner:** sign one more document in the same agent now, with nothing else changed. It is the control for E2: no prompt means the agent still held the PIN when E2 was refused.
+
+## D-493 — P2 read whole: the PIN is held per process. A process that is not the agent could not sign while the agent held it, so SPEC §6.5's second-process sentence is false through CNG; its card half is untested. The flashes are Windows Terminal windows, one per child the agent starts. The minute is MUP's dead OCSP and its 30 MB CRL, fetched again for every document
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P2 (`5f69750`) and E1b (`d4f4c23`), each committed before its run. E1 and E2 are in D-492. **The owner** ran E1b, E3 and E4 and read the screens. The watcher ran from 19:25:29 for an hour, covering E1b, E3 and E4.
+
+### The runs
+
+| | process | what happened before it | PIN asked | audit | watcher |
+|---|---|---|---|---|---|
+| E1 | the tray agent 14168, since 14:07:48 | its last signature at 16:52:06; a sleep from 18:05:38 to 19:20:54 | **yes**, 19:21:40 | 323, 19:22:23 | not running |
+| E2 | `e2probe.py`, not the agent | E1's PIN 2 min 21 s earlier | — refused, `NTE_SILENT_CONTEXT`, no signature | none | not running |
+| E1b | 14168 | E1's PIN at 19:21:40, E2 at 19:24:01, nothing else | **no** | 324, 19:33:53 | no credential window, no new process |
+| E3 | 17364, `open`, from the Start menu at 19:34:25 | 14168 quit from the tray, its three workers with it (19:34:17) | **yes**, 19:35:01 | 325, 19:36:02 | one credential window (`CredentialUIBroker.exe`) |
+| E4 | 14560, `open`, from the Start menu at 19:36:19 | 17364 ended at 19:36:03; then **the card out for five seconds, the program started, the card put back** (the owner) | **yes**, 19:36:49 | 326, 19:37:27 | one credential window |
+
+All four signatures came back B-T in green (the owner). All four audit entries are `approved`, `B-T`, `windows-cng`.
+
+### Where the PIN is held: what is established
+
+**Established — the agent's process holds it, and it is good only inside that process:**
+1. **Inside one process, it outlives everything this program does.** In D-491 it outlived two closed sessions, two closed windows, and four and a half minutes. E1b signed with no PIN 11 minutes after E1's, in the same process.
+2. **A process that is not the agent cannot use it through CNG** (E2).
+   - **E1b makes that reading sound.** The agent held a PIN at 19:21:40 (E1) and still held it at 19:32 (E1b). No PIN was entered in between, and a cleared PIN cannot come back without one. So the agent held it at 19:24:01, when E2 was refused.
+3. **A new process is asked (E3).** The agent quit, and the next process was asked once.
+
+**Consistent with all of it, and not measured:** Microsoft's documented per-process PIN cache in the smart-card key storage provider (`scksp.dll`, loaded in the agent; D-491).
+
+**Not established:**
+- **What cleared it in E1.** 16:52–19:21, across a 75-minute sleep (D-492).
+- **Whether taking the card out clears it in a living process.** E4 did two things at once, and cannot separate them: the card came out and the process was new. Either one already asks for a PIN on its own. **P2e is unreadable.**
+- **Whether a timer clears it.** Nothing measured rules out a timer longer than 11 minutes.
+- **Its form in memory.**
+
+**A clean E4, and whether it is worth it.** One tray agent, the same PID before and after, read from the watcher:
+1. sign (the PIN asked);
+2. sign (none: the control);
+3. card out for five seconds, back in, the agent left running;
+4. sign.
+
+The Start menu's shortcut starts `open`, which ends with its window, so the agent must be `tray` (the `Run` entry starts it at sign-in). **Worth repeating.** It answers the one question a person can act on: whether taking the card out is enough. E11 cannot be closed without it. It costs one PIN entry more than it saves.
+
+### SPEC §6.5, and which half E2 refuted
+
+SPEC §6.5: "Measurement on real hardware established: after the user enters the PIN once, **the card keeps the PIN cached in its own state**, independent of which process is talking to it. A second process on the same machine can therefore sign without being asked for a PIN, for as long as the session lives."
+
+- **"A second process on the same machine can therefore sign without being asked for a PIN": refuted, for the route measured.**
+  - A second process going through Windows' CNG, as any Windows program would, was refused at 19:24:01. It could only have signed by asking. The agent held the PIN at that moment (E1b).
+  - So through CNG the PIN *is* a boundary between processes. §6.5 says it is not, and gives that as the reason the consent screen is the only gate.
+- **"The card keeps the PIN cached in its own state, independent of which process is talking to it": untested.**
+  - A fresh CNG provider asks for the PIN without asking the card whether it is already verified. So E2 could not see the card's state.
+  - A program talking to the card directly could: raw commands over PC/SC, or a PKCS#11 module. The MUP card has one, `netsetpkcs11_x64.dll`, and the agent's workers hold it loaded. **The PKCS#11 half is untested.**
+- **"The PIN outlives the session": held** (D-491), but in the process, not shown to be on the card.
+- **What this does not change:** Approve is still the only gate *inside the agent* after the first signature. That is what E11 records against F2 §4.1 and the Guide.
+- **What it does change:** D-025's reason. "The card's own cached-PIN behaviour (SPEC §6.5) means our process being the one to collect it buys no additional security." Through CNG there is no such cross-process behaviour. Whether D-025's decision still stands on other grounds is the owner's.
+
+### The flashes: Windows Terminal, once for every child
+
+From the watcher, E3's preparation (E4's is the same, two minutes later):
+- **19:34:45.302–19:34:45.958: three probe children,** one at a time: 18408, 17928, 12252. Each lives 0.19–0.24 s.
+- **19:34:45.958–19:34:47.368: then three workers that stay:** 19420, 18860, 16608, until the process ends.
+- **For every child:**
+  - a `conhost.exe` child of it, which lives 0.15–0.18 s;
+  - **a new visible top-level window of class `CASCADIA_HOSTING_WINDOW_CLASS`,** 1129×635, owned by `WindowsTerminal.exe` (PID 9576);
+  - and a 0×0 `PseudoConsoleWindow`.
+- **Six windows per preparation.** That is the flash.
+- **The agent's own start did the same,** once: 17364 at 19:34:25.403, and 14560 at 19:36:19.972.
+- **E1 and E1b started no children,** because the tray agent kept its workers from the first preparation. Neither had a flash (the owner), as P2f predicted.
+
+**Why the window is drawn:**
+- `liro-bridge.exe` is a console program. A child whose parent has no console is given one before `main` runs.
+- **On this machine, Windows hands every new console to Windows Terminal,** the default terminal: `HKCU\Console\%%Startup` sets neither `DelegationConsole` nor `DelegationTerminal`, so Windows chooses, and Terminal was already running.
+- **Terminal draws its window before the child's `FreeConsole` lands,** about 0.15 s later. Then the window goes again.
+- **D-254 measured the opposite,** no window ever drawn. That was the agent's own launch, under conditions it did not record. Here it fails for the agent's launch too.
+- **Not measured:** whether it differs with Terminal not running, or with conhost as the default.
+
+### The minute
+
+**E1b, with no PIN and no new children,** in the log:
+- `documents added` 19:32:29.9;
+- the last line before signing (the MUP root's AIA warning) 19:32:55.5;
+- the `/DSS` warning 19:33:49.0;
+- the audit entry 19:33:53.4.
+
+**53.5 s of it is B-LT's evidence for the signer's certificate,** which can never be embedded:
+- **MUP's OCSP:** `ocsp.mup.gov.rs:80` accepts no connection. curl, now: 10.0 s to time out, twice. Our code makes two attempts of 10 s: **20 s.**
+- **MUP's CRL:** 29,859,134 bytes, followed through a 302 to `crl.mup.gov.rs`. curl, now: 13.1 s and 16.0 s, about 2 MB/s.
+  - **Our limit is 30 s** (`crlTimeout`), and some downloads miss it. E1b and E3 logged "no OCSP response or CRL could be had" (the download timed out). D-491's runs and E4 logged "larger than the cap" (it arrived).
+  - **Either way, 13–30 s.**
+- **Then 4 s more,** after the `/DSS` warning, before the audit entry.
+
+**Fetched afresh every time:**
+- **OCSP: once per batch.** `EndpointMemory` remembers failures for one batch only (`memory.go`, "never to the process").
+- **The CRL: once per document.** A CRL that arrives and is too large is not a failure, so nothing remembers it (`fetchCRL` returns `TooLarge` without `mem.remember`). A batch of ten MUP documents downloads 300 MB, to embed none of it.
+- **This happens on the default too.** The best available tries B-LT for every MUP signature and keeps B-T after paying for the attempt.
+
+**The owner's guess was half right:** the CRL every time, and also OCSP's 20 s, every batch.
+
+### P2, against the result
+
+- **Held:**
+  - P2b (E2 refused);
+  - P2d (E3 asked once);
+  - P2f (no children and no flash in E1);
+  - P2g: three probes one at a time, then three workers that stay, one console window each. The class is `CASCADIA_HOSTING_WINDOW_CLASS`, owned by Windows Terminal;
+  - P2i (E1b, no PIN).
+- **P2a failed as written,** and is unreadable: the sleep (D-492).
+- **P2c half failed.** The workers ended with the agent, which held. "No console window anyone sees" at start failed: Terminal drew one.
+- **P2e: unreadable** (E4's two changes).
+- **P2h: moot.** E4's process was new, so its preparation was E3's.
+- **Not predicted:** the Start menu starts `open`, not `tray`. So E3's agent ended with its window, and nothing is running now.
+
+## D-494 — D-254's flash measured again in its own setup: drawn 5 times in 5 under the same Windows Terminal, so it is not the console host; the MUP CRL's size is in its headers; D52, D53 and A38 recorded, the clean E4 written as P3
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **The owner:** "Add both to section D as their own items"; establish whether the difference from D-254 is Windows Terminal as the console host, "so D-254 reads as incomplete rather than wrong"; write down the clean E4; set out D-025, "but decide nothing — that one is mine". The hour-long watcher was stopped at the owner's word, before 19:56:48, when the 40 s run below began. **The owner was away from the machine for all of it.** Nothing here used the card.
+
+### D-254 in its own setup, again
+
+- **The setup:** D-254's own. `liro-bridge.exe --version` (the installed `67695f6` binary, which frees its console) started five times through `Win32_Process.Create`, from a parent with no console, three seconds apart.
+- **The control:** `PING.EXE -n 4 127.0.0.1`, started the same way. It keeps its console.
+- **The instrument:** `flashwatch2.py`, `flashwatch.py` with each window's title text and the moment it goes.
+- **2,468 polls in 40 s.**
+
+**The result:**
+- **Every `--version` run drew a visible window:** `CASCADIA_HOSTING_WINDOW_CLASS`, 1129×635, owned by `WindowsTerminal.exe`. It was created titled "Terminal" (once "Windows Terminal"), retitled to the binary's path, and **gone after 73, 90, 92, 94 and 78 ms**.
+- **The control's window** was the same class and size, and lived 3.13 s.
+
+**Not Windows Terminal as the host.** D-254 ran under Terminal as well: the window it photographed before its fix was `CASCADIA_HOSTING_WINDOW_CLASS`, 1129×635, "titled `C:\Users\Veljko\AppData\Local\Programs\Liro Bridge\liro-bridge.exe`". The host is the same. The outcome is not.
+
+**What has changed since 2026-09-12, read on this machine:**
+- **Windows Terminal updated on 2026-10-03 15:06,** from `1.24.11911.0` to `1.24.12741.0` (AppXDeploymentServer events 855, 400, 821).
+- **Three Windows updates on 2026-10-15:** KB5127690, KB5127648 and KB5127647. Windows is 25H2, build 26200.9711.
+- **Neither is established as the cause.** Nor is it known whether 11911 was the version D-254 ran under: the log goes back no further than the update.
+
+**So D-254 reads as incomplete, not wrong.** It measured a race between the terminal's handoff and our `FreeConsole`, and wrote the result as a mechanism: "this is not a flash made short, it is a window not drawn". It held for the Terminal and Windows of that day, and it fails on today's, for the agent's start and for every child.
+
+### The MUP CRL's headers
+
+Read with curl, without reading the body:
+- the CRL's URL answers `302` to `http://crl.mup.gov.rs/MUPGradjaniCA4.crl`;
+- that answers `200` with `Content-Length: 29859134`, `Accept-Ranges: bytes`, `Last-Modified: Sat, 24 Oct 2026 04:37:09 GMT` and an `ETag`;
+- a ranged GET's `Content-Range` gives the same total.
+
+**So the size is known before a byte of the CRL is read.** This is the basis for D52's second fix.
+
+### Recorded
+
+- **D52, the CRL:** what happens per document, where in the code, what it would take, and what that gives up (D-076's validate-then-measure order).
+- **D53, the flashes:** this entry's measurement; D-254 incomplete; what a fix would look like, not decided.
+- **A38, D-025:** what it decided, its two reasons as written, and what each rests on now.
+  - Reason 1 rests on SPEC §6.5's second-process sentence, refuted through CNG by E2.
+  - Reason 2, the PIN kept out of our logs, dumps and memory, stands.
+  - **Not decided.**
+- **E11:** the clean E4, as four steps after a setup step.
+- **P3:** that run's predictions, written before it.
+
+### A correction
+
+**D-491 and D-493 say "Microsoft documents a per-process PIN cache".** That is my recollection of Microsoft's smart-card documentation. I did not re-read it this session, and nothing here measured it. It should be read as "recalled". P3d says so.
+
+## D-495 — P3, the clean E4: taking the card out cleared the PIN in a living agent, with p3-2 as the control. Windows' own audit log shows every PIN-less signature as a verification sent to the card from the agent's process, so what verifies the card is held in that process. What E11 can now tell a person, the one route the program has to keeping F2 §4.1, and what stays untrue
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P3 (`0b7c67d`), committed before the run. **The owner** ran the four steps and read the screens: "p3-1: flash, PIN asked. About a minute. p3-2: no flash, no PIN. About a minute. p3-3: no flash, PIN asked. Slightly under a minute." The card going out and back in rests on the owner's word: nothing on this machine recorded it.
+
+### Before P3
+
+- **The repository-root build was run once, by mistake, at 20:41:42** (the owner's word). It is D-451's binary: `liro-bridge.exe` at the root, git-ignored, written 2026-09-19 17:37:15, SHA-256 `3b35ebb5…48fa0f`.
+  - **It wrote one line** to `bridge.log`: `20:41:42.19 "liro-bridge starting"`, version `dev`, commit `none`. That is D-451's signature. No `webview2` or `protocol: listening` line follows, so it did not become an agent.
+  - **The Run entry was not taken.** `HKCU\…\Run\LiroBridge` names the installed binary, and the 21:00 sign-in started the installed binary from it. Had the root build rewritten the entry at 20:41 (D-451's mechanism), the sign-in would have started the root build. No start of the installed binary is logged in between.
+  - **The Explorer verb and the `liro-bridge:` handler** name the installed binary too. That says nothing about 20:41: the 21:00 agent rewrites both at its start.
+- **The machine was restarted, not only signed out:** `LastBootUpTime` 20:59:23, `explorer.exe` 20:59:47.
+- **The agent:** PID 14140, `"…\Programs\Liro Bridge\liro-bridge.exe" tray`, created 21:00:01, parent `explorer.exe` (8076). The installed binary (`ab3e628c…3b3a`), its start line `commit 67695f6` at 21:00:02. No other `liro-bridge.exe` was running, and it had no workers.
+- **The watcher:** `flashwatch2.py`, the same bytes as D-494's (`4bcda164…f460`), started at 21:54:00 for an hour. It watched until 22:24:48, when the machine went to sleep (Kernel-Power 42, "Application API"), and ended on waking at 23:16:16 (122,150 polls). P3 (22:04–22:08) is inside the watched part. The agent was still 14140 after the wake.
+- **Not done:** the machine was not kept awake. It sleeps after 15 minutes idle on AC, and P3 ran within four minutes of activity.
+
+### The run
+
+| | when | PIN | credential window | children, Terminal windows | verification events (CHV 101) | audit |
+|---|---|---|---|---|---|---|
+| p3-1 | added 22:04:29.8, done 22:05:39.7 | **asked** | one, 22:04:58.5–22:05:01.1 | three probes, three workers; **six** | `CredentialUIBroker.exe` 22:05:01.867, then **`liro-bridge.exe` 14140** 22:05:02.019 | 327, `approved`, `B-T` |
+| p3-2 | added 22:05:52.7, done 22:06:48.0 | **none** | none | none; none | **`liro-bridge.exe` 14140 only,** 22:06:09.939 | 328, `approved`, `B-T` |
+| card | out five seconds, back in (the owner), between 22:06:48 and 22:07:07 by the order of the steps | | | none: no process under 14140 started or ended | none | |
+| p3-3 | added 22:07:12.0, done 22:08:04.2 | **asked** | one, 22:07:23.6–22:07:27.2 | none; none | `CredentialUIBroker.exe` 22:07:28.055, then **`liro-bridge.exe` 14140** 22:07:28.206 | 329, `approved`, `B-T` |
+
+- **The PID was 14140 throughout.** At 22:08:34 it was still running, with the same three workers (10328, 9348, 14424) it started at 22:04:45–47. The window closed at 22:08:06 and the agent stayed, as `tray` does.
+- **All 330 audit entries verify** (`scripts/auditverify`, on a copy).
+- **The outputs:** `p3-1-signed.pdf` (`52e62723…`), `p3-2-signed.pdf` (`83d1885b…`), `p3-3-signed.pdf` (`718fc271…`). The inputs are still `b9749fdb…`.
+- **The minute,** from the log: the B-LT attempt (the AIA line to the notes) took 40, 38 and 40 s. From adding the document to the report took 70, 55 and 52 s. Each fetched the 29,859,134-byte CRL and left it out (D52).
+
+### Taking the card out cleared the PIN in the same process
+
+**p3-3 was asked, and the only thing that differed from p3-2 was the card going out.**
+- **The same process:** PID 14140 throughout, and every verification event in it is attributed to 14140.
+- **The control:** p3-2 signed with no prompt 68 s after the PIN. Between p3-1 and p3-2 the program closed its session and freed the key, as it does after every batch (D-491). It did the same between p3-2 and p3-3. So that is not what made the difference.
+- **Not a timer:** p3-3 was asked 2 min 22 s after the PIN, and 1 min 14 s after p3-2's silent verification. E1b signed with no prompt 11 min 13 s after its PIN (CHV 19:21:42, then 19:32:55), and D-491's third signature came 4 min 15 s after its PIN.
+- **Nothing else happened in the agent:** the watcher shows no process under 14140 starting or ending between p3-2 and p3-3.
+
+**What this does not establish:**
+- **The card went out on the owner's word only.** No log recorded it. `SmartCard-DeviceEnum`'s service had stopped at 21:00:46, and Kernel-PnP has nothing in 22:04–22:09.
+- **One card (MUP), one reader, one Windows build, once,** through CNG. The Pošta card and the PKCS#11 route were not tried.
+- **Which layer cleared it,** the provider or the card. P3d's basis is still recalled, not read: the result agrees with it and does not confirm it.
+- **What cleared E1** (D-492). A reader powered down in a 75-minute sleep would look like a removed card. That is a guess, and it fits.
+
+### The verification events: what "no PIN" was
+
+Windows' `Microsoft-Windows-SmartCard-Audit/Authentication` log records every successful card-holder verification (event 101), with the process that sent it. It goes back to February 2025 and needs nothing from us.
+
+- **Every prompted signature** shows two events about 0.15 s apart: `CredentialUIBroker.exe` (the dialog) first, then the signing process.
+- **Every signature that asked for no PIN shows a verification from the agent's own process, with no dialog:**
+  - D-491: 16:48:59 and 16:51:28 (14168);
+  - E1b: 19:32:55 (14168);
+  - p3-2: 22:06:09.939 (14140).
+- **E2 shows none.** `e2probe.py` was refused before anything reached the card.
+- **The same pattern runs through the whole log:** from the first card signatures on 2026-09-05 (one prompt, then two more verifications from PID 7408 at 14:49 and 14:50), and in two other programs before this project. **So it is Windows' smart-card provider's behaviour, not ours,** and it was in Windows' own log from the start.
+
+**What it shows:**
+- **A signature with no prompt is a fresh PIN verification, sent from the agent's process.** The card did not stay verified between batches; it was verified again each time. So whatever performs that verification, the PIN or something equivalent, is available inside `liro-bridge.exe`'s process. **Its form there is not measured.**
+- **The card half of SPEC §6.5** ("the card keeps the PIN cached in its own state") **is still untested,** but the silent signatures did not rely on it. They verified again.
+- **D-025's reason 2** (F2 §2.3: "A PIN that never enters our process cannot leak from our logs, our crash dumps or our memory"): our code never holds the PIN, so the logs half stands. **The process does hold what verifies the card,** so the dumps-and-memory half is in question. Whether a dump of the agent would contain the PIN is not measured. Set out in A38; **not decided.**
+
+### What it means for E11
+
+**What a person can be told today, each measured:**
+- **Closing the window does not end it** (D-491: two closed windows, two closed sessions, no PIN asked).
+- **Taking the card out does** (P3, once).
+- **Quitting Liro Bridge from the tray does:** a new process is asked (E3, E4).
+- **Until one of those, anyone who can press Approve at the computer signs with the card without the PIN.** E1b shows at least 11 minutes. The longest is not measured.
+
+**Can the program make F2 §4.1 and the Guide true?**
+- **One route rests on a measurement.** The cache belongs to the process, and a new process is asked. So signing through CNG in a child process that lives for one session, and is ended when the session ends (the batch, or the 90 s idle timeout), would make "the next operation requires a new PIN" true by the same mechanism E3 measured. The PKCS#11 workers already show the pattern.
+  - **Its cost:** a PIN for every batch. That is what F2 §4.1 promised, and what the Guide's sentence describes.
+  - **Unknown until tried:** the PIN dialog parented to a window in another process (`NCRYPT_WINDOW_HANDLE_PROPERTY`); and the child's console (D53), unless it is started without one.
+  - **What it leaves alone:** D-025. No PIN enters our code. The material leaves with the child instead of staying in the agent, which would be D-025's reason 2 regained for the agent.
+- **Other routes, none measured:** asking Windows' provider to drop its cache, or resetting the card from the agent to imitate removal. Whether either exists or works is not known here. A reset would also reach any other program using the card.
+- **Which, if any, is the owner's decision.** The Guide is wrong for every person running the installed build today, so its text needs changing whatever is decided about code.
+
+**What stays untrue after P3, in F2 §4.1:**
+- **"On idle timeout, close the session and free the key handle. The next operation requires a new approval and a new PIN."** The idle timeout still clears nothing. Taking the card out does, and that is a person's act, not the program's.
+- **"short enough that a walked-away-from machine does not hold an authenticated card open."** The agent's process keeps what verifies the card, for at least 11 minutes, whatever the timeout does.
+- **"A batch of 1000 documents at 0.41 s each is under 7 minutes, so this never truncates legitimate work."** With the MUP card each document takes about 40 s (D52), so 30 minutes is about 45 documents. `runBatch` wraps one session for the whole batch (`mainwindow.go:1277`), and `checkLive` refuses a signature after `MaxLifetime` (`session.go:76`). **Read from the code, not run.** What a person sees at document 46 is not known.
+
+**What stays untrue after P3, in the Guide (both languages):**
+- **"After you click *Potpiši*, Windows asks for your card's PIN."** Only for the first signature in an agent's life, or after the card is taken out, or after the agent is quit.
+- **"Liro Bridge never sees or stores your PIN."** Our code never sees it. But Windows keeps what verifies the card inside Liro Bridge's process, and verifies the card from there with no prompt: four times today, logged against `liro-bridge.exe`. A person reading "never stores" would believe the opposite.
+- **Nothing says** that the PIN stays usable, that closing the window does not end it, or that taking the card out or quitting does.
+- **Not E11's subject, in the same step:** "The first signature takes about five seconds … Every one after it is much faster." With the MUP card every document takes about 40 s, and none is faster (D52).
+
+### P3 against the result
+
+- **P3a held:** one credential window; three probes, then three workers; six `CASCADIA_HOSTING_WINDOW_CLASS` windows (22:04:44.3–22:04:46.5, each gone within 65–85 ms); audit `approved`, `B-T`; about a minute.
+- **P3b held:** no PIN, no new child, no window.
+- **P3c held:** PID unchanged. **The part not predicted:** the workers did not notice. None exited and none was started; the same three were running at 22:08:34.
+- **P3d held: the PIN was asked again.** Its basis is still recalled, not read.
+- **Not predicted:** the verification events. Every silent signature is a verification from the agent's process.
+
+## D-496 — P4: 14140 asked for the PIN after its sleep. That fits the guess that sleep clears it, and cannot separate sleep from a timer longer than 11 minutes, so it does not settle E1. P5, the run that would separate them, written down and not run
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P4 (`2e1c90a`, its time in `db620fc`), committed before the run. **The owner** signed once and read the screen: "PIN asked, no flash, about a minute. Signed." The owner's ruling: "Record it that way and do not treat it as settling E1."
+
+### The run
+
+- **The agent:** 14140 throughout, the same process as P3, still holding its three workers from 22:04:45–47.
+- **The window:** opened at 23:36:20.4; the document added at 23:36:24.3.
+- **The PIN, asked once:** one `Credential Dialog Xaml Host` (`CredentialUIBroker.exe`, PID 1196), 23:36:35.9–23:36:38.6. Then the pair of verification events: `CredentialUIBroker.exe` at 23:36:38.816, 14140 at 23:36:38.964.
+- **No new child, and no Terminal window** (the watcher, from 23:19:52).
+- **The audit:** entry 330, `approved`, `B-T`, `windows-cng`. All 331 entries verify (`scripts/auditverify`, on a copy).
+- **The B-LT attempt:** 38 s, from the AIA line to the notes; the CRL left out again (D52).
+- **The output:** `p4-signed.pdf` (`21bada6c…`). `p4.pdf` is still `b9749fdb…`.
+
+**P4a, P4b and P4c held.**
+
+### What it settles, and what it does not
+
+- **The interval:**
+  - from 14140's last verification at 22:07:28.2 to the prompt: **1 h 29 min**;
+  - from the PIN at 22:05:01.9: 1 h 31 min;
+  - inside it, an S3 sleep of 51 minutes (22:24:48–23:16:17), with the card left in.
+- **The PIN was cleared at some point in that interval.** The interval holds the sleep and more than 11 min 13 s (E1b's longest silent signature). **So it cannot say which cleared it, or how.**
+- **It is E1 again,** with a watcher, the verification log and tighter bounds. **E1 is not settled.**
+- **One thing it does exclude:** the workers being replaced, or a new preparation, as the cause. Nothing started.
+
+### A correction about the watcher's clock
+
+In D-495 I told the owner the watcher's hour "runs on a clock that may stop while the machine sleeps". **It did not stop.** Started at 21:54:00 with 3,600 s, it would have run to 23:45 had the sleep paused its clock. It ended at 23:16:16, on waking. So the clock counted the sleep, and the watcher could only stop once the machine was awake. For P5 that means the watcher's duration must cover the sleep as well.
+
+### P5, written down so it can be run without rethinking
+
+Its predictions are in `docs/s35-predictions.md`, committed with this entry. **Not run, by the owner's word.**
+
+## D-497 — row 1.7 run five times on the NetSeT machine: no slow run and no probe timing out, so the row is not read and D45 stays inferred. My P6a took its 2.5–5 s from the wrong number
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P6 (`d374686`), committed before the runs. Done alone, by the owner's word. Nothing here used the card's PIN.
+
+### The runs
+
+- **How:** `go test -c` of `./internal/keysource/pkcs11` at `d374686` (`eeada5a7…`), then `-test.run '^TestSourcesAreOnePerUsableModule$' -test.count=1 -test.v`, five times in a row, 23:41:05–23:41:07. The watcher (`flashwatch2.py`) ran over all five.
+- **The card was in the reader,** and 14140 was running with its three workers holding the same three modules.
+- **All five passed, in 0.18, 0.19, 0.19, 0.21 and 0.21 s.**
+- **The same three usable modules every time,** and no `not a module` line:
+  - `A.E.T. Europe (SafeSign)`, `aetpkss1.dll`;
+  - `NetSeT (TrustEdgeID)`, `TrustEdgeID\netsetpkcs11_x64.dll`;
+  - `NetSeT (MUP RS)`, `MUP RS\Celik\netsetpkcs11_x64.dll`.
+- **The watcher:** three probe children per run, one at a time, each living 32–97 ms. No Terminal window: the children share the test's console.
+
+### Against P6
+
+- **P6a failed as written,** and the failure is mine. The runs took 0.2 s, not 2.5–5 s.
+  - D-455's "2.5–5 s" was the **package's** time inside a full `go test ./...`, not this test's.
+  - **D-455's conditions differ** in three ways:
+    1. the card was **out** of the reader;
+    2. the whole suite ran;
+    3. the code was `release/0.9.3`, two discoveries per test, with two usable modules ("got 3 sources for 2 usable modules"), not three.
+  - **Its other half held:** no probe timed out.
+- **P6b held:** the three modules, the same in every run.
+- **P6c held:** one child per candidate, one at a time, each well under a second.
+
+### What it settles
+
+- **The row is not read.** No run was slow, so D45 did not recur. **It stays inferred** (D-467).
+- **One thing it shows:** with the card in, this machine's three modules answer a probe in under 0.1 s each. So a 10 s probe is not this test's ordinary state.
+- **A repeat in D-455's own conditions** (the card out, the whole package) needs the card out, so the owner's hands. **Not done.**
+
+## D-498 — row 5.1 read: the window CI photographed on macOS 15 shows the origin page, whole
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P7 (`5c7d7d1`), committed before the artifact was opened. Done alone, by the owner's word.
+
+- **The artifact:** `liro-macos` 12571531628, from run **40121684835** (`6bb89b9`, the pull request's run, 2026-10-24 18:40 UTC). P7 called it "40121684835's sibling"; it is that run's own artifact.
+  - Downloaded with `gh api` into a new, empty folder in my scratchpad.
+  - **Only `origin-window.png` was extracted** (27,360 bytes, `0a47a8af…`). The bundle's zip stayed unopened inside the download.
+- **What it shows:**
+  - a macOS window titled "Liro Bridge (CI)", with its three title-bar buttons;
+  - "Server", then **`https://erp.example.com`** in bold;
+  - "A page on this server asked to send you documents to sign." and "Every request still opens the signing screen.";
+  - two buttons at the bottom right, **"Do not allow"** (with the keyboard focus ring) and **"Allow"** (blue).
+  - **Nothing is cut off, and there is no scroll bar.**
+
+**Against P7:**
+- **P7a failed as written:** the picture is 420×434 pixels, the runner's display at 1×, not 2×. The 28 extra rows are the title bar, which `-l` includes.
+- **P7b held,** the least certain. The page was drawn, not only loaded.
+- **P7c held.**
+
+**Row 5.1 is read: WKWebView draws our origin page on macOS 15.**
+- It says nothing of 5.2–5.4: no bundle opened by a person, no Gatekeeper, no card.
+- **The focus ring on "Do not allow"** matches the origin page putting the first focus on refusal. That was not checked against the page's code here.
+
+## D-499 — the first F14 screens on a real machine were seen by the owner without warning: both were mine, P8's steps 1 and 2, which I started without saying so. The origin window with a 255-character origin: the server's name takes six lines and pushes the buttons to the bottom of a window nobody can resize
+
+**Date:** 2026-10-24. **Phase:** F12, the worklist (session 35). **Predictions:** P8 (`8e10776`, its time in `b067e1e`), committed before either window. **The owner** had said "yes, open windows on my screen … Ask me for the clicks when you reach them". **I did not say when I was starting,** or which windows would come, and the owner saw them as windows that came "by itself". That is my failure, not the program's.
+
+### What appeared, and what sent it
+
+1. **23:46:10, the box "Ovaj link nije mogao da se upotrebi. Zatražite novi od stranice koja ga je prikazala."** (row 2.3, P8's step 1). **Mine.**
+   - **The sender:** `liro-bridge.exe open-link "liro-bridge://sign?job=http://example.invalid/j"`, PID 12088, started by my PowerShell (2648, child of `cmd.exe` 688; the watcher). http, not https, chosen to be unusable.
+   - **The log:** a start line at 23:46:10.257 (`67695f6`), then "open-link: the link could not be used" ("only https is used"), then "no desktop notification was posted … so it is shown in a box".
+   - **I closed it at about 23:46:27** with `WM_CLOSE` (the process ended at 23:46:27.7). Its exit code was not read.
+   - **Nothing else sent one.** This is the only "could not be used" line in the whole of `bridge.log`. `open-link` has run twice in it, both times by me tonight. No `liro-bridge.exe` started in the watchers over 1.7 and 5.1 except the agent's own children and my two `open-link`s. **1.7 and 5.1 reached nothing of the cloud channel:** 1.7 ran the PKCS#11 test binary, and 5.1 only downloaded a file.
+2. **23:46:47, the window "Dozvoliti ovaj server?"** (row 2.1, P8's step 2). **Mine.**
+   - **The sender:** `open-link` (PID 11084, from my PowerShell 7476) with a link whose origin is `https://` + 244 × `a` + `.rs`, 255 characters. It left the link for 14140 and exited 0. 14140 opened the window.
+   - **How it ended:** the owner clicked "Ne dozvoli", and I posted `WM_CLOSE` at 23:47:09.672. The log says "the person did not allow this server" at 23:47:09.683. **Which of the two ended it cannot be told** from what was recorded. Either one is a refusal.
+   - **The list is untouched:** `cloud-origins.json` was still absent at 23:47:11.
+
+**Recorded either way, as the owner asked: this is the first time any F14 screen was seen on a real machine.** It was seen by accident, because I did not announce it.
+
+### What the origin window showed (my screenshot, 23:46:52)
+
+- **The window:** 420×406 client area at 100 % (P8b predicted 576 wide; `pairingWindowWidth` is 420), frame 422×438, always on top.
+- **The server's name takes six lines** in bold, the last "aaaaaaaaaaaaaaaaaaaaaa.rs".
+- **Then the two sentences:** "Stranica na ovom serveru zatražila je da vam pošalje dokumente na potpis. Ako ga dozvolite, njegove stranice moći će ponovo da traže bez ovog pitanja." and "Svaki zahtev i dalje otvara ekran za potpisivanje programa Liro Bridge i ništa se ne potpisuje dok ga tamo ne odobrite."
+- **The buttons:** "Ne dozvoli" and "Dozvoli", at the very bottom. No scroll bar.
+- **The picture is overlaid:** a dashed selection rectangle over the upper left, and the rest dimmed. That was the owner taking a screenshot at the same moment, not the program. The text and buttons can still be read through it.
+- **At 100 % on this screen, nothing is cut.**
+
+**The owner's reading:** the name pushes the buttons down, and on a shorter window they would be off the bottom. **This is the screen where a person decides who may send them documents to sign.**
+- **The window cannot be made shorter by a person.** Its style is `WS_POPUP | WS_CAPTION | WS_SYSMENU`, with no resizing frame (`window_windows.go:523`). Its height is fixed at 406 points, scaled by the window's DPI (`scaleForDPI`).
+- So the heights that matter are not a person's resizing. They are:
+  - the scale (150 %, 200 %), against the screen's work area;
+  - Windows' separate text-size setting, which enlarges text and not the window. **Not measured; a guess at the likeliest way to lose the buttons.**
+  - At 200 % on this 1080-pixel screen, 406 points is 812 pixels, within the 1032-pixel work area. **On a 768-pixel laptop at 150 %, 406 points needs 609 pixels plus the title bar, against about 720.** Arithmetic only.
+- **Not measured yet:** 150 %, 200 %, the text-size setting, and what the page does when its content is taller than the window (scrolls, or cuts). It waits on the owner: changing the scale changes the owner's display.
+
+### Against P8 so far
+
+- **P8a held,** except the exit code, which was not read.
+- **P8b failed on the width:** 420, not 576. The title, always-on-top and 406 held.
+- **P8c held at 100 %:** the whole origin visible, both buttons on screen, no scroll bar. **But only with nothing to spare,** and the owner's question is not P8c's: the smaller room that a scale or a text size gives.
+- **P8d held:** the list absent; the refusal logged; no box.
+- **Step 3 (2.2 and the agent's box) has not started.**
+
+## D-500 — P9's R1 measured nothing: the owner quit 14140 by mistake before it, my link then made `open-link` the agent, and my script, looking for 14140, neither photographed nor closed the window. It timed out unseen: R5 by accident, a person who misses the window is refused silently
+
+**Date:** 2026-10-24/25. **Phase:** F12, the worklist (session 35). **Predictions:** P9 (`60990f9`). **The owner's words** on the clicks: "Those clicks were mine. I went looking for the display settings, opened Liro Bridge's Settings by mistake, closed them with the X and then clicked Izađi."
+
+### What happened, from the log
+
+- **23:54:08:** 14140's main window opened. At 23:54:09.7 its own Settings opened from it ("door": "settings").
+- **23:55:08:** Settings closed "from outside the page, not by Zatvori", which is the X.
+- **23:55:12:** "Izađi in the agent's own window sent quit, so the agent stops" (`trigger: pointer`). **14140 ended,** and with it its workers and the PIN it held.
+- **23:56:08, R1 (the owner had set scale 150 %, text 100 %):** my `open-link` (PID 828, from my PowerShell 6368) found no agent: "no agent is running, so this launch becomes it and takes the link". **828 became the agent** and opened the origin window. My command, waiting on `open-link` to return, never returned.
+- **My script looked for 14140's window, found nothing, and did neither of its jobs.** No photograph, no close. **I had checked the agent once, earlier, and assumed its PID.** The owner's correction: check which process owns the window **every time**, because the agent can go between runs, as it just did.
+- **23:58:09:** "cloud: nobody answered whether a server may send requests", then "the person did not allow this server". The list was still absent (23:59).
+
+### What R5 measured by accident
+
+**The owner did not see the window at all.** "It came up, sat there two minutes and timed out while I was in Windows settings. … nothing told me anything, because I never saw it."
+- **A person can miss the origin window entirely, and the refusal happens silently.** That is with the window always on top, at 150 %.
+- **Nothing is told on a timeout:** no box, no notice. The server is never contacted, so the page that sent the link hears nothing either.
+- **P9f held,** in the case that matters most: unseen.
+- **R1 is still to do.** R5 is counted as measured by this, unless the owner wants it repeated at 225 % text as written.
+
+## D-501 — P9's R2 held exactly: at 200 % scale the origin window is the 100 % page enlarged — six lines of name, both buttons on screen, no scroll bar, and slack to spare. The agent was re-read from the window, and `open-link` handed off instead of becoming the agent
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 35). **Predictions:** P9 (`60990f9`). **The owner's words** on dropping R1: "On this screen your own arithmetic says the buttons survive 150 % when they survive 200 %, so running the smaller scale after the larger one settles nothing. If R2 shows them crowded, I'll go back and do 150 %."
+
+**R1 was dropped, not failed.** R2's condition was already on the machine after the sign-out, and changing scale costs a sign-out, so the larger scale was run first. It is not crowded, so 150 % was never run.
+
+### What the machine was, read before anything opened
+
+- **Display scale 200 %, text size 100 %** — R2's row, already set.
+- `LogPixels` 192 with `Win8DpiScaling` 1 (custom scaling); physical panel 1920×1080 against the 960×540 a DPI-unaware process is shown, a ratio of exactly 2.0. `GetDpiForWindow` on the window itself later returned 192, agreeing.
+- **Text size 100 %:** `TextScaleFactor` is absent from `HKCU\Software\Microsoft\Accessibility`, which is the default.
+- The owner had guessed "possibly 175 %". It was 200 %.
+
+### A trap worth keeping: a DPI-unaware process is lied to, and `GetDpiForMonitor` lies with it
+
+Two separate readings said "96, so 100 %", and both were wrong. `GetDeviceCaps(LOGPIXELSX)` is virtualized, which was expected — but **`GetDpiForMonitor` with `MDT_EFFECTIVE_DPI` also returns 96 for every monitor when the caller is DPI-unaware**, and it had been treated as authoritative because it is documented as the true effective DPI. It is only true for a DPI-aware caller. The scale was nearly recorded as 100 % on its word.
+
+**What settled it** was not an API at all: the physical mode from WMI against the virtualized resolution the process was handed. **Any script in this project that measures DPI must call `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` before its first GDI or window call,** or every rect it reports is halved and every capture is taken in the wrong space.
+
+### What ran, from the log
+
+- **00:17:59.439:** `liro-bridge starting`, version `dev`, commit `67695f6` — this is `open-link`'s own process, pid 15424.
+- **00:17:59.445:** `open-link: an agent is running, so the link was left for it`. **It handed off and returned.** R1's failure, where `open-link` found no agent and became one, did not repeat.
+- **The window opened, owned by pid 11008** — the tray agent, `liro-bridge.exe tray`, up since 00:04:44, listening on 17580 and named in `bridge.json`.
+- **00:18:02 and 00:18:05:** photographed twice, to let WebView2 finish painting.
+- **00:18:05.547:** `cloud: the person did not allow this server`, carrying the full 255-character origin and job. That is `WM_CLOSE`, the X's message, sent by the script.
+
+### D-500's correction, applied
+
+The agent was **not** carried forward from the earlier reading. The window was found by its class, `LiroBridgeWindow`, of which **there were none before the link** — the tray registers its own class, so the new window was unambiguous — and its owner was resolved with `GetWindowThreadProcessId` at the moment it appeared, then checked against the listener on 17580. They matched: 11008. Had they not, the run would have said so instead of photographing the wrong window.
+
+### Row 2.1 at 200 %: the measurement
+
+| | |
+|---|---|
+| Client | **840×812** — P9a's predicted figure, to the pixel |
+| Window | 866×883 at (527, 98); `GetDpiForWindow` 192 |
+| Title | "Dozvoliti ovaj server?" |
+| Resizable | **no** — `WS_THICKFRAME` absent, confirming the window cannot be shortened |
+| Scroll bar | none, at the window and in the page |
+
+**What a person sees:** the whole origin, wrapped across **six lines** of name, and **both buttons on screen** — "Ne dozvoli" and "Dozvoli". About 110 physical pixels (~55 CSS px) of empty space sit between the last sentence and the button row, and about 45 more below it. **The layout is nowhere near its edge at 200 %.**
+
+### What held
+
+- **P9a held,** exactly: the same page as at 100 %, larger; the client size predicted; six lines; both buttons; no scroll bar. Scale enlarges the window and the page together, so the page's layout in CSS pixels does not change.
+- **P8c held at 200 %.** It was the least certain of P8, because WebKitGTK needed 372 points in Serbian Latin and nothing had measured Segoe UI. It fits, with room left.
+- **P9f held for the X:** a refusal, logged "did not allow", and **nothing told the person** — no box, no notice, and the server is never contacted.
+
+### What this settles, and what it does not
+
+- **Scale is not what threatens the buttons.** The owner's reasoning for dropping R1 is borne out by the slack measured here: 150 % cannot lose what 200 % keeps with room over.
+- **Nothing here touches text size.** P9b is still open — whether WebView2 applies Windows' text size to page content at all — and with it P9c, P9d and the dangerous case, a server name absent from a window that asks whether to allow that server. **R3, R4 and R5 are where the answer is.**
+- **R3 costs a sign-out.** Custom scaling is on, and Windows will not leave it from the dropdown; going to 100 % means signing out, which ends agent 11008. The agent must be read again from `bridge.json` and the listener before R3, never carried over.
+
+## D-502 — P9's R3: Windows' text size reaches the page, and it reaches it as a zoom of the whole layout. At 150 % text and 100 % scale the origin window shows **no server name at all** — the label "Server", a scroll bar, and nothing else — while both buttons stay on screen. P9c is false, and P9d's harm arrives at 150 %, not 225 %
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 35). **Predictions:** P9 (`60990f9`).
+
+### What the machine was, read before anything opened
+
+- **Display scale 100 %,** read the way D-501 says it must be: DPI-aware before any GDI call, then `GetDpiForMonitor` (MDT_EFFECTIVE_DPI) 96, `GetDpiForSystem` 96, aware screen metrics 1920×1080 against WMI's physical 1920×1080 — **a ratio of 1.0, which is what makes the 96 trustworthy.** At 200 % the same reading was 2.0 and the same API lied.
+  - **A second trap, for the next reader:** `HKCU\Control Panel\Desktop\LogPixels` still reads **192**, left from the 200 % run, with `Win8DpiScaling` 0 and `PerMonitorSettings\…\DpiValue` 0. **`LogPixels` alone would have recorded this run as 200 %.**
+- **Text size 150 %:** `TextScaleFactor = 150` under `HKCU\Software\Microsoft\Accessibility` (absent, i.e. 100, in D-501). Written 00:26:03 — before this logon session (explorer 00:26:42) and before the agent (00:26:47), so the agent and its WebView2 came up with it already in place.
+- **The agent: the tray.** PID **11844**, command line `"…\Liro Bridge\liro-bridge.exe" tray`, parent `explorer.exe`, started 00:26:47; it owns the listener on 127.0.0.1:17580, `bridge.json` names 17580 and was written by it at 00:26:48, and `/v2/health` answers 200. The owner asked whether it was the Start menu's `open` instead. **It matters:** on Windows `runOpen` → `openWithoutAgent` → `runMainWindow` and nothing else — it never calls `startProtocol`, so there is no port, no `bridge.json` and no cloud channel. An `open` process is a window with no agent behind it, `liveAgent()` is false, and `open-link` would have become the agent, which is exactly D-500's failure.
+- `cloud-origins.json` **absent**; **no `LiroBridgeWindow` on screen** before the link, so the new window was unambiguous by class, as in D-501.
+
+### What ran, from the log and the script
+
+- **00:34:07.820** the 255-character link sent through `open-link` (pid 6924). **00:34:08.034:** `open-link: an agent is running, so the link was left for it`; it exited 0.
+- **00:34:08.625** the window appeared. Its owner was resolved **at that moment** with `GetWindowThreadProcessId` and checked against the listener: **11844**, the tray. Title "Dozvoliti ovaj server?".
+- **00:34:11.226 and 00:34:14.258:** photographed twice, to let WebView2 finish painting. The two frames are identical.
+- **00:34:14.278** `WM_CLOSE` posted (the X's message). **00:34:14.297:** `cloud: the person did not allow this server`, carrying the full origin and job. The window was gone.
+
+### Row 2.1 at 100 % scale, 150 % text: the measurement
+
+| | |
+|---|---|
+| Client | **426×423** — not the designed 420×406 (see below) |
+| Window | 442×462 at (739, 309); `GetDpiForWindow` 96 |
+| Resizable | **no** — `WS_THICKFRAME` absent |
+| Scroll bars | **none on the window** (`WS_VSCROLL`, `WS_HSCROLL` absent) and **none on the page**; exactly one, in the server-name region |
+| Primary button | **140×64 px**, against the ~93×44 its CSS gives at 100 % |
+| Below the button | 49 px to the window's bottom edge |
+
+**What a person sees:** the quiet grey label **"Server"**, a pair of scroll arrows at the right of that line, and **white space where the name should be.** Then both sentences, then "Ne dozvoli" and "Dozvoli", both fully on screen. **Not one character of the 255-character origin is visible.**
+
+### What this settles
+
+- **P9b is answered: text size reaches the page** — and not as bigger glyphs in the same layout. The primary button is 140×64 against a designed 93×44, and the sentences wrap into more lines than at 100 %: **WebView2 applies `TextScaleFactor` as a zoom of the whole layout.** The page's CSS viewport is therefore about **284×282 CSS px** instead of 420×406 — it lost a third of its height and a third of its width while the window grew by 4 %.
+- **P9c is false.** It predicted part of the name with a scroll bar in that region. **None of the name shows.** `.identity` is `flex: 0 1 auto` with `min-height: 0`, and the page's design makes it the only thing allowed to give; asked for 124 CSS px it does not have, **it gives everything,** down to the label line. The buttons survive for the same reason.
+- **P9d's harm arrives at R3, not R4.** A window titled "Dozvoliti ovaj server?" asks a person to allow a server **it does not show them.** 150 % text is not an exotic setting; 225 % is still to run, and can only be worse.
+- **P9f held again for the X:** a refusal, logged "did not allow", **nothing told to the person,** the server never contacted. **P9g held:** the list is still absent.
+- **A smaller thing worth keeping:** the client came out **426×423, 6×17 larger than asked for.** `createNativeWindow` sizes the window by `AdjustWindowRectEx` from the client size it wants, and under text scaling that call's estimate of the frame does not match the frame Windows then draws, so the client is not the size the code asked for. Harmless here — it gave the page 17 points it would not otherwise have had — but `resizeToClientPoints` makes the same assumption.
+
+### Not measured
+
+**Whether the name can be reached at all.** The region's scroll bar is drawn, so it has overflow and the wheel should move it — but that is inference, and whether a person finds a scroll bar they have no reason to expect is the question the row is really asking. P9 gives the wheel to R4, at 225 %. **It is now worth doing at 150 % as well.**
+
+## D-503 — P9's R3b, the owner's hands on the wheel: the hidden name **is** reachable. The wheel over the region scrolls it, one line at a time, and nothing on the window says there is anything to scroll. The X ended it; **Esc was not pressed, so P9e is still unmeasured**
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 35). **Predictions:** P9 (`60990f9`). Run at the owner's instruction after D-502, because 150 % text is the ordinary setting and the answer mattered more than 225 %.
+
+**The owner's words:** "The window came up, said Server with the scroll arrows and nothing else. I put the wheel over the empty area and scrolled, and the aaaa name appeared. I closed it with the X — I did not press Esc." And on how to record it: **"not unreachable, hidden with no sign that anything is there."**
+
+### What ran
+
+- **00:42:20.831** the same 255-character link through `open-link`; `open-link: an agent is running, so the link was left for it`.
+- **00:42:21.574** the window, owner resolved at that moment: **11844**, the tray; title "Dozvoliti ovaj server?".
+- The camera took the window every 0.9 s and **kept only the frames where the pixels changed** — 19 of them — so whatever scrolling did was caught without knowing when it would happen. **I never touched the window this time.**
+- **Gone after 24 s. 00:42:44.847:** `cloud: the person did not allow this server`. `cloud-origins.json` still absent.
+
+### What the frames show
+
+| frame | t | what is in the name's region |
+|---|---|---|
+| 00 | +2.5 s | **"Server", the scroll arrows, white space.** D-502 repeated exactly. **Not the foreground window** |
+| 01 | +5.4 s | the window takes the foreground — the owner's pointer and wheel arrive |
+| 02–08 | +6.3 to +11.9 s | **one line of the name at a time:** `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` |
+| 09 | +12.8 s | **the first line: `https://aaaaaaaaaaaaaaaaaaaaaa`.** The scheme is on a line of its own, visible only to someone who scrolls back to the top |
+| 10–17 | +13.8 to +20.3 s | further single lines |
+| 18 | +23 s | back at "Server", the X lit red under the pointer |
+
+**The region's viewport is one line tall.** A 255-character origin is about eight lines, so it is read **one line at a time, in eight separate views**, with no two parts of it on screen together.
+
+### What this settles
+
+- **The name is reachable.** The wheel over that region scrolls it — the owner did it with the pointer over what looks like empty space. **D-502's "no server name at all" is about what is shown, not about what exists.**
+- **Nothing says it is there.** No ellipsis, no cut-off glyph, no "…", no count of lines: a label, a pair of small arrows, and white space that reads as an empty field. **A person who does not already know to put the wheel there sees a question about a server with no server in it,** and both buttons are fully on screen, inviting an answer.
+- **The window did not take the foreground when it opened** (frame 00), exactly as in R3. It took it only when the owner used it. That is P9e's precondition, and it is the reason Esc is worth measuring rather than assuming.
+
+### Not measured
+
+- **P9e, Esc.** The owner closed with the X instead, and said to write it down rather than repeat the run tonight. **Next sitting:** the same link at 150 %, Esc pressed without clicking the window first (the foreground question), then Esc again after a click on the **title bar**.
+- **R4 (225 %) and R5 (the timeout at 225 %).**
+- **An ordinary origin,** not the 255-character worst case, at 150 % text: how many lines it loses is unknown, and it is what a person actually meets.
+
+**Opened as its own open item, at the owner's instruction: D54.** Not a line under row 2.1: "the only screen standing between them and whoever sends them documents to sign."
+
+## D-504 — P9e answered, and worse than predicted: **Esc does nothing on the origin window, with or without a click into the page.** The keyboard never reaches the page at all — a click inside it focuses the host window, not WebView2. The X was the only thing that worked
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **Predictions:** P10 (`753a0b7`), committed before the run. **The owner's hands** did both keystrokes; my script sent the link and read, and closed nothing.
+
+**The owner's words:** "pressed Esc with Firefox in front, nothing happened. Then I clicked on the window itself and pressed Esc again — also nothing. So I ran a and c together by mistake." And: "I closed the window with the X at about 18:45, so the 120-second timeout did not run." And on the finding: **"The X is itself worth a line: it was the only thing that worked."**
+
+**R6a and R6c ran together, by the owner's mistake, and the pair is worth more than the two runs apart.** R6b was never run and does not need to be: see below.
+
+### What the machine was, read before anything opened
+
+- **Display scale 100 %, text size 100 %** — the preamble of `docs/s36-predictions.md`, read today, not carried over. `LogPixels` still 192 and still ignored.
+- **The agent: the tray, PID 12808,** owner of the listener on 17580. **No `LiroBridgeWindow` on screen before the link,** so the new window was unambiguous by class, and its owning process was resolved with `GetWindowThreadProcessId` at the moment it appeared and checked against the listener — D-500's correction, applied for the third run in a row. They matched.
+
+### What ran
+
+- **18:42:51.083** `open-link: an agent is running, so the link was left for it`; pid 16220 exited 0. The 255-character origin, session 35's.
+- **18:42:51.674** the window, hwnd `0x1003CC`, owner **12808**, title "Dozvoliti ovaj server?".
+- **18:44:47.796** `cloud: the person did not allow this server`. **18:44:47.846** the window gone, having stood **116.2 s**.
+- `cloud-origins.json` **still absent**. `bridge.log` 2826 → 2831 lines.
+
+### Row 2.1 at 100 % scale, 100 % text: the measurement
+
+| | |
+|---|---|
+| Client | **420×406** — the designed size, to the point |
+| Window | **436×445** at (742, 317); `GetDpiForWindow` 96 |
+| Resizable | **no** — `WS_THICKFRAME` absent |
+| Scroll bars | **none**, at the window or in the page |
+| The name | the whole 255-character origin, in **six lines**, with both sentences and **both buttons** on screen, and a band of white space between the last sentence and the buttons |
+
+**P10a held,** and it settles D-499's open frame figure: **436×445**, not the 422×438 that entry recorded. D-502's 150 % frame implied this, and the alternative was named in P10a before the run.
+
+### The keyboard, which is the whole finding
+
+The window's children, read when it appeared:
+
+| window | class | process |
+|---|---|---|
+| `0x1003CC` | `LiroBridgeWindow` | 12808, the tray — **the host** |
+| `0x1E0028` | `Chrome_WidgetWin_0` | 12808 |
+| `0xC0600` | `Chrome_WidgetWin_1` | **7316**, WebView2's browser process |
+| `0xD04C8` | `Chrome_RenderWidgetHostHWND` | **7316** — the one that would hold the keyboard for the page |
+
+The focus chain, sampled twice a second through `GetGUIThreadInfo` on the foreground thread:
+
+| t | foreground | focused window |
+|---|---|---|
+| +2.1 s | Firefox | Firefox — **Esc #1 pressed in here** |
+| **+7.8 s** | **`LiroBridgeWindow` 12808** | **`LiroBridgeWindow` 12808** — the owner's click into the page. **Esc #2 pressed in here** |
+| +10.9 s | Firefox | Firefox |
+| **+28.7 s** | **`LiroBridgeWindow` 12808** | **`LiroBridgeWindow` 12808** — a second activation, the same reading |
+| +30.7 s | Firefox | Firefox |
+| +33.2 s | Windows Terminal | Windows Terminal |
+
+**Twice, with the window in the foreground after a click inside the page, the focused window was the host — never `Chrome_RenderWidgetHostHWND`.** The click did not hand WebView2 the keyboard.
+
+### What this settles
+
+- **P10d held in its first half:** Esc with another window in front does nothing. The keystroke goes to whatever has the foreground — here Firefox, which is the honest picture of where a person's "no" lands.
+- **P10f is false.** It predicted Esc would refuse after a click into the page. It does not, and the focus reading says why: a click on the page's surface leaves focus on the host window, whose procedure has **no `WM_KEYDOWN` case**, so the key reaches `DefWindowProc` and dies. `origin.js`'s listener is on WebView2's `document` and is never reached.
+- **P10e is answered without being run, and the owner agreed to drop R6b.** A title-bar click is **non-client** area — the weakest activation there is. A click on the page's own surface is the strongest short of pressing a button, and it did not reach the page. There is no route by which the title bar hands the page a key that a click inside it did not.
+- **The mechanism is ours, and it is a gap rather than a bug in anything.** Nothing in `internal/ui` ever calls `ICoreWebView2Controller::MoveFocus`; `window_windows.go` has no `WM_ACTIVATE`, `WM_SETFOCUS` or `WM_KEYDOWN` case; `showAndFocusWindow` calls `SetFocus` on the **host**. Nothing in our code ever gives the page the keyboard, and nothing answers a key that reaches the host.
+- **F5 §5.6's "Escape cancels" is not kept on this window.** Six pages register the same listener (`origin.js`, `pairing.js`, `consent.js`, `main.js`, `certificates.js`, `auditlog.js`, `place.js`, `stamp.js`). **Whether any of them is reachable is now an open question, not an assumption** — this is the first time one was pressed by a person on Windows.
+
+### What is unmeasured, at the owner's instruction
+
+- **P10d's second half and P10g: unmeasured, not failed.** The owner closed with the X at 116.2 s, under the 120 s, so `originAskTimeout` never fired and no `cloud: nobody answered whether a server may send requests` line was written. The silent timeout is still only D-500's accidental sighting.
+  - The watcher logged no foreground change for the X because the click destroys the window inside one 500 ms sample. **Which of the two ended it is not in doubt this time — the owner says it was the X** — but the timing alone would not have told it apart, which is D-499's problem again.
+- **P10h held:** `cloud-origins.json` still absent.
+- **Tab.** Whether Tab moves focus into the page is the one cheap thing that might still reach `origin.js`. **The owner: fold it into the next origin window rather than opening one for it.** Owed.
+- **An ordinary origin at 150 % text** is still owed from D-503.
+
+**The owner's line, kept:** **the X was the only thing that worked.** On the one screen standing between a person and whoever sends them documents to sign, the key people reach for to say no does nothing, and says nothing about doing nothing.
+
+## D-505 — row 1.3 closed: a caller that names `b-lt` is refused `LEVEL_NOT_REACHED` on a MUP card and gets **422 with the code, not the `failures` shape PROTOCOL.md §5.2 shows**. And the report tells the person where a document went that was never written
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **Predictions:** P11 (`f3e6d70`), committed before the run. Announced before each of the three windows.
+
+### What ran
+
+- **18:55:28** `pair/request` → 200, `expiresInSeconds` 300. The window **"Zahtev za povezivanje"**, client **420×369**, frame 436×408, owned by **12808** — the tray, the listener's own process, resolved from the window. **It did not take the foreground:** the owner's terminal kept it.
+- **18:56:01** `api: an application was paired`, `appId dbac0bfd…`, name "Row 1.3 (b-lt)", origin `https://test.local`. The device secret is 32 bytes, kept in the session scratchpad and nowhere else.
+- **18:56:51.06** `POST /v2/sign/pdf`, one document, `certificateThumbprint EE8EC0F3…`, **`"level": "b-lt"`**, stamp supplied → **202**, job `d5f0e897…`.
+- **The states the caller saw:** `queued` (18:56:52) → `awaiting_consent` (18:57:00) → `awaiting_pin` (18:57:03) → `preparing_card` (18:57:04).
+- **18:57:04.67** `ui: another program's window is in front of this one … class=Credential Dialog Xaml Host pid=14604` — **Windows' own PIN dialog**, which is what CNG raises. The owner typed the PIN.
+- **18:57:42.20** `WARN pades/dss: the evidence for a certificate is larger than the cap, so it was left out`, `thumbprint=EE8EC0F3…`, `role=signer`, **`bytes=29858766`**, `cap=5242880`.
+- **18:57:42.85** the caller's poll: **`HTTP 422  {"code":"LEVEL_NOT_REACHED"}`**.
+
+### What the owner saw on the report
+
+```
+Završeno
+0 potpisano · 1 neuspešno
+Šta nije uspelo
+  row-1.3.pdf — Traženi nivo potpisa nije mogao biti dostignut, pa ništa nije sačuvano.
+Sačuvano u    vraćeno aplikaciji koja je tražila
+Nivo potpisa  —
+```
+
+### P11, scored
+
+| | | |
+|---|---|---|
+| P11a | **held** | 200, 300 seconds, the six-digit window, named as predicted, owned by 12808, **not** the foreground. **Esc on it was not pressed, so that half is untested** — I predicted it and did not measure it |
+| P11b | **held** | `appId` 32 hex characters, `deviceSecret` 32 bytes |
+| P11c | **FALSE, and the program is right — the prediction was wrong** | The 202 carried `037c78a7…`, not the document's own digest. **PROTOCOL.md §5.3 says the fingerprint is SHA-256 over the *concatenation of the digests*,** so for one document it is SHA-256 of that document's 32 **digest bytes**, not the digest itself. Computed independently: `sha256(b9749fdb…)` = `037c78a7…`, to the character. I misread §5.3 when writing P11c. **Nothing about the program is wrong here, and the check as I wrote it would have failed on every correct run** |
+| P11d | **held as far as it was read** | No certificate chooser and no stamp step — three seconds from `awaiting_consent` to `awaiting_pin` leaves room for neither. **I did not photograph the consent window,** so what it named is the owner's reading and not a measurement. A watcher on that window would have cost nothing and I did not write one |
+| P11e | **held** | The PIN was asked. E11's clock: agent 12808's first card operation. The dialog was **Windows' own** (`Credential Dialog Xaml Host`), not ours — which is also row 1.6's premise, now confirmed from the other side |
+| P11f | **held** | PIN at 18:57:03.4, done at 18:57:42.8 — **about 38 seconds**, inside the predicted 25–55 |
+| P11g | **held, word for word** | "Traženi nivo potpisa nije mogao biti dostignut, pa ništa nije sačuvano." No *Sign without a timestamp*, no offer to save at B-T |
+| P11h | **held — the least certain one** | **422 with `{"code":"LEVEL_NOT_REACHED"}`**, not a 200 carrying `documents`, `failures` and `counts`. `succeeded == 0` takes `job.Fail` (`jobhandlers.go:241`), no body is ever marshalled, and the result endpoint answers with the job's code |
+| P11i | **held** | Nothing written. All four files in `Desktop\liro-s36` still 427 bytes at 18:25; no new, partial or temporary file |
+| P11j | **held** | Entry **331**: `outcome` failed, `failureCode` LEVEL_NOT_REACHED, `documentCount` 1, `application` **"Row 1.3 (b-lt)"**, `channel` **"api-documents"**, `backend` `windows-cng`, `isTestKey` false, `achievedLevel` absent. `prevHash` `667d6622…` **is** entry 330's `hash`, so the link holds. (The link, read by hand — not a full chain verification) |
+| P11k | **held on the WARN, missed on the refusal** | One `role=signer` WARN, P1g's first branch: the CRL **did** arrive, **29,858,766 bytes** against the 5,242,880 cap. No name, no JMBG in any new line. **But I predicted a `LEVEL_NOT_REACHED` line in the log and there is none** — see below |
+| P11l | **supported, not observed** | The code says the card signs and the timestamp is fetched before B-LT's evidence is gathered (`sign.go:361`), and the 38 seconds of fetching after the PIN fit that order. **No log line records the signature value being made and discarded,** so this is the code plus consistent timing, not a direct reading |
+| P11m | **held** | `config.json` unchanged: `signatureLevel` `""`, `signatureLevelChosen` absent, TSA untouched. A caller's level is that batch's only |
+
+**Row 1.3 is closed. It holds:** a program that named `b-lt` got `LEVEL_NOT_REACHED` on a MUP card, no document came back, and nothing was saved.
+
+### Four things found doing it, none of them the row
+
+1. **The refusal is in no log line.** `bridge.log` ends this batch with `protocol: the run ended, so the caller has its result; the report stays on screen`. **The code `LEVEL_NOT_REACHED` appears nowhere in it** — it is in the audit entry and in the HTTP response, and that is all. A person reading the log to find out why a batch produced nothing is told only that it ended. (D-491's local run logged a refusal line; this path does not.)
+2. **The report says where a document went that was never written.** The owner: *"'Sačuvano u' reads differently from yesterday's run through the window … even though nothing was saved in either case — a person is told where a thing went that does not exist."* **The output row is unconditional on anything having been signed** (`mainwindow.go:1655–1665`): it is the output folder for a local batch, "fascikla svakog dokumenta" when there is none, and "vraćeno aplikaciji koja je tražila" for a protocol batch. There is **no zero-signed branch.** The level row immediately below it *is* conditional — `AchievedLevel == ""` becomes "—". So the screen that says **0 potpisano** says in the next line that the result was returned to the application, which is a delivery that did not happen: the caller got a 422. **Opened as D56.**
+3. **MUP's own root certificate does not parse.** `WARN pades/cms: AIA caIssuers did not return a parseable certificate`, `url=http://ca.mup.gov.rs/MUPRootCA4.crt`, `error=x509: malformed certificate`. Not predicted, not looked for, and it is the issuer chain of the card this project exists to support. **Recorded here; whether it bears on row 1.1 is not read.**
+4. **Three PKCS#11 modules on this machine, not two.** `C:\WINDOWS\System32\aetpkss1.dll` (SafeSign), `C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll`, and `C:\Program Files\MUP RS\Celik\netsetpkcs11_x64.dll`. D-455 and D45 name two. **Row 1.6 walks all three.**
+
+**And one thing worth keeping about a window nobody saw:** `signing window: no desktop notification was posted for a waiting request … this platform does not post desktop notifications`. A request that arrives while the person is elsewhere opens a window and posts nothing — SPEC §6.5.2's notification does not exist on Windows. The same gap D-499 saw from the box side.
+
+## D-506 — row 1.5 closed: the question offers only *Configure* and *Cancel*, and the screen offering them is **titled with the option it withholds**. The batch carried on through the configure loop to B-T. Nothing in the log says the authority failed or that a person was asked
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **Predictions:** P12 (`2440c3d`), committed before the run. Every window was the owner's own; I opened none.
+
+### What ran
+
+- **19:05:19** two documents added. **19:05:26–33** Settings from the window's own gear: the timestamp service set to `https://127.0.0.1:9/timestamp` (nothing is listening there — checked before the run), saved.
+- **19:06:36** approved. **The certificate chooser appeared with three certificates** and the owner picked the 2031 MUP one (`…FA7671BD`). **No PIN was asked.**
+- The question appeared. **19:07:12.09** `settings: window open` — with **no** `signing window: opening from the main window door=settings` line before it, because this Settings was opened by `resolveTSAChoice`, not by the window's door. **19:07:16.86** saved with `https://test-tsa.ca.posta.rs/timestamp1` restored.
+- **19:07:55.6** document 1 done; **19:08:14.3** document 2 done. Audit **332**: `approved`, `B-T`, `documentCount` 2, `application` `local`, channel absent, `backend` `windows-cng`, `prevHash` = 331's hash.
+
+### What the owner read, before pressing anything
+
+```
+Bez vremenskog žiga
+Podešeni izdavalac vremenskog žiga nije odgovorio.
+Potpis bez vremenskog žiga je nivoa B-B: važeći, ali bez dokaza o tome
+kada je napravljen, što postaje bitno kada sertifikat istekne ili bude opozvan.
+[Podesi izdavaoca vremenskog žiga] [Otkaži]
+```
+
+**Row 1.5 holds.** "Potpiši bez vremenskog žiga" is not on screen. `offersWithoutTimestamp(Unreachable, …)` is false whatever the level, and `main.js:269` hides the button.
+
+### P12, scored
+
+| | | |
+|---|---|---|
+| P12a | **held** | The dead URL saved, `tsaUser` and `tsaPassword` untouched, `signatureLevel` still `""`; restored at the end to the real TSA by the owner's hand |
+| P12b | **held** | **No PIN.** D-495's account survives: what verifies the card is held in 12808, which row 1.3 unlocked at 18:57 and which has held it since. The card never left the reader |
+| P12c | **not measured** | I predicted "about 4 seconds" from the card step to the question. **Nothing logs the authority failing, and nothing logs the question being asked**, so there is no line to measure against. The only brackets are the chain warning at 19:06:37 and the owner's press at ~19:07:11, and the gap is the owner reading |
+| P12d | **held — this is the row** | Two buttons, *Podesi izdavaoca vremenskog žiga* and *Otkaži*. No *Potpiši bez vremenskog žiga* |
+| P12e | **held, and it is the finding** | The screen is **titled "Bez vremenskog žiga"** and carries the whole B-B explanation, because the heading and the paragraph are static `data-i18n` elements of `state-tsachoice` and only `tsa-without-btn` is hidden. **Opened as D57** |
+| P12f | **held** | "Podešeni izdavalac vremenskog žiga nije odgovorio." — the unreachable reason, not the not-configured one |
+| P12g | **held** | The batch continued. The question was not asked again for document 2 |
+| P12h | **held** | Both at B-T, `row-1.5-a-signed.pdf` and `row-1.5-b-signed.pdf`, 119,389 bytes each, beside their inputs |
+| P12i | **FALSE** | I predicted about 40 seconds each and that the second would not be faster. **Document 1 took 38.7 s; document 2 took 18.7 s** — a little under half. See below |
+| P12j | **held on the WARNs, false on the rest** | Two `role=signer` WARNs, one per document, each `bytes=29858766` against `cap=5242880`. **But there are no TSA failure lines at all** — I predicted them as a certainty, not as the open question |
+| P12k | **held** | Entry 332 exactly as predicted; `prevHash` `8cc4b1d2…` is entry 331's `hash` |
+| P12l | **held** | Both documents: `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`, `HasTimestamp`, `TimestampOK` all true, and `SignerChainTrusted` **true**. `TimestampChainTrusted` **false** — Pošta's test unit under "TEST 2018 CA 1 - Novo", which is D-484's test CA, exactly as row 1.4 found. The signer's revocation evidence was left out, which the signer's note records rather than the verifier |
+
+### Why document 2 was half the time, and what it does to D52
+
+The per-document notes are identical and name the same 29,858,766 bytes, so the CRL was weighed again for the second document. **The 20 seconds that vanished are MUP's dead OCSP:** two attempts of 10 seconds, which `revocationMemory` remembers as "did not answer" for the rest of the batch and does not repeat. 38.7 − 18.7 = **20.0 s**, which is that timeout to the second. **This is the fit, not a reading of the fetch** — nothing logs either endpoint being tried.
+
+**So D52 is right about the CRL and too pessimistic about the batch.** The first document on a MUP card costs about 40 s; **every one after it costs about 19 s**, and the ~30 MB is still fetched for each. F2 §4.1's arithmetic in E11 and D52 should use 19 s, not 40, for every document after the first — which moves where `MaxLifetime` falls in a long batch.
+
+### Three things found beside the row
+
+1. **Nothing in the log says the timestamp authority failed, or that a person was asked about it.** The batch's own log goes straight from the certificate chain work to the two signer notes forty seconds later. **This is the second time today** — row 1.3's `LEVEL_NOT_REACHED` was in no line either (D-505). A person reading `bridge.log` to find out why a batch stalled for half a minute, or what a person was asked, is told nothing. **Opened as D58.**
+2. **The project's own verifier prints the signer's subject, which on a MUP card is the person's name and their JMBG.** `scripts/verifypdf` writes it to standard output, where it lands in a terminal, a transcript, a CI log or a pasted report. **D-480 took certificate names out of every message in the agent; the verifier was not changed with it, and D-487 is what that costs when it reaches a public repository.** The value is not reproduced here and was filtered out of the second run. **Opened as D59.**
+3. **The log's note says `requested=B-LT` for a batch in which nobody requested anything.** `the signer's notes on this signature … path=window requested=B-LT achieved=B-T`. The level was "the best available", so `m.requestedLevel` is deliberately cleared for the report (D-476) — but the engine's own requested level reaches the log unqualified. Minor, and recorded rather than filed: the report and the log disagree about whether a request was made.
+
+### What the run did not measure
+
+- **The *Otkaži* branch.** The owner pressed *Podesi…*, which was also what restored their setting. Whether cancelling at that question leaves nothing written is unmeasured.
+- **An authority that answers and then stops.** The client is built once per batch, so a dead URL is dead from the first document. The question still arrived after the card was open and the PIN spent, which is the sense that matters, but a live-then-dead authority is not what ran.
+- **`resolveTSAChoice` opening a second pairing store** (`interactive.go:247`, on a comment that assumes a `sign` process). This window was in the tray, which holds the live store. Predicted as a code reading in P12, and this run neither needed nor touched a pairing, so it stays unmeasured.
+
+### A plan error of mine, not a prediction
+
+**My step 3 told the owner to "approve", and the certificate chooser came first** — three certificates, one to pick. P12 did not mention the chooser at all. Row 1.3 had none because I supplied the thumbprint over the protocol; the local window always asks. **The owner's correction: "Not a fault, but your plan said approve."**
+
+## D-507 — row 1.6 closed: the signing window closed under a **real** card login, and the PIN dialog ended as a cancel 126 ms later. The login did not hang. The limit: this is a path no person can reach, and the close is one no person can post
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **Predictions:** P13 (`d351c48`), committed before the run. Announced before the window and before the dialog.
+
+### The limit, first, because it is half the result
+
+**Our PIN dialog is not the dialog a person meets on this machine.** The MUP card signs through CNG, which raises **Windows'** own prompt — seen four hours earlier in D-505 as `Credential Dialog Xaml Host`, pid 14604. `internal/ui`'s dialog, the one C21 built the watchdog into, is reached on Windows only through PKCS#11, which needs **`preferPKCS11: true`** — a key **Settings does not expose** (no page, no handler). **The owner's ruling, recorded as he asked:** *"Changing a setting Settings does not expose is a measurement of a path no person reaches by hand."*
+
+**And the close is a second such path.** `runPINDialog` calls `EnableWindow(owner, 0)` before it shows. Measured here: with the dialog up, the signing window had **`WS_DISABLED` set and `IsWindowEnabled` false.** A person cannot click its X. The close in this run was **posted from outside by my script**, which is not something a person can do. What this row now knows is that C21's mechanism works against a real card login. What nobody has measured is a case a person can produce.
+
+### `config.json`, touched and put back
+
+| | |
+|---|---|
+| Before | `06FE0F4EB6AACB6B0C39D57E5C6079B11DE64BED14C46E48EC2EF8CBE0AC4C79`, 728 bytes |
+| Backup | `…\scratchpad\config.json.before-row-1.6`, same digest, taken before anything was written |
+| Changed | **`preferPKCS11` only** — field-by-field diff against the backup showed one line: `'' -> 'True'` |
+| After the run | restored from the backup; digest **`06FE0F4E…`** again, 728 bytes, `preferPKCS11` absent |
+
+### What ran
+
+- **19:19:36** the owner quit the tray: `protocol: stopped port=17580`. **`bridge.json` was removed** and nothing listens on 17580.
+- **19:20:03.26** I started `liro-bridge open`, **pid 15532**. **19:20:03.53** the signing window, `0x1A01F8`, owned by that process — resolved from the window, as every run today.
+- **19:20:12** one document added. **19:20:21** three modules enumerated. **19:20:29.67** the dialog.
+
+| the dialog | |
+|---|---|
+| Class | **`LiroBridgePINDialog`** — ours |
+| Title | "Unesite PIN" |
+| Owner | `0x1A01F8`, the signing window itself |
+| Process | 15532, the same one |
+| Heading | "Liro Bridge traži PIN vaše kartice" |
+| Card | "Kartica: NetSeT's CardEdge Token" |
+| Limits | "Ova kartica prihvata od 4 do 8 znakova." — **D-268's claim, met** |
+| Foreground | **the dialog itself**, with focus on its `Edit` control |
+| The signing window | **`WS_DISABLED` set, `IsWindowEnabled` false** |
+
+**Then, with nothing typed:**
+
+| | |
+|---|---|
+| `WM_CLOSE` posted to `0x1A01F8` | 19:20:29.730 |
+| Signing window gone | **+76 ms** |
+| **PIN dialog gone** | **+202 ms — 126 ms after the window**, inside one 250 ms watchdog tick |
+| Process 15532 | **exited, code 1** |
+| Left on screen | nothing: no `LiroBridgeWindow`, no `LiroBridgePINDialog`, no `Credential Dialog Xaml Host` |
+
+**Row 1.6 holds.** The dialog did not stay and the login did not hang.
+
+### P13, scored
+
+| | | |
+|---|---|---|
+| P13a | **held except `bridge.json`** | Nothing was running; `preferPKCS11` was the only change. **I predicted the discovery file would be left stale and it was removed** — a clean quit cleans up after itself. D-502's "stale discovery file" line comes from an unclean exit, not from Izađi |
+| P13b | **held** | The window belonged to the process I started |
+| P13c | **held** | Ours, by class and by title, naming the card and its 4-to-8 limits. **No `Credential Dialog Xaml Host`** — the discriminator came out on the PKCS#11 side, as intended |
+| P13d | **held** | **Exactly one dialog**, for a NetSeT token; SafeSign answered "not mine" without asking for anything. No second PIN for one card. **But see below: which of the two NetSeT modules asked is recorded nowhere** |
+| P13e | **held** | `WS_DISABLED` set. The case the row describes cannot be produced by a person's hands |
+| P13f | **held** | The posted `WM_CLOSE` was dispatched and the window destroyed in **76 ms**. The hinge held: the pump is the dedicated `LiroBridgeUIThread`, and the PIN blocks only a goroutine |
+| P13g | **held** | **126 ms after the window**, one tick of `pinOwnerInterval` |
+| P13h | **held** | No second dialog anywhere, and CNG was never asked. "No" was not turned into "ask somewhere else" |
+| P13i | **held** | Exited, code 1. No hang, nothing to kill |
+| P13j | **held, by construction** | Nothing was typed and the dialog was cancelled before `C_Login`, so no attempt was spent on the card |
+| P13k | **held** | Audit chain still at **332**; no `row-1.6-signed.pdf`; `row-1.6.pdf` untouched at 427 bytes |
+| P13l | **held** | Restored byte-for-byte, digest compared |
+
+### Two things found doing it
+
+1. **Which module asked for the PIN is in no record.** The dialog names the **token** ("NetSeT's CardEdge Token"), not the module, and `pkcs11: signing through a module` is only written on success. Two of this machine's three modules are NetSeT's — TrustEdgeID's and MUP's — and **nothing says which one raised this dialog.** On a machine where one card sits behind two modules (D-271), that is the fact needed to read a PIN prompt, a failure or a timing anomaly. **This is D58's shape again, in a third place today.**
+2. **The person is told nothing, and the two lines that would have told them are warnings about it.** The run ends with `WARN signing flow: resizing the window failed  error=ui: window is closed` and `WARN signing flow: posting the failure failed  error=ui: window is closed`. The cancel is handled correctly and the only channel for explaining it was the window that went away. **In the real case this models — a window closing under the dialog for any reason — the person learns nothing about why their signature stopped,** and the log records the failure to tell them rather than the thing itself.
+
+### A contrast worth keeping, against D-504
+
+**Our native dialog takes the foreground and puts focus in its own `Edit` control.** The WebView2 windows do not: D-504 measured focus staying on the host window even after a click inside the page, which is why Escape is dead on them (D55). The two kinds of window in this program behave oppositely about the keyboard, and only the native one behaves as a person would expect.
+
+### What this row still does not know
+
+- **Anything about the dialog a person actually meets**, which is Microsoft's, on the CNG path, and which C21 does not govern.
+- **What happens when the window is closed by a route a person has** — there is none while the dialog is up, which is itself the finding.
+- **Which NetSeT module** holds this card, and whether the other would have asked too had the first declined.
+
+## D-508 — D59 fixed: the verifier no longer prints the signer's JMBG, and says what it withholds. And **D-505 was wrong about MUP**: `MUPRootCA4.crt` is a perfectly good certificate served as PEM, which our code refuses because it accepts only DER — and nothing depends on it, because the root is discarded anyway
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). Not a worklist row: the owner's three instructions after the rows were closed.
+
+**The owner, on priority:** *"D59 first — that is not a list item, it is the thing that put a third party's JMBG into yesterday's transcript."*
+
+### 1. D59, fixed
+
+**What it was.** `scripts/verifypdf` printed `c.Subject.CommonName` for every certificate, signer included. On a Serbian identity card that common name is the holder's name **and their JMBG** — and this command writes to standard output, which is where terminals, transcripts, CI logs and anything pasted into an issue come from. **D-480 took certificate names out of every message the agent writes and this verifier was not changed with it.** D-487 is what that omission already cost once, with a third party's number, in a public repository; it cost it again yesterday in a transcript, which is how the owner came to rule on it today.
+
+**The change** (`scripts/verifypdf/main.go`):
+
+- **The signer's subject is never printed.** In its place, a line that says what is missing and why: `(withheld: on an identity card this carries the holder's name and their JMBG)` — the owner asked that it "say what it is withholding", and a blank would read as an empty field.
+- **A thumbprint line was added**, uppercase SHA-1 — the same form the audit chain, Windows' certificate store and the agent's own warnings name a certificate by. Nothing is lost: on the real signature it printed `EE8EC0F36917D9E5EC4A05A52FE93645FA7671BD`, which is exactly the value in audit entries 331 and 332, so a signature can still be tied to a log line and an audit entry **without naming a person**.
+- **The timestamp unit's subject is still printed.** A timestamp server is a machine; hiding its name would cost a reader the one thing that says which authority stamped the document. The distinction is a parameter, `subjectIsNotAPerson`, false at the signer's call site and true at the timestamp's.
+- `printCert` now writes to an `io.Writer` so the guard below can read it.
+- The thumbprint is computed in this file rather than imported from `internal/pades/dss`. **Deliberate:** this command is the second, from-scratch implementation SPEC §16.4 requires, and shares no code with the signing path (D-044). Three duplicated lines of hashing is the right price.
+
+**A guard, red before and green after** (`scripts/verifypdf/main_test.go`, four tests):
+
+- `TestSignerSubjectNeverReachesTheOutput` — a certificate whose common name is shaped like a real one (an **invented** name and number; no real person's appears in this repository) must not have its name, its number, or the whole string reach the output, and something must say what was withheld.
+- `TestWithheldSubjectStillIdentifiesTheCertificate` — the thumbprint, the issuer and the validity are still there.
+- `TestAMachineSubjectIsStillPrinted` — a timestamp unit's subject is not treated as a person's.
+- `TestThumbprintIsTheFormEverythingElseUses` — 40 uppercase hex characters.
+
+**Seen red on the old behaviour**, with the subject printed unconditionally: three failures naming the invented number, plus the missing withholding line. Green after. `go vet` clean, `gofmt` clean, and run again over the real card signature: **the subject line is the withheld sentence and nothing personal is in the output.**
+
+**My first attempt to see it red did not take** — a scripted replacement silently failed to match, and the "red" run was the fixed code passing. It was caught by reading the file rather than trusting the exit status, and redone with an exact edit. Recorded because a guard never seen red is not a guard.
+
+### 2. What else in `scripts/` prints it — **two more, not fixed**
+
+The owner asked whether anything else does. **Two do, and both are worse in one way or another:**
+
+| | what it prints | why it matters |
+|---|---|---|
+| `scripts/cngprobe/cngprobe_windows.go:52` | `parsed.Subject` — the **whole distinguished name**, not just the common name | More than `verifypdf` leaked: every RDN, so the identity-number attribute too, not only whatever the common name happens to carry |
+| `scripts/p11worker/p11worker_windows.go:179` | `parsed.Subject.CommonName` | Exactly the defect just fixed. This is the probe a developer runs **with a real card in the reader**, which is the only condition under which any of this leaks |
+
+Both print to standard output, both are run on a machine with a card in it, and both are the same two-line shape to fix. **Not changed, because the owner's instruction named `verifypdf` and asked only that the others be reported.** They are a live risk until they are done.
+
+**Outside `scripts/` there is no fourth.** Four call sites touch a subject and all four are legitimate: `internal/pades/signer_identity.go` (the visible stamp names the signer, which is the point of a visible signature), `internal/trust/classify/dn.go` and `internal_certificates.go` (classification, nothing printed), and `internal/ui/pindialog_linux.go` (showing a person their own card on their own screen).
+
+### 3. `MUPRootCA4.crt` — **D-505 item 3 is wrong and is corrected here**
+
+**D-505 recorded:** "MUP's own root certificate does not parse." **That is false**, and it was my reading of a warning whose wording blames the far end.
+
+**What was measured.** Fetched both certificates MUP's AIA points at:
+
+| | HTTP | Content-Type | bytes | encoding |
+|---|---|---|---|---|
+| `ca.mup.gov.rs/MUPGradjaniCA4.crt` | 200 | `application/x-x509-ca-cert` | 2511 | **PEM** |
+| `ca.mup.gov.rs/MUPRootCA4.crt` | 200 | `application/x-x509-ca-cert` | 2247 | **PEM** |
+
+Both begin `-----BEGIN CERTIFICATE-----`. Decoded, the root is 1618 bytes of valid DER: **`CN=MUP Root CA 4`, self-signed, valid 2020-05-25 to 2045-05-25, SHA-1 `0F5E0337A9909A39F46EDA6BE87D9CCD382860BF`** — and it is **already in a Windows Root store on this machine.** The intermediate decodes to `CN=MUP Gradjani CA 4`, **not** self-signed, issued by `MUP Root CA 4`.
+
+**So: not malformed at the source, and not fetched or stored wrongly.** The bytes arrive complete and intact. **We parse them wrongly:** `chain.go:124` calls `x509.ParseCertificate(data)`, which takes DER only, on content that is PEM. RFC 5280 §4.2.2.1 and RFC 2585 do say HTTP `caIssuers` should serve DER as `application/pkix-cert`, so MUP deviates — but it is a common deviation, the certificate is valid, and two lines would accept it.
+
+**Does anything depend on it? No.** `CompleteChain` walks signer → issuer, and **excludes the root by design** (F3 §5.4: "up to but not including the root") — `if isSelfSigned(issuer) { break }`. The root we fail to parse is precisely the certificate that would be thrown away one line later. The chain built is byte-identical with or without the fix. Today's two signatures came back `SignerChainTrusted true`, which is the proof.
+
+**Why only the root warns, and not the intermediate, when both are PEM:** `findIssuerInStore` is tried before AIA, and `MUP Gradjani CA 4` **is** in the Trusted List, so AIA is never reached for it. `MUP Root CA 4` is **not** in the Trusted List, so AIA is reached, and fails.
+
+**What it costs today:** one misleading WARN per signature — four of them in this session's log — and a pointless 2.2 kB fetch each time. **The wording is the real cost:** "AIA caIssuers did not return a parseable certificate" reads as the far end's fault, and it made me write a false sentence about a national CA into the permanent record.
+
+**And it answers an open question of D-038's,** quoted in `CompleteChain`'s own comment: *"Whether MUP's Trusted List CA/QC service certificate is itself self-signed (a root, correctly excluded) or an intermediate under a separate, unlisted root could not be verified in this environment."* **It is an intermediate under a separate root**, and that root is not in the Trusted List. **Opened as D60**, with the PEM tolerance and the warning's wording.
+
+### 4. The machine, put back
+
+- **The Row 1.3 pairing is revoked.** `appId dbac0bfd55ed3bcb3b7677d9bb2646cd`, through the agent's **own `api.Pairings.Revoke`** — the same call Settings makes, which deletes the device secret from the DPAPI store and rewrites `pairings.json`. Driven by a throwaway command in the module, run once and deleted, not committed: hand-editing an encrypted secret store is how somebody's TSA password gets destroyed by accident, and there is **no command-line way to revoke a pairing** (worth its own note). `pairings.json`, `secrets.json` and `secrets.entropy` were copied first. **The other six pairings are untouched**, before and after, read from the running agent.
+- The scratchpad file holding that pairing's device secret was deleted.
+- **The tray is running again: PID 12252**, listening on 17580, `bridge.json` written, `/v2/health` 200, and the revoked pairing is absent from what it serves.
+- **One difference from normal, for whoever reads this machine next:** its **parent is `powershell.exe` (16928), not `explorer.exe`** — I started it, where a logon normally does. D-502's rule stands: read how the agent was started, every time, and do not assume it from here.
+
+## D-509 — D59 closed: the two remaining probes withhold the subject too, and the rule behind all three is now a guard over `scripts/` rather than three separate fixes somebody has to remember
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **The owner:** *"Yes, fix cngprobe and p11worker in one commit, same way, with a guard seen red first."*
+
+### The guard, written first and seen red first
+
+`scripts/guards/subjects_test.go` — a package with no code of its own; the tests are the package. It walks every non-test `.go` file under `scripts/` and fails on any line that both reads a certificate's subject (`\.Subject\b` — a struct literal's `Subject:` field has no dot and does not match) and passes it to something that prints: `fmt.Print*`, `fmt.Fprint*`, `fmt.Sprintf`, `slog.*`, or `say(`, which is the probes' own printer.
+
+**The rule it states: a certificate's subject is a person until something says otherwise.** A line that genuinely prints a machine's subject marks itself `subject-ok:` and says which machine and why.
+
+**Run before any of today's second-round changes, it failed with exactly three:**
+
+```
+../cngprobe/cngprobe_windows.go:52   fmt.Printf("     subject     %s\n", parsed.Subject)
+../p11worker/p11worker_windows.go:179  say("        subject   %s", parsed.Subject.CommonName)
+../verifypdf/main.go:172             fmt.Fprintf(w, "%s subject            %s\n", label, c.Subject.CommonName)
+```
+
+The third is D-508's own timestamp branch, which is legitimate — and the guard was right to demand it say so.
+
+A second test, `TestTheMarkerIsActuallyUsedSomewhere`, fails if nothing in the tree uses the marker: an exemption that has never been exercised would pass just as happily if the marker were misspelt.
+
+### The three changes
+
+| | |
+|---|---|
+| `cngprobe_windows.go:52` | printed **`parsed.Subject`** — the *whole* distinguished name, every attribute, so more than `verifypdf` ever leaked. Now `subjectWithheld`. The thumbprint it already prints at the head of each entry still identifies the certificate |
+| `p11worker_windows.go:179` | printed `parsed.Subject.CommonName`. Now `subjectWithheld`. The thumbprint is already on the line above it |
+| `verifypdf/main.go` | the timestamp branch gained the marker and its reason: a timestamp unit is a machine, and its name is the one thing that says which authority stamped the document |
+
+The withheld sentence is identical in all three and declared in each — three short constants in three separate `main` packages rather than a shared symbol, because `verifypdf` is the second implementation SPEC §16.4 requires and shares no code with anything (D-044). **The guard is what keeps the three honest, not a shared declaration.**
+
+### Then the guard was changed, so it was seen red again
+
+The marker sits two comment lines above `verifypdf`'s call, and the first draft only looked at the line itself and the one directly above it, so it stayed red on a line that *had* said why. The rule was relaxed to scan the whole comment block above the call — where in their own comment somebody puts the marker is not a rule worth having.
+
+**A relaxed guard has to be re-proved, so it was:** the `cngprobe` leak was put back, directly underneath its new eight-line comment — a comment which does **not** contain the marker — and the guard failed on it. So the block scan does not blanket-exempt anything that merely has a comment above it. Then restored, and green.
+
+**This is the second time today that a "red" run had to be redone.** D-508 recorded the first, where a scripted replacement silently failed to match and the red run was the fixed code passing. Both were caught by reading the file rather than trusting an exit status.
+
+### State
+
+`gofmt` clean, `go vet` clean on all four packages, both test packages green, and both probes still build for Windows. (`go vet ./scripts/...` also reports three pre-existing `possible misuse of unsafe.Pointer` in `scripts/p11probe`, untouched by this and not mine to fix here.)
+
+**D59 is closed.** Nothing in `scripts/` prints a certificate subject it has not been told is a machine's, and a new tool that tries will fail the guard rather than reach a transcript.
+
+## D-510 — CI red on both jobs from my own refactor: `fmt.Printf` is exempt from errcheck and `fmt.Fprintf` is not. **Seven, not three** — the linter was truncating. And fixing it blinded the guard I had written the day before, which then had to be fixed and re-proved twice
+
+**Date:** 2026-10-25 (pushed), read 2026-10-26. **Phase:** F12, the worklist (session 36). **The owner:** CI red on `ci` and `linux-gui`, both runs, with `scripts/verifypdf/main.go:168, :174, :176 — Error return value of fmt.Fprintf is not checked (errcheck)`.
+
+### Whose lines those are
+
+**Two of the three existed before and one is new** — but the distinction that matters is not new-versus-moved, it is `Printf`-versus-`Fprintf`.
+
+| line | before `51b7f8c` | now |
+|---|---|---|
+| **168** | `fmt.Printf("%s certificate         (none)\n", label)` — existed, 3rd line of the old `printCert` | moved down by added comments, **and changed to `Fprintf`** |
+| **174** | `fmt.Printf("%s subject            %s\n", label, c.Subject.CommonName)` — existed, 6th line | moved, **and changed to `Fprintf`** |
+| **176** | — | **new** (D-508's withheld branch) |
+
+### Why the linter had not flagged them until now
+
+**errcheck exempts the `fmt.Print*` family and does not exempt `fmt.Fprintf`.** `Print`/`Printf`/`Println` write to standard output, where a failed write has no recovery action; `Fprintf` takes an arbitrary writer, where it might.
+
+Measured rather than assumed: `golangci-lint run ./scripts/cngprobe/` — a file that is almost nothing but `fmt.Printf` — reports **0 issues**. The same linter on `./scripts/verifypdf/` reports the `Fprintf` calls.
+
+**So the lint failure is a direct consequence of D-508's testability refactor.** `printCert` was given an `io.Writer` so the D59 guard could read its output; that turned five existing `Printf` calls and two new ones into `Fprintf`, and every one of them became an unchecked error return. The change that made the subject testable is the change that broke the build.
+
+### It was seven, not three — the linter was truncating
+
+CI reported three. **`printCert` has seven `Fprintf` calls, and all seven were flagged.** golangci-lint's `max-same-issues` defaults to **3**: issues sharing one message text are capped at three, whatever the real count.
+
+```
+golangci-lint run ./scripts/verifypdf/                      ->  3 issues
+golangci-lint run --max-same-issues=0 ./scripts/verifypdf/  ->  7 issues
+```
+
+**Fixing only the three named lines would have left four and turned CI red again on the next push**, with the next three. Said here because "three issues, nothing else" is what the report says and not what is there.
+
+### The fix, the way the repository already does it
+
+`cmd/liro-bridge/print.go` and `internal/cli/render.go` both already own this problem, and `print.go`'s comment states the rule outright: *"there is no recovery action for a failed write to stdout, and letting every call site ignore it individually is what errcheck would otherwise flag repeatedly for no benefit."*
+
+So `verifypdf` gained the same one-line helper — declared again rather than imported, because it is the second implementation SPEC §16.4 requires and shares no code (D-044) — and all seven call sites went through it.
+
+**Both views, whole module, report limit lifted:**
+- `GOOS=windows GOARCH=amd64 golangci-lint run ./...` → **0 issues**
+- `GOOS=linux golangci-lint run ./scripts/verifypdf/ ./scripts/guards/` → **0 issues**
+
+### `linux-gui` was the same cause, not a second one
+
+- Both jobs run **golangci-lint v2.13.2**, the same pinned version, over the whole module with the same `.golangci.yml`; `ci` with `GOOS=windows`, `linux-gui` with `GOOS=linux` (the workflow's own comment: the two views exist because each sees code the other cannot).
+- **`scripts/verifypdf/main.go` carries no build tag and no platform filename suffix**, so both views lint the same bytes — which is why both jobs failed with the same three lines, and why one fix clears both.
+- The whole module in the linux view cannot be linted on this machine: golangci-lint loads every package it is pointed at, and that view links GTK (D-335, and the reason `linux-gui` is a separate job). The package itself lints clean there.
+
+### Then the fix blinded the guard, and the guard had to be fixed and re-proved **twice**
+
+D-509's guard matched printers by their **package-qualified names** — `fmt.Fprintf` and friends. Renaming the calls to a local `fprintf` helper meant the guard no longer matched them at all.
+
+**It did not fail. It passed, on a line printing a certificate subject.** That was proved rather than inferred: the `subject-ok:` marker was deleted from the one exempt line, leaving an unmarked `c.Subject.CommonName` going to output, and the guard still said ok.
+
+**A second defect surfaced in the same minute.** `TestTheMarkerIsActuallyUsedSomewhere` walked `scripts/` *without* skipping `_test.go`, so it found the marker in its own `theMarker` declaration. **It could never fail.** A check that cannot fail measures nothing, which is the rule the whole of worklist group 0 rests on — and I had written one into the repository the day before.
+
+Both fixed:
+- `printsSomething` now matches **the printer's name, not its package**: anything ending in `print`, `printf` or `println`, plus `say(` and `slog.*`. A printer is a printer whoever wrote it.
+- The marker walk skips `_test.go`.
+
+**Then re-proved, with the marker still absent: both tests red, each for its own reason** — one naming `verifypdf/main.go:187` and the unmarked subject, the other saying nothing uses the marker. Marker restored, both green.
+
+### What this says about the day
+
+**Three times in two days a check had to be re-proved after it was changed, and twice it was passing for the wrong reason.** D-508: a scripted revert silently did not match, so the "red" run was the fixed code. D-509: the guard was relaxed and had to be re-shown red. Here: the guard went blind and a second test could never fail at all.
+
+The pattern is not carelessness about the product — it is **trusting an exit status instead of reading what ran**. Every one of the three was caught by looking at the file or deliberately breaking the thing under test, and none by the test suite being green.
+
+**Noted in A37**, with the part that is cheap and available today: golangci-lint v2.13.2, the version both jobs pin, is already installed on this machine and needs none of A37's blockers — it runs no tests, writes nothing, touches no registry and opens no window. A local windows-view lint would have caught this in seconds. It is not the whole check, and the linux view cannot run whole here; and anything used as a gate must pass `--max-same-issues=0`, or it under-reports exactly the mechanical fault that caused this.
