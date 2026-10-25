@@ -49370,3 +49370,84 @@ The per-document notes are identical and name the same 29,858,766 bytes, so the 
 ### A plan error of mine, not a prediction
 
 **My step 3 told the owner to "approve", and the certificate chooser came first** — three certificates, one to pick. P12 did not mention the chooser at all. Row 1.3 had none because I supplied the thumbprint over the protocol; the local window always asks. **The owner's correction: "Not a fault, but your plan said approve."**
+
+## D-507 — row 1.6 closed: the signing window closed under a **real** card login, and the PIN dialog ended as a cancel 126 ms later. The login did not hang. The limit: this is a path no person can reach, and the close is one no person can post
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **Predictions:** P13 (`d351c48`), committed before the run. Announced before the window and before the dialog.
+
+### The limit, first, because it is half the result
+
+**Our PIN dialog is not the dialog a person meets on this machine.** The MUP card signs through CNG, which raises **Windows'** own prompt — seen four hours earlier in D-505 as `Credential Dialog Xaml Host`, pid 14604. `internal/ui`'s dialog, the one C21 built the watchdog into, is reached on Windows only through PKCS#11, which needs **`preferPKCS11: true`** — a key **Settings does not expose** (no page, no handler). **The owner's ruling, recorded as he asked:** *"Changing a setting Settings does not expose is a measurement of a path no person reaches by hand."*
+
+**And the close is a second such path.** `runPINDialog` calls `EnableWindow(owner, 0)` before it shows. Measured here: with the dialog up, the signing window had **`WS_DISABLED` set and `IsWindowEnabled` false.** A person cannot click its X. The close in this run was **posted from outside by my script**, which is not something a person can do. What this row now knows is that C21's mechanism works against a real card login. What nobody has measured is a case a person can produce.
+
+### `config.json`, touched and put back
+
+| | |
+|---|---|
+| Before | `06FE0F4EB6AACB6B0C39D57E5C6079B11DE64BED14C46E48EC2EF8CBE0AC4C79`, 728 bytes |
+| Backup | `…\scratchpad\config.json.before-row-1.6`, same digest, taken before anything was written |
+| Changed | **`preferPKCS11` only** — field-by-field diff against the backup showed one line: `'' -> 'True'` |
+| After the run | restored from the backup; digest **`06FE0F4E…`** again, 728 bytes, `preferPKCS11` absent |
+
+### What ran
+
+- **19:19:36** the owner quit the tray: `protocol: stopped port=17580`. **`bridge.json` was removed** and nothing listens on 17580.
+- **19:20:03.26** I started `liro-bridge open`, **pid 15532**. **19:20:03.53** the signing window, `0x1A01F8`, owned by that process — resolved from the window, as every run today.
+- **19:20:12** one document added. **19:20:21** three modules enumerated. **19:20:29.67** the dialog.
+
+| the dialog | |
+|---|---|
+| Class | **`LiroBridgePINDialog`** — ours |
+| Title | "Unesite PIN" |
+| Owner | `0x1A01F8`, the signing window itself |
+| Process | 15532, the same one |
+| Heading | "Liro Bridge traži PIN vaše kartice" |
+| Card | "Kartica: NetSeT's CardEdge Token" |
+| Limits | "Ova kartica prihvata od 4 do 8 znakova." — **D-268's claim, met** |
+| Foreground | **the dialog itself**, with focus on its `Edit` control |
+| The signing window | **`WS_DISABLED` set, `IsWindowEnabled` false** |
+
+**Then, with nothing typed:**
+
+| | |
+|---|---|
+| `WM_CLOSE` posted to `0x1A01F8` | 19:20:29.730 |
+| Signing window gone | **+76 ms** |
+| **PIN dialog gone** | **+202 ms — 126 ms after the window**, inside one 250 ms watchdog tick |
+| Process 15532 | **exited, code 1** |
+| Left on screen | nothing: no `LiroBridgeWindow`, no `LiroBridgePINDialog`, no `Credential Dialog Xaml Host` |
+
+**Row 1.6 holds.** The dialog did not stay and the login did not hang.
+
+### P13, scored
+
+| | | |
+|---|---|---|
+| P13a | **held except `bridge.json`** | Nothing was running; `preferPKCS11` was the only change. **I predicted the discovery file would be left stale and it was removed** — a clean quit cleans up after itself. D-502's "stale discovery file" line comes from an unclean exit, not from Izađi |
+| P13b | **held** | The window belonged to the process I started |
+| P13c | **held** | Ours, by class and by title, naming the card and its 4-to-8 limits. **No `Credential Dialog Xaml Host`** — the discriminator came out on the PKCS#11 side, as intended |
+| P13d | **held** | **Exactly one dialog**, for a NetSeT token; SafeSign answered "not mine" without asking for anything. No second PIN for one card. **But see below: which of the two NetSeT modules asked is recorded nowhere** |
+| P13e | **held** | `WS_DISABLED` set. The case the row describes cannot be produced by a person's hands |
+| P13f | **held** | The posted `WM_CLOSE` was dispatched and the window destroyed in **76 ms**. The hinge held: the pump is the dedicated `LiroBridgeUIThread`, and the PIN blocks only a goroutine |
+| P13g | **held** | **126 ms after the window**, one tick of `pinOwnerInterval` |
+| P13h | **held** | No second dialog anywhere, and CNG was never asked. "No" was not turned into "ask somewhere else" |
+| P13i | **held** | Exited, code 1. No hang, nothing to kill |
+| P13j | **held, by construction** | Nothing was typed and the dialog was cancelled before `C_Login`, so no attempt was spent on the card |
+| P13k | **held** | Audit chain still at **332**; no `row-1.6-signed.pdf`; `row-1.6.pdf` untouched at 427 bytes |
+| P13l | **held** | Restored byte-for-byte, digest compared |
+
+### Two things found doing it
+
+1. **Which module asked for the PIN is in no record.** The dialog names the **token** ("NetSeT's CardEdge Token"), not the module, and `pkcs11: signing through a module` is only written on success. Two of this machine's three modules are NetSeT's — TrustEdgeID's and MUP's — and **nothing says which one raised this dialog.** On a machine where one card sits behind two modules (D-271), that is the fact needed to read a PIN prompt, a failure or a timing anomaly. **This is D58's shape again, in a third place today.**
+2. **The person is told nothing, and the two lines that would have told them are warnings about it.** The run ends with `WARN signing flow: resizing the window failed  error=ui: window is closed` and `WARN signing flow: posting the failure failed  error=ui: window is closed`. The cancel is handled correctly and the only channel for explaining it was the window that went away. **In the real case this models — a window closing under the dialog for any reason — the person learns nothing about why their signature stopped,** and the log records the failure to tell them rather than the thing itself.
+
+### A contrast worth keeping, against D-504
+
+**Our native dialog takes the foreground and puts focus in its own `Edit` control.** The WebView2 windows do not: D-504 measured focus staying on the host window even after a click inside the page, which is why Escape is dead on them (D55). The two kinds of window in this program behave oppositely about the keyboard, and only the native one behaves as a person would expect.
+
+### What this row still does not know
+
+- **Anything about the dialog a person actually meets**, which is Microsoft's, on the CNG path, and which C21 does not govern.
+- **What happens when the window is closed by a route a person has** — there is none while the dialog is up, which is itself the finding.
+- **Which NetSeT module** holds this card, and whether the other would have asked too had the first declined.
