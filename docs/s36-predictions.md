@@ -132,3 +132,47 @@ one thing each.**
 is live. R6a and R6b are predicted to end on the clock, and letting them
 is the measurement. The watcher stops reading at 135 seconds; if a window
 is somehow still up then, I will say so before touching it.
+
+## P11 — row 1.3: a program that names `b-lt`, on a MUP card
+
+**The row:** a program that names `b-lt` gets `LEVEL_NOT_REACHED` on a MUP card, and nothing is saved (C26). **False** if a document comes back at B-T.
+
+**Why this is not row 1.2 again.** D-491 measured a level **chosen in Settings**. This is a level **named by a caller** — a different field, a different path into the window (`protocolserver.go:166`: `req.Level` overwrites `m.cfg.SignatureLevel` for that batch only), and a different way out: the caller is answered over HTTP rather than shown a report. D-476's rule is that the two are held to the same standard; this is the half of it nothing has run.
+
+**Why it must come before row 1.5.** The engine signs on the card and fetches the timestamp **first**, and only then gathers B-LT's evidence and refuses (`sign.go:361`). With a dead timestamp authority the document would fail `TSA_UNAVAILABLE` and the row would measure nothing. So the real Pošta test TSA must still be configured, and it is.
+
+**The steps.**
+
+1. **Mine:** `POST /v2/pair/request`, name "Row 1.3 (b-lt)", origin `https://test.local`.
+2. **The owner's hands:** read the six-digit code off the window and tell me. (Valid 5 minutes.)
+3. **Mine:** `POST /v2/pair/confirm`; then `POST /v2/sign/pdf` with `certificateThumbprint` `EE8EC0F3…`, one document `row-1.3.pdf`, **`"level": "b-lt"`**, and `stamp` supplied in full — so there is no certificate chooser and no stamp step, and the owner meets one window.
+4. **The owner's hands:** approve the consent window (**120 seconds**, countdown in the last 30) and type the PIN.
+5. **Mine:** poll the result; then read the log, the audit chain, the folder and `config.json`.
+
+**What the code says, read for this block:**
+
+- `levelIsARequest(cfg)` is `cfg.SignatureLevel != ""`, and the caller's level was just written into it. So `keepBTIfBLTFails` is **false**: there is no saving at B-T.
+- A protocol batch is **exempt from the timestamp question** (`mainwindow.go`, the `m.remote != nil` branch): "there is nobody watching the window by the time a batch it approved is running". A TSA failure here is reported, not asked about.
+- `succeeded == 0` makes the job **failed, not completed with an empty result** (`jobhandlers.go:241`), with `firstFailureCode(result)`, and **no body is stored**. `handleJobResult` then finds `TakeResult` empty and answers `fail(w, state.Code)`.
+
+| | measured | predicted |
+|---|---|---|
+| P11a | `pair/request` and its window | 200, a `requestId`, `expiresInSeconds` **300**. A window shows a **six-digit code** and names "Row 1.3 (b-lt)" and `https://test.local`. **It does not take the foreground** — D-504 measured that for the origin window and nothing about the pairing window differs. **Esc will not close it either**: `pairing.js:42` registers the same listener D-504 proved unreachable |
+| P11b | `pair/confirm` | 200, `appId` 32 hex characters, `deviceSecret` 32 random bytes base64 (44 characters). Written to the scratchpad and nowhere else; never to the repository, never printed in full |
+| P11c | `POST /v2/sign/pdf` | **202**, a `jobId`, and `batchFingerprint` equal to SHA-256 over the document exactly as sent — `b9749fdb57fcadf802492c78b5da3cc10b7a3772fa91ecc776f9340ccd536fda`, which I compute independently and compare |
+| P11d | The consent window | Names **"Row 1.3 (b-lt)"** above the request, **one** document, `row-1.3.pdf`, and the batch fingerprint the 202 carried. **No certificate chooser and no stamp step.** A countdown appears in the last 30 seconds |
+| P11e | The PIN | **Asked.** Agent 12808 has signed nothing in its life, so this is E11's first card operation in this process (D-495) |
+| P11f | From the PIN to the end | **About 25–55 seconds**, as P1d predicted and D-491 measured: OCSP's two 10-second attempts against MUP's dead responder, then the 29.9 MB CRL (D52) |
+| P11g | The window at the end | The refusal: "Traženi nivo potpisa nije mogao biti dostignut, pa ništa nije sačuvano." No *Sign without a timestamp*, no offer to save at B-T |
+| P11h | **What the caller gets** | **Least certain of P11. HTTP 422 with `{"code":"LEVEL_NOT_REACHED"}` — not a 200 carrying a `failures` array.** Every document failed, so `job.Fail` is taken and no body is ever marshalled, and the result endpoint answers with the job's code. **PROTOCOL.md §5.2's worked example shows `documents`, `failures` and `counts`, which is what a reader would expect here and is not what the code does when *every* document fails.** If it is 422, §5.2 needs a sentence; if it is 200 with `counts {1, 0, 1}`, I have misread `jobhandlers.go:241` and the row still holds |
+| P11i | Nothing saved | **No file anywhere.** The protocol path's output is a response, not a file: `Desktop\liro-s36` gains nothing, `row-1.3.pdf` is unchanged at `b9749fdb…`, and no temporary or partial file appears |
+| P11j | Audit entry **331** | `outcome` **failed**, `failureCode` **LEVEL_NOT_REACHED**, `documentCount` 1, `application` **"Row 1.3 (b-lt)"** (not "local"), `channel` **"api-documents"**, `backend` `windows-cng`, `isTestKey` false, `achievedLevel` **empty**. The chain verifies from 330 |
+| P11k | The log | One WARN with `role=signer` for `EE8EC0F3…` (by design, D-480), then the B-LT shortfall note — "larger than the cap" with `bytes` about 30,000,000 against `cap=5242880`, or "no OCSP response or CRL could be had" — then `LEVEL_NOT_REACHED`. WARNs with `role=timestamp` for Pošta's test unit and its test CA (D-484) may come too; I do not predict their content. **No name and no JMBG in any new line** |
+| P11l | What the card did | **The card signed, and the signature was thrown away.** `sign.go:361` refuses only after the card has produced a real signature value and the timestamp has been fetched. So the PIN bought a signature nobody will ever see. That is the row holding, and it is also worth saying plainly |
+| P11m | `config.json` | **Unchanged.** A caller's level is this batch's only (`protocolserver.go:166` writes `m.cfg`, a copy). `signatureLevel` still `""`, `signatureLevelChosen` still absent |
+
+**What would make the row unreadable rather than false, in which case I stop and say so before anything else is tried:**
+
+- **MUP's OCSP answering now, or its CRL under the 5 MB cap.** The document would reach B-LT, which is the level that was asked for — not a failure of the row, but no refusal to see with this card.
+- **Pošta's test TSA not answering.** The document then fails `TSA_UNAVAILABLE` before B-LT's evidence is ever gathered, and because a protocol batch is exempt from the timestamp question there is no question either — just a different code. That is row 1.5's ground arriving in row 1.3's run.
+- **The consent window timing out at 120 seconds** while the owner is reading. Then the job ends `CONSENT_TIMEOUT` and nothing about the level was tested.
