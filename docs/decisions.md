@@ -49308,3 +49308,65 @@ Nivo potpisa  —
 4. **Three PKCS#11 modules on this machine, not two.** `C:\WINDOWS\System32\aetpkss1.dll` (SafeSign), `C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll`, and `C:\Program Files\MUP RS\Celik\netsetpkcs11_x64.dll`. D-455 and D45 name two. **Row 1.6 walks all three.**
 
 **And one thing worth keeping about a window nobody saw:** `signing window: no desktop notification was posted for a waiting request … this platform does not post desktop notifications`. A request that arrives while the person is elsewhere opens a window and posts nothing — SPEC §6.5.2's notification does not exist on Windows. The same gap D-499 saw from the box side.
+
+## D-506 — row 1.5 closed: the question offers only *Configure* and *Cancel*, and the screen offering them is **titled with the option it withholds**. The batch carried on through the configure loop to B-T. Nothing in the log says the authority failed or that a person was asked
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **Predictions:** P12 (`2440c3d`), committed before the run. Every window was the owner's own; I opened none.
+
+### What ran
+
+- **19:05:19** two documents added. **19:05:26–33** Settings from the window's own gear: the timestamp service set to `https://127.0.0.1:9/timestamp` (nothing is listening there — checked before the run), saved.
+- **19:06:36** approved. **The certificate chooser appeared with three certificates** and the owner picked the 2031 MUP one (`…FA7671BD`). **No PIN was asked.**
+- The question appeared. **19:07:12.09** `settings: window open` — with **no** `signing window: opening from the main window door=settings` line before it, because this Settings was opened by `resolveTSAChoice`, not by the window's door. **19:07:16.86** saved with `https://test-tsa.ca.posta.rs/timestamp1` restored.
+- **19:07:55.6** document 1 done; **19:08:14.3** document 2 done. Audit **332**: `approved`, `B-T`, `documentCount` 2, `application` `local`, channel absent, `backend` `windows-cng`, `prevHash` = 331's hash.
+
+### What the owner read, before pressing anything
+
+```
+Bez vremenskog žiga
+Podešeni izdavalac vremenskog žiga nije odgovorio.
+Potpis bez vremenskog žiga je nivoa B-B: važeći, ali bez dokaza o tome
+kada je napravljen, što postaje bitno kada sertifikat istekne ili bude opozvan.
+[Podesi izdavaoca vremenskog žiga] [Otkaži]
+```
+
+**Row 1.5 holds.** "Potpiši bez vremenskog žiga" is not on screen. `offersWithoutTimestamp(Unreachable, …)` is false whatever the level, and `main.js:269` hides the button.
+
+### P12, scored
+
+| | | |
+|---|---|---|
+| P12a | **held** | The dead URL saved, `tsaUser` and `tsaPassword` untouched, `signatureLevel` still `""`; restored at the end to the real TSA by the owner's hand |
+| P12b | **held** | **No PIN.** D-495's account survives: what verifies the card is held in 12808, which row 1.3 unlocked at 18:57 and which has held it since. The card never left the reader |
+| P12c | **not measured** | I predicted "about 4 seconds" from the card step to the question. **Nothing logs the authority failing, and nothing logs the question being asked**, so there is no line to measure against. The only brackets are the chain warning at 19:06:37 and the owner's press at ~19:07:11, and the gap is the owner reading |
+| P12d | **held — this is the row** | Two buttons, *Podesi izdavaoca vremenskog žiga* and *Otkaži*. No *Potpiši bez vremenskog žiga* |
+| P12e | **held, and it is the finding** | The screen is **titled "Bez vremenskog žiga"** and carries the whole B-B explanation, because the heading and the paragraph are static `data-i18n` elements of `state-tsachoice` and only `tsa-without-btn` is hidden. **Opened as D57** |
+| P12f | **held** | "Podešeni izdavalac vremenskog žiga nije odgovorio." — the unreachable reason, not the not-configured one |
+| P12g | **held** | The batch continued. The question was not asked again for document 2 |
+| P12h | **held** | Both at B-T, `row-1.5-a-signed.pdf` and `row-1.5-b-signed.pdf`, 119,389 bytes each, beside their inputs |
+| P12i | **FALSE** | I predicted about 40 seconds each and that the second would not be faster. **Document 1 took 38.7 s; document 2 took 18.7 s** — a little under half. See below |
+| P12j | **held on the WARNs, false on the rest** | Two `role=signer` WARNs, one per document, each `bytes=29858766` against `cap=5242880`. **But there are no TSA failure lines at all** — I predicted them as a certainty, not as the open question |
+| P12k | **held** | Entry 332 exactly as predicted; `prevHash` `8cc4b1d2…` is entry 331's `hash` |
+| P12l | **held** | Both documents: `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`, `HasTimestamp`, `TimestampOK` all true, and `SignerChainTrusted` **true**. `TimestampChainTrusted` **false** — Pošta's test unit under "TEST 2018 CA 1 - Novo", which is D-484's test CA, exactly as row 1.4 found. The signer's revocation evidence was left out, which the signer's note records rather than the verifier |
+
+### Why document 2 was half the time, and what it does to D52
+
+The per-document notes are identical and name the same 29,858,766 bytes, so the CRL was weighed again for the second document. **The 20 seconds that vanished are MUP's dead OCSP:** two attempts of 10 seconds, which `revocationMemory` remembers as "did not answer" for the rest of the batch and does not repeat. 38.7 − 18.7 = **20.0 s**, which is that timeout to the second. **This is the fit, not a reading of the fetch** — nothing logs either endpoint being tried.
+
+**So D52 is right about the CRL and too pessimistic about the batch.** The first document on a MUP card costs about 40 s; **every one after it costs about 19 s**, and the ~30 MB is still fetched for each. F2 §4.1's arithmetic in E11 and D52 should use 19 s, not 40, for every document after the first — which moves where `MaxLifetime` falls in a long batch.
+
+### Three things found beside the row
+
+1. **Nothing in the log says the timestamp authority failed, or that a person was asked about it.** The batch's own log goes straight from the certificate chain work to the two signer notes forty seconds later. **This is the second time today** — row 1.3's `LEVEL_NOT_REACHED` was in no line either (D-505). A person reading `bridge.log` to find out why a batch stalled for half a minute, or what a person was asked, is told nothing. **Opened as D58.**
+2. **The project's own verifier prints the signer's subject, which on a MUP card is the person's name and their JMBG.** `scripts/verifypdf` writes it to standard output, where it lands in a terminal, a transcript, a CI log or a pasted report. **D-480 took certificate names out of every message in the agent; the verifier was not changed with it, and D-487 is what that costs when it reaches a public repository.** The value is not reproduced here and was filtered out of the second run. **Opened as D59.**
+3. **The log's note says `requested=B-LT` for a batch in which nobody requested anything.** `the signer's notes on this signature … path=window requested=B-LT achieved=B-T`. The level was "the best available", so `m.requestedLevel` is deliberately cleared for the report (D-476) — but the engine's own requested level reaches the log unqualified. Minor, and recorded rather than filed: the report and the log disagree about whether a request was made.
+
+### What the run did not measure
+
+- **The *Otkaži* branch.** The owner pressed *Podesi…*, which was also what restored their setting. Whether cancelling at that question leaves nothing written is unmeasured.
+- **An authority that answers and then stops.** The client is built once per batch, so a dead URL is dead from the first document. The question still arrived after the card was open and the PIN spent, which is the sense that matters, but a live-then-dead authority is not what ran.
+- **`resolveTSAChoice` opening a second pairing store** (`interactive.go:247`, on a comment that assumes a `sign` process). This window was in the tray, which holds the live store. Predicted as a code reading in P12, and this run neither needed nor touched a pairing, so it stays unmeasured.
+
+### A plan error of mine, not a prediction
+
+**My step 3 told the owner to "approve", and the certificate chooser came first** — three certificates, one to pick. P12 did not mention the chooser at all. Row 1.3 had none because I supplied the thumbprint over the protocol; the local window always asks. **The owner's correction: "Not a fault, but your plan said approve."**
