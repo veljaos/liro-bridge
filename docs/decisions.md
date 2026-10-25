@@ -49523,3 +49523,49 @@ Both begin `-----BEGIN CERTIFICATE-----`. Decoded, the root is 1618 bytes of val
 - The scratchpad file holding that pairing's device secret was deleted.
 - **The tray is running again: PID 12252**, listening on 17580, `bridge.json` written, `/v2/health` 200, and the revoked pairing is absent from what it serves.
 - **One difference from normal, for whoever reads this machine next:** its **parent is `powershell.exe` (16928), not `explorer.exe`** — I started it, where a logon normally does. D-502's rule stands: read how the agent was started, every time, and do not assume it from here.
+
+## D-509 — D59 closed: the two remaining probes withhold the subject too, and the rule behind all three is now a guard over `scripts/` rather than three separate fixes somebody has to remember
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **The owner:** *"Yes, fix cngprobe and p11worker in one commit, same way, with a guard seen red first."*
+
+### The guard, written first and seen red first
+
+`scripts/guards/subjects_test.go` — a package with no code of its own; the tests are the package. It walks every non-test `.go` file under `scripts/` and fails on any line that both reads a certificate's subject (`\.Subject\b` — a struct literal's `Subject:` field has no dot and does not match) and passes it to something that prints: `fmt.Print*`, `fmt.Fprint*`, `fmt.Sprintf`, `slog.*`, or `say(`, which is the probes' own printer.
+
+**The rule it states: a certificate's subject is a person until something says otherwise.** A line that genuinely prints a machine's subject marks itself `subject-ok:` and says which machine and why.
+
+**Run before any of today's second-round changes, it failed with exactly three:**
+
+```
+../cngprobe/cngprobe_windows.go:52   fmt.Printf("     subject     %s\n", parsed.Subject)
+../p11worker/p11worker_windows.go:179  say("        subject   %s", parsed.Subject.CommonName)
+../verifypdf/main.go:172             fmt.Fprintf(w, "%s subject            %s\n", label, c.Subject.CommonName)
+```
+
+The third is D-508's own timestamp branch, which is legitimate — and the guard was right to demand it say so.
+
+A second test, `TestTheMarkerIsActuallyUsedSomewhere`, fails if nothing in the tree uses the marker: an exemption that has never been exercised would pass just as happily if the marker were misspelt.
+
+### The three changes
+
+| | |
+|---|---|
+| `cngprobe_windows.go:52` | printed **`parsed.Subject`** — the *whole* distinguished name, every attribute, so more than `verifypdf` ever leaked. Now `subjectWithheld`. The thumbprint it already prints at the head of each entry still identifies the certificate |
+| `p11worker_windows.go:179` | printed `parsed.Subject.CommonName`. Now `subjectWithheld`. The thumbprint is already on the line above it |
+| `verifypdf/main.go` | the timestamp branch gained the marker and its reason: a timestamp unit is a machine, and its name is the one thing that says which authority stamped the document |
+
+The withheld sentence is identical in all three and declared in each — three short constants in three separate `main` packages rather than a shared symbol, because `verifypdf` is the second implementation SPEC §16.4 requires and shares no code with anything (D-044). **The guard is what keeps the three honest, not a shared declaration.**
+
+### Then the guard was changed, so it was seen red again
+
+The marker sits two comment lines above `verifypdf`'s call, and the first draft only looked at the line itself and the one directly above it, so it stayed red on a line that *had* said why. The rule was relaxed to scan the whole comment block above the call — where in their own comment somebody puts the marker is not a rule worth having.
+
+**A relaxed guard has to be re-proved, so it was:** the `cngprobe` leak was put back, directly underneath its new eight-line comment — a comment which does **not** contain the marker — and the guard failed on it. So the block scan does not blanket-exempt anything that merely has a comment above it. Then restored, and green.
+
+**This is the second time today that a "red" run had to be redone.** D-508 recorded the first, where a scripted replacement silently failed to match and the red run was the fixed code passing. Both were caught by reading the file rather than trusting an exit status.
+
+### State
+
+`gofmt` clean, `go vet` clean on all four packages, both test packages green, and both probes still build for Windows. (`go vet ./scripts/...` also reports three pre-existing `possible misuse of unsafe.Pointer` in `scripts/p11probe`, untouched by this and not mine to fix here.)
+
+**D59 is closed.** Nothing in `scripts/` prints a certificate subject it has not been told is a machine's, and a new tool that tries will fail the guard rather than reach a transcript.

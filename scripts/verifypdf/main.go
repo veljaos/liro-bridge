@@ -169,6 +169,8 @@ func printCert(w io.Writer, label string, c *x509.Certificate, subjectIsNotAPers
 		return
 	}
 	if subjectIsNotAPerson {
+		// subject-ok: a timestamp unit is a machine, and its name is the
+		// one thing that says which authority stamped the document.
 		fmt.Fprintf(w, "%s subject            %s\n", label, c.Subject.CommonName)
 	} else {
 		fmt.Fprintf(w, "%s subject            %s\n", label, subjectWithheld)

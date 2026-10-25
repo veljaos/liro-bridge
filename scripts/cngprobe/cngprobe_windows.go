@@ -26,6 +26,11 @@ import (
 	"github.com/veljaos/liro-bridge/internal/keysource/windowscng"
 )
 
+// subjectWithheld stands where a certificate subject would be. It says
+// what is missing and why, because a blank reads as an empty field
+// (D59, D-508). The wording matches scripts/verifypdf.
+const subjectWithheld = "(withheld: on an identity card this carries the holder's name and their JMBG)"
+
 func main() {
 	fmt.Printf("cngprobe  %s\n\n", time.Now().Format("2006-01-02 15:04:05 MST"))
 	start := time.Now()
@@ -49,7 +54,15 @@ func main() {
 			fmt.Printf("     (%d bytes, did not parse: %v)\n\n", len(c.DER), perr)
 			continue
 		}
-		fmt.Printf("     subject     %s\n", parsed.Subject)
+		// **Never the subject** (D59, D-508). This probe is run with a
+		// real card in the reader, and it printed the *whole*
+		// distinguished name — so on an identity card, the holder's
+		// name and every attribute carrying their JMBG, straight to
+		// standard output and from there into terminals, transcripts
+		// and anything pasted into an issue. The thumbprint above
+		// identifies the certificate exactly, and is the value the
+		// audit chain and the agent's own warnings use.
+		fmt.Printf("     subject     %s\n", subjectWithheld)
 		fmt.Printf("     issuer      %s\n", parsed.Issuer.CommonName)
 		fmt.Printf("     serial      %X\n", parsed.SerialNumber)
 		fmt.Printf("     valid       %s .. %s\n",
