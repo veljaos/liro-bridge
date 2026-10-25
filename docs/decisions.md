@@ -49180,3 +49180,77 @@ The agent was **not** carried forward from the earlier reading. The window was f
 - **An ordinary origin,** not the 255-character worst case, at 150 % text: how many lines it loses is unknown, and it is what a person actually meets.
 
 **Opened as its own open item, at the owner's instruction: D54.** Not a line under row 2.1: "the only screen standing between them and whoever sends them documents to sign."
+
+## D-504 — P9e answered, and worse than predicted: **Esc does nothing on the origin window, with or without a click into the page.** The keyboard never reaches the page at all — a click inside it focuses the host window, not WebView2. The X was the only thing that worked
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **Predictions:** P10 (`753a0b7`), committed before the run. **The owner's hands** did both keystrokes; my script sent the link and read, and closed nothing.
+
+**The owner's words:** "pressed Esc with Firefox in front, nothing happened. Then I clicked on the window itself and pressed Esc again — also nothing. So I ran a and c together by mistake." And: "I closed the window with the X at about 18:45, so the 120-second timeout did not run." And on the finding: **"The X is itself worth a line: it was the only thing that worked."**
+
+**R6a and R6c ran together, by the owner's mistake, and the pair is worth more than the two runs apart.** R6b was never run and does not need to be: see below.
+
+### What the machine was, read before anything opened
+
+- **Display scale 100 %, text size 100 %** — the preamble of `docs/s36-predictions.md`, read today, not carried over. `LogPixels` still 192 and still ignored.
+- **The agent: the tray, PID 12808,** owner of the listener on 17580. **No `LiroBridgeWindow` on screen before the link,** so the new window was unambiguous by class, and its owning process was resolved with `GetWindowThreadProcessId` at the moment it appeared and checked against the listener — D-500's correction, applied for the third run in a row. They matched.
+
+### What ran
+
+- **18:42:51.083** `open-link: an agent is running, so the link was left for it`; pid 16220 exited 0. The 255-character origin, session 35's.
+- **18:42:51.674** the window, hwnd `0x1003CC`, owner **12808**, title "Dozvoliti ovaj server?".
+- **18:44:47.796** `cloud: the person did not allow this server`. **18:44:47.846** the window gone, having stood **116.2 s**.
+- `cloud-origins.json` **still absent**. `bridge.log` 2826 → 2831 lines.
+
+### Row 2.1 at 100 % scale, 100 % text: the measurement
+
+| | |
+|---|---|
+| Client | **420×406** — the designed size, to the point |
+| Window | **436×445** at (742, 317); `GetDpiForWindow` 96 |
+| Resizable | **no** — `WS_THICKFRAME` absent |
+| Scroll bars | **none**, at the window or in the page |
+| The name | the whole 255-character origin, in **six lines**, with both sentences and **both buttons** on screen, and a band of white space between the last sentence and the buttons |
+
+**P10a held,** and it settles D-499's open frame figure: **436×445**, not the 422×438 that entry recorded. D-502's 150 % frame implied this, and the alternative was named in P10a before the run.
+
+### The keyboard, which is the whole finding
+
+The window's children, read when it appeared:
+
+| window | class | process |
+|---|---|---|
+| `0x1003CC` | `LiroBridgeWindow` | 12808, the tray — **the host** |
+| `0x1E0028` | `Chrome_WidgetWin_0` | 12808 |
+| `0xC0600` | `Chrome_WidgetWin_1` | **7316**, WebView2's browser process |
+| `0xD04C8` | `Chrome_RenderWidgetHostHWND` | **7316** — the one that would hold the keyboard for the page |
+
+The focus chain, sampled twice a second through `GetGUIThreadInfo` on the foreground thread:
+
+| t | foreground | focused window |
+|---|---|---|
+| +2.1 s | Firefox | Firefox — **Esc #1 pressed in here** |
+| **+7.8 s** | **`LiroBridgeWindow` 12808** | **`LiroBridgeWindow` 12808** — the owner's click into the page. **Esc #2 pressed in here** |
+| +10.9 s | Firefox | Firefox |
+| **+28.7 s** | **`LiroBridgeWindow` 12808** | **`LiroBridgeWindow` 12808** — a second activation, the same reading |
+| +30.7 s | Firefox | Firefox |
+| +33.2 s | Windows Terminal | Windows Terminal |
+
+**Twice, with the window in the foreground after a click inside the page, the focused window was the host — never `Chrome_RenderWidgetHostHWND`.** The click did not hand WebView2 the keyboard.
+
+### What this settles
+
+- **P10d held in its first half:** Esc with another window in front does nothing. The keystroke goes to whatever has the foreground — here Firefox, which is the honest picture of where a person's "no" lands.
+- **P10f is false.** It predicted Esc would refuse after a click into the page. It does not, and the focus reading says why: a click on the page's surface leaves focus on the host window, whose procedure has **no `WM_KEYDOWN` case**, so the key reaches `DefWindowProc` and dies. `origin.js`'s listener is on WebView2's `document` and is never reached.
+- **P10e is answered without being run, and the owner agreed to drop R6b.** A title-bar click is **non-client** area — the weakest activation there is. A click on the page's own surface is the strongest short of pressing a button, and it did not reach the page. There is no route by which the title bar hands the page a key that a click inside it did not.
+- **The mechanism is ours, and it is a gap rather than a bug in anything.** Nothing in `internal/ui` ever calls `ICoreWebView2Controller::MoveFocus`; `window_windows.go` has no `WM_ACTIVATE`, `WM_SETFOCUS` or `WM_KEYDOWN` case; `showAndFocusWindow` calls `SetFocus` on the **host**. Nothing in our code ever gives the page the keyboard, and nothing answers a key that reaches the host.
+- **F5 §5.6's "Escape cancels" is not kept on this window.** Six pages register the same listener (`origin.js`, `pairing.js`, `consent.js`, `main.js`, `certificates.js`, `auditlog.js`, `place.js`, `stamp.js`). **Whether any of them is reachable is now an open question, not an assumption** — this is the first time one was pressed by a person on Windows.
+
+### What is unmeasured, at the owner's instruction
+
+- **P10d's second half and P10g: unmeasured, not failed.** The owner closed with the X at 116.2 s, under the 120 s, so `originAskTimeout` never fired and no `cloud: nobody answered whether a server may send requests` line was written. The silent timeout is still only D-500's accidental sighting.
+  - The watcher logged no foreground change for the X because the click destroys the window inside one 500 ms sample. **Which of the two ended it is not in doubt this time — the owner says it was the X** — but the timing alone would not have told it apart, which is D-499's problem again.
+- **P10h held:** `cloud-origins.json` still absent.
+- **Tab.** Whether Tab moves focus into the page is the one cheap thing that might still reach `origin.js`. **The owner: fold it into the next origin window rather than opening one for it.** Owed.
+- **An ordinary origin at 150 % text** is still owed from D-503.
+
+**The owner's line, kept:** **the X was the only thing that worked.** On the one screen standing between a person and whoever sends them documents to sign, the key people reach for to say no does nothing, and says nothing about doing nothing.
