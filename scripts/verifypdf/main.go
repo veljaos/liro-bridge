@@ -139,6 +139,19 @@ func loadTrustedList() *tsl.List {
 	return list
 }
 
+// fprintf mirrors cmd/liro-bridge/print.go and internal/cli/render.go,
+// declared again here rather than imported: this command is the second
+// implementation SPEC §16.4 requires and shares no code with the rest
+// (D-044), and it is one line.
+//
+// The write error is discarded deliberately, for the reason those two
+// already give: there is no recovery action for a failed write to
+// stdout, and letting every call site ignore it individually is what
+// errcheck flags repeatedly for no benefit — which is exactly what it
+// did once printCert was given an io.Writer so its output could be
+// tested (D-510).
+func fprintf(w io.Writer, format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
+
 // subjectWithheld is what stands where a person's name would be, and it
 // says why rather than leaving a blank somebody will read as "empty".
 const subjectWithheld = "(withheld: on an identity card this carries the holder's name and their JMBG)"
@@ -165,20 +178,20 @@ const subjectWithheld = "(withheld: on an identity card this carries the holder'
 // tool whose output they have chosen to look at.
 func printCert(w io.Writer, label string, c *x509.Certificate, subjectIsNotAPerson bool) {
 	if c == nil {
-		fmt.Fprintf(w, "%s certificate         (none)\n", label)
+		fprintf(w, "%s certificate         (none)\n", label)
 		return
 	}
 	if subjectIsNotAPerson {
 		// subject-ok: a timestamp unit is a machine, and its name is the
 		// one thing that says which authority stamped the document.
-		fmt.Fprintf(w, "%s subject            %s\n", label, c.Subject.CommonName)
+		fprintf(w, "%s subject            %s\n", label, c.Subject.CommonName)
 	} else {
-		fmt.Fprintf(w, "%s subject            %s\n", label, subjectWithheld)
+		fprintf(w, "%s subject            %s\n", label, subjectWithheld)
 	}
-	fmt.Fprintf(w, "%s thumbprint         %s\n", label, thumbprintOf(c))
-	fmt.Fprintf(w, "%s issuer             %s\n", label, c.Issuer.CommonName)
-	fmt.Fprintf(w, "%s serial             %X\n", label, c.SerialNumber)
-	fmt.Fprintf(w, "%s validity           %s .. %s\n", label,
+	fprintf(w, "%s thumbprint         %s\n", label, thumbprintOf(c))
+	fprintf(w, "%s issuer             %s\n", label, c.Issuer.CommonName)
+	fprintf(w, "%s serial             %X\n", label, c.SerialNumber)
+	fprintf(w, "%s validity           %s .. %s\n", label,
 		c.NotBefore.Format("2006-01-02"), c.NotAfter.Format("2006-01-02"))
 }
 

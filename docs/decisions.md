@@ -49569,3 +49569,74 @@ The marker sits two comment lines above `verifypdf`'s call, and the first draft 
 `gofmt` clean, `go vet` clean on all four packages, both test packages green, and both probes still build for Windows. (`go vet ./scripts/...` also reports three pre-existing `possible misuse of unsafe.Pointer` in `scripts/p11probe`, untouched by this and not mine to fix here.)
 
 **D59 is closed.** Nothing in `scripts/` prints a certificate subject it has not been told is a machine's, and a new tool that tries will fail the guard rather than reach a transcript.
+
+## D-510 — CI red on both jobs from my own refactor: `fmt.Printf` is exempt from errcheck and `fmt.Fprintf` is not. **Seven, not three** — the linter was truncating. And fixing it blinded the guard I had written the day before, which then had to be fixed and re-proved twice
+
+**Date:** 2026-10-25 (pushed), read 2026-10-26. **Phase:** F12, the worklist (session 36). **The owner:** CI red on `ci` and `linux-gui`, both runs, with `scripts/verifypdf/main.go:168, :174, :176 — Error return value of fmt.Fprintf is not checked (errcheck)`.
+
+### Whose lines those are
+
+**Two of the three existed before and one is new** — but the distinction that matters is not new-versus-moved, it is `Printf`-versus-`Fprintf`.
+
+| line | before `51b7f8c` | now |
+|---|---|---|
+| **168** | `fmt.Printf("%s certificate         (none)\n", label)` — existed, 3rd line of the old `printCert` | moved down by added comments, **and changed to `Fprintf`** |
+| **174** | `fmt.Printf("%s subject            %s\n", label, c.Subject.CommonName)` — existed, 6th line | moved, **and changed to `Fprintf`** |
+| **176** | — | **new** (D-508's withheld branch) |
+
+### Why the linter had not flagged them until now
+
+**errcheck exempts the `fmt.Print*` family and does not exempt `fmt.Fprintf`.** `Print`/`Printf`/`Println` write to standard output, where a failed write has no recovery action; `Fprintf` takes an arbitrary writer, where it might.
+
+Measured rather than assumed: `golangci-lint run ./scripts/cngprobe/` — a file that is almost nothing but `fmt.Printf` — reports **0 issues**. The same linter on `./scripts/verifypdf/` reports the `Fprintf` calls.
+
+**So the lint failure is a direct consequence of D-508's testability refactor.** `printCert` was given an `io.Writer` so the D59 guard could read its output; that turned five existing `Printf` calls and two new ones into `Fprintf`, and every one of them became an unchecked error return. The change that made the subject testable is the change that broke the build.
+
+### It was seven, not three — the linter was truncating
+
+CI reported three. **`printCert` has seven `Fprintf` calls, and all seven were flagged.** golangci-lint's `max-same-issues` defaults to **3**: issues sharing one message text are capped at three, whatever the real count.
+
+```
+golangci-lint run ./scripts/verifypdf/                      ->  3 issues
+golangci-lint run --max-same-issues=0 ./scripts/verifypdf/  ->  7 issues
+```
+
+**Fixing only the three named lines would have left four and turned CI red again on the next push**, with the next three. Said here because "three issues, nothing else" is what the report says and not what is there.
+
+### The fix, the way the repository already does it
+
+`cmd/liro-bridge/print.go` and `internal/cli/render.go` both already own this problem, and `print.go`'s comment states the rule outright: *"there is no recovery action for a failed write to stdout, and letting every call site ignore it individually is what errcheck would otherwise flag repeatedly for no benefit."*
+
+So `verifypdf` gained the same one-line helper — declared again rather than imported, because it is the second implementation SPEC §16.4 requires and shares no code (D-044) — and all seven call sites went through it.
+
+**Both views, whole module, report limit lifted:**
+- `GOOS=windows GOARCH=amd64 golangci-lint run ./...` → **0 issues**
+- `GOOS=linux golangci-lint run ./scripts/verifypdf/ ./scripts/guards/` → **0 issues**
+
+### `linux-gui` was the same cause, not a second one
+
+- Both jobs run **golangci-lint v2.13.2**, the same pinned version, over the whole module with the same `.golangci.yml`; `ci` with `GOOS=windows`, `linux-gui` with `GOOS=linux` (the workflow's own comment: the two views exist because each sees code the other cannot).
+- **`scripts/verifypdf/main.go` carries no build tag and no platform filename suffix**, so both views lint the same bytes — which is why both jobs failed with the same three lines, and why one fix clears both.
+- The whole module in the linux view cannot be linted on this machine: golangci-lint loads every package it is pointed at, and that view links GTK (D-335, and the reason `linux-gui` is a separate job). The package itself lints clean there.
+
+### Then the fix blinded the guard, and the guard had to be fixed and re-proved **twice**
+
+D-509's guard matched printers by their **package-qualified names** — `fmt.Fprintf` and friends. Renaming the calls to a local `fprintf` helper meant the guard no longer matched them at all.
+
+**It did not fail. It passed, on a line printing a certificate subject.** That was proved rather than inferred: the `subject-ok:` marker was deleted from the one exempt line, leaving an unmarked `c.Subject.CommonName` going to output, and the guard still said ok.
+
+**A second defect surfaced in the same minute.** `TestTheMarkerIsActuallyUsedSomewhere` walked `scripts/` *without* skipping `_test.go`, so it found the marker in its own `theMarker` declaration. **It could never fail.** A check that cannot fail measures nothing, which is the rule the whole of worklist group 0 rests on — and I had written one into the repository the day before.
+
+Both fixed:
+- `printsSomething` now matches **the printer's name, not its package**: anything ending in `print`, `printf` or `println`, plus `say(` and `slog.*`. A printer is a printer whoever wrote it.
+- The marker walk skips `_test.go`.
+
+**Then re-proved, with the marker still absent: both tests red, each for its own reason** — one naming `verifypdf/main.go:187` and the unmarked subject, the other saying nothing uses the marker. Marker restored, both green.
+
+### What this says about the day
+
+**Three times in two days a check had to be re-proved after it was changed, and twice it was passing for the wrong reason.** D-508: a scripted revert silently did not match, so the "red" run was the fixed code. D-509: the guard was relaxed and had to be re-shown red. Here: the guard went blind and a second test could never fail at all.
+
+The pattern is not carelessness about the product — it is **trusting an exit status instead of reading what ran**. Every one of the three was caught by looking at the file or deliberately breaking the thing under test, and none by the test suite being green.
+
+**Noted in A37**, with the part that is cheap and available today: golangci-lint v2.13.2, the version both jobs pin, is already installed on this machine and needs none of A37's blockers — it runs no tests, writes nothing, touches no registry and opens no window. A local windows-view lint would have caught this in seconds. It is not the whole check, and the linux view cannot run whole here; and anything used as a gate must pass `--max-same-issues=0`, or it under-reports exactly the mechanical fault that caused this.

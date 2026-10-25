@@ -12,9 +12,16 @@ import (
 )
 
 // printsSomething matches the calls that put text where a person, a
-// terminal, a transcript or a CI log will see it. say( is the probes'
-// own printer.
-var printsSomething = regexp.MustCompile(`\b(fmt\.(Print|Printf|Println|Fprint|Fprintf|Fprintln|Sprintf)|say|slog\.(Info|Warn|Error|Debug))\(`)
+// terminal, a transcript or a CI log will see it.
+//
+// **It matches the printer's name, not its package**, and that is the
+// whole lesson of D-510: the first version listed `fmt.Fprintf` and
+// friends explicitly, and went blind the moment those calls were
+// renamed to a local `fprintf` helper to satisfy errcheck — the guard
+// still passed, on a line printing a subject with no marker at all.
+// Any name ending in print/printf/println is a printer whoever wrote
+// it, so that is what is matched. say( is the probes' own printer.
+var printsSomething = regexp.MustCompile(`[Pp]rint(f|ln)?\(|\bsay\(|\bslog\.(Info|Warn|Error|Debug)\(`)
 
 // readsASubject matches a certificate's subject being read off a parsed
 // certificate: parsed.Subject, c.Subject.CommonName, and so on. A
@@ -100,6 +107,14 @@ func TestTheMarkerIsActuallyUsedSomewhere(t *testing.T) {
 	err := filepath.Walk("..", func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
+		}
+		// **Test files are skipped, this one above all** (D-510). The
+		// first version of this walk did not skip them, so it found the
+		// marker in its own `theMarker` declaration and could never
+		// fail — a check that cannot fail measures nothing, which is
+		// the rule group 0 of the worklist is built on.
+		if strings.HasSuffix(path, "_test.go") {
+			return nil
 		}
 		src, readErr := os.ReadFile(path)
 		if readErr != nil {
