@@ -49254,3 +49254,57 @@ The focus chain, sampled twice a second through `GetGUIThreadInfo` on the foregr
 - **An ordinary origin at 150 % text** is still owed from D-503.
 
 **The owner's line, kept:** **the X was the only thing that worked.** On the one screen standing between a person and whoever sends them documents to sign, the key people reach for to say no does nothing, and says nothing about doing nothing.
+
+## D-505 — row 1.3 closed: a caller that names `b-lt` is refused `LEVEL_NOT_REACHED` on a MUP card and gets **422 with the code, not the `failures` shape PROTOCOL.md §5.2 shows**. And the report tells the person where a document went that was never written
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). **Predictions:** P11 (`f3e6d70`), committed before the run. Announced before each of the three windows.
+
+### What ran
+
+- **18:55:28** `pair/request` → 200, `expiresInSeconds` 300. The window **"Zahtev za povezivanje"**, client **420×369**, frame 436×408, owned by **12808** — the tray, the listener's own process, resolved from the window. **It did not take the foreground:** the owner's terminal kept it.
+- **18:56:01** `api: an application was paired`, `appId dbac0bfd…`, name "Row 1.3 (b-lt)", origin `https://test.local`. The device secret is 32 bytes, kept in the session scratchpad and nowhere else.
+- **18:56:51.06** `POST /v2/sign/pdf`, one document, `certificateThumbprint EE8EC0F3…`, **`"level": "b-lt"`**, stamp supplied → **202**, job `d5f0e897…`.
+- **The states the caller saw:** `queued` (18:56:52) → `awaiting_consent` (18:57:00) → `awaiting_pin` (18:57:03) → `preparing_card` (18:57:04).
+- **18:57:04.67** `ui: another program's window is in front of this one … class=Credential Dialog Xaml Host pid=14604` — **Windows' own PIN dialog**, which is what CNG raises. The owner typed the PIN.
+- **18:57:42.20** `WARN pades/dss: the evidence for a certificate is larger than the cap, so it was left out`, `thumbprint=EE8EC0F3…`, `role=signer`, **`bytes=29858766`**, `cap=5242880`.
+- **18:57:42.85** the caller's poll: **`HTTP 422  {"code":"LEVEL_NOT_REACHED"}`**.
+
+### What the owner saw on the report
+
+```
+Završeno
+0 potpisano · 1 neuspešno
+Šta nije uspelo
+  row-1.3.pdf — Traženi nivo potpisa nije mogao biti dostignut, pa ništa nije sačuvano.
+Sačuvano u    vraćeno aplikaciji koja je tražila
+Nivo potpisa  —
+```
+
+### P11, scored
+
+| | | |
+|---|---|---|
+| P11a | **held** | 200, 300 seconds, the six-digit window, named as predicted, owned by 12808, **not** the foreground. **Esc on it was not pressed, so that half is untested** — I predicted it and did not measure it |
+| P11b | **held** | `appId` 32 hex characters, `deviceSecret` 32 bytes |
+| P11c | **FALSE, and the program is right — the prediction was wrong** | The 202 carried `037c78a7…`, not the document's own digest. **PROTOCOL.md §5.3 says the fingerprint is SHA-256 over the *concatenation of the digests*,** so for one document it is SHA-256 of that document's 32 **digest bytes**, not the digest itself. Computed independently: `sha256(b9749fdb…)` = `037c78a7…`, to the character. I misread §5.3 when writing P11c. **Nothing about the program is wrong here, and the check as I wrote it would have failed on every correct run** |
+| P11d | **held as far as it was read** | No certificate chooser and no stamp step — three seconds from `awaiting_consent` to `awaiting_pin` leaves room for neither. **I did not photograph the consent window,** so what it named is the owner's reading and not a measurement. A watcher on that window would have cost nothing and I did not write one |
+| P11e | **held** | The PIN was asked. E11's clock: agent 12808's first card operation. The dialog was **Windows' own** (`Credential Dialog Xaml Host`), not ours — which is also row 1.6's premise, now confirmed from the other side |
+| P11f | **held** | PIN at 18:57:03.4, done at 18:57:42.8 — **about 38 seconds**, inside the predicted 25–55 |
+| P11g | **held, word for word** | "Traženi nivo potpisa nije mogao biti dostignut, pa ništa nije sačuvano." No *Sign without a timestamp*, no offer to save at B-T |
+| P11h | **held — the least certain one** | **422 with `{"code":"LEVEL_NOT_REACHED"}`**, not a 200 carrying `documents`, `failures` and `counts`. `succeeded == 0` takes `job.Fail` (`jobhandlers.go:241`), no body is ever marshalled, and the result endpoint answers with the job's code |
+| P11i | **held** | Nothing written. All four files in `Desktop\liro-s36` still 427 bytes at 18:25; no new, partial or temporary file |
+| P11j | **held** | Entry **331**: `outcome` failed, `failureCode` LEVEL_NOT_REACHED, `documentCount` 1, `application` **"Row 1.3 (b-lt)"**, `channel` **"api-documents"**, `backend` `windows-cng`, `isTestKey` false, `achievedLevel` absent. `prevHash` `667d6622…` **is** entry 330's `hash`, so the link holds. (The link, read by hand — not a full chain verification) |
+| P11k | **held on the WARN, missed on the refusal** | One `role=signer` WARN, P1g's first branch: the CRL **did** arrive, **29,858,766 bytes** against the 5,242,880 cap. No name, no JMBG in any new line. **But I predicted a `LEVEL_NOT_REACHED` line in the log and there is none** — see below |
+| P11l | **supported, not observed** | The code says the card signs and the timestamp is fetched before B-LT's evidence is gathered (`sign.go:361`), and the 38 seconds of fetching after the PIN fit that order. **No log line records the signature value being made and discarded,** so this is the code plus consistent timing, not a direct reading |
+| P11m | **held** | `config.json` unchanged: `signatureLevel` `""`, `signatureLevelChosen` absent, TSA untouched. A caller's level is that batch's only |
+
+**Row 1.3 is closed. It holds:** a program that named `b-lt` got `LEVEL_NOT_REACHED` on a MUP card, no document came back, and nothing was saved.
+
+### Four things found doing it, none of them the row
+
+1. **The refusal is in no log line.** `bridge.log` ends this batch with `protocol: the run ended, so the caller has its result; the report stays on screen`. **The code `LEVEL_NOT_REACHED` appears nowhere in it** — it is in the audit entry and in the HTTP response, and that is all. A person reading the log to find out why a batch produced nothing is told only that it ended. (D-491's local run logged a refusal line; this path does not.)
+2. **The report says where a document went that was never written.** The owner: *"'Sačuvano u' reads differently from yesterday's run through the window … even though nothing was saved in either case — a person is told where a thing went that does not exist."* **The output row is unconditional on anything having been signed** (`mainwindow.go:1655–1665`): it is the output folder for a local batch, "fascikla svakog dokumenta" when there is none, and "vraćeno aplikaciji koja je tražila" for a protocol batch. There is **no zero-signed branch.** The level row immediately below it *is* conditional — `AchievedLevel == ""` becomes "—". So the screen that says **0 potpisano** says in the next line that the result was returned to the application, which is a delivery that did not happen: the caller got a 422. **Opened as D56.**
+3. **MUP's own root certificate does not parse.** `WARN pades/cms: AIA caIssuers did not return a parseable certificate`, `url=http://ca.mup.gov.rs/MUPRootCA4.crt`, `error=x509: malformed certificate`. Not predicted, not looked for, and it is the issuer chain of the card this project exists to support. **Recorded here; whether it bears on row 1.1 is not read.**
+4. **Three PKCS#11 modules on this machine, not two.** `C:\WINDOWS\System32\aetpkss1.dll` (SafeSign), `C:\Program Files\TrustEdgeID\netsetpkcs11_x64.dll`, and `C:\Program Files\MUP RS\Celik\netsetpkcs11_x64.dll`. D-455 and D45 name two. **Row 1.6 walks all three.**
+
+**And one thing worth keeping about a window nobody saw:** `signing window: no desktop notification was posted for a waiting request … this platform does not post desktop notifications`. A request that arrives while the person is elsewhere opens a window and posts nothing — SPEC §6.5.2's notification does not exist on Windows. The same gap D-499 saw from the box side.
