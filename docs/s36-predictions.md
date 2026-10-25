@@ -176,3 +176,44 @@ is somehow still up then, I will say so before touching it.
 - **MUP's OCSP answering now, or its CRL under the 5 MB cap.** The document would reach B-LT, which is the level that was asked for — not a failure of the row, but no refusal to see with this card.
 - **Pošta's test TSA not answering.** The document then fails `TSA_UNAVAILABLE` before B-LT's evidence is ever gathered, and because a protocol batch is exempt from the timestamp question there is no question either — just a different code. That is row 1.5's ground arriving in row 1.3's run.
 - **The consent window timing out at 120 seconds** while the owner is reading. Then the job ends `CONSENT_TIMEOUT` and nothing about the level was tested.
+
+## P12 — row 1.5: the timestamp authority stops answering, and what the question offers
+
+**The row:** when the TSA stops answering mid-batch, the question offers only *Configure* and *Cancel* (C26). **False** if *Sign without a timestamp* is on screen. Point Settings at a dead URL to provoke it.
+
+**Why through the window and not a program.** A protocol batch is **exempt from the question by design** (`mainwindow.go`, the `m.remote != nil` branch): "there is nobody watching the window by the time a batch it approved is running". So this row cannot be measured through the path row 1.3 used. It needs the local window.
+
+**Why a dead URL rather than an authority that dies between documents.** The row's own instruction says to point Settings at a dead URL, and the client is built **once per batch** from the configuration — changing the setting mid-run would not reach it. So the authority is dead from the first document. **It still fails *after* the card is open and the PIN spent,** which is the sense of "mid-batch" that matters: the question arrives when a person has already committed. **A truly live-then-dead authority is not measured by this and I will say so.**
+
+**The URL:** `https://127.0.0.1:9/timestamp`. Port 9 is closed, so the connection is refused immediately rather than hanging — three attempts of `attemptTimeout` never used, plus `backoffAttempt1` 1 s and `backoffAttempt2` 3 s (`internal/pades/tsa/client.go:15–20`).
+
+**The steps.**
+
+1. **The owner's hands:** open the signing window from the tray; add **both** `row-1.5-a.pdf` and `row-1.5-b.pdf`.
+2. **The owner's hands:** open **Settings from the window's own gear**, set the timestamp service to `https://127.0.0.1:9/timestamp`, Save, close. The window re-reads the configuration when its Settings closes (`mainwindow.go:705`), so **no restart**.
+3. **The owner's hands:** approve. Then **read the question out to me before pressing anything.**
+4. **The owner's hands:** press **Podesi izdavaoca vremenskog žiga**, put `https://test-tsa.ca.posta.rs/timestamp1` back, Save, close — which measures the loop *and* restores the setting by the owner's own hand.
+5. **Mine:** the log, the audit chain, the folder, `config.json`, and `verifypdf` on both outputs.
+
+| | measured | predicted |
+|---|---|---|
+| P12a | `config.json` after step 2 | `tsaURL` `https://127.0.0.1:9/timestamp`; `tsaUser` and `tsaPassword` **unchanged**; `signatureLevel` still `""` |
+| P12b | The PIN | **Not asked.** D-495: what verifies the card is held in the agent's process, and this window is in **12808**, which row 1.3 already unlocked at 18:57 and which has held the card since. The card has not left the reader and the agent has not quit. **If it is asked, E11's account is wrong and that matters more than this row** |
+| P12c | From approve to the question | **About 4 seconds** after the card step: three attempts refused at once, with 1 s and 3 s of backoff between them. Not 45 s — nothing waits on a timeout, because a closed port answers |
+| P12d | **The buttons on the question** | **Only two: "Podesi izdavaoca vremenskog žiga" and "Otkaži".** `offersWithoutTimestamp(Unreachable, …)` is **false whatever the level**, and `main.js:269` hides `tsa-without-btn`. **The row holds if and only if "Potpiši bez vremenskog žiga" is absent** |
+| P12e | **What the rest of the screen says** | **Least certain of P12, and the thing I expect to be wrong about the row's spirit.** The heading and the explanation are **static `data-i18n` elements of `state-tsachoice`** — only the button is hidden. So I predict the screen is **titled "Bez vremenskog žiga"** and carries the paragraph "Potpis bez vremenskog žiga je nivoa B-B: važeći, ali bez dokaza o tome kada je napravljen…" — **a screen headed by the one option it does not offer, explaining a level it will not produce**, above two buttons that do something else. The row as written would still be *true*; what a person reads would not be |
+| P12f | The reason line | "Podešeni izdavalac vremenskog žiga nije odgovorio." (`consent.tsa_reason_unreachable`), not the not-configured one |
+| P12g | After *Podesi…*, with the real URL restored | The batch **continues**: `buildTSAClient` returns a client, `allowBB` stays false, and `signInteractiveOne` is retried for document 1. **The question is not asked again** for document 2 |
+| P12h | The end | **Both documents at B-T**, saved beside their inputs as `row-1.5-a-signed.pdf` and `row-1.5-b-signed.pdf`. The level is "the best available", so `keepBTIfBLTFails` is **true** and the CRL shortfall keeps B-T rather than refusing — the opposite of row 1.3, from the same card, in the same hour |
+| P12i | How long the two documents take | **About 40 seconds each, and the second is not faster** (D52, D-493): the 29.9 MB CRL is fetched again for every document, because nothing remembers it was too large. `revocationMemory` is per batch and remembers endpoints that did not answer, not evidence that was too big |
+| P12j | The log | Two `role=signer` WARNs, one per document, each `bytes` about 29,858,766 against `cap=5242880`. Before them, the TSA failures for document 1. **I do not predict whether a line names the question being asked** — row 1.3 showed this program does not always log what it decided |
+| P12k | Audit entry **332** | One entry for the batch: `outcome` `approved`, `achievedLevel` **`B-T`**, `documentCount` **2**, `application` `local`, `channel` absent (ChannelLocal is the empty string), `backend` `windows-cng`. `prevHash` is entry 331's hash |
+| P12l | `verifypdf` on both | `ByteRangeDigestOK`, `SignatureOK`, `SigningCertificateOK`, `HasTimestamp`, `TimestampOK` all true; a **partial** `/DSS` — certificates, no CRL or OCSP for the signer |
+
+**A code reading this run will probably not measure, recorded now so it is not invented later.** `resolveTSAChoice` opens **its own pairing store** before showing Settings (`interactive.go:247`), on the comment "this is a `sign` process, not the tray, so nothing else in it holds one and there is no second copy to disagree with". **That premise is false here:** this window is in the tray, which holds the live store the protocol authenticates against (`tray.go:129` passes it). So pressing *Podesi…* in a tray-hosted window opens Settings against a **second** copy. Nothing in this run depends on it — the owner is changing a URL, not revoking a pairing — and I will not revoke one to find out. **Flagged for the owner, not claimed.**
+
+**What would make the row unreadable rather than false, in which case I stop and say so:**
+
+- **The PIN being asked again,** which would mean the card session did not survive from row 1.3 and E11's account needs re-reading before anything else.
+- **Something answering on 127.0.0.1:9.** Then there is no failure to provoke; I check the port before the run.
+- **The batch failing before the timestamp** — a card gone, a document unreadable — which is a different question than the one being asked.
