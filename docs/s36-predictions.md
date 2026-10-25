@@ -217,3 +217,54 @@ is somehow still up then, I will say so before touching it.
 - **The PIN being asked again,** which would mean the card session did not survive from row 1.3 and E11's account needs re-reading before anything else.
 - **Something answering on 127.0.0.1:9.** Then there is no failure to provoke; I check the port before the run.
 - **The batch failing before the timestamp** — a card gone, a document unreadable — which is a different question than the one being asked.
+
+## P13 — row 1.6: the PIN dialog when the signing window is closed under it, during a real card login
+
+**The row:** the PIN dialog ends as a cancel when the signing window closes under it (C21, measured only with a test owner). **False** if the login hangs or the dialog stays.
+
+### The limit this measurement has, written before it runs
+
+**Our PIN dialog is not on the path this machine normally takes.** The MUP card signs through CNG (`backend: windows-cng` in every audit entry today), and CNG raises **Windows'** own prompt — seen directly in D-505's log as `Credential Dialog Xaml Host`, pid 14604. C21's dialog is `internal/ui`'s, and on Windows it is reached only through PKCS#11, which needs **`preferPKCS11: true`** — a key **Settings does not expose** (it is in no page of `settings.html` and in no handler). The owner's ruling, kept here and in the row: **changing a setting Settings does not expose is a measurement of a path no person reaches by hand.** What this run can show is that the dialog and its watchdog behave as C21 built them. What it cannot show is anything about the dialog a person actually meets on this machine, which is Microsoft's.
+
+**`config.json` is copied before it is touched and put back after.** The copy, its digest, and the restored digest all go in the entry.
+
+### The steps
+
+1. **Mine:** copy `config.json` to the scratchpad; record its SHA-256.
+2. **The owner's hands:** quit the tray (Izađi). The agent must be gone or a new `open` hands its link off to it (D-500's failure) and reads the old configuration.
+3. **Mine:** verify no `liro-bridge.exe` is left; write `preferPKCS11: true`; change nothing else.
+4. **Mine:** start `liro-bridge open` — with no agent this is `openWithoutAgent` → `runMainWindow`, a window with no protocol behind it (D-502).
+5. **The owner's hands:** add `row-1.6.pdf`, pick the 2031 MUP certificate, approve. **Then type nothing at all.**
+6. **Mine:** the moment a window of class `LiroBridgePINDialog` appears, read it, photograph it, and **post `WM_CLOSE` to the signing window** — because the owner *cannot*: see P13e.
+7. **Mine:** restore `config.json` and verify the digest. **The owner's hands:** start the tray again.
+
+### What the code says, read for this block
+
+- `CollectPIN` runs the dialog **on its own locked OS thread** and blocks its caller. Its caller here is `openInteractiveSession`, reached from `startSigning` on an ordinary **goroutine**.
+- **The window's messages are pumped by a dedicated OS thread** — `uiThread`, class `LiroBridgeUIThread`, "the one OS thread every WebView2 window in this process lives on". **So the PIN blocks a goroutine, not the pump.** This is the whole hinge of the row: if the pump were the blocked thread, a posted `WM_CLOSE` would never be dispatched, the owner window would never be destroyed, the watchdog would never fire, and the login would hang — which is the row's own falsifier.
+- `runPINDialog` calls `EnableWindow(owner, 0)` before showing, and sets a **250 ms timer** (`pinOwnerInterval`) that calls `cancel()` when `IsWindow(owner)` goes false — built for exactly this, because D-457 measured a dialog outliving its owner by the whole 15 s a test waited.
+- `wmClose` calls `DestroyWindow` **synchronously inside the window procedure**.
+- A cancelled PIN **stops the chain**: `openThroughPKCS11` returns it rather than walking on, and `openInOrder` returns it rather than falling through to CNG — "nothing may turn 'no' into 'ask somewhere else'".
+
+| | measured | predicted |
+|---|---|---|
+| P13a | The machine before the window | No `liro-bridge.exe` of any kind. `config.json` identical to the backup except `preferPKCS11: true`. **`bridge.json` is left stale** — an `open` process starts no protocol, so it still names 17580 with nobody listening |
+| P13b | The signing window | Class `LiroBridgeWindow`, owned by **the process I started**, resolved at the moment it appears — D-500's correction, as every run today |
+| P13c | **Which dialog appears** | **Ours: class `LiroBridgePINDialog`**, owned by the signing window, titled in Serbian, naming the card and its 4-to-8 limits (D-268). **`Credential Dialog Xaml Host` does not appear** — that is the whole discriminator between CNG and PKCS#11, and D-505 showed what CNG looks like four hours ago |
+| P13d | **Which module asks, and how many times** | **Least certain of P13.** Three modules are on this machine (D-505): `aetpkss1.dll`, TrustEdgeID's `netsetpkcs11_x64.dll`, MUP's. They are walked **in turn**, and a module that must log in before it can say whether it has the certificate would ask first and find out after. I predict **exactly one dialog**, from one of the two NetSeT modules, SafeSign having answered "not mine" without a login. **If two appear, that is one card asked for two PINs, which SPEC §6.5.1 clause 5 forbids, and it is a bigger finding than the row.** NetSeT is also the slow module (D45, B12), so the dialog may take ten seconds or more to arrive |
+| P13e | The signing window while the dialog is up | **Disabled** — `WS_DISABLED` set by `EnableWindow(owner, 0)`. **This is why the close has to be posted:** a person looking at this screen cannot click the window's X, so the case the row describes is not one a person can produce by hand. Worth saying in the row |
+| P13f | Whether `WM_CLOSE` is dispatched | **Yes.** The pump is `LiroBridgeUIThread` and it is not the blocked thread. The window is destroyed inside the window procedure, synchronously |
+| P13g | **The dialog, after the window goes** | **It disappears, within about 250 ms** — one tick of its own watchdog. Not immediately, and not never |
+| P13h | Whether a second PIN is asked | **No.** `ErrPINCancelled` stops the PKCS#11 walk and stops `openInOrder` before CNG. A person who gave no PIN is not asked again somewhere else |
+| P13i | The process | **It exits.** It does not hang and does not have to be killed. The exit code is not predicted firmly |
+| P13j | The card | **No PIN attempt spent.** Nothing is typed, so `C_Login` is never called with a wrong value. This run costs the card nothing |
+| P13k | What is written | **Nothing.** No signed file, no audit entry — `recordAudit` is inside `runBatch`, which is never reached, so the chain stays at **332** |
+| P13l | `config.json` afterwards | **Byte-for-byte the backup**, digest compared and recorded |
+
+### What would make the row unreadable rather than false, in which case I stop and say so
+
+- **No dialog of ours at all** — every module answering "not mine", so the walk falls through to CNG and Windows' prompt appears instead. Then `preferPKCS11` did not reach this path and nothing about C21 was tested.
+- **Two dialogs.** I stop at the first one, measure the row against it, and record the second as its own finding rather than folding it in.
+- **The dialog never appearing because NetSeT hangs.** That is D45's ground, not this row's.
+
+**If it does hang, that is the row false, and I will say so and then kill the process I started — announced first.**
