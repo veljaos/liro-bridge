@@ -49451,3 +49451,75 @@ The per-document notes are identical and name the same 29,858,766 bytes, so the 
 - **Anything about the dialog a person actually meets**, which is Microsoft's, on the CNG path, and which C21 does not govern.
 - **What happens when the window is closed by a route a person has** — there is none while the dialog is up, which is itself the finding.
 - **Which NetSeT module** holds this card, and whether the other would have asked too had the first declined.
+
+## D-508 — D59 fixed: the verifier no longer prints the signer's JMBG, and says what it withholds. And **D-505 was wrong about MUP**: `MUPRootCA4.crt` is a perfectly good certificate served as PEM, which our code refuses because it accepts only DER — and nothing depends on it, because the root is discarded anyway
+
+**Date:** 2026-10-25. **Phase:** F12, the worklist (session 36). Not a worklist row: the owner's three instructions after the rows were closed.
+
+**The owner, on priority:** *"D59 first — that is not a list item, it is the thing that put a third party's JMBG into yesterday's transcript."*
+
+### 1. D59, fixed
+
+**What it was.** `scripts/verifypdf` printed `c.Subject.CommonName` for every certificate, signer included. On a Serbian identity card that common name is the holder's name **and their JMBG** — and this command writes to standard output, which is where terminals, transcripts, CI logs and anything pasted into an issue come from. **D-480 took certificate names out of every message the agent writes and this verifier was not changed with it.** D-487 is what that omission already cost once, with a third party's number, in a public repository; it cost it again yesterday in a transcript, which is how the owner came to rule on it today.
+
+**The change** (`scripts/verifypdf/main.go`):
+
+- **The signer's subject is never printed.** In its place, a line that says what is missing and why: `(withheld: on an identity card this carries the holder's name and their JMBG)` — the owner asked that it "say what it is withholding", and a blank would read as an empty field.
+- **A thumbprint line was added**, uppercase SHA-1 — the same form the audit chain, Windows' certificate store and the agent's own warnings name a certificate by. Nothing is lost: on the real signature it printed `EE8EC0F36917D9E5EC4A05A52FE93645FA7671BD`, which is exactly the value in audit entries 331 and 332, so a signature can still be tied to a log line and an audit entry **without naming a person**.
+- **The timestamp unit's subject is still printed.** A timestamp server is a machine; hiding its name would cost a reader the one thing that says which authority stamped the document. The distinction is a parameter, `subjectIsNotAPerson`, false at the signer's call site and true at the timestamp's.
+- `printCert` now writes to an `io.Writer` so the guard below can read it.
+- The thumbprint is computed in this file rather than imported from `internal/pades/dss`. **Deliberate:** this command is the second, from-scratch implementation SPEC §16.4 requires, and shares no code with the signing path (D-044). Three duplicated lines of hashing is the right price.
+
+**A guard, red before and green after** (`scripts/verifypdf/main_test.go`, four tests):
+
+- `TestSignerSubjectNeverReachesTheOutput` — a certificate whose common name is shaped like a real one (an **invented** name and number; no real person's appears in this repository) must not have its name, its number, or the whole string reach the output, and something must say what was withheld.
+- `TestWithheldSubjectStillIdentifiesTheCertificate` — the thumbprint, the issuer and the validity are still there.
+- `TestAMachineSubjectIsStillPrinted` — a timestamp unit's subject is not treated as a person's.
+- `TestThumbprintIsTheFormEverythingElseUses` — 40 uppercase hex characters.
+
+**Seen red on the old behaviour**, with the subject printed unconditionally: three failures naming the invented number, plus the missing withholding line. Green after. `go vet` clean, `gofmt` clean, and run again over the real card signature: **the subject line is the withheld sentence and nothing personal is in the output.**
+
+**My first attempt to see it red did not take** — a scripted replacement silently failed to match, and the "red" run was the fixed code passing. It was caught by reading the file rather than trusting the exit status, and redone with an exact edit. Recorded because a guard never seen red is not a guard.
+
+### 2. What else in `scripts/` prints it — **two more, not fixed**
+
+The owner asked whether anything else does. **Two do, and both are worse in one way or another:**
+
+| | what it prints | why it matters |
+|---|---|---|
+| `scripts/cngprobe/cngprobe_windows.go:52` | `parsed.Subject` — the **whole distinguished name**, not just the common name | More than `verifypdf` leaked: every RDN, so the identity-number attribute too, not only whatever the common name happens to carry |
+| `scripts/p11worker/p11worker_windows.go:179` | `parsed.Subject.CommonName` | Exactly the defect just fixed. This is the probe a developer runs **with a real card in the reader**, which is the only condition under which any of this leaks |
+
+Both print to standard output, both are run on a machine with a card in it, and both are the same two-line shape to fix. **Not changed, because the owner's instruction named `verifypdf` and asked only that the others be reported.** They are a live risk until they are done.
+
+**Outside `scripts/` there is no fourth.** Four call sites touch a subject and all four are legitimate: `internal/pades/signer_identity.go` (the visible stamp names the signer, which is the point of a visible signature), `internal/trust/classify/dn.go` and `internal_certificates.go` (classification, nothing printed), and `internal/ui/pindialog_linux.go` (showing a person their own card on their own screen).
+
+### 3. `MUPRootCA4.crt` — **D-505 item 3 is wrong and is corrected here**
+
+**D-505 recorded:** "MUP's own root certificate does not parse." **That is false**, and it was my reading of a warning whose wording blames the far end.
+
+**What was measured.** Fetched both certificates MUP's AIA points at:
+
+| | HTTP | Content-Type | bytes | encoding |
+|---|---|---|---|---|
+| `ca.mup.gov.rs/MUPGradjaniCA4.crt` | 200 | `application/x-x509-ca-cert` | 2511 | **PEM** |
+| `ca.mup.gov.rs/MUPRootCA4.crt` | 200 | `application/x-x509-ca-cert` | 2247 | **PEM** |
+
+Both begin `-----BEGIN CERTIFICATE-----`. Decoded, the root is 1618 bytes of valid DER: **`CN=MUP Root CA 4`, self-signed, valid 2020-05-25 to 2045-05-25, SHA-1 `0F5E0337A9909A39F46EDA6BE87D9CCD382860BF`** — and it is **already in a Windows Root store on this machine.** The intermediate decodes to `CN=MUP Gradjani CA 4`, **not** self-signed, issued by `MUP Root CA 4`.
+
+**So: not malformed at the source, and not fetched or stored wrongly.** The bytes arrive complete and intact. **We parse them wrongly:** `chain.go:124` calls `x509.ParseCertificate(data)`, which takes DER only, on content that is PEM. RFC 5280 §4.2.2.1 and RFC 2585 do say HTTP `caIssuers` should serve DER as `application/pkix-cert`, so MUP deviates — but it is a common deviation, the certificate is valid, and two lines would accept it.
+
+**Does anything depend on it? No.** `CompleteChain` walks signer → issuer, and **excludes the root by design** (F3 §5.4: "up to but not including the root") — `if isSelfSigned(issuer) { break }`. The root we fail to parse is precisely the certificate that would be thrown away one line later. The chain built is byte-identical with or without the fix. Today's two signatures came back `SignerChainTrusted true`, which is the proof.
+
+**Why only the root warns, and not the intermediate, when both are PEM:** `findIssuerInStore` is tried before AIA, and `MUP Gradjani CA 4` **is** in the Trusted List, so AIA is never reached for it. `MUP Root CA 4` is **not** in the Trusted List, so AIA is reached, and fails.
+
+**What it costs today:** one misleading WARN per signature — four of them in this session's log — and a pointless 2.2 kB fetch each time. **The wording is the real cost:** "AIA caIssuers did not return a parseable certificate" reads as the far end's fault, and it made me write a false sentence about a national CA into the permanent record.
+
+**And it answers an open question of D-038's,** quoted in `CompleteChain`'s own comment: *"Whether MUP's Trusted List CA/QC service certificate is itself self-signed (a root, correctly excluded) or an intermediate under a separate, unlisted root could not be verified in this environment."* **It is an intermediate under a separate root**, and that root is not in the Trusted List. **Opened as D60**, with the PEM tolerance and the warning's wording.
+
+### 4. The machine, put back
+
+- **The Row 1.3 pairing is revoked.** `appId dbac0bfd55ed3bcb3b7677d9bb2646cd`, through the agent's **own `api.Pairings.Revoke`** — the same call Settings makes, which deletes the device secret from the DPAPI store and rewrites `pairings.json`. Driven by a throwaway command in the module, run once and deleted, not committed: hand-editing an encrypted secret store is how somebody's TSA password gets destroyed by accident, and there is **no command-line way to revoke a pairing** (worth its own note). `pairings.json`, `secrets.json` and `secrets.entropy` were copied first. **The other six pairings are untouched**, before and after, read from the running agent.
+- The scratchpad file holding that pairing's device secret was deleted.
+- **The tray is running again: PID 12252**, listening on 17580, `bridge.json` written, `/v2/health` 200, and the revoked pairing is absent from what it serves.
+- **One difference from normal, for whoever reads this machine next:** its **parent is `powershell.exe` (16928), not `explorer.exe`** — I started it, where a logon normally does. D-502's rule stands: read how the agent was started, every time, and do not assume it from here.
